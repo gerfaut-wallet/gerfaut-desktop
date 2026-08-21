@@ -1,0 +1,126 @@
+import { useEffect, useRef } from "react";
+import { Button } from "./components/Button";
+import { CommandPalette } from "./components/CommandPalette";
+import { EmptyState } from "./components/EmptyState";
+import { Toast } from "./components/Toast";
+import { Rail } from "./shell/Rail";
+import { useSettings, useSyncAll, useWallets } from "./state/queries";
+import { useUi } from "./state/store";
+import { AddWalletModal } from "./views/AddWalletModal";
+import { ReceiveModal } from "./views/ReceiveModal";
+import { SettingsView } from "./views/SettingsView";
+import { TxDetailRail } from "./views/TxDetailRail";
+import { WalletHome } from "./views/WalletHome";
+
+export default function App() {
+  const settings = useSettings();
+  const network = settings.data?.active_network;
+  const wallets = useWallets(network);
+  const syncAll = useSyncAll();
+  const { view, activeWalletId, openWallet, hydratePrefs, selectTx } = useUi();
+  const hydrated = useRef(false);
+  const autosynced = useRef(false);
+
+  // Hydrate UI prefs from the vault once.
+  useEffect(() => {
+    if (settings.data && !hydrated.current) {
+      hydrated.current = true;
+      hydratePrefs(settings.data.app_prefs);
+    }
+  }, [settings.data, hydratePrefs]);
+
+  // Keep a valid wallet selection.
+  useEffect(() => {
+    if (!wallets.data) return;
+    const stillThere = wallets.data.some((wallet) => wallet.id === activeWalletId);
+    if (!stillThere) {
+      const first = wallets.data[0];
+      if (first) openWallet(first.id);
+    }
+  }, [wallets.data, activeWalletId, openWallet]);
+
+  // One background refresh at startup; data stays visibly stamped.
+  useEffect(() => {
+    if (wallets.data && wallets.data.length > 0 && !autosynced.current && network) {
+      autosynced.current = true;
+      syncAll.mutate(network);
+    }
+  }, [wallets.data, network, syncAll]);
+
+  // Esc closes the context rail (modals trap Esc themselves).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") selectTx(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectTx]);
+
+  if (settings.isPending || wallets.isPending) {
+    return (
+      <div className="flex h-full items-center justify-center bg-background">
+        <p className="font-ui text-sm text-muted">Opening vault…</p>
+      </div>
+    );
+  }
+  if (settings.isError || wallets.isError || !settings.data) {
+    return (
+      <div className="flex h-full items-center justify-center bg-background">
+        <p className="max-w-sm text-center font-ui text-sm text-muted">
+          The vault could not be opened. Restart Gerfaut; if this persists, the
+          OS credential store refused access to the vault key.
+        </p>
+      </div>
+    );
+  }
+
+  const walletList = wallets.data ?? [];
+  const activeWallet = walletList.find((wallet) => wallet.id === activeWalletId) ?? null;
+
+  return (
+    <div className="flex h-full bg-background">
+      <Rail
+        wallets={walletList}
+        network={settings.data.active_network}
+        syncing={syncAll.isPending}
+        onSyncAll={() => syncAll.mutate(settings.data.active_network)}
+      />
+
+      <main className="flex min-w-0 flex-1">
+        <div className="min-w-0 flex-1 overflow-y-auto">
+          <div className="mx-auto h-full max-w-[1280px] px-6 py-4">
+            {view === "settings" ? (
+              <SettingsView settings={settings.data} wallets={walletList} />
+            ) : walletList.length === 0 ? (
+              <EmptyState
+                title="No wallets watched yet"
+                hint="Add a descriptor, an extended public key, or an address. Gerfaut watches it and never touches a key."
+                action={
+                  <Button
+                    variant="primary"
+                    onClick={() => useUi.getState().setAddWalletOpen(true)}
+                  >
+                    Add a wallet
+                  </Button>
+                }
+              />
+            ) : activeWallet ? (
+              <WalletHome walletId={activeWallet.id} />
+            ) : null}
+          </div>
+        </div>
+        {view === "wallet" && activeWallet && (
+          <TxDetailRail walletId={activeWallet.id} network={activeWallet.network} />
+        )}
+      </main>
+
+      <AddWalletModal activeNetwork={settings.data.active_network} />
+      {activeWallet && <ReceiveModal walletId={activeWallet.id} />}
+      <CommandPalette
+        wallets={walletList}
+        onSyncAll={() => syncAll.mutate(settings.data.active_network)}
+      />
+      <Toast />
+    </div>
+  );
+}
