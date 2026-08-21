@@ -23,7 +23,7 @@ The app contains no code to generate keys, handle seeds, or sign transactions. T
 | Repository | Role |
 |---|---|
 | [`gerfaut-core`](https://github.com/gerfaut-wallet/gerfaut-core) | Core Rust library |
-| [`gerfaut-mobile`](https://github.com/gerfaut-wallet/gerfaut-mobile) | Mobile app (Flutter, Android and iOS) |
+| [`gerfaut-mobile`](https://github.com/gerfaut-wallet/gerfaut-mobile) | Mobile app (Flutter, Android first) |
 | `gerfaut-desktop` | Desktop app, this repository |
 | [`gerfaut-web`](https://github.com/gerfaut-wallet/gerfaut-web) | Website, documentation, downloads |
 
