@@ -16,16 +16,19 @@ const NETWORK_LABEL: Record<Network, string> = {
     A self-contained dark island in either theme (.shell-rail). */
 export function Rail({
   wallets,
+  activeWalletId,
   network,
   syncing,
   onSyncAll,
 }: {
   wallets: WalletMeta[];
+  /** Effective selection, derived by the app (fallback included). */
+  activeWalletId: string | null;
   network: Network;
   syncing: boolean;
   onSyncAll: () => void;
 }) {
-  const { view, activeWalletId, openWallet, openSettings, setAddWalletOpen, masked } = useUi();
+  const { view, openWallet, openSettings, setAddWalletOpen, masked } = useUi();
 
   return (
     <nav

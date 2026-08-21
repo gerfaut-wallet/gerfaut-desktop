@@ -17,7 +17,7 @@ export default function App() {
   const network = settings.data?.active_network;
   const wallets = useWallets(network);
   const syncAll = useSyncAll();
-  const { view, activeWalletId, openWallet, hydratePrefs, selectTx } = useUi();
+  const { view, activeWalletId, hydratePrefs, selectTx } = useUi();
   const hydrated = useRef(false);
   const autosynced = useRef(false);
 
@@ -28,16 +28,6 @@ export default function App() {
       hydratePrefs(settings.data.app_prefs);
     }
   }, [settings.data, hydratePrefs]);
-
-  // Keep a valid wallet selection.
-  useEffect(() => {
-    if (!wallets.data) return;
-    const stillThere = wallets.data.some((wallet) => wallet.id === activeWalletId);
-    if (!stillThere) {
-      const first = wallets.data[0];
-      if (first) openWallet(first.id);
-    }
-  }, [wallets.data, activeWalletId, openWallet]);
 
   // One background refresh at startup; data stays visibly stamped.
   useEffect(() => {
@@ -75,12 +65,16 @@ export default function App() {
   }
 
   const walletList = wallets.data ?? [];
-  const activeWallet = walletList.find((wallet) => wallet.id === activeWalletId) ?? null;
+  // Selection is derived, never reset by effects: a stale list between
+  // an add and its refetch must not steal the selection.
+  const activeWallet =
+    walletList.find((wallet) => wallet.id === activeWalletId) ?? walletList[0] ?? null;
 
   return (
     <div className="flex h-full bg-background">
       <Rail
         wallets={walletList}
+        activeWalletId={activeWallet?.id ?? null}
         network={settings.data.active_network}
         syncing={syncAll.isPending}
         onSyncAll={() => syncAll.mutate(settings.data.active_network)}
