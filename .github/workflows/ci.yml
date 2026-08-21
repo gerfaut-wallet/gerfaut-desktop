@@ -1,0 +1,26 @@
+name: CI
+
+# Frontend checks only for now: the Rust crate depends on the sibling
+# gerfaut-core checkout, which a private cross-repo token would require.
+# Full Rust CI lands when the repositories go public.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Type check
+        run: npx tsc -b
+      - name: Test
+        run: npx vitest run
+      - name: Build
+        run: npx vite build
