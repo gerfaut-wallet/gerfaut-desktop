@@ -43,9 +43,11 @@ export function Modal({
         onCloseRef.current();
       }
       if (event.key === "Tab" && node) {
-        const focusables = node.querySelectorAll<HTMLElement>(
-          'a, button:not(:disabled), input, textarea, select, [tabindex]:not([tabindex="-1"])',
-        );
+        const focusables = [
+          ...node.querySelectorAll<HTMLElement>(
+            'a, button:not(:disabled), input, textarea, select, [tabindex]:not([tabindex="-1"])',
+          ),
+        ].filter((el) => el.offsetParent !== null);
         if (focusables.length === 0) return;
         const first = focusables[0];
         const last = focusables[focusables.length - 1];

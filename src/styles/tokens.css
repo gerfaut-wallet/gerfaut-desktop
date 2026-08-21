@@ -39,7 +39,7 @@
 /* --- theme --- */
 
 @theme {
-  /* Couleurs — thème clair (défaut) */
+  /* Colors — light theme (default) */
   --color-background: #f4f7f9;
   --color-surface: #ffffff;
   --color-sunken: #ebf0f4;
@@ -75,7 +75,7 @@
 [data-theme="dark"] {
   --color-background: #0b0f14;
   --color-surface: #161e27;
-  --color-sunken: #1f2933; /* relief en sombre */
+  --color-sunken: #1f2933; /* raised in dark, sunken in light */
   --color-border: #2a3440;
   --color-text: #e6ecf2;
   --color-muted: #8a98a6;

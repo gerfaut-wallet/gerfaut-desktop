@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { Eye, EyeOff, QrCode, RefreshCw } from "lucide-react";
+import { ArrowDownLeft, Eye, EyeOff, RefreshCw } from "lucide-react";
 import { Balance } from "../components/Amount";
 import { Button, IconButton } from "../components/Button";
 import { SyncIndicator } from "../components/SyncIndicator";
@@ -65,7 +65,7 @@ export function WalletHome({ walletId }: { walletId: string }) {
               Sync
             </Button>
             <Button variant="primary" onClick={() => setReceiveOpen(true)}>
-              <QrCode size={16} strokeWidth={1.5} aria-hidden />
+              <ArrowDownLeft size={16} strokeWidth={1.5} aria-hidden />
               Receive
             </Button>
           </div>
@@ -101,6 +101,12 @@ export function WalletHome({ walletId }: { walletId: string }) {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto py-2">
+        {walletTab === "transactions" && snapshot.data.truncated && (
+          <p className="px-3 pb-2 font-ui text-xs text-muted">
+            This address has more history than Gerfaut fetched: the list below
+            is partial. The balance stays exact.
+          </p>
+        )}
         {walletTab === "transactions" ? (
           <TxList txs={txs} />
         ) : utxos.isPending ? (

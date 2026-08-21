@@ -3,7 +3,7 @@ import {
   Eye,
   Moon,
   Plus,
-  QrCode,
+  ArrowDownLeft,
   RefreshCw,
   Settings,
   Sun,
@@ -93,7 +93,7 @@ export function CommandPalette({
           </PaletteItem>
           {activeWalletId && (
             <PaletteItem onSelect={() => run(() => setReceiveOpen(true))}>
-              <QrCode size={16} strokeWidth={1.5} aria-hidden />
+              <ArrowDownLeft size={16} strokeWidth={1.5} aria-hidden />
               Receive
             </PaletteItem>
           )}

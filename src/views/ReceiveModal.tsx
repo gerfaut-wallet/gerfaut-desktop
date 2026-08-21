@@ -8,7 +8,13 @@ import { useUi } from "../state/store";
 /** Receive address display: the full address in mono, copy with
     explicit feedback, index shown. Single-address wallets show their
     one address. */
-export function ReceiveModal({ walletId }: { walletId: string }) {
+export function ReceiveModal({
+  walletId,
+  singleAddress = false,
+}: {
+  walletId: string;
+  singleAddress?: boolean;
+}) {
   const { receiveOpen, setReceiveOpen, showToast } = useUi();
   const addresses = useReceiveAddresses(walletId, receiveOpen);
   const [copied, setCopied] = useState(false);
@@ -37,7 +43,9 @@ export function ReceiveModal({ walletId }: { walletId: string }) {
         <div className="flex flex-col gap-4">
           <div>
             <p className="mb-1 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
-              Next unused address · index {entry.index}
+              {singleAddress
+                ? "Watched address"
+                : `Next unused address · index ${entry.index}`}
             </p>
             <p className="selectable break-all rounded-sm bg-sunken p-4 font-data text-[15px] leading-relaxed text-text">
               {entry.address}

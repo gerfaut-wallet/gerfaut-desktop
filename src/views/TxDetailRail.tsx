@@ -99,14 +99,16 @@ export function TxDetailRail({ walletId, network }: { walletId: string; network:
             <IoSection title={`Outputs (${detail.data.outputs.length})`} ios={detail.data.outputs} masked={masked} />
           </dl>
 
-          <button
-            type="button"
-            onClick={() => void openUrl(explorerTxUrl(network, detail.data.summary.txid))}
-            className="mt-5 inline-flex cursor-pointer items-center gap-1.5 font-ui text-sm text-primary transition-colors duration-150 hover:underline"
-          >
-            View on explorer
-            <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
-          </button>
+          {explorerTxUrl(network, detail.data.summary.txid) !== "" && (
+            <button
+              type="button"
+              onClick={() => void openUrl(explorerTxUrl(network, detail.data.summary.txid))}
+              className="mt-5 inline-flex cursor-pointer items-center gap-1.5 font-ui text-sm text-primary transition-colors duration-150 hover:underline"
+            >
+              View on explorer
+              <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
+            </button>
+          )}
         </div>
       )}
     </aside>

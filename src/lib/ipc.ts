@@ -117,6 +117,8 @@ export interface WalletSnapshot {
   balance: BalanceSnapshot;
   txs: TxSummary[];
   tip_height: number;
+  /** True when the tx list is partial (busy watched address). */
+  truncated: boolean;
 }
 
 export interface SyncReport {

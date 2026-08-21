@@ -53,6 +53,7 @@ const SNAPSHOT: WalletSnapshot = {
     },
   ],
   tip_height: 200_000,
+  truncated: false,
 };
 
 const PARSED_TPUB: ParsedInput = {

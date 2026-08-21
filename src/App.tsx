@@ -109,7 +109,12 @@ export default function App() {
       </main>
 
       <AddWalletModal activeNetwork={settings.data.active_network} />
-      {activeWallet && <ReceiveModal walletId={activeWallet.id} />}
+      {activeWallet && (
+        <ReceiveModal
+          walletId={activeWallet.id}
+          singleAddress={activeWallet.kind.type === "single_address"}
+        />
+      )}
       <CommandPalette
         wallets={walletList}
         onSyncAll={() => syncAll.mutate(settings.data.active_network)}

@@ -127,6 +127,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
               }}
               rows={5}
               spellCheck={false}
+              aria-invalid={error !== null}
               placeholder="wpkh([fingerprint/84h/0h/0h]xpub.../0/*)"
               className="selectable w-full resize-none rounded-sm bg-sunken p-3 font-data text-[13px] leading-relaxed text-text outline-none placeholder:text-muted/60"
             />
