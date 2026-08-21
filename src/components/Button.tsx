@@ -1,7 +1,7 @@
 import { clsx } from "clsx";
 import type { ButtonHTMLAttributes } from "react";
 
-type Variant = "primary" | "secondary" | "ghost";
+type Variant = "primary" | "secondary" | "ghost" | "danger";
 
 interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
@@ -20,6 +20,9 @@ export function Button({ variant = "secondary", className, ...rest }: Props) {
           "bg-primary text-on-primary hover:bg-primary-hover disabled:hover:bg-primary",
         variant === "secondary" && "bg-sunken text-text hover:bg-border/60",
         variant === "ghost" && "bg-transparent text-muted hover:bg-sunken hover:text-text",
+        // Destructive confirmations only, never a lone delete button.
+        variant === "danger" &&
+          "bg-alert text-white hover:opacity-90 dark:text-background",
         className,
       )}
       {...rest}
