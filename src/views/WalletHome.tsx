@@ -10,11 +10,12 @@ import { UtxoTable } from "./UtxoTable";
 
 /** Home of one wallet: balance, freshness, transactions and UTXOs. */
 export function WalletHome({ walletId }: { walletId: string }) {
-  const { walletTab, setWalletTab, masked, toggleMasked, setReceiveOpen } = useUi();
+  const { walletTab, setWalletTab, masked, toggleMasked, setReceiveOpen, syncErrors } = useUi();
   const snapshot = useSnapshot(walletId);
   const utxos = useUtxos(walletId, walletTab === "utxos");
   const sync = useSyncWallet();
   const syncingThis = sync.isPending && sync.variables === walletId;
+  const syncError = syncErrors[walletId] ?? null;
 
   if (snapshot.isPending) {
     return <p className="px-1 py-4 font-ui text-sm text-muted">Loading wallet…</p>;
@@ -37,7 +38,7 @@ export function WalletHome({ walletId }: { walletId: string }) {
               {meta.name}
             </h1>
             <div className="mt-1">
-              <SyncIndicator stamp={meta.last_sync} syncing={syncingThis} />
+              <SyncIndicator stamp={meta.last_sync} syncing={syncingThis} error={syncError} />
             </div>
           </div>
           <div className="flex items-center gap-1">
