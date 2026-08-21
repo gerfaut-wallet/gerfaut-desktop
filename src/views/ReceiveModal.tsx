@@ -1,5 +1,6 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
+import { renderSVG } from "uqr";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { useReceiveAddresses } from "../state/queries";
@@ -41,6 +42,18 @@ export function ReceiveModal({
       )}
       {entry && (
         <div className="flex flex-col gap-4">
+          {/* A QR code stays dark-on-light in every theme: scanners
+              expect it, and inverting hurts contrast for cameras. */}
+          <div className="flex justify-center">
+            <div
+              aria-label="Address QR code"
+              role="img"
+              className="w-[220px] rounded-lg border border-border bg-white p-3 [&_svg]:block [&_svg]:h-full [&_svg]:w-full"
+              dangerouslySetInnerHTML={{
+                __html: renderSVG(entry.address, { border: 0, blackColor: "#0d1317" }),
+              }}
+            />
+          </div>
           <div>
             <p className="mb-1 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
               {singleAddress
