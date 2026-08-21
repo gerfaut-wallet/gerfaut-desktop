@@ -203,7 +203,7 @@ function LaneColumn({
             <AddressChip value={lane.label} />
           ) : (
             <span className="font-data text-[13px] text-muted">
-              {side === "in" ? "coinbase" : "unknown"}
+              {side === "in" ? "coinbase" : "script output"}
             </span>
           )}
           {lane.valueSats !== null && <InlineAmount sats={lane.valueSats} />}

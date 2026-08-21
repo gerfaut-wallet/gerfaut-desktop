@@ -62,15 +62,15 @@ export function ListAmount({ sats, pending }: { sats: number; pending?: boolean 
   );
 }
 
-/** Inline amount for detail views: primary unit plus fiat. */
-export function InlineAmount({ sats }: { sats: number }) {
+/** Inline amount for detail views: primary unit, fiat optional. */
+export function InlineAmount({ sats, withFiat = true }: { sats: number; withFiat?: boolean }) {
   const { masked, unit } = useUi();
   const fiat = useFiatValue(sats);
   if (masked) return <span className="font-data text-[13px] text-text">{MASKED}</span>;
   return (
     <span className="selectable font-data text-[13px] text-text">
       {formatAmount(sats, unit)}
-      {fiat && <span className="text-muted"> · {fiat}</span>}
+      {withFiat && fiat && <span className="text-muted"> · {fiat}</span>}
     </span>
   );
 }

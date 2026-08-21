@@ -60,7 +60,7 @@ export function TxDetailModal({ walletId, network }: { walletId: string; network
             </MetaItem>
             <MetaItem label="Fee">
               {detail.data.summary.fee_sats !== null ? (
-                <InlineAmount sats={detail.data.summary.fee_sats} />
+                <InlineAmount sats={detail.data.summary.fee_sats} withFiat={false} />
               ) : (
                 <span className="font-data text-[13px] text-muted">n/a</span>
               )}
@@ -183,7 +183,7 @@ function IoTable({ title, ios }: { title: string; ios: TxIo[] }) {
                     {io.address ? (
                       <AddressChip value={io.address} />
                     ) : (
-                      <span className="font-data text-[13px] text-muted">unknown</span>
+                      <span className="font-data text-[13px] text-muted">script output</span>
                     )}
                     {io.is_mine && (
                       <span className="rounded-full bg-sunken px-1.5 py-px font-ui text-[10px] font-medium uppercase tracking-[0.04em] text-muted">
