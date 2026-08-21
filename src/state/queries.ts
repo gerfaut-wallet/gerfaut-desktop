@@ -6,7 +6,8 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import type { BackendConfig, Network, ParsedInput } from "../lib/ipc";
-import { ipc } from "../lib/ipc";
+import { ipc, isCommandError } from "../lib/ipc";
+import { useUi } from "./store";
 
 export const keys = {
   settings: ["settings"] as const,
@@ -81,6 +82,11 @@ export function useSyncWallet() {
   const invalidate = useInvalidateWallet();
   return useMutation({
     mutationFn: (id: string) => ipc.syncWallet(id),
+    onSuccess: (_report, id) => useUi.getState().setSyncError(id, null),
+    onError: (error, id) =>
+      useUi
+        .getState()
+        .setSyncError(id, isCommandError(error) ? error.message : String(error)),
     onSettled: (_data, _error, id) => invalidate(id),
   });
 }
@@ -89,8 +95,45 @@ export function useSyncAll() {
   const invalidate = useInvalidateWallet();
   return useMutation({
     mutationFn: (network?: Network) => ipc.syncAll(network),
+    onSuccess: (report) => {
+      const ui = useUi.getState();
+      for (const sync of report.reports) {
+        ui.setSyncError(sync.wallet_id, null);
+      }
+      for (const failure of report.failures) {
+        ui.setSyncError(failure.wallet_id, failure.message);
+      }
+      if (report.failures.length === 0) {
+        ui.showToast(
+          report.reports.length === 1
+            ? "1 wallet synced"
+            : `${report.reports.length} wallets synced`,
+        );
+      } else {
+        ui.showToast(
+          `${report.reports.length} synced, ${report.failures.length} failed`,
+        );
+      }
+    },
     onSettled: () => invalidate(),
   });
+}
+
+/** Current BTC price, refreshed every minute while fiat display is on. */
+export function useFiatRate() {
+  const { fiatEnabled, fiatSource, fiatCurrency } = useUi();
+  return useQuery({
+    queryKey: ["price", fiatSource, fiatCurrency],
+    queryFn: () => ipc.fetchPrice(fiatSource, fiatCurrency),
+    enabled: fiatEnabled,
+    refetchInterval: 60_000,
+    staleTime: 55_000,
+    retry: 1,
+  });
+}
+
+export function useCheckUpdate() {
+  return useMutation({ mutationFn: () => ipc.checkUpdate() });
 }
 
 export function useAddWallet() {

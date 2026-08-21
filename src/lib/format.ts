@@ -60,3 +60,26 @@ export function formatTimestamp(unixSeconds: number): string {
 
 /** Masked replacement for any amount. */
 export const MASKED = "•••••";
+
+export type Unit = "btc" | "sats";
+
+/** Primary amount in the chosen display unit. */
+export function formatAmount(sats: number, unit: Unit): string {
+  return unit === "btc" ? `${formatBtc(sats)} BTC` : formatSats(sats);
+}
+
+/** Signed primary amount in the chosen display unit. */
+export function formatAmountSigned(sats: number, unit: Unit): string {
+  if (unit === "btc") return `${formatBtcSigned(sats)} BTC`;
+  return sats < 0 ? formatSats(sats) : `+${formatSats(sats)}`;
+}
+
+/** Fiat value of an amount at a given BTC rate, in the user's locale. */
+export function formatFiat(sats: number, rate: number, currency: string): string {
+  const value = (sats / 100_000_000) * rate;
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: currency.toUpperCase(),
+    maximumFractionDigits: Math.abs(value) < 1 ? 4 : 2,
+  }).format(value);
+}

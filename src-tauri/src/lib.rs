@@ -168,6 +168,20 @@ async fn set_app_pref(
     Ok(state.manager.set_app_pref(key, value).await?)
 }
 
+#[tauri::command]
+async fn fetch_price(
+    source: gerfaut_core::price::PriceSource,
+    currency: gerfaut_core::price::FiatCurrency,
+) -> CommandResult<gerfaut_core::price::PriceQuote> {
+    Ok(gerfaut_core::price::fetch_price(source, currency).await?)
+}
+
+#[tauri::command]
+async fn check_update(app: tauri::AppHandle) -> CommandResult<gerfaut_core::updates::UpdateCheck> {
+    let current = app.package_info().version.to_string();
+    Ok(gerfaut_core::updates::check_update("gerfaut-wallet/gerfaut-desktop", &current).await?)
+}
+
 // --- vault key ---------------------------------------------------------
 
 const KEYRING_SERVICE: &str = "Gerfaut";
@@ -227,7 +241,9 @@ pub fn run() {
             get_settings,
             set_active_network,
             set_backend,
-            set_app_pref
+            set_app_pref,
+            fetch_price,
+            check_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

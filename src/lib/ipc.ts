@@ -146,6 +146,23 @@ export interface Settings {
   app_prefs: Record<string, string>;
 }
 
+export type PriceSource = "coingecko" | "kraken" | "mempool_space";
+export type FiatCurrency = "eur" | "usd" | "gbp" | "chf";
+
+export interface PriceQuote {
+  /** Price of 1 BTC in the currency. */
+  rate: number;
+  currency: FiatCurrency;
+  source: PriceSource;
+  at: number;
+}
+
+export interface UpdateCheck {
+  latest: string;
+  url: string;
+  update_available: boolean;
+}
+
 export interface CommandError {
   kind:
     | "unrecognized_input"
@@ -195,4 +212,7 @@ export const ipc = {
   setBackend: (network: Network, config: BackendConfig) =>
     invoke<void>("set_backend", { network, config }),
   setAppPref: (key: string, value: string) => invoke<void>("set_app_pref", { key, value }),
+  fetchPrice: (source: PriceSource, currency: FiatCurrency) =>
+    invoke<PriceQuote>("fetch_price", { source, currency }),
+  checkUpdate: () => invoke<UpdateCheck>("check_update"),
 };
