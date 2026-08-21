@@ -9,6 +9,8 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
+    // The Rust build writes into src-tauri/target while vite runs.
+    watch: { ignored: ["**/src-tauri/**"] },
   },
   envPrefix: ["VITE_", "TAURI_ENV_"],
   build: {

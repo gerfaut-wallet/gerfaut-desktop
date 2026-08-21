@@ -4,7 +4,7 @@ import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import type { InputWarning, Network, ParsedInput, RecognizedKind, ScriptKind } from "../lib/ipc";
 import { ipc, isCommandError } from "../lib/ipc";
-import { useAddWallet, useSyncWallet } from "../state/queries";
+import { useAddWallet, useSetActiveNetwork, useSyncWallet } from "../state/queries";
 import { useUi } from "../state/store";
 
 const KIND_LABEL: Record<RecognizedKind, string> = {
@@ -53,6 +53,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const addWallet = useAddWallet();
   const sync = useSyncWallet();
+  const setActiveNetwork = useSetActiveNetwork();
 
   const reset = () => {
     setRaw("");
@@ -86,9 +87,14 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
   };
 
   const submit = async () => {
-    if (!parsed) return;
+    if (!parsed || name.trim().length === 0) return;
     try {
       const meta = await addWallet.mutateAsync({ name, parsed, network });
+      // The workspace follows the wallet that was just added, otherwise
+      // it would land invisible on another network.
+      if (network !== activeNetwork) {
+        await setActiveNetwork.mutateAsync(network);
+      }
       showToast("Wallet added");
       close();
       openWallet(meta.id);
@@ -113,6 +119,12 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
               id="wallet-input"
               value={raw}
               onChange={(event) => setRaw(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+                  event.preventDefault();
+                  if (raw.trim().length > 0) void parse(raw);
+                }
+              }}
               rows={5}
               spellCheck={false}
               placeholder="wpkh([fingerprint/84h/0h/0h]xpub.../0/*)"
@@ -194,8 +206,15 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
               </label>
               <input
                 id="wallet-name"
+                autoFocus
                 value={name}
                 onChange={(event) => setName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void submit();
+                  }
+                }}
                 placeholder="Cold storage"
                 className="h-11 w-full rounded-sm bg-sunken px-3 font-ui text-base text-text outline-none placeholder:text-muted/60"
               />
