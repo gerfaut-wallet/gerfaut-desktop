@@ -9,7 +9,7 @@ import { useUi } from "./state/store";
 import { AddWalletModal } from "./views/AddWalletModal";
 import { ReceiveModal } from "./views/ReceiveModal";
 import { SettingsView } from "./views/SettingsView";
-import { TxDetailRail } from "./views/TxDetailRail";
+import { TxDetailModal } from "./views/TxDetailModal";
 import { WalletHome } from "./views/WalletHome";
 
 export default function App() {
@@ -17,7 +17,7 @@ export default function App() {
   const network = settings.data?.active_network;
   const wallets = useWallets(network);
   const syncAll = useSyncAll();
-  const { view, activeWalletId, hydratePrefs, selectTx } = useUi();
+  const { view, activeWalletId, hydratePrefs } = useUi();
   const hydrated = useRef(false);
   const autosynced = useRef(false);
 
@@ -36,15 +36,6 @@ export default function App() {
       syncAll.mutate(network);
     }
   }, [wallets.data, network, syncAll]);
-
-  // Esc closes the context rail (modals trap Esc themselves).
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") selectTx(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [selectTx]);
 
   if (settings.isPending || wallets.isPending) {
     return (
@@ -103,11 +94,11 @@ export default function App() {
             ) : null}
           </div>
         </div>
-        {view === "wallet" && activeWallet && (
-          <TxDetailRail walletId={activeWallet.id} network={activeWallet.network} />
-        )}
       </main>
 
+      {view === "wallet" && activeWallet && (
+        <TxDetailModal walletId={activeWallet.id} network={activeWallet.network} />
+      )}
       <AddWalletModal activeNetwork={settings.data.active_network} />
       {activeWallet && (
         <ReceiveModal

@@ -3,23 +3,30 @@ import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { IconButton } from "./Button";
 
+/** Open modals, bottom to top: Escape only closes the topmost one. */
+const modalStack: symbol[] = [];
+
 /** Floating surface: the only place the overlay shadow exists.
-    Focus is trapped, Esc closes, focus returns to the trigger. */
+    Focus is trapped, Esc closes the topmost modal, focus returns to
+    the trigger. Modals stack (`z` raises later ones). */
 export function Modal({
   open,
   onClose,
   title,
   children,
   width = 520,
+  z = 50,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
   width?: number;
+  z?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const previous = useRef<Element | null>(null);
+  const id = useRef(Symbol("modal"));
 
   // The effect must only run when `open` flips: re-running on parent
   // re-renders would steal focus mid-typing.
@@ -28,6 +35,7 @@ export function Modal({
 
   useEffect(() => {
     if (!open) return;
+    modalStack.push(id.current);
     previous.current = document.activeElement;
     const node = ref.current;
     // Initial focus goes to the content, never the header close button.
@@ -38,6 +46,7 @@ export function Modal({
     target?.focus();
 
     const onKey = (event: KeyboardEvent) => {
+      if (modalStack[modalStack.length - 1] !== id.current) return;
       if (event.key === "Escape") {
         event.stopPropagation();
         onCloseRef.current();
@@ -63,6 +72,8 @@ export function Modal({
     document.addEventListener("keydown", onKey, true);
     return () => {
       document.removeEventListener("keydown", onKey, true);
+      const index = modalStack.indexOf(id.current);
+      if (index !== -1) modalStack.splice(index, 1);
       (previous.current as HTMLElement | null)?.focus?.();
     };
   }, [open]);
@@ -71,7 +82,8 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-[12vh]"
+      className="fixed inset-0 flex items-start justify-center bg-black/40 pt-[10vh]"
+      style={{ zIndex: z }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -90,7 +102,7 @@ export function Modal({
             <X size={20} strokeWidth={1.5} aria-hidden />
           </IconButton>
         </header>
-        <div className="max-h-[70vh] overflow-y-auto px-6 py-5">{children}</div>
+        <div className="max-h-[76vh] overflow-y-auto px-6 py-5">{children}</div>
       </div>
     </div>
   );

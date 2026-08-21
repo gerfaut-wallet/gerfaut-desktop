@@ -1654,11 +1654,11 @@ dependencies = [
  "bdk_wallet",
  "chacha20poly1305",
  "rand 0.9.5",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
  "tokio",
- "tracing",
  "uuid",
  "zeroize",
 ]

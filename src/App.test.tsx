@@ -126,10 +126,12 @@ describe("with a wallet", () => {
           return SNAPSHOT;
         case "sync_all":
           return { reports: [], failures: [] };
+        case "fetch_price":
+          return { rate: 100_000, currency: "eur", source: "coingecko", at: 1_755_000_000 };
         case "tx_detail":
           return {
             summary: SNAPSHOT.txs[0],
-            inputs: [],
+            inputs: [{ address: "tb1qsource", value_sats: 150_210, is_mine: false }],
             outputs: [{ address: "tb1qexample", value_sats: 150_000, is_mine: true }],
             vsize: 141,
             fee_rate_sat_vb: 1.5,
@@ -148,6 +150,16 @@ describe("with a wallet", () => {
     expect(screen.getByRole("button", { name: /^receive$/i })).toBeInTheDocument();
   });
 
+  it("shows the fiat value next to the balance", async () => {
+    renderApp();
+    await screen.findByText("0.00150000");
+    // 0.0015 BTC at 100 000 EUR/BTC is 150 EUR, on the subline.
+    const matches = await screen.findAllByText(
+      (text) => text.includes("€") && text.includes("150"),
+    );
+    expect(matches.length).toBeGreaterThanOrEqual(1);
+  });
+
   it("masks every amount with the eye toggle", async () => {
     renderApp();
     const user = userEvent.setup();
@@ -157,15 +169,26 @@ describe("with a wallet", () => {
     expect(screen.getAllByText("•••••").length).toBeGreaterThanOrEqual(2);
   });
 
-  it("opens the transaction detail rail on row click", async () => {
+  it("opens the transaction detail modal with the flow diagram", async () => {
     renderApp();
     const user = userEvent.setup();
     await screen.findByText("Received");
     await user.click(screen.getByText("Received"));
-    expect(
-      await screen.findByRole("complementary", { name: /transaction detail/i }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Transaction" })).toBeInTheDocument();
     expect(screen.getByText("1.5 sat/vB")).toBeInTheDocument();
+    expect(screen.getByText(/network fee/i)).toBeInTheDocument();
+  });
+
+  it("warns before opening an external explorer", async () => {
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Received");
+    await user.click(screen.getByText("Received"));
+    await user.click(
+      await screen.findByRole("button", { name: /view on mempool\.space/i }),
+    );
+    expect(await screen.findByText(/third-party website/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^cancel$/i }));
   });
 });
 
