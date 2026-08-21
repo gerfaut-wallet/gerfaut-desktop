@@ -1,0 +1,182 @@
+/* Toundra design tokens — single source: gerfaut-meta/DESIGN.md.
+   Light theme is the default; [data-theme="dark"] flips the ramp; the
+   .shell-rail class is a self-contained dark island in either theme. */
+
+@import "tailwindcss";
+
+/* --- fonts (SIL OFL 1.1, files bundled with their license) --- */
+
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("../assets/fonts/bricolage-grotesque/BricolageGrotesque-Variable.ttf")
+    format("truetype-variations");
+  font-weight: 200 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("../assets/fonts/instrument-sans/InstrumentSans-Variable.ttf")
+    format("truetype-variations");
+  font-weight: 400 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("../assets/fonts/instrument-sans/InstrumentSans-Italic-Variable.ttf")
+    format("truetype-variations");
+  font-weight: 400 700;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../assets/fonts/jetbrains-mono/JetBrainsMono-Variable.ttf")
+    format("truetype-variations");
+  font-weight: 100 800;
+  font-display: swap;
+}
+
+/* --- theme --- */
+
+@theme {
+  /* Couleurs — thème clair (défaut) */
+  --color-background: #f4f7f9;
+  --color-surface: #ffffff;
+  --color-sunken: #ebf0f4;
+  --color-border: #c7d2db;
+  --color-text: #0d1317;
+  --color-muted: #55636f;
+  --color-primary: #0e7490;
+  --color-primary-hover: #0a5d75;
+  --color-on-primary: #ffffff;
+  --color-alert: #b3261e;
+  --color-alert-surface: #fde7e7;
+  --color-confirmed: #116b41;
+  --color-confirmed-surface: #dcf5e6;
+  --color-pending: #745400;
+  --color-pending-surface: #fdf0cf;
+
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-ui: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, Consolas, monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --shadow-overlay: 0 8px 24px rgba(13, 19, 23, 0.14);
+
+  --spacing-rail: 260px;
+  --spacing-context-rail: 320px;
+}
+
+/* Dark theme: same roles, other ramp. Runtime override works because
+   Tailwind v4 utilities read the CSS variables. */
+[data-theme="dark"] {
+  --color-background: #0b0f14;
+  --color-surface: #161e27;
+  --color-sunken: #1f2933; /* relief en sombre */
+  --color-border: #2a3440;
+  --color-text: #e6ecf2;
+  --color-muted: #8a98a6;
+  --color-primary: #7dd3e8;
+  --color-primary-hover: #a5e1f0;
+  --color-on-primary: #06232b;
+  --color-alert: #ff706d;
+  --color-alert-surface: #161e27;
+  --color-confirmed: #50b771;
+  --color-confirmed-surface: #161e27;
+  --color-pending: #c1983a;
+  --color-pending-surface: #161e27;
+  --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* The desktop shell rail: a self-contained dark island in any theme. */
+.shell-rail {
+  --color-background: #0b0f14;
+  --color-surface: #161e27;
+  --color-sunken: #1f2933;
+  --color-border: #2a3440;
+  --color-text: #e6ecf2;
+  --color-muted: #8a98a6;
+  --color-primary: #7dd3e8;
+  --color-primary-hover: #a5e1f0;
+  --color-on-primary: #06232b;
+}
+[data-theme="dark"] .shell-rail {
+  /* In dark theme the rail keeps Nuit polaire and separates from the
+     Abysse canvas with a Schiste border (handled in layout). */
+  --color-background: #0b0f14;
+}
+
+/* --- base --- */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text);
+  background: var(--color-background);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden; /* the app manages its own scroll areas */
+  user-select: none; /* instrument feel; data opts back in */
+}
+
+.selectable {
+  user-select: text;
+}
+
+/* Bitcoin data always in mono with tabular figures. */
+.font-data,
+[class*="font-data"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Focus: 2px ring in the theme's action color, offset 2px. */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+
+/* Thin themed scrollbars for the tool feel. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Tailwind dark: variant follows the app's data-theme, not the OS. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Floating surface entry: fade + 8px rise, 250ms. */
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
