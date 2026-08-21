@@ -104,9 +104,10 @@
   --color-on-primary: #06232b;
 }
 [data-theme="dark"] .shell-rail {
-  /* In dark theme the rail keeps Nuit polaire and separates from the
-     Abysse canvas with a Schiste border (handled in layout). */
-  --color-background: #0b0f14;
+  /* In dark theme the rail sinks one step below Nuit polaire and adds a
+     Schiste border (in the Rail layout), so the island stays readable
+     as an island instead of merging into the canvas. */
+  --color-background: #06090c;
 }
 
 /* --- base --- */

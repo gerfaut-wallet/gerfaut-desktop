@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { Plus, RefreshCw, Settings } from "lucide-react";
+import { MapPin, Plus, RefreshCw, Settings, Wallet as WalletIcon } from "lucide-react";
 import { MASKED, formatBtc } from "../lib/format";
 import type { Network, WalletMeta } from "../lib/ipc";
 import { useUi } from "../state/store";
@@ -33,7 +33,7 @@ export function Rail({
   return (
     <nav
       aria-label="Wallets"
-      className="shell-rail flex h-full w-[260px] shrink-0 flex-col bg-background text-text"
+      className="shell-rail flex h-full w-[260px] shrink-0 flex-col bg-background text-text dark:border-r dark:border-border"
     >
       <div className="flex items-center gap-2.5 px-5 pb-4 pt-5">
         <img src={mark} alt="" aria-hidden className="h-6 w-6" />
@@ -75,7 +75,14 @@ export function Rail({
                       className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary"
                     />
                   )}
-                  <span className="truncate font-ui text-sm font-medium">{wallet.name}</span>
+                  <span className="flex items-center gap-1.5 truncate font-ui text-sm font-medium">
+                    {wallet.kind.type === "single_address" ? (
+                      <MapPin size={13} strokeWidth={1.5} aria-hidden className="shrink-0 opacity-70" />
+                    ) : (
+                      <WalletIcon size={13} strokeWidth={1.5} aria-hidden className="shrink-0 opacity-70" />
+                    )}
+                    <span className="truncate">{wallet.name}</span>
+                  </span>
                   <span className="font-data text-xs text-muted">
                     {masked ? MASKED : `${formatBtc(wallet.cached.balance.total)} BTC`}
                   </span>
