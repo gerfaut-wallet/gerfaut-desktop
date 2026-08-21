@@ -72,7 +72,7 @@ export function TxDetailRail({ walletId, network }: { walletId: string; network:
                 <dd className="selectable mt-1 font-data text-[13px] text-text">
                   {detail.data.summary.fee_sats !== null
                     ? formatSats(detail.data.summary.fee_sats)
-                    : "unknown"}
+                    : "—"}
                 </dd>
               </div>
               <div>
@@ -82,7 +82,7 @@ export function TxDetailRail({ walletId, network }: { walletId: string; network:
                 <dd className="selectable mt-1 font-data text-[13px] text-text">
                   {detail.data.fee_rate_sat_vb !== null
                     ? `${detail.data.fee_rate_sat_vb.toFixed(1)} sat/vB`
-                    : "unknown"}
+                    : "—"}
                 </dd>
               </div>
               <div>
