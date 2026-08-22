@@ -73,10 +73,12 @@
 /* Dark theme: same roles, other ramp. Runtime override works because
    Tailwind v4 utilities read the CSS variables. */
 [data-theme="dark"] {
+  /* Canvas lifted half a step above Nuit polaire: the raised sheet of
+     the dark coque. Surfaces stay on the canonical ramp. */
   --color-background: #0e141b;
-  --color-surface: #171f29;
-  --color-sunken: #212c37; /* raised in dark, sunken in light */
-  --color-border: #2c3844;
+  --color-surface: #161e27;
+  --color-sunken: #1f2933; /* raised in dark, sunken in light */
+  --color-border: #2a3440;
   --color-text: #e6ecf2;
   --color-muted: #8a98a6;
   --color-primary: #7dd3e8;
