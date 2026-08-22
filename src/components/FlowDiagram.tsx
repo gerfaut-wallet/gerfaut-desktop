@@ -1,16 +1,26 @@
 import { useMemo } from "react";
+import { clsx } from "clsx";
 import type { TxIo } from "../lib/ipc";
+import { MASKED, formatAmount } from "../lib/format";
+import { useUi } from "../state/store";
 import { AddressChip } from "./AddressChip";
 import { InlineAmount } from "./Amount";
 
 /** Row height of one input/output lane. */
-const ROW = 56;
-/** Width of the SVG strip carrying the curves and the tx node. */
-const MID = 150;
-/** Extra height under the lanes for the fee branch. */
-const FEE_DROP = 44;
+const ROW = 64;
+/** Width of the SVG strip carrying the ribbons and the tx node. */
+const MID = 170;
 /** Lanes shown per side before aggregation into a "+N more" lane. */
-const MAX_LANES = 8;
+const MAX_LANES = 7;
+/** Width of the transaction node capsule. */
+const NODE_W = 22;
+/** Extra SVG height under the lanes for the fee branch. */
+const FEE_DROP = 52;
+/** Ribbon thickness bounds; area follows sqrt so small amounts stay visible. */
+const MIN_T = 3;
+const MAX_T = 24;
+/** Vertical gap between ribbon anchors on the node. */
+const NODE_GAP = 3;
 
 interface Lane {
   label: string | null;
@@ -51,16 +61,30 @@ function toLanes(ios: TxIo[]): Lane[] {
   ];
 }
 
-/** Stroke width proportional to the lane's share of the largest value. */
-function strokeWidth(valueSats: number | null, max: number): number {
-  if (valueSats === null || max <= 0) return 1.5;
-  return 1.5 + (valueSats / max) * 7.5;
+function thickness(valueSats: number | null, max: number): number {
+  if (valueSats === null || max <= 0) return MIN_T;
+  return MIN_T + (MAX_T - MIN_T) * Math.sqrt(valueSats / max);
 }
 
-/** Transaction flow: inputs converge into the transaction node, outputs
-    fan out, the fee drops below. Curve thickness follows the amounts,
-    in the spirit of Sparrow and mempool.space. Pure geometry: the lane
-    grid is fixed, so positions are computed, never measured. */
+/** A constant-thickness ribbon between two anchor points: two mirrored
+    cubic curves closed into one filled shape. */
+function ribbonPath(x0: number, y0: number, x1: number, y1: number, t: number): string {
+  const c1 = x0 + (x1 - x0) * 0.38;
+  const c2 = x0 + (x1 - x0) * 0.62;
+  const h = t / 2;
+  return [
+    `M ${x0} ${y0 - h}`,
+    `C ${c1} ${y0 - h}, ${c2} ${y1 - h}, ${x1} ${y1 - h}`,
+    `L ${x1} ${y1 + h}`,
+    `C ${c2} ${y1 + h}, ${c1} ${y0 + h}, ${x0} ${y0 + h}`,
+    "Z",
+  ].join(" ");
+}
+
+/** Transaction flow in the spirit of Sparrow and mempool.space: filled
+    ribbons whose thickness follows the amounts converge into the
+    transaction node and fan out again; the fee drips below. Pure
+    geometry, nothing measured. */
 export function FlowDiagram({
   inputs,
   outputs,
@@ -82,32 +106,55 @@ export function FlowDiagram({
       ...outLanes.map((lane) => lane.valueSats ?? 0),
       0,
     );
-    // The node spans the middle of the lane area.
-    const nodeHeight = Math.max(40, Math.min(height * 0.6, 160));
-    const nodeTop = (height - nodeHeight) / 2;
-    const inY = (index: number) =>
-      inLanes.length === laneCount
-        ? index * ROW + ROW / 2
-        : (height - inLanes.length * ROW) / 2 + index * ROW + ROW / 2;
-    const outY = (index: number) =>
-      outLanes.length === laneCount
-        ? index * ROW + ROW / 2
-        : (height - outLanes.length * ROW) / 2 + index * ROW + ROW / 2;
-    const nodeY = (index: number, count: number) =>
-      nodeTop + ((index + 0.5) / count) * nodeHeight;
-    return { inLanes, outLanes, height, maxValue, nodeHeight, nodeTop, inY, outY, nodeY };
+    const tIn = inLanes.map((lane) => thickness(lane.valueSats, maxValue));
+    const tOut = outLanes.map((lane) => thickness(lane.valueSats, maxValue));
+    const stackIn =
+      tIn.reduce((sum, t) => sum + t, 0) + Math.max(0, tIn.length - 1) * NODE_GAP;
+    const stackOut =
+      tOut.reduce((sum, t) => sum + t, 0) + Math.max(0, tOut.length - 1) * NODE_GAP;
+    const nodeH = Math.max(48, Math.max(stackIn, stackOut) + 18);
+    const nodeTop = (height - nodeH) / 2;
+    // Ribbon anchors stack on the node by cumulative thickness, so
+    // ribbons meet the capsule without overlapping: the Sankey look.
+    const anchors = (ts: number[], stack: number) => {
+      let cursor = nodeTop + (nodeH - stack) / 2;
+      return ts.map((t) => {
+        const y = cursor + t / 2;
+        cursor += t + NODE_GAP;
+        return y;
+      });
+    };
+    const laneY = (index: number, count: number) =>
+      (height - count * ROW) / 2 + index * ROW + ROW / 2;
+    return {
+      inLanes,
+      outLanes,
+      height,
+      tIn,
+      tOut,
+      nodeH,
+      nodeTop,
+      anchorIn: anchors(tIn, stackIn),
+      anchorOut: anchors(tOut, stackOut),
+      laneY,
+    };
   }, [inputs, outputs]);
 
-  const { inLanes, outLanes, height, maxValue, nodeHeight, nodeTop, inY, outY, nodeY } =
+  const { inLanes, outLanes, height, tIn, tOut, nodeH, nodeTop, anchorIn, anchorOut, laneY } =
     geometry;
   const showFee = feeSats !== null && feeSats > 0;
   const svgHeight = height + (showFee ? FEE_DROP : 0);
   const nodeX = MID / 2;
 
   return (
-    <div className="rounded-lg border border-border bg-background p-4">
-      <div className="flex">
-        <LaneColumn lanes={inLanes} side="in" laneY={inY} height={height} />
+    <div className="rounded-lg border border-border bg-background p-5">
+      <div className="flex items-stretch">
+        <LaneColumn
+          lanes={inLanes}
+          side="in"
+          laneY={(index) => laneY(index, inLanes.length)}
+          height={height}
+        />
         <svg
           width={MID}
           height={svgHeight}
@@ -118,59 +165,88 @@ export function FlowDiagram({
           {inLanes.map((lane, index) => (
             <path
               key={`in-${index}`}
-              d={`M 0 ${inY(index)} C ${MID * 0.3} ${inY(index)}, ${nodeX - 40} ${nodeY(index, inLanes.length)}, ${nodeX - 9} ${nodeY(index, inLanes.length)}`}
-              fill="none"
-              stroke={lane.mine ? "var(--color-primary)" : "var(--color-border)"}
-              strokeOpacity={lane.mine ? 0.75 : 1}
-              strokeWidth={strokeWidth(lane.valueSats, maxValue)}
-              strokeLinecap="round"
+              d={ribbonPath(
+                0,
+                laneY(index, inLanes.length),
+                nodeX - NODE_W / 2 + 2,
+                anchorIn[index],
+                tIn[index],
+              )}
+              fill={lane.mine ? "var(--color-primary)" : "var(--color-muted)"}
+              fillOpacity={lane.mine ? 0.5 : 0.18}
             />
           ))}
           {outLanes.map((lane, index) => (
             <path
               key={`out-${index}`}
-              d={`M ${nodeX + 9} ${nodeY(index, outLanes.length)} C ${nodeX + 40} ${nodeY(index, outLanes.length)}, ${MID * 0.7} ${outY(index)}, ${MID} ${outY(index)}`}
-              fill="none"
-              stroke={lane.mine ? "var(--color-primary)" : "var(--color-border)"}
-              strokeOpacity={lane.mine ? 0.75 : 1}
-              strokeWidth={strokeWidth(lane.valueSats, maxValue)}
-              strokeLinecap="round"
+              d={ribbonPath(
+                nodeX + NODE_W / 2 - 2,
+                anchorOut[index],
+                MID,
+                laneY(index, outLanes.length),
+                tOut[index],
+              )}
+              fill={lane.mine ? "var(--color-primary)" : "var(--color-muted)"}
+              fillOpacity={lane.mine ? 0.5 : 0.18}
             />
           ))}
           {showFee && (
             <path
-              d={`M ${nodeX} ${nodeTop + nodeHeight - 2} C ${nodeX} ${height + 10}, ${nodeX} ${height + 14}, ${nodeX} ${height + FEE_DROP - 18}`}
+              d={`M ${nodeX} ${nodeTop + nodeH - 1} C ${nodeX} ${height + 14}, ${nodeX} ${height + 18}, ${nodeX} ${height + FEE_DROP - 14}`}
               fill="none"
               stroke="var(--color-pending)"
-              strokeOpacity={0.8}
-              strokeWidth={Math.max(1.5, strokeWidth(feeSats, maxValue))}
+              strokeOpacity={0.7}
+              strokeWidth={2}
               strokeLinecap="round"
               strokeDasharray="1 6"
             />
           )}
-          {/* The transaction node itself. */}
+          {/* The transaction node capsule. */}
           <rect
-            x={nodeX - 9}
+            x={nodeX - NODE_W / 2}
             y={nodeTop}
-            width={18}
-            height={nodeHeight}
-            rx={9}
-            fill="var(--color-surface)"
+            width={NODE_W}
+            height={nodeH}
+            rx={NODE_W / 2}
+            fill="var(--color-sunken)"
             stroke="var(--color-border)"
             strokeWidth={1}
           />
         </svg>
-        <LaneColumn lanes={outLanes} side="out" laneY={outY} height={height} />
+        <LaneColumn
+          lanes={outLanes}
+          side="out"
+          laneY={(index) => laneY(index, outLanes.length)}
+          height={height}
+        />
       </div>
       {showFee && (
-        <p className="mt-1 text-center font-ui text-xs font-medium tracking-wide text-pending">
-          Network fee · <InlineAmount sats={feeSats} />
-          {feeRate !== null && (
-            <span className="text-muted"> ({feeRate.toFixed(1)} sat/vB)</span>
-          )}
-        </p>
+        <div className="flex">
+          <div className="flex-1" />
+          <div className="flex w-[170px] justify-center">
+            <FeePill feeSats={feeSats} feeRate={feeRate} />
+          </div>
+          <div className="flex-1" />
+        </div>
       )}
     </div>
+  );
+}
+
+function FeePill({ feeSats, feeRate }: { feeSats: number; feeRate: number | null }) {
+  const { masked, unit } = useUi();
+  return (
+    <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap rounded-full border border-pending/30 bg-pending-surface px-3 py-1">
+      <span className="font-ui text-[11px] font-medium uppercase tracking-[0.04em] text-pending">
+        fee
+      </span>
+      <span className="font-data text-xs text-pending">
+        {masked ? MASKED : formatAmount(feeSats, unit)}
+      </span>
+      {feeRate !== null && (
+        <span className="font-data text-[11px] text-muted">{feeRate.toFixed(1)} sat/vB</span>
+      )}
+    </span>
   );
 }
 
@@ -190,9 +266,15 @@ function LaneColumn({
       {lanes.map((lane, index) => (
         <div
           key={index}
-          className={`absolute flex w-full -translate-y-1/2 flex-col gap-0.5 ${
-            side === "in" ? "items-end pr-2 text-right" : "items-start pl-2"
-          }`}
+          className={clsx(
+            "absolute flex h-[52px] w-full -translate-y-1/2 flex-col justify-center gap-0.5 rounded-md border px-2.5",
+            side === "in" ? "items-end text-right" : "items-start",
+            lane.more > 0
+              ? "border-dashed border-border bg-transparent"
+              : lane.mine
+                ? "border-primary/40 bg-primary/[0.05]"
+                : "border-border bg-surface",
+          )}
           style={{ top: laneY(index) }}
         >
           {lane.more > 0 ? (
@@ -206,7 +288,11 @@ function LaneColumn({
               {side === "in" ? "coinbase" : "script output"}
             </span>
           )}
-          {lane.valueSats !== null && <InlineAmount sats={lane.valueSats} />}
+          {lane.valueSats !== null && (
+            <span className="whitespace-nowrap">
+              <InlineAmount sats={lane.valueSats} withFiat={false} />
+            </span>
+          )}
         </div>
       ))}
     </div>

@@ -16,6 +16,7 @@ export function Modal({
   children,
   width = 520,
   z = 50,
+  centered = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -23,6 +24,9 @@ export function Modal({
   children: ReactNode;
   width?: number;
   z?: number;
+  /** Vertically centered instead of anchored near the top: for short
+      confirmations that should sit in the middle of the window. */
+  centered?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const previous = useRef<Element | null>(null);
@@ -82,7 +86,11 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 flex items-start justify-center bg-black/40 pt-[10vh]"
+      className={
+        centered
+          ? "fixed inset-0 flex items-center justify-center bg-black/40"
+          : "fixed inset-0 flex items-start justify-center bg-black/40 pt-[10vh]"
+      }
       style={{ zIndex: z }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
