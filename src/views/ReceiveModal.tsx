@@ -1,4 +1,4 @@
-import { Check, Copy } from "lucide-react";
+import { AlertTriangle, Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { renderSVG } from "uqr";
 import { Button } from "../components/Button";
@@ -64,10 +64,22 @@ export function ReceiveModal({
               {entry.address}
             </p>
           </div>
-          <p className="font-ui text-xs text-muted">
-            Verify this address on your signing device before sharing it. Gerfaut
-            only watches: it never holds the keys behind it.
-          </p>
+          <div className="flex items-start gap-2.5 rounded-md border border-alert/25 bg-alert-surface p-3">
+            <AlertTriangle
+              size={16}
+              strokeWidth={1.75}
+              aria-hidden
+              className="mt-0.5 shrink-0 text-alert"
+            />
+            <div>
+              <p className="font-ui text-sm font-medium text-alert">
+                Verify this address on your signing device before sharing it.
+              </p>
+              <p className="mt-0.5 font-ui text-xs text-muted">
+                Gerfaut only watches: it never holds the keys behind it.
+              </p>
+            </div>
+          </div>
           <div className="flex justify-end">
             <Button variant="primary" onClick={() => void copy()}>
               {copied ? (
