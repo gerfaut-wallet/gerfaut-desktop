@@ -77,6 +77,28 @@ function SectionCard({
   );
 }
 
+/** Full-width setting line: title and hint on the left, control on the
+    right, so stacked cards stay balanced at any window width. */
+function SettingRow({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+      <div className="min-w-0 max-w-xl">
+        <p className="font-ui text-sm font-medium text-text">{title}</p>
+        {hint && <p className="mt-0.5 font-ui text-xs text-muted">{hint}</p>}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
 function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: ReactNode }) {
   return (
     <label
@@ -148,11 +170,13 @@ function Toggle({
         checked ? "bg-primary" : "bg-border",
       )}
     >
+      {/* Anchored left-0.5: without an explicit inset the knob's resting
+          spot follows the button's text alignment and drifts per engine. */}
       <span
         aria-hidden
         className={clsx(
-          "absolute top-0.5 size-5 rounded-full bg-white transition-transform duration-150",
-          checked ? "translate-x-[22px]" : "translate-x-0.5",
+          "absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow-[0_1px_2px_rgba(13,19,23,0.25)] transition-transform duration-150",
+          checked && "translate-x-5",
         )}
       />
     </button>
@@ -205,10 +229,9 @@ export function SettingsView({
       <h1 className="px-1 pb-5 pt-2 font-display text-2xl font-semibold tracking-[-0.01em] text-text">
         Settings
       </h1>
-      <div className="grid items-start gap-5 xl:grid-cols-2">
-        <SectionCard icon={<Globe size={18} strokeWidth={1.5} />} title="Workspace">
-          <FieldLabel>Network</FieldLabel>
-          <div className="grid grid-cols-2 gap-2">
+      <div className="flex flex-col gap-5">
+        <SectionCard icon={<Globe size={18} strokeWidth={1.5} />} title="Network">
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
             {NETWORKS.map((option) => {
               const selected = network === option.value;
               return (
@@ -251,7 +274,7 @@ export function SettingsView({
             })}
           </div>
           <p className="mt-3 font-ui text-xs text-muted">
-            The workspace only shows wallets on the selected network.
+            Only wallets on the selected network are shown.
           </p>
         </SectionCard>
 
@@ -268,8 +291,7 @@ export function SettingsView({
 
         <SectionCard icon={<Coins size={18} strokeWidth={1.5} />} title="Display">
           <div className="flex flex-col gap-4">
-            <div>
-              <FieldLabel>Amounts</FieldLabel>
+            <SettingRow title="Unit" hint="Applies to every amount in the app.">
               <Segmented
                 label="Amount unit"
                 value={unit}
@@ -279,21 +301,16 @@ export function SettingsView({
                   { value: "sats", label: "sats" },
                 ]}
               />
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="font-ui text-sm font-medium text-text">Fiat value</p>
-                <p className="font-ui text-xs text-muted">
-                  Shows the current value next to every amount. The price
-                  provider sees this app's requests.
-                </p>
-              </div>
+            </SettingRow>
+            <SettingRow
+              title="Fiat value"
+              hint="Shows the fiat value next to every amount. Price requests expose this app's IP address to the selected provider; they carry no wallet data."
+            >
               <Toggle checked={fiatEnabled} onChange={setFiatEnabled} label="Show fiat value" />
-            </div>
+            </SettingRow>
             {fiatEnabled && (
               <>
-                <div>
-                  <FieldLabel>Currency</FieldLabel>
+                <SettingRow title="Currency">
                   <Segmented
                     label="Fiat currency"
                     value={fiatCurrency}
@@ -302,9 +319,11 @@ export function SettingsView({
                       (currency) => ({ value: currency, label: currency.toUpperCase() }),
                     )}
                   />
-                </div>
-                <div>
-                  <FieldLabel>Price source</FieldLabel>
+                </SettingRow>
+                <SettingRow
+                  title="Price source"
+                  hint="One request per minute while the app is in front."
+                >
                   <Segmented
                     label="Price source"
                     value={fiatSource}
@@ -317,7 +336,7 @@ export function SettingsView({
                       ] as { value: PriceSource; label: string }[]
                     }
                   />
-                </div>
+                </SettingRow>
                 <RatePreview />
               </>
             )}
@@ -325,17 +344,18 @@ export function SettingsView({
         </SectionCard>
 
         <SectionCard icon={<SunMoon size={18} strokeWidth={1.5} />} title="Appearance">
-          <FieldLabel>Theme</FieldLabel>
-          <Segmented
-            label="Theme"
-            value={theme}
-            onChange={(value) => setTheme(value as ThemePref)}
-            options={[
-              { value: "light", label: "Light" },
-              { value: "dark", label: "Dark" },
-              { value: "system", label: "System" },
-            ]}
-          />
+          <SettingRow title="Theme">
+            <Segmented
+              label="Theme"
+              value={theme}
+              onChange={(value) => setTheme(value as ThemePref)}
+              options={[
+                { value: "light", label: "Light" },
+                { value: "dark", label: "Dark" },
+                { value: "system", label: "System" },
+              ]}
+            />
+          </SettingRow>
         </SectionCard>
 
         <WalletsSection wallets={wallets} />
@@ -509,8 +529,8 @@ function BackendSection({
       )}
       {kind !== "public_esplora" && (
         <p className="mt-3 font-ui text-xs text-muted">
-          Onion addresses are routed through the Tor proxy at 127.0.0.1:9050
-          automatically. Tor must be running on this machine.
+          Onion addresses go through the Tor proxy at 127.0.0.1:9050. Start Tor
+          on this machine before syncing; a built-in Tor client is planned.
         </p>
       )}
       <div className="mt-4">
@@ -543,7 +563,6 @@ function WalletsSection({ wallets }: { wallets: WalletMeta[] }) {
     <SectionCard
       icon={<WalletIcon size={18} strokeWidth={1.5} />}
       title="Wallets"
-      className="xl:col-span-2"
     >
       {wallets.length === 0 ? (
         <p className="font-ui text-sm text-muted">No wallets on this network yet.</p>
@@ -680,7 +699,6 @@ function AboutSection() {
     <SectionCard
       icon={<Info size={18} strokeWidth={1.5} />}
       title="About"
-      className="xl:col-span-2"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="font-ui text-sm text-text">

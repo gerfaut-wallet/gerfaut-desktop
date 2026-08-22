@@ -23,10 +23,12 @@ interface UiState {
   theme: ThemePref;
   /** Display unit for every amount. */
   unit: Unit;
-  /** Fiat display: on by default, currency and source configurable. */
+  /** Fiat display: off by default, currency and source configurable. */
   fiatEnabled: boolean;
   fiatCurrency: FiatCurrency;
   fiatSource: PriceSource;
+  /** External explorer warning acknowledged: skip the dialog when set. */
+  explorerAck: boolean;
   toast: string | null;
   /** Last sync failure per wallet id, cleared on the next success. */
   syncErrors: Record<string, string>;
@@ -44,6 +46,7 @@ interface UiState {
   setFiatEnabled: (enabled: boolean) => void;
   setFiatCurrency: (currency: FiatCurrency) => void;
   setFiatSource: (source: PriceSource) => void;
+  setExplorerAck: (acknowledged: boolean) => void;
   showToast: (message: string) => void;
   setSyncError: (walletId: string, message: string | null) => void;
   /** Applies preferences loaded from the vault at startup. */
@@ -67,9 +70,10 @@ export const useUi = create<UiState>((set, get) => ({
   masked: false,
   theme: "light",
   unit: "btc",
-  fiatEnabled: true,
+  fiatEnabled: false,
   fiatCurrency: "eur",
   fiatSource: "coingecko",
+  explorerAck: false,
   toast: null,
   syncErrors: {},
 
@@ -107,6 +111,10 @@ export const useUi = create<UiState>((set, get) => ({
     set({ fiatSource });
     persist("display.fiat_source", fiatSource);
   },
+  setExplorerAck: (explorerAck) => {
+    set({ explorerAck });
+    persist("privacy.explorer_ack", explorerAck ? "1" : "0");
+  },
   showToast: (message) => {
     clearTimeout(toastTimer);
     set({ toast: message });
@@ -131,7 +139,8 @@ export const useUi = create<UiState>((set, get) => ({
       theme: ["light", "dark", "system"].includes(theme) ? theme : "light",
       masked: prefs["desktop.masked"] === "1",
       unit,
-      fiatEnabled: prefs["display.fiat"] !== "0",
+      fiatEnabled: prefs["display.fiat"] === "1",
+      explorerAck: prefs["privacy.explorer_ack"] === "1",
       fiatCurrency: ["eur", "usd", "gbp", "chf"].includes(currency) ? currency : "eur",
       fiatSource: ["coingecko", "kraken", "mempool_space"].includes(source)
         ? source
