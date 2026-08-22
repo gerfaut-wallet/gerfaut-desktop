@@ -1,14 +1,11 @@
 import type { UtxoInfo } from "../lib/ipc";
-import { MASKED, formatSats } from "../lib/format";
+import { StackedAmount } from "../components/Amount";
 import { AddressChip } from "../components/AddressChip";
 import { StatusPill } from "../components/StatusPill";
 import { EmptyState } from "../components/EmptyState";
-import { useUi } from "../state/store";
 
 /** Dense UTXO table: mono data columns, tabular figures, hairlines. */
 export function UtxoTable({ utxos }: { utxos: UtxoInfo[] }) {
-  const masked = useUi((s) => s.masked);
-
   if (utxos.length === 0) {
     return (
       <EmptyState
@@ -49,14 +46,14 @@ export function UtxoTable({ utxos }: { utxos: UtxoInfo[] }) {
               {utxo.address ? (
                 <AddressChip value={utxo.address} />
               ) : (
-                <span className="font-data text-[13px] text-muted">—</span>
+                <span className="font-data text-[13px] text-muted">n/a</span>
               )}
             </td>
             <td className="px-3 py-2">
               <StatusPill status={utxo.status} />
             </td>
-            <td className="selectable px-3 py-2 text-right font-data text-[13px] text-text">
-              {masked ? MASKED : formatSats(utxo.value_sats)}
+            <td className="px-3 py-2 text-right">
+              <StackedAmount sats={utxo.value_sats} />
             </td>
           </tr>
         ))}

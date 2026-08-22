@@ -62,6 +62,23 @@ export function ListAmount({ sats, pending }: { sats: number; pending?: boolean 
   );
 }
 
+/** Unsigned amount stacked over its fiat value, for table cells: the
+    amount never wraps, the fiat line carries the small print. */
+export function StackedAmount({ sats }: { sats: number }) {
+  const { masked, unit } = useUi();
+  const fiat = useFiatValue(sats);
+  return (
+    <span className="inline-flex flex-col items-end">
+      <span className="selectable whitespace-nowrap font-data text-[13px] text-text">
+        {masked ? MASKED : formatAmount(sats, unit)}
+      </span>
+      {fiat && (
+        <span className="whitespace-nowrap font-data text-[11px] text-muted">{fiat}</span>
+      )}
+    </span>
+  );
+}
+
 /** Inline amount for detail views: primary unit, fiat optional. */
 export function InlineAmount({ sats, withFiat = true }: { sats: number; withFiat?: boolean }) {
   const { masked, unit } = useUi();
