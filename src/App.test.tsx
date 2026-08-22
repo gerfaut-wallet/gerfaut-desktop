@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -88,6 +88,10 @@ beforeEach(() => {
     receiveOpen: false,
     paletteOpen: false,
     masked: false,
+    unit: "btc",
+    fiatEnabled: false,
+    explorerAck: false,
+    syncErrors: {},
     toast: null,
   });
 });
@@ -150,14 +154,28 @@ describe("with a wallet", () => {
     expect(screen.getByRole("button", { name: /^receive$/i })).toBeInTheDocument();
   });
 
-  it("shows the fiat value next to the balance", async () => {
+  it("shows the fiat value next to the balance once enabled", async () => {
     renderApp();
     await screen.findByText("0.00150000");
+    // Fiat is off by default: no euro amount anywhere until enabled.
+    expect(
+      screen.queryByText((text) => text.includes("€") && text.includes("150")),
+    ).not.toBeInTheDocument();
+    act(() => useUi.getState().setFiatEnabled(true));
     // 0.0015 BTC at 100 000 EUR/BTC is 150 EUR, on the subline.
     const matches = await screen.findAllByText(
       (text) => text.includes("€") && text.includes("150"),
     );
     expect(matches.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("follows the unit setting everywhere, including the rail", async () => {
+    renderApp();
+    await screen.findByText("0.00150000");
+    act(() => useUi.getState().setUnit("sats"));
+    // Rail row and balance both switch to sats.
+    expect(await screen.findAllByText(/150 000 sats/)).not.toHaveLength(0);
+    expect(screen.queryByText("0.00150000")).not.toBeInTheDocument();
   });
 
   it("masks every amount with the eye toggle", async () => {
@@ -175,8 +193,9 @@ describe("with a wallet", () => {
     await screen.findByText("Received");
     await user.click(screen.getByText("Received"));
     expect(await screen.findByRole("dialog", { name: "Transaction" })).toBeInTheDocument();
-    expect(screen.getByText("1.5 sat/vB")).toBeInTheDocument();
-    expect(screen.getByText(/network fee/i)).toBeInTheDocument();
+    // Meta strip and fee pill both carry the fee rate.
+    expect(screen.getAllByText("1.5 sat/vB").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("fee")).toBeInTheDocument();
   });
 
   it("warns before opening an external explorer", async () => {
@@ -188,7 +207,32 @@ describe("with a wallet", () => {
       await screen.findByRole("button", { name: /view on mempool\.space/i }),
     );
     expect(await screen.findByText(/third-party website/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: /do not show this warning again/i }),
+    ).not.toBeChecked();
     await user.click(screen.getByRole("button", { name: /^cancel$/i }));
+    expect(useUi.getState().explorerAck).toBe(false);
+  });
+
+  it("skips the explorer warning once acknowledged", async () => {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Received");
+    await user.click(screen.getByText("Received"));
+    await user.click(
+      await screen.findByRole("button", { name: /view on mempool\.space/i }),
+    );
+    await user.click(
+      await screen.findByRole("checkbox", { name: /do not show this warning again/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /open explorer/i }));
+    expect(openUrl).toHaveBeenCalledTimes(1);
+    expect(useUi.getState().explorerAck).toBe(true);
+    // Next time the link opens straight away, no dialog.
+    await user.click(screen.getByRole("button", { name: /view on mempool\.space/i }));
+    expect(screen.queryByText(/third-party website/i)).not.toBeInTheDocument();
+    expect(openUrl).toHaveBeenCalledTimes(2);
   });
 });
 
