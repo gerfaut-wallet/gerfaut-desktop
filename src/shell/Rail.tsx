@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
 import { MapPin, Plus, RefreshCw, Settings, Wallet as WalletIcon } from "lucide-react";
-import { MASKED, formatBtc } from "../lib/format";
+import { MASKED, formatAmount } from "../lib/format";
 import type { Network, WalletMeta } from "../lib/ipc";
 import { useUi } from "../state/store";
 import mark from "../assets/gerfaut-mark-accent-dark.svg";
@@ -28,12 +28,12 @@ export function Rail({
   syncing: boolean;
   onSyncAll: () => void;
 }) {
-  const { view, openWallet, openSettings, setAddWalletOpen, masked } = useUi();
+  const { view, openWallet, openSettings, setAddWalletOpen, masked, unit } = useUi();
 
   return (
     <nav
       aria-label="Wallets"
-      className="shell-rail flex h-full w-[260px] shrink-0 flex-col bg-background text-text dark:border-r dark:border-border"
+      className="shell-rail flex h-full w-[260px] shrink-0 flex-col bg-background text-text"
     >
       <div className="flex items-center gap-2.5 px-5 pb-4 pt-5">
         <img src={mark} alt="" aria-hidden className="h-6 w-6" />
@@ -84,7 +84,7 @@ export function Rail({
                     <span className="truncate">{wallet.name}</span>
                   </span>
                   <span className="font-data text-xs text-muted">
-                    {masked ? MASKED : `${formatBtc(wallet.cached.balance.total)} BTC`}
+                    {masked ? MASKED : formatAmount(wallet.cached.balance.total, unit)}
                   </span>
                 </button>
               </li>
@@ -103,7 +103,11 @@ export function Rail({
         </ul>
       </div>
 
-      <div className="flex items-center gap-1 border-t border-border px-3 py-3">
+      <div
+        aria-hidden
+        className="mx-3 h-px bg-gradient-to-r from-transparent via-border to-transparent"
+      />
+      <div className="flex items-center gap-1 px-3 py-3">
         <button
           type="button"
           onClick={onSyncAll}

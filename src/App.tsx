@@ -62,7 +62,7 @@ export default function App() {
     walletList.find((wallet) => wallet.id === activeWalletId) ?? walletList[0] ?? null;
 
   return (
-    <div className="flex h-full bg-background">
+    <div className="shell-frame flex h-full bg-background">
       <Rail
         wallets={walletList}
         activeWalletId={activeWallet?.id ?? null}
@@ -71,9 +71,10 @@ export default function App() {
         onSyncAll={() => syncAll.mutate(settings.data.active_network)}
       />
 
-      <main className="flex min-w-0 flex-1">
-        <div className="min-w-0 flex-1 overflow-y-auto">
-          <div className="mx-auto h-full max-w-[1280px] px-6 py-4">
+      <main className="flex min-w-0 flex-1 dark:py-2.5 dark:pr-2.5">
+        <div className="canvas-sheet flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+          <div className="min-w-0 flex-1 overflow-y-auto">
+            <div className="mx-auto h-full max-w-[1280px] px-6 py-4">
             {view === "settings" ? (
               <SettingsView settings={settings.data} wallets={walletList} />
             ) : walletList.length === 0 ? (
@@ -92,6 +93,7 @@ export default function App() {
             ) : activeWallet ? (
               <WalletHome walletId={activeWallet.id} />
             ) : null}
+            </div>
           </div>
         </div>
       </main>

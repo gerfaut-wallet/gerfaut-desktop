@@ -73,10 +73,10 @@
 /* Dark theme: same roles, other ramp. Runtime override works because
    Tailwind v4 utilities read the CSS variables. */
 [data-theme="dark"] {
-  --color-background: #0b0f14;
-  --color-surface: #161e27;
-  --color-sunken: #1f2933; /* raised in dark, sunken in light */
-  --color-border: #2a3440;
+  --color-background: #0e141b;
+  --color-surface: #171f29;
+  --color-sunken: #212c37; /* raised in dark, sunken in light */
+  --color-border: #2c3844;
   --color-text: #e6ecf2;
   --color-muted: #8a98a6;
   --color-primary: #7dd3e8;
@@ -104,10 +104,27 @@
   --color-on-primary: #06232b;
 }
 [data-theme="dark"] .shell-rail {
-  /* In dark theme the rail sinks one step below Nuit polaire and adds a
-     Schiste border (in the Rail layout), so the island stays readable
-     as an island instead of merging into the canvas. */
-  --color-background: #06090c;
+  /* In dark theme the rail joins the near-black window frame; the canvas
+     floats as a raised sheet, so tone and shadow do the separation
+     instead of a border line. */
+  --color-background: #05080b;
+  --color-sunken: #141c25;
+  --color-border: #1d2731;
+}
+
+/* The near-black frame around rail and canvas, dark theme only. */
+[data-theme="dark"] .shell-frame {
+  background: #05080b;
+}
+
+/* The canvas as a raised sheet in dark: rounded, hairline sheen, deep
+   shadow. In light the class is inert and the canvas stays flat. */
+[data-theme="dark"] .canvas-sheet {
+  border-radius: 12px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.035),
+    0 12px 40px rgba(0, 0, 0, 0.5);
 }
 
 /* --- base --- */
