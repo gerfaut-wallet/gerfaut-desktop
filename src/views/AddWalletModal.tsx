@@ -1,7 +1,8 @@
-import { FileUp, Info } from "lucide-react";
+import { FileUp, Info, ScanLine } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
+import { ScanQrModal } from "../components/ScanQrModal";
 import type { InputWarning, Network, ParsedInput, RecognizedKind, ScriptKind } from "../lib/ipc";
 import { ipc, isCommandError } from "../lib/ipc";
 import { useAddWallet, useSetActiveNetwork, useSyncWallet } from "../state/queries";
@@ -50,6 +51,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
   const [parsed, setParsed] = useState<ParsedInput | null>(null);
   const [name, setName] = useState("");
   const [network, setNetwork] = useState<Network>(activeNetwork);
+  const [scanOpen, setScanOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const addWallet = useAddWallet();
   const sync = useSyncWallet();
@@ -142,10 +144,16 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
             </p>
           </div>
           <div className="flex items-center justify-between">
-            <Button variant="ghost" onClick={() => fileRef.current?.click()}>
-              <FileUp size={16} strokeWidth={1.5} aria-hidden />
-              Import a file
-            </Button>
+            <div className="flex gap-1">
+              <Button variant="ghost" onClick={() => fileRef.current?.click()}>
+                <FileUp size={16} strokeWidth={1.5} aria-hidden />
+                Import a file
+              </Button>
+              <Button variant="ghost" onClick={() => setScanOpen(true)}>
+                <ScanLine size={16} strokeWidth={1.5} aria-hidden />
+                Scan a QR code
+              </Button>
+            </div>
             <input
               ref={fileRef}
               type="file"
@@ -263,6 +271,14 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
           </div>
         </div>
       )}
+      <ScanQrModal
+        open={scanOpen}
+        onClose={() => setScanOpen(false)}
+        onScan={(text) => {
+          setRaw(text);
+          void parse(text);
+        }}
+      />
     </Modal>
   );
 }
