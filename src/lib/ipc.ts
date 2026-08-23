@@ -82,10 +82,37 @@ export interface TxSummary {
   confirmations: number;
 }
 
+export interface OpReturnData {
+  /** Payload bytes in hex. */
+  hex: string;
+  /** The payload as text, when printable UTF-8. */
+  text: string | null;
+}
+
 export interface TxIo {
   address: string | null;
   value_sats: number | null;
   is_mine: boolean;
+  /** Output on the wallet's change keychain. */
+  change: boolean;
+  op_return: OpReturnData | null;
+}
+
+/** Deep transaction facts; null only for watched-address entries synced
+    by older app versions. */
+export interface TxExtras {
+  size_bytes: number;
+  vsize: number;
+  weight_wu: number;
+  version: number;
+  locktime: number;
+  rbf_signaled: boolean;
+  segwit: boolean;
+  taproot: boolean;
+  is_coinbase: boolean;
+  coinbase_pool: string | null;
+  sigops: number;
+  raw_hex: string;
 }
 
 export interface TxDetail {
@@ -94,6 +121,7 @@ export interface TxDetail {
   outputs: TxIo[];
   vsize: number;
   fee_rate_sat_vb: number | null;
+  extras: TxExtras | null;
 }
 
 export interface UtxoInfo {
