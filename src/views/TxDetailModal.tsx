@@ -1,7 +1,19 @@
-import { AlertTriangle, ExternalLink } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  Pickaxe,
+  Repeat2,
+  ScrollText,
+} from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState } from "react";
-import type { Network, TxIo } from "../lib/ipc";
+import type { ReactNode } from "react";
+import { clsx } from "clsx";
+import type { Network, TxExtras, TxIo } from "../lib/ipc";
 import {
   MASKED,
   formatAmount,
@@ -13,13 +25,14 @@ import { useTxDetail } from "../state/queries";
 import { useUi } from "../state/store";
 import { AddressChip } from "../components/AddressChip";
 import { StackedAmount, useFiatValue } from "../components/Amount";
-import { Button } from "../components/Button";
-import { FlowDiagram } from "../components/FlowDiagram";
+import { Button, IconButton } from "../components/Button";
+import { FlowDiagram, opReturnPreview } from "../components/FlowDiagram";
 import { Modal } from "../components/Modal";
 import { StatusPill } from "../components/StatusPill";
 
-/** Transaction detail as a large centered modal: summary, flow diagram,
-    input and output tables, explorer link behind a privacy warning. */
+/** Transaction detail as a large centered modal: summary, flow diagram
+    with feature badges, input and output tables, raw hex, explorer link
+    behind a privacy warning. */
 export function TxDetailModal({ walletId, network }: { walletId: string; network: Network }) {
   const { selectedTxid, selectTx, explorerAck, setExplorerAck } = useUi();
   const detail = useTxDetail(walletId, selectedTxid);
@@ -32,6 +45,8 @@ export function TxDetailModal({ walletId, network }: { walletId: string; network
   const openExplorer = () => {
     if (explorerUrl) void openUrl(explorerUrl);
   };
+
+  const extras = detail.data?.extras ?? null;
 
   return (
     <Modal
@@ -71,37 +86,69 @@ export function TxDetailModal({ walletId, network }: { walletId: string; network
               {detail.data.summary.fee_sats !== null ? (
                 <FeeAmount sats={detail.data.summary.fee_sats} />
               ) : (
-                <span className="font-data text-[13px] text-muted">n/a</span>
+                <MetaText>n/a</MetaText>
               )}
             </MetaItem>
             <MetaItem label="Fee rate">
-              <span className="selectable whitespace-nowrap font-data text-[13px] text-text">
+              <MetaText>
                 {detail.data.fee_rate_sat_vb !== null
                   ? `${detail.data.fee_rate_sat_vb.toFixed(1)} sat/vB`
                   : "n/a"}
-              </span>
+              </MetaText>
             </MetaItem>
-            <MetaItem label="Size">
-              <span className="selectable whitespace-nowrap font-data text-[13px] text-text">
-                {detail.data.vsize} vB
-              </span>
-            </MetaItem>
+            {extras ? (
+              <>
+                <MetaItem label="Size">
+                  <MetaText>{groupThousands(String(extras.size_bytes))} B</MetaText>
+                </MetaItem>
+                <MetaItem label="Virtual size">
+                  <MetaText>{groupThousands(String(extras.vsize))} vB</MetaText>
+                </MetaItem>
+                <MetaItem label="Weight">
+                  <MetaText>{groupThousands(String(extras.weight_wu))} WU</MetaText>
+                </MetaItem>
+                <MetaItem label="Version">
+                  <MetaText>{extras.version}</MetaText>
+                </MetaItem>
+                <MetaItem label="Sigops">
+                  <MetaText>{groupThousands(String(extras.sigops))}</MetaText>
+                </MetaItem>
+              </>
+            ) : (
+              <MetaItem label="Virtual size">
+                <MetaText>{groupThousands(String(detail.data.vsize))} vB</MetaText>
+              </MetaItem>
+            )}
           </dl>
 
-          <FlowDiagram
-            inputs={detail.data.inputs}
-            outputs={detail.data.outputs}
-            feeSats={detail.data.summary.fee_sats}
-            feeRate={detail.data.fee_rate_sat_vb}
-          />
+          <div className="flex flex-col gap-3">
+            <FlowDiagram
+              inputs={detail.data.inputs}
+              outputs={detail.data.outputs}
+              feeSats={detail.data.summary.fee_sats}
+              feeRate={detail.data.fee_rate_sat_vb}
+              isCoinbase={extras?.is_coinbase ?? false}
+              coinbasePool={extras?.coinbase_pool ?? null}
+            />
+            {extras && <FeatureBadges extras={extras} outputs={detail.data.outputs} />}
+          </div>
 
           <div className="grid gap-5 lg:grid-cols-2">
-            <IoTable title={`Inputs (${detail.data.inputs.length})`} ios={detail.data.inputs} />
+            <IoTable
+              title={`Inputs (${detail.data.inputs.length})`}
+              ios={detail.data.inputs}
+              side="in"
+              coinbase={extras?.is_coinbase ?? false}
+            />
             <IoTable
               title={`Outputs (${detail.data.outputs.length})`}
               ios={detail.data.outputs}
+              side="out"
+              coinbase={false}
             />
           </div>
+
+          {extras && extras.raw_hex.length > 0 && <RawTransaction hex={extras.raw_hex} />}
 
           {explorerUrl !== "" && explorerUrl !== undefined && (
             <div className="flex justify-end">
@@ -202,7 +249,7 @@ function FeeAmount({ sats }: { sats: number }) {
   );
 }
 
-function MetaItem({ label, children }: { label: string; children: React.ReactNode }) {
+function MetaItem({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0">
       <dt className="mb-1 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
@@ -213,7 +260,131 @@ function MetaItem({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
-function IoTable({ title, ios }: { title: string; ios: TxIo[] }) {
+function MetaText({ children }: { children: ReactNode }) {
+  return (
+    <span className="selectable whitespace-nowrap font-data text-[13px] text-text">
+      {children}
+    </span>
+  );
+}
+
+/** One feature chip: label plus optional icon, palette colors only. */
+function Badge({
+  tone,
+  icon,
+  children,
+}: {
+  tone: "neutral" | "pending" | "confirmed";
+  icon?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={clsx(
+        "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 font-ui text-[11px] font-medium",
+        tone === "pending" && "border border-pending/25 bg-pending-surface text-pending",
+        tone === "confirmed" && "border border-confirmed/25 bg-confirmed-surface text-confirmed",
+        tone === "neutral" && "bg-sunken text-muted",
+      )}
+    >
+      {icon}
+      {children}
+    </span>
+  );
+}
+
+/** The transaction's options at a glance, under the flow diagram. */
+function FeatureBadges({ extras, outputs }: { extras: TxExtras; outputs: TxIo[] }) {
+  const hasOpReturn = outputs.some((io) => io.op_return !== null);
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-1.5">
+      {extras.is_coinbase ? (
+        <Badge tone="confirmed" icon={<Pickaxe size={12} strokeWidth={1.75} aria-hidden />}>
+          Coinbase{extras.coinbase_pool ? ` · ${extras.coinbase_pool}` : ""}
+        </Badge>
+      ) : extras.rbf_signaled ? (
+        <Badge tone="pending" icon={<Repeat2 size={12} strokeWidth={1.75} aria-hidden />}>
+          RBF
+        </Badge>
+      ) : (
+        <Badge tone="neutral">Final</Badge>
+      )}
+      {extras.segwit && <Badge tone="neutral">SegWit</Badge>}
+      {extras.taproot && <Badge tone="neutral">Taproot</Badge>}
+      <Badge tone="neutral">Version {extras.version}</Badge>
+      {extras.locktime > 0 && (
+        <Badge tone="neutral">Locktime {groupThousands(String(extras.locktime))}</Badge>
+      )}
+      {hasOpReturn && (
+        <Badge tone="pending" icon={<ScrollText size={12} strokeWidth={1.75} aria-hidden />}>
+          OP_RETURN
+        </Badge>
+      )}
+    </div>
+  );
+}
+
+/** The raw serialized transaction, collapsed by default. */
+function RawTransaction({ hex }: { hex: string }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const showToast = useUi((s) => s.showToast);
+
+  const copy = async () => {
+    await navigator.clipboard.writeText(hex);
+    setCopied(true);
+    showToast("Copied");
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="inline-flex cursor-pointer items-center gap-1.5 rounded-md px-1 py-1 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted transition-colors duration-150 hover:text-text"
+      >
+        {open ? (
+          <ChevronDown size={14} strokeWidth={1.75} aria-hidden />
+        ) : (
+          <ChevronRight size={14} strokeWidth={1.75} aria-hidden />
+        )}
+        Raw transaction
+      </button>
+      {open && (
+        <div className="relative mt-2">
+          <p className="selectable max-h-44 overflow-y-auto break-all rounded-md bg-sunken p-3 pr-12 font-data text-[11px] leading-relaxed text-muted">
+            {hex}
+          </p>
+          <IconButton
+            label="Copy raw transaction"
+            className="absolute right-2 top-2"
+            onClick={() => void copy()}
+          >
+            {copied ? (
+              <Check size={14} strokeWidth={1.5} aria-hidden className="text-confirmed" />
+            ) : (
+              <Copy size={14} strokeWidth={1.5} aria-hidden />
+            )}
+          </IconButton>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IoTable({
+  title,
+  ios,
+  side,
+  coinbase,
+}: {
+  title: string;
+  ios: TxIo[];
+  side: "in" | "out";
+  coinbase: boolean;
+}) {
   return (
     <div className="min-w-0">
       <h2 className="mb-2 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
@@ -228,23 +399,45 @@ function IoTable({ title, ios }: { title: string; ios: TxIo[] }) {
                 className="border-b border-border last:border-b-0"
               >
                 <td className="min-w-0 px-3 py-2">
-                  <span className="flex items-center gap-1.5">
-                    {io.address ? (
-                      <AddressChip value={io.address} />
-                    ) : (
-                      <span className="font-data text-[13px] text-muted">script output</span>
-                    )}
-                    {io.is_mine && (
-                      <span className="rounded-full bg-sunken px-1.5 py-px font-ui text-[10px] font-medium uppercase tracking-[0.04em] text-muted">
-                        mine
+                  {io.op_return ? (
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <ScrollText
+                        size={14}
+                        strokeWidth={1.75}
+                        aria-hidden
+                        className="shrink-0 text-pending"
+                      />
+                      <span className="shrink-0 font-data text-[13px] text-pending">
+                        OP_RETURN
                       </span>
-                    )}
-                  </span>
+                      <span
+                        className="selectable min-w-0 truncate font-data text-[11px] text-muted"
+                        title={io.op_return.text ?? io.op_return.hex}
+                      >
+                        {opReturnPreview(io.op_return)}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5">
+                      {io.address ? (
+                        <AddressChip value={io.address} />
+                      ) : (
+                        <span className="font-data text-[13px] text-muted">
+                          {side === "in" && coinbase ? "coinbase" : "script output"}
+                        </span>
+                      )}
+                      {io.is_mine && (
+                        <span className="rounded-full bg-sunken px-1.5 py-px font-ui text-[10px] font-medium uppercase tracking-[0.04em] text-muted">
+                          {io.change ? "change" : "mine"}
+                        </span>
+                      )}
+                    </span>
+                  )}
                 </td>
                 <td className="px-3 py-2 text-right align-top">
                   {io.value_sats !== null ? (
                     <StackedAmount sats={io.value_sats} />
-                  ) : (
+                  ) : io.op_return ? null : (
                     <span className="font-data text-[13px] text-muted">n/a</span>
                   )}
                 </td>
