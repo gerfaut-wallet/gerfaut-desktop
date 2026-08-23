@@ -135,10 +135,47 @@ describe("with a wallet", () => {
         case "tx_detail":
           return {
             summary: SNAPSHOT.txs[0],
-            inputs: [{ address: "tb1qsource", value_sats: 150_210, is_mine: false }],
-            outputs: [{ address: "tb1qexample", value_sats: 150_000, is_mine: true }],
+            inputs: [
+              {
+                address: "tb1qsource",
+                value_sats: 150_210,
+                is_mine: false,
+                change: false,
+                op_return: null,
+              },
+            ],
+            outputs: [
+              {
+                address: "tb1qexample",
+                value_sats: 150_000,
+                is_mine: true,
+                change: false,
+                op_return: null,
+              },
+              {
+                address: null,
+                value_sats: 0,
+                is_mine: false,
+                change: false,
+                op_return: { hex: "68656c6c6f", text: "hello" },
+              },
+            ],
             vsize: 141,
             fee_rate_sat_vb: 1.5,
+            extras: {
+              size_bytes: 215,
+              vsize: 141,
+              weight_wu: 561,
+              version: 2,
+              locktime: 0,
+              rbf_signaled: true,
+              segwit: true,
+              taproot: false,
+              is_coinbase: false,
+              coinbase_pool: null,
+              sigops: 1,
+              raw_hex: "02000000abcdef",
+            },
           };
         default:
           throw new Error(`unexpected command ${cmd} ${JSON.stringify(args)}`);
@@ -196,6 +233,29 @@ describe("with a wallet", () => {
     // Meta strip and fee pill both carry the fee rate.
     expect(screen.getAllByText("1.5 sat/vB").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("fee")).toBeInTheDocument();
+  });
+
+  it("shows deep facts: badges, op_return, sizes, raw hex", async () => {
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Received");
+    await user.click(screen.getByText("Received"));
+    await screen.findByRole("dialog", { name: "Transaction" });
+    // Feature badges under the diagram.
+    expect(screen.getByText("RBF")).toBeInTheDocument();
+    expect(screen.getByText("SegWit")).toBeInTheDocument();
+    expect(screen.getByText("Version 2")).toBeInTheDocument();
+    // OP_RETURN decoded in the diagram lane, the badge, and the table.
+    expect(screen.getAllByText("OP_RETURN").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("hello").length).toBeGreaterThanOrEqual(1);
+    // SegWit sizes spelled out.
+    expect(screen.getByText("215 B")).toBeInTheDocument();
+    expect(screen.getByText("141 vB")).toBeInTheDocument();
+    expect(screen.getByText("561 WU")).toBeInTheDocument();
+    // Raw hex behind a disclosure.
+    expect(screen.queryByText("02000000abcdef")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /raw transaction/i }));
+    expect(screen.getByText("02000000abcdef")).toBeInTheDocument();
   });
 
   it("warns before opening an external explorer", async () => {
