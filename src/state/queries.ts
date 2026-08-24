@@ -91,6 +91,20 @@ export function useSyncWallet() {
   });
 }
 
+/** Fetches an older round of watched-address history. */
+export function useLoadMoreHistory() {
+  const invalidate = useInvalidateWallet();
+  return useMutation({
+    mutationFn: (id: string) => ipc.loadMoreHistory(id),
+    onSuccess: (added, id) => {
+      invalidate(id);
+      useUi
+        .getState()
+        .showToast(added === 0 ? "History is complete" : `${added} older transactions`);
+    },
+  });
+}
+
 export function useSyncAll() {
   const invalidate = useInvalidateWallet();
   return useMutation({

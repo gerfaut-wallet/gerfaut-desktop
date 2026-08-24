@@ -115,6 +115,13 @@ async fn sync_wallet(state: tauri::State<'_, AppState>, id: String) -> CommandRe
     Ok(state.manager.sync_wallet(&id).await?)
 }
 
+/// Fetches an older round of history for a watched address. Returns how
+/// many transactions were added; zero means nothing older remains.
+#[tauri::command]
+async fn load_more_history(state: tauri::State<'_, AppState>, id: String) -> CommandResult<u32> {
+    Ok(state.manager.load_more_history(&id).await?)
+}
+
 #[tauri::command]
 async fn sync_all(
     state: tauri::State<'_, AppState>,
@@ -235,6 +242,7 @@ pub fn run() {
             utxos,
             receive_addresses,
             sync_wallet,
+            load_more_history,
             sync_all,
             rename_wallet,
             remove_wallet,

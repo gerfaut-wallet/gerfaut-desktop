@@ -87,6 +87,8 @@ export interface OpReturnData {
   hex: string;
   /** The payload as text, when printable UTF-8. */
   text: string | null;
+  /** Name of a recognized protocol payload (witness commitment...). */
+  label: string | null;
 }
 
 export interface TxIo {
@@ -111,6 +113,8 @@ export interface TxExtras {
   taproot: boolean;
   is_coinbase: boolean;
   coinbase_pool: string | null;
+  coinbase_height: number | null;
+  coinbase_tag: string | null;
   sigops: number;
   raw_hex: string;
 }
@@ -231,6 +235,7 @@ export const ipc = {
   receiveAddresses: (id: string, lookahead: number) =>
     invoke<AddressEntry[]>("receive_addresses", { id, lookahead }),
   syncWallet: (id: string) => invoke<SyncReport>("sync_wallet", { id }),
+  loadMoreHistory: (id: string) => invoke<number>("load_more_history", { id }),
   syncAll: (network?: Network) =>
     invoke<SyncAllReport>("sync_all", { network: network ?? null }),
   renameWallet: (id: string, name: string) => invoke<void>("rename_wallet", { id, name }),
