@@ -341,15 +341,13 @@ function BalanceWidget({ walletId }: { walletId: string }) {
   if (!snapshot.data) return <WidgetPending />;
   const { balance } = snapshot.data;
   return (
-    <div className="flex h-full flex-col justify-between gap-3">
+    <div className="flex h-full flex-col gap-3">
       <Balance sats={balance.total} />
-      {balance.untrusted_pending + balance.trusted_pending > 0 ? (
-        <p className="font-ui text-xs text-muted">
-          Includes pending funds not yet confirmed.
-        </p>
-      ) : (
-        <p className="font-ui text-xs text-muted">All funds confirmed.</p>
-      )}
+      <p className="font-ui text-xs text-muted">
+        {balance.untrusted_pending + balance.trusted_pending > 0
+          ? "Includes pending funds not yet confirmed."
+          : "All funds confirmed."}
+      </p>
     </div>
   );
 }
