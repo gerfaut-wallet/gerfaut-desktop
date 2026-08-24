@@ -157,7 +157,7 @@ describe("with a wallet", () => {
                 value_sats: 0,
                 is_mine: false,
                 change: false,
-                op_return: { hex: "68656c6c6f", text: "hello" },
+                op_return: { hex: "68656c6c6f", text: "hello", label: null },
               },
             ],
             vsize: 141,
@@ -173,6 +173,8 @@ describe("with a wallet", () => {
               taproot: false,
               is_coinbase: false,
               coinbase_pool: null,
+              coinbase_height: null,
+              coinbase_tag: null,
               sigops: 1,
               raw_hex: "02000000abcdef",
             },
@@ -242,9 +244,12 @@ describe("with a wallet", () => {
     await user.click(screen.getByText("Received"));
     await screen.findByRole("dialog", { name: "Transaction" });
     // Feature badges under the diagram.
-    expect(screen.getByText("RBF")).toBeInTheDocument();
+    expect(screen.getByText("Replaceable")).toBeInTheDocument();
     expect(screen.getByText("SegWit")).toBeInTheDocument();
-    expect(screen.getByText("Version 2")).toBeInTheDocument();
+    // The version lives in the meta panel only, never duplicated as a pill.
+    expect(screen.queryByText("Version 2")).not.toBeInTheDocument();
+    // Wallet rows are highlighted, not labelled.
+    expect(screen.queryByText("mine")).not.toBeInTheDocument();
     // OP_RETURN decoded in the diagram lane, the badge, and the table.
     expect(screen.getAllByText("OP_RETURN").length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText("hello").length).toBeGreaterThanOrEqual(1);
@@ -293,6 +298,39 @@ describe("with a wallet", () => {
     await user.click(screen.getByRole("button", { name: /view on mempool\.space/i }));
     expect(screen.queryByText(/third-party website/i)).not.toBeInTheDocument();
     expect(openUrl).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("partial history", () => {
+  const loadMore = vi.fn(() => 25);
+
+  beforeEach(() => {
+    loadMore.mockClear();
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "get_settings":
+          return SETTINGS;
+        case "list_wallets":
+          return [WALLET];
+        case "wallet_snapshot":
+          return { ...SNAPSHOT, truncated: true };
+        case "sync_all":
+          return { reports: [], failures: [] };
+        case "load_more_history":
+          return loadMore();
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+  });
+
+  it("offers to fetch older transactions instead of a dead end", async () => {
+    renderApp();
+    const user = userEvent.setup();
+    const button = await screen.findByRole("button", { name: /load older transactions/i });
+    expect(screen.getByText(/loads in rounds/i)).toBeInTheDocument();
+    await user.click(button);
+    await waitFor(() => expect(loadMore).toHaveBeenCalledTimes(1));
   });
 });
 

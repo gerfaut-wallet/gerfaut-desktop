@@ -59,14 +59,14 @@ describe("FlowDiagram", () => {
         coinbasePool="Foundry USA"
       />,
     );
-    expect(screen.getByText("coinbase · Foundry USA")).toBeInTheDocument();
+    expect(screen.getByText("Coinbase · Foundry USA")).toBeInTheDocument();
   });
 
   it("renders an op_return lane with its decoded text", () => {
     render(
       <FlowDiagram
         inputs={[io()]}
-        outputs={[io({ value_sats: 0, op_return: { hex: "6869", text: "hi" } })]}
+        outputs={[io({ value_sats: 0, op_return: { hex: "6869", text: "hi", label: null } })]}
         feeSats={210}
         feeRate={1.5}
       />,
