@@ -19,7 +19,7 @@ export function useFiatValue(sats: number): string | null {
   return formatFiat(sats, rate.data.rate, fiatCurrency);
 }
 
-/** Large balance figure: mono, tabular, masked-aware, never animated.
+/** Large balance figure: UI face with tabular figures, masked-aware.
     Primary line follows the unit setting; the second line carries the
     other unit and the fiat value. */
 export function Balance({ sats }: { sats: number }) {
@@ -29,13 +29,13 @@ export function Balance({ sats }: { sats: number }) {
   const secondary = unit === "btc" ? formatSats(sats) : `${formatBtc(sats)} BTC`;
   return (
     <div className="selectable">
-      <div className="font-data text-[32px] font-medium leading-[1.1] tracking-[-0.01em] text-text">
+      <div className="tabular text-[34px] font-semibold leading-[1.05] tracking-[-0.02em] text-text">
         {masked ? MASKED : primary}
         {unit === "btc" && (
           <span className="ml-2 font-ui text-sm font-normal text-muted">BTC</span>
         )}
       </div>
-      <div className="mt-1 font-data text-[13px] text-muted">
+      <div className="mt-1.5 tabular text-[13px] text-muted">
         {masked ? MASKED : fiat ? `${secondary} · ${fiat}` : secondary}
       </div>
     </div>
@@ -51,13 +51,13 @@ export function ListAmount({ sats, pending }: { sats: number; pending?: boolean 
     <span className="inline-flex flex-col items-end">
       <span
         className={clsx(
-          "font-data text-[13px]",
+          "tabular text-[13px] font-medium",
           sats > 0 && !pending ? "text-confirmed" : "text-text",
         )}
       >
         {masked ? MASKED : formatAmountSigned(sats, unit)}
       </span>
-      {fiat && <span className="font-data text-[11px] text-muted">{fiat}</span>}
+      {fiat && <span className="tabular text-[11px] text-muted">{fiat}</span>}
     </span>
   );
 }
@@ -69,11 +69,11 @@ export function StackedAmount({ sats }: { sats: number }) {
   const fiat = useFiatValue(sats);
   return (
     <span className="inline-flex flex-col items-end">
-      <span className="selectable whitespace-nowrap font-data text-[13px] text-text">
+      <span className="selectable whitespace-nowrap tabular text-[13px] font-medium text-text">
         {masked ? MASKED : formatAmount(sats, unit)}
       </span>
       {fiat && (
-        <span className="whitespace-nowrap font-data text-[11px] text-muted">{fiat}</span>
+        <span className="whitespace-nowrap tabular text-[11px] text-muted">{fiat}</span>
       )}
     </span>
   );
@@ -83,9 +83,9 @@ export function StackedAmount({ sats }: { sats: number }) {
 export function InlineAmount({ sats, withFiat = true }: { sats: number; withFiat?: boolean }) {
   const { masked, unit } = useUi();
   const fiat = useFiatValue(sats);
-  if (masked) return <span className="font-data text-[13px] text-text">{MASKED}</span>;
+  if (masked) return <span className="tabular text-[13px] text-text">{MASKED}</span>;
   return (
-    <span className="selectable font-data text-[13px] text-text">
+    <span className="selectable tabular text-[13px] text-text">
       {formatAmount(sats, unit)}
       {withFiat && fiat && <span className="text-muted"> · {fiat}</span>}
     </span>

@@ -134,10 +134,19 @@ body {
   user-select: text;
 }
 
-/* Bitcoin data always in mono with tabular figures. */
+/* Identifiers stay in mono; figures read better in the UI face. Both
+   get tabular figures so columns line up. */
 .font-data,
-[class*="font-data"] {
+[class*="font-data"],
+.tabular {
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Amounts, dates, counts: UI face, tabular, slightly tightened so long
+   figures keep their rhythm. */
+.tabular {
+  letter-spacing: -0.01em;
 }
 
 /* Focus: 2px ring in the theme's action color, offset 2px. */

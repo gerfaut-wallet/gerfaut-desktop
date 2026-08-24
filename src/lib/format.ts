@@ -2,8 +2,9 @@
 // never silently rounded; identifiers truncated in the middle only.
 
 const SATS_PER_BTC = 100_000_000;
-/** Narrow no-break space, used for digit grouping. */
-const GROUP = " ";
+/** No-break space for digit grouping: in the UI face a narrow space
+    collapses and "1 000 000" reads as one blob. */
+const GROUP = " ";
 
 /** `123456` -> `"0.00123456"` — always 8 decimals. */
 export function formatBtc(sats: number): string {

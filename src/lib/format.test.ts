@@ -17,7 +17,7 @@ describe("formatBtc", () => {
   });
 
   it("groups whole bitcoins", () => {
-    expect(formatBtc(2_100_000_000_000_000)).toBe("21 000 000.00000000");
+    expect(formatBtc(2_100_000_000_000_000)).toBe("21 000 000.00000000");
   });
 
   it("signs explicitly", () => {
@@ -27,8 +27,8 @@ describe("formatBtc", () => {
 });
 
 describe("formatSats", () => {
-  it("groups thousands with a narrow space", () => {
-    expect(formatSats(1_234_567)).toBe("1 234 567 sats");
+  it("groups thousands with a no-break space", () => {
+    expect(formatSats(1_234_567)).toBe("1 234 567 sats");
     expect(formatSats(-500)).toBe("-500 sats");
   });
 });
