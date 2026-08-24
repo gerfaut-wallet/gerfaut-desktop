@@ -184,6 +184,15 @@ async fn fetch_price(
 }
 
 #[tauri::command]
+async fn fetch_price_history(
+    source: gerfaut_core::price::PriceSource,
+    currency: gerfaut_core::price::FiatCurrency,
+    range: gerfaut_core::price::PriceRange,
+) -> CommandResult<gerfaut_core::price::PriceHistory> {
+    Ok(gerfaut_core::price::fetch_price_history(source, currency, range).await?)
+}
+
+#[tauri::command]
 async fn check_update(app: tauri::AppHandle) -> CommandResult<gerfaut_core::updates::UpdateCheck> {
     let current = app.package_info().version.to_string();
     Ok(gerfaut_core::updates::check_update("gerfaut-wallet/gerfaut-desktop", &current).await?)
@@ -251,6 +260,7 @@ pub fn run() {
             set_backend,
             set_app_pref,
             fetch_price,
+            fetch_price_history,
             check_update
         ])
         .run(tauri::generate_context!())

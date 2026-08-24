@@ -189,6 +189,30 @@ export interface PriceQuote {
   at: number;
 }
 
+export type PriceRange = "day" | "week" | "month" | "year" | "max";
+
+/** Mirror of `PriceSource::supports` in gerfaut-core: the ranges each
+    keyless endpoint can actually serve. The UI hides the rest. */
+export const SUPPORTED_RANGES: Record<PriceSource, PriceRange[]> = {
+  kraken: ["day", "week", "month", "year", "max"],
+  coingecko: ["day", "week", "month", "year"],
+  mempool_space: ["month", "year", "max"],
+};
+
+export interface PricePoint {
+  /** Unix timestamp, seconds. */
+  t: number;
+  rate: number;
+}
+
+export interface PriceHistory {
+  points: PricePoint[];
+  currency: FiatCurrency;
+  source: PriceSource;
+  range: PriceRange;
+  at: number;
+}
+
 export interface UpdateCheck {
   latest: string;
   url: string;
@@ -247,5 +271,7 @@ export const ipc = {
   setAppPref: (key: string, value: string) => invoke<void>("set_app_pref", { key, value }),
   fetchPrice: (source: PriceSource, currency: FiatCurrency) =>
     invoke<PriceQuote>("fetch_price", { source, currency }),
+  fetchPriceHistory: (source: PriceSource, currency: FiatCurrency, range: PriceRange) =>
+    invoke<PriceHistory>("fetch_price_history", { source, currency, range }),
   checkUpdate: () => invoke<UpdateCheck>("check_update"),
 };
