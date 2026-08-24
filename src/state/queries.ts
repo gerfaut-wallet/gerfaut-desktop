@@ -1,11 +1,12 @@
 // Server-state hooks. One place defines cache keys and invalidation.
 
 import {
+  useIsMutating,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import type { BackendConfig, Network, ParsedInput } from "../lib/ipc";
+import type { BackendConfig, Network, ParsedInput, PriceRange } from "../lib/ipc";
 import { ipc, isCommandError } from "../lib/ipc";
 import { useUi } from "./store";
 
@@ -53,11 +54,11 @@ export function useTxDetail(id: string | null, txid: string | null) {
   });
 }
 
-export function useReceiveAddresses(id: string | null, open: boolean) {
+export function useReceiveAddresses(id: string | null, lookahead: number) {
   return useQuery({
-    queryKey: keys.receive(id ?? "none"),
-    queryFn: () => ipc.receiveAddresses(id!, 0),
-    enabled: id !== null && open,
+    queryKey: [...keys.receive(id ?? "none"), lookahead],
+    queryFn: () => ipc.receiveAddresses(id!, lookahead),
+    enabled: id !== null,
   });
 }
 
@@ -78,9 +79,16 @@ function useInvalidateWallet() {
   };
 }
 
+/** True while any sync (one wallet or all) is in flight, from any
+    component: mutation state itself is local to its hook instance. */
+export function useSyncing(): boolean {
+  return useIsMutating({ mutationKey: ["sync"] }) > 0;
+}
+
 export function useSyncWallet() {
   const invalidate = useInvalidateWallet();
   return useMutation({
+    mutationKey: ["sync"],
     mutationFn: (id: string) => ipc.syncWallet(id),
     onSuccess: (_report, id) => useUi.getState().setSyncError(id, null),
     onError: (error, id) =>
@@ -116,6 +124,7 @@ export function useLoadMoreHistory() {
 export function useSyncAll() {
   const invalidate = useInvalidateWallet();
   return useMutation({
+    mutationKey: ["sync"],
     mutationFn: (network?: Network) => ipc.syncAll(network),
     onSuccess: (report) => {
       const ui = useUi.getState();
@@ -150,6 +159,20 @@ export function useFiatRate() {
     enabled: fiatEnabled,
     refetchInterval: 60_000,
     staleTime: 55_000,
+    retry: 1,
+  });
+}
+
+/** Price series for the overview chart. Follows the configured source
+    and currency even while fiat display is off: the chart is its own
+    opt-in (remove the widget to stop the requests). */
+export function usePriceHistory(range: PriceRange, enabled: boolean) {
+  const { fiatSource, fiatCurrency } = useUi();
+  return useQuery({
+    queryKey: ["price-history", fiatSource, fiatCurrency, range],
+    queryFn: () => ipc.fetchPriceHistory(fiatSource, fiatCurrency, range),
+    enabled,
+    staleTime: range === "day" ? 5 * 60_000 : 30 * 60_000,
     retry: 1,
   });
 }

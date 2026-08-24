@@ -20,3 +20,22 @@ if (!window.matchMedia) {
   }));
 }
 Element.prototype.scrollIntoView = Element.prototype.scrollIntoView ?? vi.fn();
+
+// jsdom has no ResizeObserver; the chart measures its container with
+// it. Report a plausible width once so the SVG actually renders.
+if (!window.ResizeObserver) {
+  window.ResizeObserver = class {
+    private readonly callback: ResizeObserverCallback;
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback;
+    }
+    observe() {
+      this.callback(
+        [{ contentRect: { width: 640, height: 156 } } as ResizeObserverEntry],
+        this as unknown as ResizeObserver,
+      );
+    }
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}

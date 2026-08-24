@@ -1,24 +1,46 @@
 // UI state. Server state lives in TanStack Query; this store only holds
-// what the interface itself decides: selection, panels, preferences.
+// what the interface itself decides: selection, navigation, preferences.
 
 import { create } from "zustand";
-import type { FiatCurrency, PriceSource } from "../lib/ipc";
+import type { FiatCurrency, PriceRange, PriceSource } from "../lib/ipc";
 import { ipc } from "../lib/ipc";
 import type { Unit } from "../lib/format";
 
 export type ThemePref = "light" | "dark" | "system";
-export type CanvasView = "wallet" | "settings";
-export type WalletTab = "transactions" | "utxos";
+
+/** The sidebar pages. Settings is global; the rest read one wallet. */
+export type CanvasView = "home" | "transactions" | "utxos" | "receive" | "settings";
+
+/** The overview widgets, in their default order. */
+export const WIDGET_IDS = ["balance", "price", "activity", "utxos", "status"] as const;
+export type WidgetId = (typeof WIDGET_IDS)[number];
+export const DEFAULT_HOME_LAYOUT: WidgetId[] = [...WIDGET_IDS];
+
+/** Drops unknown ids and duplicates from a stored layout. */
+export function sanitizeLayout(raw: unknown): WidgetId[] | null {
+  if (!Array.isArray(raw)) return null;
+  const seen = new Set<string>();
+  const layout: WidgetId[] = [];
+  for (const id of raw) {
+    if (
+      typeof id === "string" &&
+      (WIDGET_IDS as readonly string[]).includes(id) &&
+      !seen.has(id)
+    ) {
+      seen.add(id);
+      layout.push(id as WidgetId);
+    }
+  }
+  return layout;
+}
 
 interface UiState {
   view: CanvasView;
   activeWalletId: string | null;
-  walletTab: WalletTab;
   /** Txid opened in the detail modal, null when closed. */
   selectedTxid: string | null;
   addWalletOpen: boolean;
-  receiveOpen: boolean;
-  paletteOpen: boolean;
+  sidebarCollapsed: boolean;
   masked: boolean;
   theme: ThemePref;
   /** Display unit for every amount. */
@@ -29,17 +51,23 @@ interface UiState {
   fiatSource: PriceSource;
   /** External explorer warning acknowledged: skip the dialog when set. */
   explorerAck: boolean;
+  /** Overview widget order per wallet id; falls back to the default. */
+  homeLayouts: Record<string, WidgetId[]>;
+  /** One shared overview layout for every wallet, when enabled. */
+  sharedHome: boolean;
+  sharedHomeLayout: WidgetId[] | null;
+  homeEditing: boolean;
+  /** Selected span of the price chart, shared across wallets. */
+  priceRange: PriceRange;
   toast: string | null;
   /** Last sync failure per wallet id, cleared on the next success. */
   syncErrors: Record<string, string>;
 
+  setView: (view: CanvasView) => void;
   openWallet: (id: string) => void;
-  openSettings: () => void;
-  setWalletTab: (tab: WalletTab) => void;
   selectTx: (txid: string | null) => void;
   setAddWalletOpen: (open: boolean) => void;
-  setReceiveOpen: (open: boolean) => void;
-  setPaletteOpen: (open: boolean) => void;
+  toggleSidebar: () => void;
   toggleMasked: () => void;
   setTheme: (theme: ThemePref) => void;
   setUnit: (unit: Unit) => void;
@@ -47,6 +75,13 @@ interface UiState {
   setFiatCurrency: (currency: FiatCurrency) => void;
   setFiatSource: (source: PriceSource) => void;
   setExplorerAck: (acknowledged: boolean) => void;
+  /** Reads the effective overview layout for a wallet. */
+  homeLayout: (walletId: string) => WidgetId[];
+  /** Writes the overview layout where it belongs (wallet or shared). */
+  setHomeLayout: (walletId: string, layout: WidgetId[]) => void;
+  setSharedHome: (enabled: boolean) => void;
+  setHomeEditing: (editing: boolean) => void;
+  setPriceRange: (range: PriceRange) => void;
   showToast: (message: string) => void;
   setSyncError: (walletId: string, message: string | null) => void;
   /** Applies preferences loaded from the vault at startup. */
@@ -59,14 +94,21 @@ function persist(key: string, value: string) {
   void ipc.setAppPref(key, value).catch(() => {});
 }
 
+function parseLayoutPref(value: string | undefined): WidgetId[] | null {
+  if (!value) return null;
+  try {
+    return sanitizeLayout(JSON.parse(value));
+  } catch {
+    return null;
+  }
+}
+
 export const useUi = create<UiState>((set, get) => ({
-  view: "wallet",
+  view: "home",
   activeWalletId: null,
-  walletTab: "transactions",
   selectedTxid: null,
   addWalletOpen: false,
-  receiveOpen: false,
-  paletteOpen: false,
+  sidebarCollapsed: false,
   masked: false,
   theme: "light",
   unit: "btc",
@@ -74,17 +116,31 @@ export const useUi = create<UiState>((set, get) => ({
   fiatCurrency: "eur",
   fiatSource: "coingecko",
   explorerAck: false,
+  homeLayouts: {},
+  sharedHome: false,
+  sharedHomeLayout: null,
+  homeEditing: false,
+  priceRange: "month",
   toast: null,
   syncErrors: {},
 
+  setView: (view) => set({ view, selectedTxid: null, homeEditing: false }),
+  // Switching wallets keeps the current page, so wallets compare on the
+  // same view; from settings it lands on the overview.
   openWallet: (id) =>
-    set({ view: "wallet", activeWalletId: id, selectedTxid: null, walletTab: "transactions" }),
-  openSettings: () => set({ view: "settings", selectedTxid: null }),
-  setWalletTab: (walletTab) => set({ walletTab, selectedTxid: null }),
+    set((state) => ({
+      activeWalletId: id,
+      view: state.view === "settings" ? "home" : state.view,
+      selectedTxid: null,
+      homeEditing: false,
+    })),
   selectTx: (selectedTxid) => set({ selectedTxid }),
   setAddWalletOpen: (addWalletOpen) => set({ addWalletOpen }),
-  setReceiveOpen: (receiveOpen) => set({ receiveOpen }),
-  setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
+  toggleSidebar: () => {
+    const sidebarCollapsed = !get().sidebarCollapsed;
+    set({ sidebarCollapsed });
+    persist("desktop.sidebar", sidebarCollapsed ? "collapsed" : "expanded");
+  },
   toggleMasked: () => {
     const masked = !get().masked;
     set({ masked });
@@ -115,6 +171,29 @@ export const useUi = create<UiState>((set, get) => ({
     set({ explorerAck });
     persist("privacy.explorer_ack", explorerAck ? "1" : "0");
   },
+  homeLayout: (walletId) => {
+    const state = get();
+    if (state.sharedHome) return state.sharedHomeLayout ?? DEFAULT_HOME_LAYOUT;
+    return state.homeLayouts[walletId] ?? DEFAULT_HOME_LAYOUT;
+  },
+  setHomeLayout: (walletId, layout) => {
+    if (get().sharedHome) {
+      set({ sharedHomeLayout: layout });
+      persist("home.widgets.shared_layout", JSON.stringify(layout));
+    } else {
+      set((state) => ({ homeLayouts: { ...state.homeLayouts, [walletId]: layout } }));
+      persist(`home.widgets.${walletId}`, JSON.stringify(layout));
+    }
+  },
+  setSharedHome: (sharedHome) => {
+    set({ sharedHome });
+    persist("home.widgets.shared", sharedHome ? "1" : "0");
+  },
+  setHomeEditing: (homeEditing) => set({ homeEditing }),
+  setPriceRange: (priceRange) => {
+    set({ priceRange });
+    persist("home.price_range", priceRange);
+  },
   showToast: (message) => {
     clearTimeout(toastTimer);
     set({ toast: message });
@@ -135,9 +214,17 @@ export const useUi = create<UiState>((set, get) => ({
     const unit = prefs["display.unit"] === "sats" ? "sats" : "btc";
     const currency = prefs["display.fiat_currency"] as FiatCurrency;
     const source = prefs["display.fiat_source"] as PriceSource;
+    const homeLayouts: Record<string, WidgetId[]> = {};
+    for (const [key, value] of Object.entries(prefs)) {
+      if (key.startsWith("home.widgets.") && !key.startsWith("home.widgets.shared")) {
+        const layout = parseLayoutPref(value);
+        if (layout) homeLayouts[key.slice("home.widgets.".length)] = layout;
+      }
+    }
     set({
       theme: ["light", "dark", "system"].includes(theme) ? theme : "light",
       masked: prefs["desktop.masked"] === "1",
+      sidebarCollapsed: prefs["desktop.sidebar"] === "collapsed",
       unit,
       fiatEnabled: prefs["display.fiat"] === "1",
       explorerAck: prefs["privacy.explorer_ack"] === "1",
@@ -145,6 +232,14 @@ export const useUi = create<UiState>((set, get) => ({
       fiatSource: ["coingecko", "kraken", "mempool_space"].includes(source)
         ? source
         : "coingecko",
+      homeLayouts,
+      sharedHome: prefs["home.widgets.shared"] === "1",
+      sharedHomeLayout: parseLayoutPref(prefs["home.widgets.shared_layout"]),
+      priceRange: (["day", "week", "month", "year", "max"] as PriceRange[]).includes(
+        prefs["home.price_range"] as PriceRange,
+      )
+        ? (prefs["home.price_range"] as PriceRange)
+        : "month",
     });
     applyTheme(theme);
   },

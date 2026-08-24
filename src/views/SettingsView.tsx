@@ -3,8 +3,8 @@ import {
   Check,
   Coins,
   Globe,
+  House,
   Info,
-  MapPin,
   Pencil,
   RefreshCw,
   Server,
@@ -217,6 +217,8 @@ export function SettingsView({
     setFiatCurrency,
     fiatSource,
     setFiatSource,
+    sharedHome,
+    setSharedHome,
     showToast,
   } = useUi();
   const setActiveNetwork = useSetActiveNetwork();
@@ -308,38 +310,37 @@ export function SettingsView({
             >
               <Toggle checked={fiatEnabled} onChange={setFiatEnabled} label="Show fiat value" />
             </SettingRow>
-            {fiatEnabled && (
-              <>
-                <SettingRow title="Currency">
-                  <Segmented
-                    label="Fiat currency"
-                    value={fiatCurrency}
-                    onChange={setFiatCurrency}
-                    options={(["eur", "usd", "gbp", "chf"] as FiatCurrency[]).map(
-                      (currency) => ({ value: currency, label: currency.toUpperCase() }),
-                    )}
-                  />
-                </SettingRow>
-                <SettingRow
-                  title="Price source"
-                  hint="One request per minute while the app is in front."
-                >
-                  <Segmented
-                    label="Price source"
-                    value={fiatSource}
-                    onChange={setFiatSource}
-                    options={
-                      [
-                        { value: "coingecko", label: "CoinGecko" },
-                        { value: "kraken", label: "Kraken" },
-                        { value: "mempool_space", label: "mempool.space" },
-                      ] as { value: PriceSource; label: string }[]
-                    }
-                  />
-                </SettingRow>
-                <RatePreview />
-              </>
-            )}
+            <SettingRow
+              title="Currency"
+              hint="Used by the fiat value and the overview price chart."
+            >
+              <Segmented
+                label="Fiat currency"
+                value={fiatCurrency}
+                onChange={setFiatCurrency}
+                options={(["eur", "usd", "gbp", "chf"] as FiatCurrency[]).map(
+                  (currency) => ({ value: currency, label: currency.toUpperCase() }),
+                )}
+              />
+            </SettingRow>
+            <SettingRow
+              title="Price source"
+              hint="Serves the fiat value and the price chart. Remove the chart widget from the overview to stop its requests."
+            >
+              <Segmented
+                label="Price source"
+                value={fiatSource}
+                onChange={setFiatSource}
+                options={
+                  [
+                    { value: "coingecko", label: "CoinGecko" },
+                    { value: "kraken", label: "Kraken" },
+                    { value: "mempool_space", label: "mempool.space" },
+                  ] as { value: PriceSource; label: string }[]
+                }
+              />
+            </SettingRow>
+            {fiatEnabled && <RatePreview />}
           </div>
         </SectionCard>
 
@@ -354,6 +355,22 @@ export function SettingsView({
                 { value: "dark", label: "Dark" },
                 { value: "system", label: "System" },
               ]}
+            />
+          </SettingRow>
+        </SectionCard>
+
+        <SectionCard icon={<House size={18} strokeWidth={1.5} />} title="Overview">
+          <SettingRow
+            title="Same overview on every wallet"
+            hint="Every wallet shows the same widgets, arranged the same way; editing one edits all. Off, each wallet keeps its own layout."
+          >
+            <Toggle
+              checked={sharedHome}
+              onChange={(checked) => {
+                setSharedHome(checked);
+                showToast("Setting saved");
+              }}
+              label="Same overview on every wallet"
             />
           </SettingRow>
         </SectionCard>
@@ -578,11 +595,7 @@ function WalletsSection({ wallets }: { wallets: WalletMeta[] }) {
                 <div className="flex items-center justify-between gap-3">
                   <span className="flex min-w-0 items-center gap-2.5">
                     <span className="text-muted">
-                      {single ? (
-                        <MapPin size={16} strokeWidth={1.5} aria-hidden />
-                      ) : (
-                        <WalletIcon size={16} strokeWidth={1.5} aria-hidden />
-                      )}
+                      <WalletIcon size={16} strokeWidth={1.5} aria-hidden />
                     </span>
                     {renaming?.id === wallet.id ? (
                       <span className="flex items-center gap-1.5">
