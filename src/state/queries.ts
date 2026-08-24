@@ -59,6 +59,10 @@ export function useReceiveAddresses(id: string | null, lookahead: number) {
     queryKey: [...keys.receive(id ?? "none"), lookahead],
     queryFn: () => ipc.receiveAddresses(id!, lookahead),
     enabled: id !== null,
+    // Skipping to the next index must not flash the page empty — but
+    // never carry an address across wallets, even for a frame.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[1] === id ? previous : undefined,
   });
 }
 
@@ -71,10 +75,13 @@ function useInvalidateWallet() {
       void client.invalidateQueries({ queryKey: keys.snapshot(id) });
       void client.invalidateQueries({ queryKey: keys.utxos(id) });
       void client.invalidateQueries({ queryKey: ["tx", id] });
+      // A sync can mark the shown receive address as used.
+      void client.invalidateQueries({ queryKey: keys.receive(id) });
     } else {
       void client.invalidateQueries({ queryKey: ["snapshot"] });
       void client.invalidateQueries({ queryKey: ["utxos"] });
       void client.invalidateQueries({ queryKey: ["tx"] });
+      void client.invalidateQueries({ queryKey: ["receive"] });
     }
   };
 }
