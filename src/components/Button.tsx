@@ -44,7 +44,8 @@ export function IconButton({
       className={clsx(
         "inline-flex size-10 cursor-pointer items-center justify-center rounded-md",
         "text-muted transition-colors duration-150 ease-out",
-        "hover:bg-sunken hover:text-text active:scale-[0.96]",
+        "enabled:hover:bg-sunken enabled:hover:text-text enabled:active:scale-[0.96]",
+        "disabled:cursor-default disabled:opacity-40",
         className,
       )}
       {...rest}
