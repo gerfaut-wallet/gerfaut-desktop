@@ -102,6 +102,14 @@ export function useLoadMoreHistory() {
         .getState()
         .showToast(added === 0 ? "History is complete" : `${added} older transactions`);
     },
+    // A backend that refuses must say so: the button would otherwise
+    // look like it did nothing.
+    onError: (error) =>
+      useUi
+        .getState()
+        .showToast(
+          isCommandError(error) ? "Could not reach the backend" : "Could not load more",
+        ),
   });
 }
 
