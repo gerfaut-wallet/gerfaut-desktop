@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, ChevronRight } from "lucide-react";
 import type { TxSummary } from "../lib/ipc";
 import { formatTimestamp, truncateMiddle } from "../lib/format";
 import { ListAmount } from "../components/Amount";
@@ -34,14 +34,14 @@ export function TxList({ txs }: { txs: TxSummary[] }) {
               onClick={() => selectTx(selected ? null : tx.txid)}
               aria-expanded={selected}
               className={clsx(
-                "flex min-h-11 w-full cursor-pointer items-center gap-3 px-3 py-1.5 text-left transition-colors duration-100",
+                "group flex min-h-12 w-full cursor-pointer items-center gap-3 px-3 py-1.5 text-left transition-colors duration-100",
                 selected ? "bg-sunken" : "hover:bg-sunken/60",
               )}
             >
               <span
                 aria-hidden
                 className={clsx(
-                  "inline-flex size-7 shrink-0 items-center justify-center rounded-full",
+                  "inline-flex size-8 shrink-0 items-center justify-center rounded-lg",
                   incoming && !pending
                     ? "bg-confirmed-surface text-confirmed"
                     : "bg-sunken text-muted",
@@ -57,16 +57,27 @@ export function TxList({ txs }: { txs: TxSummary[] }) {
                 <span className="font-ui text-sm text-text">
                   {incoming ? "Received" : "Sent"}
                 </span>
-                <span className="truncate font-data text-xs text-muted">
-                  {tx.status.state === "confirmed" && tx.status.timestamp
-                    ? formatTimestamp(tx.status.timestamp)
-                    : truncateMiddle(tx.txid, 8, 8)}
+                <span className="truncate text-xs text-muted">
+                  {tx.status.state === "confirmed" && tx.status.timestamp ? (
+                    <span className="tabular">{formatTimestamp(tx.status.timestamp)}</span>
+                  ) : (
+                    <span className="font-data">{truncateMiddle(tx.txid, 8, 8)}</span>
+                  )}
                 </span>
               </span>
               <StatusPill status={tx.status} confirmations={tx.confirmations} />
               <span className="w-36 text-right">
                 <ListAmount sats={tx.net_sats} pending={pending} />
               </span>
+              <ChevronRight
+                size={16}
+                strokeWidth={1.5}
+                aria-hidden
+                className={clsx(
+                  "shrink-0 text-muted transition-opacity duration-150",
+                  selected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                )}
+              />
             </button>
           </li>
         );

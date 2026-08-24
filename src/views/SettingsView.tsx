@@ -380,7 +380,7 @@ function RatePreview() {
     );
   }
   return (
-    <p className="font-data text-xs text-muted">
+    <p className="tabular text-xs text-muted">
       1 BTC = {formatFiat(100_000_000, rate.data.rate, fiatCurrency)} · updated{" "}
       {relativeTime(rate.data.at)}
     </p>

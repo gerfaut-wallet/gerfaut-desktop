@@ -18,7 +18,7 @@ export function UtxoTable({ utxos }: { utxos: UtxoInfo[] }) {
   return (
     <table className="w-full border-collapse">
       <thead>
-        <tr className="border-b border-border text-left">
+        <tr className="border-b border-border bg-sunken/50 text-left">
           <th className="px-3 py-2 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
             Outpoint
           </th>
@@ -46,7 +46,7 @@ export function UtxoTable({ utxos }: { utxos: UtxoInfo[] }) {
               {utxo.address ? (
                 <AddressChip value={utxo.address} />
               ) : (
-                <span className="font-data text-[13px] text-muted">n/a</span>
+                <span className="font-ui text-[13px] text-muted">n/a</span>
               )}
             </td>
             <td className="px-3 py-2">

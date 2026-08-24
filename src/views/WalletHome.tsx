@@ -1,9 +1,14 @@
 import { clsx } from "clsx";
-import { ArrowDownLeft, Eye, EyeOff, RefreshCw } from "lucide-react";
+import { ArrowDownLeft, ChevronDown, Eye, EyeOff, RefreshCw } from "lucide-react";
 import { Balance } from "../components/Amount";
 import { Button, IconButton } from "../components/Button";
 import { SyncIndicator } from "../components/SyncIndicator";
-import { useSnapshot, useSyncWallet, useUtxos } from "../state/queries";
+import {
+  useLoadMoreHistory,
+  useSnapshot,
+  useSyncWallet,
+  useUtxos,
+} from "../state/queries";
 import { useUi } from "../state/store";
 import { TxList } from "./TxList";
 import { UtxoTable } from "./UtxoTable";
@@ -14,6 +19,7 @@ export function WalletHome({ walletId }: { walletId: string }) {
   const snapshot = useSnapshot(walletId);
   const utxos = useUtxos(walletId, walletTab === "utxos");
   const sync = useSyncWallet();
+  const loadMore = useLoadMoreHistory();
   const syncingThis = sync.isPending && sync.variables === walletId;
   const syncError = syncErrors[walletId] ?? null;
 
@@ -71,11 +77,14 @@ export function WalletHome({ walletId }: { walletId: string }) {
             </Button>
           </div>
         </div>
-        <div className="mt-5">
+        <div className="mt-5 rounded-lg border border-border bg-surface px-5 py-4">
+          <p className="mb-2 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
+            Total balance
+          </p>
           <Balance sats={balance.total} />
           {(balance.untrusted_pending > 0 || balance.trusted_pending > 0) && (
-            <p className="mt-1 font-ui text-xs text-muted">
-              includes pending funds not yet confirmed
+            <p className="mt-2 font-ui text-xs text-muted">
+              Includes pending funds not yet confirmed.
             </p>
           )}
         </div>
@@ -96,20 +105,49 @@ export function WalletHome({ walletId }: { walletId: string }) {
                 : "border-transparent text-muted hover:text-text",
             )}
           >
-            {tab === "transactions" ? "Transactions" : "UTXOs"}
+            <span className="flex items-center gap-1.5">
+              {tab === "transactions" ? "Transactions" : "UTXOs"}
+              {tab === "transactions" && txs.length > 0 && (
+                <span className="tabular rounded-full bg-sunken px-1.5 py-px text-[11px] font-medium text-muted">
+                  {txs.length}
+                </span>
+              )}
+              {tab === "utxos" && (utxos.data?.length ?? 0) > 0 && (
+                <span className="tabular rounded-full bg-sunken px-1.5 py-px text-[11px] font-medium text-muted">
+                  {utxos.data?.length}
+                </span>
+              )}
+            </span>
           </button>
         ))}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto py-2">
-        {walletTab === "transactions" && snapshot.data.truncated && (
-          <p className="px-3 pb-2 font-ui text-xs text-muted">
-            This address has more history than Gerfaut fetched: the list below
-            is partial. The balance stays exact.
-          </p>
-        )}
         {walletTab === "transactions" ? (
-          <TxList txs={txs} />
+          <>
+            <TxList txs={txs} />
+            {snapshot.data.truncated && (
+              <div className="flex flex-col items-center gap-1.5 px-3 py-4">
+                <Button
+                  variant="secondary"
+                  onClick={() => loadMore.mutate(walletId)}
+                  disabled={loadMore.isPending}
+                >
+                  <ChevronDown
+                    size={16}
+                    strokeWidth={1.5}
+                    aria-hidden
+                    className={loadMore.isPending ? "motion-safe:animate-bounce" : undefined}
+                  />
+                  {loadMore.isPending ? "Fetching…" : "Load older transactions"}
+                </Button>
+                <p className="font-ui text-xs text-muted">
+                  This address has a long history: it loads in rounds. The
+                  balance above already covers all of it.
+                </p>
+              </div>
+            )}
+          </>
         ) : utxos.isPending ? (
           <p className="px-3 py-4 font-ui text-sm text-muted">Loading UTXOs…</p>
         ) : (

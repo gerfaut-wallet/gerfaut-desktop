@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
-import { MapPin, Plus, RefreshCw, Settings, Wallet as WalletIcon } from "lucide-react";
-import { MASKED, formatAmount } from "../lib/format";
+import { Blocks, MapPin, Plus, RefreshCw, Search, Settings, Wallet as WalletIcon } from "lucide-react";
+import { MASKED, formatAmount, groupThousands } from "../lib/format";
 import type { Network, WalletMeta } from "../lib/ipc";
 import { useUi } from "../state/store";
 import mark from "../assets/gerfaut-mark-accent-dark.svg";
@@ -28,7 +28,13 @@ export function Rail({
   syncing: boolean;
   onSyncAll: () => void;
 }) {
-  const { view, openWallet, openSettings, setAddWalletOpen, masked, unit } = useUi();
+  const { view, openWallet, openSettings, setAddWalletOpen, setPaletteOpen, masked, unit } =
+    useUi();
+  // Chain tip as last seen by any wallet: the instrument's status line.
+  const tipHeight = wallets.reduce(
+    (highest, wallet) => Math.max(highest, wallet.last_sync?.tip_height ?? 0),
+    0,
+  );
 
   return (
     <nav
@@ -41,10 +47,24 @@ export function Rail({
           GERFAUT
         </span>
         {network !== "mainnet" && (
-          <span className="ml-auto rounded-full bg-sunken px-2 py-0.5 font-data text-[11px] text-pending">
+          <span className="ml-auto rounded-full bg-sunken px-2 py-0.5 font-ui text-[11px] font-medium text-pending">
             {NETWORK_LABEL[network]}
           </span>
         )}
+      </div>
+
+      <div className="px-3 pb-3">
+        <button
+          type="button"
+          onClick={() => setPaletteOpen(true)}
+          className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-md bg-sunken/70 px-2.5 text-muted transition-colors duration-150 hover:bg-sunken hover:text-text"
+        >
+          <Search size={15} strokeWidth={1.5} aria-hidden className="shrink-0" />
+          <span className="font-ui text-sm">Search</span>
+          <kbd className="ml-auto rounded-sm border border-border px-1.5 py-px font-ui text-[10px] font-medium tracking-wide text-muted">
+            Ctrl K
+          </kbd>
+        </button>
       </div>
 
       <div className="px-3">
@@ -83,7 +103,7 @@ export function Rail({
                     )}
                     <span className="truncate">{wallet.name}</span>
                   </span>
-                  <span className="font-data text-xs text-muted">
+                  <span className="tabular text-xs text-muted">
                     {masked ? MASKED : formatAmount(wallet.cached.balance.total, unit)}
                   </span>
                 </button>
@@ -103,6 +123,12 @@ export function Rail({
         </ul>
       </div>
 
+      {tipHeight > 0 && (
+        <p className="flex items-center gap-1.5 px-5 pb-2 pt-1 font-ui text-[11px] text-muted">
+          <Blocks size={12} strokeWidth={1.5} aria-hidden className="shrink-0" />
+          <span className="tabular">block {groupThousands(String(tipHeight))}</span>
+        </p>
+      )}
       <div
         aria-hidden
         className="mx-3 h-px bg-gradient-to-r from-transparent via-border to-transparent"
