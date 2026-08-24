@@ -55,7 +55,7 @@ function toLanes(ios: TxIo[], side: "in" | "out", coinbase: boolean): Lane[] {
         label: null,
         valueSats: null,
         more: 0,
-        preview: io.op_return.text ?? io.op_return.hex,
+        preview: opReturnPreview(io.op_return),
       };
     }
     return {
@@ -262,11 +262,11 @@ function FeePill({ feeSats, feeRate }: { feeSats: number; feeRate: number | null
       <span className="font-ui text-[11px] font-medium uppercase tracking-[0.04em] text-pending">
         fee
       </span>
-      <span className="font-data text-xs text-pending">
+      <span className="tabular text-xs font-medium text-pending">
         {masked ? MASKED : formatAmount(feeSats, unit)}
       </span>
       {feeRate !== null && (
-        <span className="font-data text-[11px] text-muted">{feeRate.toFixed(1)} sat/vB</span>
+        <span className="tabular text-[11px] text-muted">{feeRate.toFixed(1)} sat/vB</span>
       )}
     </span>
   );
@@ -327,7 +327,7 @@ function LaneColumn({
               </span>
             ) : lane.role === "op-return" ? (
               <>
-                <span className="shrink-0 font-data text-xs text-pending">OP_RETURN</span>
+                <span className="shrink-0 font-ui text-xs font-medium text-pending">OP_RETURN</span>
                 {lane.preview && (
                   <span className="min-w-0 truncate font-data text-[11px] text-muted">
                     {lane.preview}
@@ -335,14 +335,14 @@ function LaneColumn({
                 )}
               </>
             ) : lane.role === "coinbase" ? (
-              <span className="font-data text-[13px] text-muted">
-                coinbase{coinbasePool ? ` · ${coinbasePool}` : ""}
+              <span className="truncate font-ui text-[13px] text-muted">
+                Coinbase{coinbasePool ? ` · ${coinbasePool}` : ""}
               </span>
             ) : lane.label ? (
               <AddressChip value={lane.label} />
             ) : (
-              <span className="font-data text-[13px] text-muted">
-                {side === "in" ? "unknown input" : "script output"}
+              <span className="font-ui text-[13px] text-muted">
+                {side === "in" ? "Unknown input" : "Script output"}
               </span>
             )}
             {lane.valueSats !== null && lane.role !== "op-return" && (
@@ -357,7 +357,15 @@ function LaneColumn({
   );
 }
 
-/** Preview text used by the outputs table for OP_RETURN rows. */
-export function opReturnPreview(data: { hex: string; text: string | null }): string {
-  return data.text ?? truncateMiddle(data.hex, 18, 8);
+/** Preview text for an OP_RETURN payload: the recognized protocol name
+    when there is one, then decoded text, then a short hex excerpt. Kept
+    short on purpose so table rows never push the amount out of view. */
+export function opReturnPreview(data: {
+  hex: string;
+  text: string | null;
+  label: string | null;
+}): string {
+  if (data.label) return data.label;
+  if (data.text) return truncateMiddle(data.text, 22, 6);
+  return truncateMiddle(data.hex, 12, 6);
 }
