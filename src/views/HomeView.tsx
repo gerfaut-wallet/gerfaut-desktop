@@ -1,60 +1,37 @@
 import { clsx } from "clsx";
-import {
-  ArrowDownLeft,
-  ArrowUpRight,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  GripVertical,
-  Plus,
-  RotateCcw,
-  SlidersHorizontal,
-  X,
-} from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, ChevronRight, Coins } from "lucide-react";
 import type { ReactNode } from "react";
-import { Balance } from "../components/Amount";
-import { ListAmount } from "../components/Amount";
-import { Button, IconButton } from "../components/Button";
-import { PriceChart } from "../components/PriceChart";
+import { Balance, ListAmount } from "../components/Amount";
+import { BalanceChart } from "../components/BalanceChart";
 import { SyncIndicator } from "../components/SyncIndicator";
-import { MASKED, formatAmount, formatTimestamp, groupThousands, relativeTime, truncateMiddle } from "../lib/format";
+import {
+  MASKED,
+  formatTimestamp,
+  groupThousands,
+  relativeTime,
+  truncateMiddle,
+} from "../lib/format";
 import { SUPPORTED_RANGES } from "../lib/ipc";
-import type { TxSummary } from "../lib/ipc";
+import type { PriceRange, TxSummary, WalletSnapshot } from "../lib/ipc";
+import { balanceSeries } from "../lib/series";
 import { usePriceHistory, useSnapshot, useSyncing, useUtxos } from "../state/queries";
-import type { WidgetId } from "../state/store";
-import { DEFAULT_HOME_LAYOUT, useUi } from "../state/store";
+import { useUi } from "../state/store";
 
-/** Fixed footprint of each widget on the 6-column grid. */
-const WIDGET_META: Record<WidgetId, { label: string; span: string }> = {
-  balance: { label: "Total balance", span: "lg:col-span-2" },
-  price: { label: "Bitcoin price", span: "lg:col-span-4" },
-  activity: { label: "Latest activity", span: "lg:col-span-4" },
-  utxos: { label: "UTXOs", span: "lg:col-span-2" },
-  status: { label: "Watch status", span: "lg:col-span-2" },
+const RANGE_LABEL: Record<PriceRange, string> = {
+  day: "1D",
+  week: "1W",
+  month: "1M",
+  year: "1Y",
+  max: "Max",
 };
 
-/** Overview of one wallet: a small grid of glanceable widgets, each a
-    preview that leads to its full page. The set and order belong to
-    the user, per wallet or shared (settings). */
+/** Overview of one wallet: one fixed, glanceable dashboard — balance
+    and counts, the BTC price, watch status, the wallet's balance curve,
+    and its latest activity. Sized to the window, nothing to arrange. */
 export function HomeView({ walletId }: { walletId: string }) {
-  const {
-    homeEditing,
-    setHomeEditing,
-    setHomeLayout,
-    sharedHome,
-    syncErrors,
-  } = useUi();
+  const { syncErrors } = useUi();
   const snapshot = useSnapshot(walletId);
   const syncing = useSyncing();
-  const layout = useUi((state) => {
-    // Subscribe to layout changes; the selector recomputes on write.
-    void state.homeLayouts;
-    void state.sharedHomeLayout;
-    void state.sharedHome;
-    return state.homeLayout(walletId);
-  });
-  const [dragged, setDragged] = useState<WidgetId | null>(null);
 
   if (snapshot.isPending) {
     return <p className="px-1 py-4 font-ui text-sm text-muted">Loading wallet…</p>;
@@ -67,346 +44,304 @@ export function HomeView({ walletId }: { walletId: string }) {
     );
   }
   const { meta } = snapshot.data;
-  const missing = DEFAULT_HOME_LAYOUT.filter((id) => !layout.includes(id));
-
-  const move = (id: WidgetId, direction: -1 | 1) => {
-    const index = layout.indexOf(id);
-    const target = index + direction;
-    if (index === -1 || target < 0 || target >= layout.length) return;
-    const next = [...layout];
-    next.splice(index, 1);
-    next.splice(target, 0, id);
-    setHomeLayout(walletId, next);
-  };
-
-  const reorderOnto = (target: WidgetId) => {
-    if (!dragged || dragged === target) return;
-    const next = layout.filter((id) => id !== dragged);
-    next.splice(next.indexOf(target), 0, dragged);
-    setHomeLayout(walletId, next);
-  };
 
   return (
-    <div className="pb-8">
-      <header className="flex items-start justify-between gap-4 px-1 pb-5 pt-2">
-        <div>
-          <h1 className="font-display text-2xl font-semibold tracking-[-0.01em] text-text">
-            {meta.name}
-          </h1>
-          <div className="mt-1">
-            <SyncIndicator
-              stamp={meta.last_sync}
-              syncing={syncing}
-              error={syncErrors[walletId] ?? null}
-            />
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5">
-          {homeEditing && (
-            <>
-              {sharedHome && (
-                <span className="font-ui text-xs text-muted">Applies to every wallet</span>
-              )}
-              <Button
-                variant="ghost"
-                className="h-9"
-                onClick={() => setHomeLayout(walletId, DEFAULT_HOME_LAYOUT)}
-              >
-                <RotateCcw size={14} strokeWidth={1.5} aria-hidden />
-                Reset
-              </Button>
-              <Button variant="primary" className="h-9" onClick={() => setHomeEditing(false)}>
-                <Check size={15} strokeWidth={1.75} aria-hidden />
-                Done
-              </Button>
-            </>
-          )}
-          {!homeEditing && (
-            <Button variant="ghost" className="h-9" onClick={() => setHomeEditing(true)}>
-              <SlidersHorizontal size={14} strokeWidth={1.5} aria-hidden />
-              Customize
-            </Button>
-          )}
+    <div className="flex h-full min-h-[560px] flex-col pb-2">
+      <header className="px-1 pb-4 pt-2">
+        <h1 className="font-display text-2xl font-semibold tracking-[-0.01em] text-text">
+          {meta.name}
+        </h1>
+        <div className="mt-1">
+          <SyncIndicator
+            stamp={meta.last_sync}
+            syncing={syncing}
+            error={syncErrors[walletId] ?? null}
+          />
         </div>
       </header>
 
-      {layout.length === 0 && !homeEditing ? (
-        <div className="flex flex-col items-center gap-2 rounded-lg border border-border bg-surface px-6 py-10">
-          <p className="font-ui text-base text-text">This overview is empty</p>
-          <p className="font-ui text-sm text-muted">
-            Add widgets to see the wallet at a glance.
-          </p>
-          <Button variant="secondary" className="mt-2" onClick={() => setHomeEditing(true)}>
-            <SlidersHorizontal size={15} strokeWidth={1.5} aria-hidden />
-            Customize
-          </Button>
+      <div className="flex min-h-0 flex-1 gap-4 max-lg:flex-col">
+        <div className="flex w-[320px] shrink-0 flex-col gap-4 max-lg:w-full">
+          <BalanceCard snapshot={snapshot.data} walletId={walletId} />
+          <PriceCard />
+          <StatusCard snapshot={snapshot.data} />
         </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-6">
-          {layout.map((id, index) => (
-            <WidgetFrame
-              key={id}
-              id={id}
-              editing={homeEditing}
-              dragging={dragged === id}
-              first={index === 0}
-              last={index === layout.length - 1}
-              onRemove={() => setHomeLayout(walletId, layout.filter((w) => w !== id))}
-              onMove={(direction) => move(id, direction)}
-              onDragStart={() => setDragged(id)}
-              onDragEnd={() => setDragged(null)}
-              onDragOver={() => reorderOnto(id)}
-            >
-              {id === "balance" && <BalanceWidget walletId={walletId} />}
-              {id === "price" && <PriceWidget />}
-              {id === "activity" && <ActivityWidget walletId={walletId} />}
-              {id === "utxos" && <UtxoWidget walletId={walletId} />}
-              {id === "status" && <StatusWidget walletId={walletId} />}
-            </WidgetFrame>
-          ))}
-          {homeEditing && missing.length > 0 && (
-            <AddWidgetTile
-              missing={missing}
-              onAdd={(id) => setHomeLayout(walletId, [...layout, id])}
-            />
-          )}
+        <div className="flex min-w-0 flex-1 flex-col gap-4">
+          <HistoryCard snapshot={snapshot.data} />
+          <ActivityCard snapshot={snapshot.data} />
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
-/** Card chrome shared by every widget; in edit mode it grows a drag
-    handle, keyboard reordering, and a remove control. */
-function WidgetFrame({
-  id,
-  editing,
-  dragging,
-  first,
-  last,
+function Card({
+  label,
   children,
-  onRemove,
-  onMove,
-  onDragStart,
-  onDragEnd,
-  onDragOver,
+  className,
+  action,
 }: {
-  id: WidgetId;
-  editing: boolean;
-  dragging: boolean;
-  first: boolean;
-  last: boolean;
+  label: string;
   children: ReactNode;
-  onRemove: () => void;
-  onMove: (direction: -1 | 1) => void;
-  onDragStart: () => void;
-  onDragEnd: () => void;
-  onDragOver: () => void;
+  className?: string;
+  action?: ReactNode;
 }) {
-  const meta = WIDGET_META[id];
   return (
     <section
-      aria-label={meta.label}
-      draggable={editing}
-      onDragStart={(event) => {
-        event.dataTransfer.effectAllowed = "move";
-        onDragStart();
-      }}
-      onDragEnd={onDragEnd}
-      onDragOver={(event) => {
-        if (!editing) return;
-        event.preventDefault();
-        onDragOver();
-      }}
-      className={clsx(
-        "flex min-h-[164px] flex-col rounded-lg border bg-surface p-5",
-        meta.span,
-        editing ? "border-dashed border-primary/50" : "border-border",
-        editing && "cursor-grab",
-        dragging && "opacity-60",
-      )}
+      aria-label={label}
+      className={clsx("flex flex-col rounded-lg border border-border bg-surface p-5", className)}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
         <p className="font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
-          {meta.label}
+          {label}
         </p>
-        {editing && (
-          <span className="flex items-center gap-0.5">
-            <IconButton
-              label={`Move ${meta.label} earlier`}
-              className="size-7"
-              disabled={first}
-              onClick={() => onMove(-1)}
-            >
-              <ChevronLeft size={14} strokeWidth={1.5} aria-hidden />
-            </IconButton>
-            <IconButton
-              label={`Move ${meta.label} later`}
-              className="size-7"
-              disabled={last}
-              onClick={() => onMove(1)}
-            >
-              <ChevronRight size={14} strokeWidth={1.5} aria-hidden />
-            </IconButton>
-            <GripVertical
-              size={14}
-              strokeWidth={1.5}
-              aria-hidden
-              className="mx-0.5 text-muted"
-            />
-            <IconButton
-              label={`Remove ${meta.label}`}
-              className="size-7"
-              onClick={onRemove}
-            >
-              <X size={14} strokeWidth={1.5} aria-hidden />
-            </IconButton>
-          </span>
-        )}
+        {action}
       </div>
       <div className="min-h-0 flex-1">{children}</div>
     </section>
   );
 }
 
-function AddWidgetTile({
-  missing,
-  onAdd,
-}: {
-  missing: WidgetId[];
-  onAdd: (id: WidgetId) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
+// --- left column --------------------------------------------------------
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+function BalanceCard({ snapshot, walletId }: { snapshot: WalletSnapshot; walletId: string }) {
+  const utxos = useUtxos(walletId, true);
+  const { setView } = useUi();
+  const { balance, meta } = snapshot;
+  const pending = balance.untrusted_pending + balance.trusted_pending;
+  return (
+    <Card label="Total balance" className="flex-1">
+      <div className="flex h-full flex-col">
+        <Balance sats={balance.total} />
+        <p className="mt-2 font-ui text-xs text-muted">
+          {pending > 0 ? "Includes pending funds not yet confirmed." : "All funds confirmed."}
+        </p>
+        <div className="flex-1" />
+        <div className="-mx-2 mt-3 border-t border-border/60 pt-2">
+          <CountRow
+            icon={<Coins size={15} strokeWidth={1.5} aria-hidden />}
+            count={utxos.data?.length ?? null}
+            label={`UTXO${(utxos.data?.length ?? 0) === 1 ? "" : "s"}`}
+            onClick={() => setView("utxos")}
+          />
+          <CountRow
+            icon={<ArrowLeftRight size={15} strokeWidth={1.5} aria-hidden />}
+            count={meta.cached.tx_count}
+            label={`transaction${meta.cached.tx_count === 1 ? "" : "s"}`}
+            onClick={() => setView("transactions")}
+          />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/** One glanceable count that leads to its page. Counts are structure,
+    not amounts: they stay visible in masked mode. */
+function CountRow({
+  icon,
+  count,
+  label,
+  onClick,
+}: {
+  icon: ReactNode;
+  count: number | null;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-sunken/60"
+    >
+      <span className="text-muted">{icon}</span>
+      <span className="font-ui text-[13px] text-text">
+        <span className="tabular font-medium">
+          {count === null ? "…" : groupThousands(String(count))}
+        </span>{" "}
+        <span className="text-muted">{label}</span>
+      </span>
+      <ChevronRight
+        size={14}
+        strokeWidth={1.5}
+        aria-hidden
+        className="ml-auto text-muted opacity-60 transition-opacity duration-150 group-hover:opacity-100"
+      />
+    </button>
+  );
+}
+
+function PriceCard() {
+  const { fiatSource, fiatCurrency, priceRange, setPriceRange } = useUi();
+  // The compact widget offers no "max": a lifetime of price says
+  // nothing at a glance.
+  const ranges: PriceRange[] = SUPPORTED_RANGES[fiatSource].filter(
+    (range) => range !== "max",
+  );
+  const range = ranges.includes(priceRange) ? priceRange : (ranges[0] ?? "month");
+  const history = usePriceHistory(range, true);
+  const points = history.data?.points ?? [];
+  const first = points[0];
+  const last = points[points.length - 1];
+  const change = first && last ? ((last.rate - first.rate) / first.rate) * 100 : null;
 
   return (
-    <div ref={rootRef} className="relative lg:col-span-2">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className="flex min-h-[164px] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border font-ui text-sm text-muted transition-colors duration-150 hover:border-primary/50 hover:text-text"
-      >
-        <Plus size={18} strokeWidth={1.5} aria-hidden />
-        Add a widget
-      </button>
-      {open && (
-        <div
-          role="menu"
-          aria-label="Available widgets"
-          className="absolute left-0 right-0 top-full z-30 mt-1.5 rounded-lg bg-surface p-1.5 shadow-overlay"
-        >
-          {missing.map((id) => (
+    <Card
+      label="Bitcoin price"
+      action={
+        <div role="radiogroup" aria-label="Price range" className="inline-flex rounded-md bg-sunken p-0.5">
+          {ranges.map((option) => (
             <button
-              key={id}
+              key={option}
               type="button"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                onAdd(id);
-              }}
-              className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-left font-ui text-sm text-text transition-colors duration-150 hover:bg-sunken"
+              role="radio"
+              aria-checked={range === option}
+              onClick={() => setPriceRange(option)}
+              className={clsx(
+                "cursor-pointer rounded-[6px] px-2 py-0.5 font-ui text-[11px] font-medium transition-colors duration-150",
+                range === option
+                  ? "bg-surface text-text shadow-[inset_0_0_0_1px_var(--color-border)]"
+                  : "text-muted hover:text-text",
+              )}
             >
-              <Plus size={14} strokeWidth={1.5} aria-hidden className="text-muted" />
-              {WIDGET_META[id].label}
+              {RANGE_LABEL[option]}
             </button>
           ))}
         </div>
+      }
+    >
+      {last ? (
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span className="tabular text-[22px] font-semibold leading-tight text-text">
+            {new Intl.NumberFormat(undefined, {
+              style: "currency",
+              currency: fiatCurrency.toUpperCase(),
+              maximumFractionDigits: 0,
+            }).format(last.rate)}
+          </span>
+          {change !== null && (
+            <span
+              className={clsx(
+                "tabular inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                change >= 0
+                  ? "border-confirmed/25 bg-confirmed-surface text-confirmed"
+                  : "border-alert/25 bg-alert-surface text-alert",
+              )}
+            >
+              {change >= 0 ? "+" : "−"}
+              {Math.abs(change).toFixed(1)}%
+            </span>
+          )}
+        </div>
+      ) : (
+        <p className="font-ui text-sm text-muted">
+          {history.isPending ? "Loading…" : "The price source did not answer."}
+        </p>
       )}
-    </div>
+    </Card>
   );
 }
 
-// --- the widgets --------------------------------------------------------
-
-function BalanceWidget({ walletId }: { walletId: string }) {
-  const snapshot = useSnapshot(walletId);
-  if (!snapshot.data) return <WidgetPending />;
-  const { balance } = snapshot.data;
+function StatusCard({ snapshot }: { snapshot: WalletSnapshot }) {
+  const { meta, tip_height } = snapshot;
+  const rows: { label: string; value: ReactNode }[] = [
+    {
+      label: "Last sync",
+      value: meta.last_sync ? (
+        <span className="tabular">{relativeTime(meta.last_sync.at)}</span>
+      ) : (
+        "never"
+      ),
+    },
+    {
+      label: "Backend",
+      value: meta.last_sync ? (
+        <span className="font-data text-[12px]">{meta.last_sync.backend}</span>
+      ) : (
+        "—"
+      ),
+    },
+    {
+      label: "Block",
+      value:
+        tip_height > 0 ? (
+          <span className="tabular">{groupThousands(String(tip_height))}</span>
+        ) : (
+          "—"
+        ),
+    },
+  ];
   return (
-    <div className="flex h-full flex-col gap-3">
-      <Balance sats={balance.total} />
-      <p className="font-ui text-xs text-muted">
-        {balance.untrusted_pending + balance.trusted_pending > 0
-          ? "Includes pending funds not yet confirmed."
-          : "All funds confirmed."}
-      </p>
-    </div>
-  );
-}
-
-function PriceWidget() {
-  const { fiatSource, fiatCurrency, priceRange, setPriceRange } = useUi();
-  const ranges = SUPPORTED_RANGES[fiatSource];
-  const range = ranges.includes(priceRange) ? priceRange : "month";
-  const history = usePriceHistory(range, true);
-  return (
-    <div className="flex h-full flex-col">
-      <PriceChart
-        history={history.data}
-        pending={history.isPending}
-        failed={history.isError}
-        currency={fiatCurrency}
-        range={range}
-        ranges={ranges}
-        onRangeChange={setPriceRange}
-      />
-      <p className="mt-2 font-ui text-[11px] text-muted">
-        via {fiatSource === "mempool_space" ? "mempool.space" : fiatSource === "kraken" ? "Kraken" : "CoinGecko"}
-        {" · "}
-        {fiatCurrency.toUpperCase()} · set in Settings
-      </p>
-    </div>
-  );
-}
-
-function ActivityWidget({ walletId }: { walletId: string }) {
-  const snapshot = useSnapshot(walletId);
-  const { selectTx, setView } = useUi();
-  if (!snapshot.data) return <WidgetPending />;
-  const txs = snapshot.data.txs.slice(0, 5);
-  if (txs.length === 0) {
-    return (
-      <p className="font-ui text-sm text-muted">
-        No transactions yet. Once this wallet sees activity on the chain, it
-        shows up here.
-      </p>
-    );
-  }
-  return (
-    <div className="flex h-full flex-col">
-      <ul className="flex-1">
-        {txs.map((tx) => (
-          <ActivityRow key={tx.txid} tx={tx} onOpen={() => selectTx(tx.txid)} />
+    <Card label="Watch status">
+      <dl className="flex flex-col gap-2.5">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-baseline justify-between gap-3">
+            <dt className="font-ui text-xs text-muted">{row.label}</dt>
+            <dd className="min-w-0 truncate text-right font-ui text-[13px] text-text">
+              {row.value}
+            </dd>
+          </div>
         ))}
-      </ul>
-      <div className="mt-2 flex justify-end">
-        <button
-          type="button"
-          onClick={() => setView("transactions")}
-          className="cursor-pointer rounded-md px-2 py-1 font-ui text-xs font-medium text-primary transition-colors duration-150 hover:bg-sunken"
-        >
-          All transactions →
-        </button>
-      </div>
-    </div>
+      </dl>
+    </Card>
+  );
+}
+
+// --- right column -------------------------------------------------------
+
+function HistoryCard({ snapshot }: { snapshot: WalletSnapshot }) {
+  const { masked, unit } = useUi();
+  const points = balanceSeries(snapshot.txs, snapshot.balance.total);
+  return (
+    <Card label="Balance history" className="min-h-[220px] flex-1">
+      {masked ? (
+        <p className="flex h-full items-center justify-center font-ui text-sm text-muted">
+          {MASKED} · amounts are hidden
+        </p>
+      ) : points.length < 2 ? (
+        <p className="flex h-full items-center justify-center font-ui text-sm text-muted">
+          Not enough history to chart yet.
+        </p>
+      ) : (
+        <BalanceChart points={points} unit={unit} />
+      )}
+    </Card>
+  );
+}
+
+function ActivityCard({ snapshot }: { snapshot: WalletSnapshot }) {
+  const { selectTx, setView } = useUi();
+  const txs = snapshot.txs.slice(0, 5);
+  return (
+    <Card
+      label="Latest activity"
+      className="shrink-0"
+      action={
+        txs.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setView("transactions")}
+            className="cursor-pointer rounded-md px-2 py-1 font-ui text-xs font-medium text-primary transition-colors duration-150 hover:bg-sunken"
+          >
+            All transactions →
+          </button>
+        ) : undefined
+      }
+    >
+      {txs.length === 0 ? (
+        <p className="font-ui text-sm text-muted">
+          No transactions yet. Once this wallet sees activity on the chain, it
+          shows up here.
+        </p>
+      ) : (
+        <ul>
+          {txs.map((tx) => (
+            <ActivityRow key={tx.txid} tx={tx} onOpen={() => selectTx(tx.txid)} />
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
 
@@ -418,7 +353,7 @@ function ActivityRow({ tx, onOpen }: { tx: TxSummary; onOpen: () => void }) {
       <button
         type="button"
         onClick={onOpen}
-        className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-1 py-1.5 text-left transition-colors duration-100 hover:bg-sunken/60"
+        className="group flex w-full cursor-pointer items-center gap-2.5 rounded-md px-1 py-1.5 text-left transition-colors duration-100 hover:bg-sunken/60"
       >
         <span
           aria-hidden
@@ -448,89 +383,13 @@ function ActivityRow({ tx, onOpen }: { tx: TxSummary; onOpen: () => void }) {
           </span>
         </span>
         <ListAmount sats={tx.net_sats} pending={pending} />
+        <ChevronRight
+          size={14}
+          strokeWidth={1.5}
+          aria-hidden
+          className="shrink-0 text-muted opacity-60 transition-opacity duration-150 group-hover:opacity-100"
+        />
       </button>
     </li>
   );
-}
-
-function UtxoWidget({ walletId }: { walletId: string }) {
-  const utxos = useUtxos(walletId, true);
-  const { setView, masked, unit } = useUi();
-  if (!utxos.data) return <WidgetPending />;
-  const total = utxos.data.reduce((sum, utxo) => sum + utxo.value_sats, 0);
-  const pending = utxos.data.filter((utxo) => utxo.status.state === "pending").length;
-  return (
-    <div className="flex h-full flex-col justify-between gap-3">
-      <div>
-        <p className="tabular text-2xl font-semibold leading-tight text-text">
-          {utxos.data.length}
-        </p>
-        <p className="mt-0.5 font-ui text-xs text-muted">
-          unspent output{utxos.data.length === 1 ? "" : "s"}
-          {pending > 0 && ` · ${pending} pending`}
-        </p>
-        <p className="tabular mt-2 text-[13px] font-medium text-text">
-          {masked ? MASKED : formatAmount(total, unit)}
-        </p>
-      </div>
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={() => setView("utxos")}
-          className="cursor-pointer rounded-md px-2 py-1 font-ui text-xs font-medium text-primary transition-colors duration-150 hover:bg-sunken"
-        >
-          All UTXOs →
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function StatusWidget({ walletId }: { walletId: string }) {
-  const snapshot = useSnapshot(walletId);
-  if (!snapshot.data) return <WidgetPending />;
-  const { meta, tip_height } = snapshot.data;
-  const rows: { label: string; value: ReactNode }[] = [
-    {
-      label: "Last sync",
-      value: meta.last_sync ? (
-        <span className="tabular">{relativeTime(meta.last_sync.at)}</span>
-      ) : (
-        "never"
-      ),
-    },
-    {
-      label: "Backend",
-      value: meta.last_sync ? (
-        <span className="font-data text-[12px]">{meta.last_sync.backend}</span>
-      ) : (
-        "—"
-      ),
-    },
-    {
-      label: "Block",
-      value:
-        tip_height > 0 ? (
-          <span className="tabular">{groupThousands(String(tip_height))}</span>
-        ) : (
-          "—"
-        ),
-    },
-  ];
-  return (
-    <dl className="flex h-full flex-col justify-center gap-2.5">
-      {rows.map((row) => (
-        <div key={row.label} className="flex items-baseline justify-between gap-3">
-          <dt className="font-ui text-xs text-muted">{row.label}</dt>
-          <dd className="min-w-0 truncate text-right font-ui text-[13px] text-text">
-            {row.value}
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-function WidgetPending() {
-  return <p className="font-ui text-sm text-muted">Loading…</p>;
 }

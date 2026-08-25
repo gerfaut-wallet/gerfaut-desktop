@@ -20,13 +20,12 @@ export function useFiatValue(sats: number): string | null {
 }
 
 /** Headline balance figure: UI face with tabular figures, masked-aware.
-    Primary line follows the unit setting; the second line carries the
-    other unit and the fiat value. Sized to read, not to shout. */
+    One line in the chosen unit — never both units — with the fiat value
+    below when that display is on. Sized to read, not to shout. */
 export function Balance({ sats }: { sats: number }) {
   const { masked, unit } = useUi();
   const fiat = useFiatValue(sats);
   const primary = unit === "btc" ? formatBtc(sats) : formatSats(sats);
-  const secondary = unit === "btc" ? formatSats(sats) : `${formatBtc(sats)} BTC`;
   return (
     <div className="selectable">
       <div className="tabular text-2xl font-semibold leading-[1.1] tracking-[-0.02em] text-text">
@@ -35,9 +34,7 @@ export function Balance({ sats }: { sats: number }) {
           <span className="ml-1.5 font-ui text-[13px] font-normal text-muted">BTC</span>
         )}
       </div>
-      <div className="mt-1.5 tabular text-[13px] text-muted">
-        {masked ? MASKED : fiat ? `${secondary} · ${fiat}` : secondary}
-      </div>
+      {fiat && <div className="mt-1.5 tabular text-[13px] text-muted">{fiat}</div>}
     </div>
   );
 }

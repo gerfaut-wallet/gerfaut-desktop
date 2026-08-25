@@ -167,6 +167,11 @@ async fn set_backend(
 }
 
 #[tauri::command]
+async fn set_gap_limit(state: tauri::State<'_, AppState>, gap_limit: u32) -> CommandResult<()> {
+    Ok(state.manager.set_gap_limit(gap_limit).await?)
+}
+
+#[tauri::command]
 async fn set_app_pref(
     state: tauri::State<'_, AppState>,
     key: String,
@@ -258,6 +263,7 @@ pub fn run() {
             get_settings,
             set_active_network,
             set_backend,
+            set_gap_limit,
             set_app_pref,
             fetch_price,
             fetch_price_history,

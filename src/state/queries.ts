@@ -221,6 +221,19 @@ export function useSetActiveNetwork() {
   });
 }
 
+export function useSetGapLimit() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (gapLimit: number) => ipc.setGapLimit(gapLimit),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: keys.settings });
+      // Metas carry the effective gap limit.
+      void client.invalidateQueries({ queryKey: ["wallets"] });
+      void client.invalidateQueries({ queryKey: ["snapshot"] });
+    },
+  });
+}
+
 export function useSetBackend() {
   const client = useQueryClient();
   return useMutation({

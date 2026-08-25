@@ -89,7 +89,7 @@ export function TxDetailModal({ walletId, network }: { walletId: string; network
             </span>
           </div>
 
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border border-border bg-background p-4 lg:grid-cols-4">
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg bg-sunken/60 p-4 lg:grid-cols-4">
             <MetaItem label="Transaction id">
               <AddressChip value={detail.data.summary.txid} head={8} tail={8} />
             </MetaItem>
@@ -238,16 +238,12 @@ export function TxDetailModal({ walletId, network }: { walletId: string; network
 function NetAmount({ sats }: { sats: number }) {
   const { masked, unit } = useUi();
   const fiat = useFiatValue(sats);
-  const secondary =
-    unit === "btc" ? formatAmount(sats, "sats") : formatAmount(sats, "btc");
   return (
     <div className="selectable">
-      <div className="tabular text-[28px] font-semibold leading-[1.1] tracking-[-0.02em] text-text">
+      <div className="tabular text-[26px] font-semibold leading-[1.1] tracking-[-0.02em] text-text">
         {masked ? MASKED : formatAmountSigned(sats, unit)}
       </div>
-      <div className="mt-1 tabular text-[13px] text-muted">
-        {masked ? MASKED : fiat ? `${secondary} · ${fiat}` : secondary}
-      </div>
+      {fiat && <div className="mt-1 tabular text-[13px] text-muted">{fiat}</div>}
     </div>
   );
 }
@@ -301,7 +297,8 @@ function Badge({
         tone === "pending" && "border border-pending/25 bg-pending-surface text-pending",
         tone === "confirmed" && "border border-confirmed/25 bg-confirmed-surface text-confirmed",
         tone === "accent" && "border border-primary/25 bg-primary/[0.08] text-primary",
-        tone === "neutral" && "bg-sunken text-muted",
+        // Same anatomy as the toned pills: quiet, but never borderless.
+        tone === "neutral" && "border border-border bg-sunken text-muted",
       )}
     >
       {icon}
@@ -497,7 +494,7 @@ function IoTable({
                           {extras?.coinbase_pool ? ` · ${extras.coinbase_pool}` : ""}
                         </span>
                       ) : io.address ? (
-                        <AddressChip value={io.address} />
+                        <AddressChip value={io.address} emphasis={mine} />
                       ) : (
                         <span className="font-ui text-[13px] text-muted">
                           {side === "in" ? "Unknown input" : "Script output"}

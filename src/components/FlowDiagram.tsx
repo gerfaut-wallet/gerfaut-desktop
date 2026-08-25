@@ -142,7 +142,7 @@ export function FlowDiagram({
   const cx = MID / 2;
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-background p-5">
+    <div className="overflow-x-auto rounded-lg bg-sunken/40 p-5">
       <div className="flex min-w-[720px] items-stretch">
         <LaneColumn
           lanes={inLanes}
@@ -309,7 +309,7 @@ function LaneColumn({
               lane.role === "more"
                 ? "border-dashed border-border bg-transparent"
                 : mine
-                  ? "border-primary/40 bg-primary/[0.05]"
+                  ? "border-primary/50 bg-surface"
                   : lane.role === "op-return"
                     ? "border-pending/30 bg-pending-surface"
                     : "border-border bg-surface",
@@ -339,7 +339,7 @@ function LaneColumn({
                 Coinbase{coinbasePool ? ` · ${coinbasePool}` : ""}
               </span>
             ) : lane.label ? (
-              <AddressChip value={lane.label} />
+              <AddressChip value={lane.label} emphasis={mine} />
             ) : (
               <span className="font-ui text-[13px] text-muted">
                 {side === "in" ? "Unknown input" : "Script output"}

@@ -16,6 +16,7 @@ import { useUi } from "./state/store";
 const SETTINGS: Settings = {
   active_network: "signet",
   backends: {},
+  gap_limit: 20,
   app_prefs: {},
 };
 
@@ -91,6 +92,7 @@ function receiveEntries(lookahead: number): AddressEntry[] {
     index,
     address: `tb1qexampleaddress${index}xxxxxxxxxxxxxxxxxxxx`,
     used: false,
+    derivation: `m/84'/1'/0'/0/${index}`,
   }));
 }
 
@@ -162,12 +164,8 @@ beforeEach(() => {
     fiatEnabled: false,
     fiatCurrency: "eur",
     fiatSource: "coingecko",
-    explorerAck: false,
-    homeLayouts: {},
-    sharedHome: false,
-    sharedHomeLayout: null,
-    homeEditing: false,
     priceRange: "month",
+    explorerAck: false,
     toast: null,
     syncErrors: {},
   });
@@ -202,88 +200,51 @@ describe("empty workspace", () => {
 describe("overview", () => {
   beforeEach(() => walletIpc());
 
-  it("renders the widgets: balance, price, activity, utxos, status", async () => {
+  it("renders the fixed dashboard: balance, counts, price, status, charts", async () => {
     renderApp();
-    const canvas = within(await screen.findByRole("main"));
-    expect(await canvas.findByText("0.00150000")).toBeInTheDocument();
-    expect(canvas.getByText("Total balance")).toBeInTheDocument();
-    expect(canvas.getByText("Bitcoin price")).toBeInTheDocument();
-    expect(canvas.getByText("Latest activity")).toBeInTheDocument();
-    expect(canvas.getByText("Received")).toBeInTheDocument();
-    expect(canvas.getByText("UTXOs")).toBeInTheDocument();
-    expect(canvas.getByText("Watch status")).toBeInTheDocument();
-    expect(canvas.getByText(/synced .* mempool\.space/i)).toBeInTheDocument();
+    expect(await screen.findByText("0.00150000")).toBeInTheDocument();
+    expect(screen.getByText("Total balance")).toBeInTheDocument();
+    expect(screen.getByText("Bitcoin price")).toBeInTheDocument();
+    expect(screen.getByText("Latest activity")).toBeInTheDocument();
+    expect(screen.getByText("Received")).toBeInTheDocument();
+    expect(screen.getByText("Balance history")).toBeInTheDocument();
+    expect(screen.getByText("Watch status")).toBeInTheDocument();
+    // Counts lead to their pages.
+    expect(await screen.findByRole("button", { name: /1 UTXO/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /1 transaction/ })).toBeInTheDocument();
+    expect(screen.getByText(/synced .* mempool\.space/i)).toBeInTheDocument();
+    // Nothing to customize: the dashboard is fixed.
+    expect(screen.queryByRole("button", { name: /customize/i })).not.toBeInTheDocument();
+    // One unit only: no sats echo under the BTC figure.
+    expect(screen.queryByText(/150 000 sats/)).not.toBeInTheDocument();
   });
 
-  it("charts the price and states its change over the range", async () => {
+  it("shows the price with a signed change pill, no chart", async () => {
     renderApp();
     // 90k -> 100k over the mocked series.
-    expect(await screen.findByText(/\+11\.1% over 1M/)).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: /bitcoin price over 1M/i })).toBeInTheDocument();
-    // CoinGecko cannot serve Max without a key: the pill is absent.
+    expect(await screen.findByText("+11.1%")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /bitcoin price/i })).not.toBeInTheDocument();
+    // The compact widget offers no Max range.
     expect(screen.queryByRole("radio", { name: "Max" })).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "1D" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "1Y" })).toBeInTheDocument();
   });
 
-  it("removes, adds back, and reorders widgets, persisting the layout", async () => {
-    const saved: Record<string, string> = {};
-    walletIpc({
-      set_app_pref: (args) => {
-        saved[String(args.key)] = String(args.value);
-        return undefined;
-      },
-    });
+  it("charts the wallet balance over its life", async () => {
     renderApp();
-    const user = userEvent.setup();
-    await screen.findByText("Bitcoin price");
-
-    await user.click(screen.getByRole("button", { name: /customize/i }));
-    await user.click(screen.getByRole("button", { name: /remove bitcoin price/i }));
-    expect(screen.queryByText("Bitcoin price")).not.toBeInTheDocument();
-    await waitFor(() =>
-      expect(saved["home.widgets.w-1"]).toBe(
-        JSON.stringify(["balance", "activity", "utxos", "status"]),
-      ),
-    );
-
-    // The removed widget is offered back.
-    await user.click(screen.getByRole("button", { name: /add a widget/i }));
-    await user.click(screen.getByRole("menuitem", { name: /bitcoin price/i }));
-    expect(await screen.findByText("Bitcoin price")).toBeInTheDocument();
-
-    // Keyboard reordering works without a pointer drag.
-    await user.click(screen.getByRole("button", { name: /move total balance later/i }));
-    await waitFor(() =>
-      expect(saved["home.widgets.w-1"]).toBe(
-        JSON.stringify(["activity", "balance", "utxos", "status", "price"]),
-      ),
-    );
-    await user.click(screen.getByRole("button", { name: /done/i }));
-    expect(screen.queryByRole("button", { name: /remove total balance/i })).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole("img", { name: /wallet balance over time/i }),
+    ).toBeInTheDocument();
   });
 
-  it("writes the shared layout when the shared overview is on", async () => {
-    const saved: Record<string, string> = {};
-    walletIpc({
-      // The flag arrives through pref hydration, like in production.
-      get_settings: () => ({ ...SETTINGS, app_prefs: { "home.widgets.shared": "1" } }),
-      set_app_pref: (args) => {
-        saved[String(args.key)] = String(args.value);
-        return undefined;
-      },
-    });
+  it("navigates from the count rows", async () => {
     renderApp();
     const user = userEvent.setup();
-    await screen.findByText("Bitcoin price");
-    await user.click(screen.getByRole("button", { name: /customize/i }));
-    await user.click(screen.getByRole("button", { name: /remove watch status/i }));
-    await waitFor(() =>
-      expect(saved["home.widgets.shared_layout"]).toBe(
-        JSON.stringify(["balance", "price", "activity", "utxos"]),
-      ),
-    );
-    expect(saved["home.widgets.w-1"]).toBeUndefined();
+    await user.click(await screen.findByRole("button", { name: /1 UTXO/ }));
+    expect(await screen.findByRole("heading", { name: /utxos/i })).toBeInTheDocument();
   });
 });
+
 
 describe("navigation", () => {
   beforeEach(() => walletIpc());
@@ -313,10 +274,14 @@ describe("navigation", () => {
     const user = userEvent.setup();
     await screen.findByText("Bitcoin price");
     expect(sidebar().getByText("Overview")).toBeInTheDocument();
+    // The network badge sits in the bottom info area.
+    expect(sidebar().getByText("Signet")).toBeInTheDocument();
     await user.click(sidebar().getByRole("button", { name: /collapse sidebar/i }));
-    // Labels go; icon buttons stay reachable by name.
+    // Labels go; icon buttons stay reachable by name; the network badge
+    // survives as its initial.
     expect(sidebar().queryByText("Overview")).not.toBeInTheDocument();
     expect(sidebar().getByRole("button", { name: "Overview" })).toBeInTheDocument();
+    expect(sidebar().getByText("S")).toBeInTheDocument();
     await user.click(sidebar().getByRole("button", { name: /expand sidebar/i }));
     expect(sidebar().getByText("Overview")).toBeInTheDocument();
   });
@@ -393,8 +358,39 @@ describe("display settings", () => {
     await user.click(sidebar().getByRole("button", { name: /hide amounts/i }));
     expect(screen.queryByText("0.00150000")).not.toBeInTheDocument();
     expect(screen.getAllByText("•••••").length).toBeGreaterThanOrEqual(2);
-    // The public BTC price is not a wallet amount: it stays visible.
-    expect(screen.getByText(/over 1M/)).toBeInTheDocument();
+    // The public BTC price is not a wallet amount: it stays visible;
+    // the balance curve, which is one, goes away.
+    expect(screen.getByText("+11.1%")).toBeInTheDocument();
+    expect(screen.getByText(/amounts are hidden/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("img", { name: /wallet balance over time/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("saves the shared gap limit from settings", async () => {
+    const setGapLimit = vi.fn();
+    walletIpc({
+      set_gap_limit: (args) => {
+        setGapLimit(args.gapLimit);
+        return undefined;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+    const field = await screen.findByRole("textbox", { name: /gap limit/i });
+    expect(field).toHaveValue("20");
+    await user.clear(field);
+    await user.type(field, "50");
+    await user.tab();
+    await waitFor(() => expect(setGapLimit).toHaveBeenCalledWith(50));
+    // An out-of-range value is refused and the field snaps back.
+    await user.clear(field);
+    await user.type(field, "900");
+    await user.tab();
+    expect(setGapLimit).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(field).toHaveValue("20"));
   });
 });
 
@@ -428,6 +424,17 @@ describe("receive page", () => {
     expect(await navigator.clipboard.readText()).toContain("tb1qexampleaddress0");
   });
 
+  it("states the derivation path of the shown address", async () => {
+    walletIpc();
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Receive" }));
+    expect(await screen.findByText("m/84'/1'/0'/0/0")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /next address/i }));
+    expect(await screen.findByText("m/84'/1'/0'/0/1")).toBeInTheDocument();
+  });
+
   it("warns beyond the gap limit", async () => {
     walletIpc();
     renderApp();
@@ -451,7 +458,9 @@ describe("receive page", () => {
     walletIpc({
       list_wallets: () => [single],
       wallet_snapshot: () => ({ ...SNAPSHOT, meta: single }),
-      receive_addresses: () => [{ index: 0, address: "tb1qwatchedonly", used: true }],
+      receive_addresses: () => [
+        { index: 0, address: "tb1qwatchedonly", used: true, derivation: null },
+      ],
     });
     renderApp();
     const user = userEvent.setup();

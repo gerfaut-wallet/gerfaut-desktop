@@ -1,7 +1,6 @@
 import { clsx } from "clsx";
 import {
   ArrowLeftRight,
-  Blocks,
   Check,
   ChevronsUpDown,
   Coins,
@@ -18,7 +17,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { MASKED, formatAmount, groupThousands } from "../lib/format";
+import { MASKED, formatAmount } from "../lib/format";
 import type { Network, WalletMeta } from "../lib/ipc";
 import type { CanvasView } from "../state/store";
 import { useUi } from "../state/store";
@@ -63,10 +62,22 @@ export function Sidebar({
   const { view, setView, sidebarCollapsed, toggleSidebar, masked, toggleMasked } = useUi();
   const collapsed = sidebarCollapsed;
   const hasWallets = wallets.length > 0;
-  // Chain tip as last seen by any wallet: the instrument's status line.
-  const tipHeight = wallets.reduce(
-    (highest, wallet) => Math.max(highest, wallet.last_sync?.tip_height ?? 0),
-    0,
+
+  const collapseButton = (
+    <button
+      type="button"
+      onClick={toggleSidebar}
+      aria-expanded={!collapsed}
+      title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      className="inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition-colors duration-150 hover:bg-sunken/60 hover:text-text"
+    >
+      {collapsed ? (
+        <PanelLeftOpen size={17} strokeWidth={1.5} aria-hidden />
+      ) : (
+        <PanelLeftClose size={17} strokeWidth={1.5} aria-hidden />
+      )}
+    </button>
   );
 
   return (
@@ -78,26 +89,20 @@ export function Sidebar({
         collapsed ? "w-16" : "w-[248px]",
       )}
     >
-      <div
-        className={clsx(
-          "flex items-center pb-3 pt-5",
-          collapsed ? "justify-center px-0" : "gap-2.5 px-5",
-        )}
-      >
-        <img src={mark} alt="" aria-hidden className="h-6 w-6 shrink-0" />
-        {!collapsed && (
-          <>
-            <span className="font-display text-[15px] font-bold tracking-wide text-text">
-              GERFAUT
-            </span>
-            {network !== "mainnet" && (
-              <span className="ml-auto rounded-full bg-sunken px-2 py-0.5 font-ui text-[11px] font-medium text-pending">
-                {NETWORK_LABEL[network]}
-              </span>
-            )}
-          </>
-        )}
-      </div>
+      {collapsed ? (
+        <div className="flex flex-col items-center gap-1 pb-3 pt-5">
+          <img src={mark} alt="" aria-hidden className="h-6 w-6" />
+          {collapseButton}
+        </div>
+      ) : (
+        <div className="flex items-center gap-2.5 py-4 pl-5 pr-3">
+          <img src={mark} alt="" aria-hidden className="h-6 w-6 shrink-0" />
+          <span className="font-display text-[15px] font-bold tracking-wide text-text">
+            GERFAUT
+          </span>
+          <span className="ml-auto">{collapseButton}</span>
+        </div>
+      )}
 
       <WalletSwitcher
         wallets={wallets}
@@ -122,18 +127,25 @@ export function Sidebar({
 
       <div className="flex-1" />
 
-      {tipHeight > 0 && !collapsed && (
-        <p className="flex items-center gap-1.5 px-5 pb-2 font-ui text-[11px] text-muted">
-          <Blocks size={12} strokeWidth={1.5} aria-hidden className="shrink-0" />
-          <span className="tabular">block {groupThousands(String(tipHeight))}</span>
-        </p>
+      {network !== "mainnet" && (
+        <div className={clsx("flex pb-2", collapsed ? "justify-center px-2" : "px-5")}>
+          <span
+            title={collapsed ? NETWORK_LABEL[network] : undefined}
+            className={clsx(
+              "rounded-full bg-sunken font-ui text-[11px] font-medium text-pending",
+              collapsed ? "px-1.5 py-0.5" : "px-2 py-0.5",
+            )}
+          >
+            {collapsed ? NETWORK_LABEL[network].charAt(0) : NETWORK_LABEL[network]}
+          </span>
+        </div>
       )}
       <div
         aria-hidden
         className="mx-3 h-px bg-gradient-to-r from-transparent via-border to-transparent"
       />
 
-      <div className={clsx("flex flex-col gap-0.5 py-2", collapsed ? "px-2" : "px-3")}>
+      <div className={clsx("flex flex-col gap-0.5 py-2 pb-3", collapsed ? "px-2" : "px-3")}>
         <NavItem
           label="Settings"
           icon={<Settings size={18} strokeWidth={1.5} aria-hidden />}
@@ -141,70 +153,35 @@ export function Sidebar({
           active={view === "settings"}
           onClick={() => setView("settings")}
         />
-      </div>
-
-      <div
-        className={clsx(
-          "flex items-center gap-1 pb-3",
-          collapsed ? "flex-col px-2" : "px-3",
-        )}
-      >
-        <button
-          type="button"
-          onClick={onSyncAll}
+        <NavItem
+          label={syncing ? "Syncing…" : "Sync all"}
+          icon={
+            <RefreshCw
+              size={18}
+              strokeWidth={1.5}
+              aria-hidden
+              className={syncing ? "motion-safe:animate-spin" : undefined}
+            />
+          }
+          collapsed={collapsed}
+          active={false}
           disabled={syncing || !hasWallets}
-          title={collapsed ? (syncing ? "Syncing…" : "Sync all") : undefined}
-          aria-label={syncing ? "Syncing" : "Sync all wallets"}
-          className={clsx(
-            "flex cursor-pointer items-center gap-2 rounded-md font-ui text-sm text-muted",
-            "transition-colors duration-150 hover:bg-sunken/60 hover:text-text",
-            "disabled:cursor-default disabled:opacity-50",
-            collapsed ? "size-10 justify-center" : "flex-1 px-3 py-2",
-          )}
-        >
-          <RefreshCw
-            size={16}
-            strokeWidth={1.5}
-            aria-hidden
-            className={clsx("shrink-0", syncing && "motion-safe:animate-spin")}
-          />
-          {!collapsed && (syncing ? "Syncing…" : "Sync all")}
-        </button>
-        <button
-          type="button"
+          onClick={onSyncAll}
+        />
+        <NavItem
+          label={masked ? "Show amounts" : "Hide amounts"}
+          icon={
+            masked ? (
+              <EyeOff size={18} strokeWidth={1.5} aria-hidden className="text-primary" />
+            ) : (
+              <Eye size={18} strokeWidth={1.5} aria-hidden />
+            )
+          }
+          collapsed={collapsed}
+          active={false}
+          pressed={masked}
           onClick={toggleMasked}
-          aria-pressed={masked}
-          title={masked ? "Show amounts" : "Hide amounts"}
-          aria-label={masked ? "Show amounts" : "Hide amounts"}
-          className={clsx(
-            "inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-md",
-            "transition-colors duration-150 hover:bg-sunken/60 hover:text-text",
-            masked ? "text-primary" : "text-muted",
-          )}
-        >
-          {masked ? (
-            <EyeOff size={17} strokeWidth={1.5} aria-hidden />
-          ) : (
-            <Eye size={17} strokeWidth={1.5} aria-hidden />
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={toggleSidebar}
-          aria-expanded={!collapsed}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className={clsx(
-            "inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-md",
-            "text-muted transition-colors duration-150 hover:bg-sunken/60 hover:text-text",
-          )}
-        >
-          {collapsed ? (
-            <PanelLeftOpen size={17} strokeWidth={1.5} aria-hidden />
-          ) : (
-            <PanelLeftClose size={17} strokeWidth={1.5} aria-hidden />
-          )}
-        </button>
+        />
       </div>
     </nav>
   );
@@ -216,6 +193,7 @@ function NavItem({
   collapsed,
   active,
   disabled = false,
+  pressed,
   onClick,
 }: {
   label: string;
@@ -223,6 +201,8 @@ function NavItem({
   collapsed: boolean;
   active: boolean;
   disabled?: boolean;
+  /** For toggle rows (hide amounts): state without the page accent. */
+  pressed?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -231,6 +211,7 @@ function NavItem({
       onClick={onClick}
       disabled={disabled}
       aria-current={active ? "page" : undefined}
+      aria-pressed={pressed}
       title={collapsed ? label : undefined}
       aria-label={collapsed ? label : undefined}
       className={clsx(
@@ -384,7 +365,7 @@ function WalletSwitcher({
           role="menu"
           aria-label="Wallets"
           className={clsx(
-            "absolute z-40 max-h-[50vh] overflow-y-auto rounded-lg bg-surface p-1.5 shadow-overlay",
+            "absolute z-40 max-h-[60vh] overflow-y-auto rounded-lg bg-surface p-1.5 shadow-overlay",
             collapsed ? "left-full top-0 ml-2 w-64" : "left-3 right-3 top-full mt-1.5",
           )}
         >
@@ -413,11 +394,15 @@ function WalletSwitcher({
                   aria-hidden
                   className="shrink-0 text-muted"
                 />
-                <span className="min-w-0 flex-1 truncate font-ui text-sm text-text">
-                  {wallet.name}
-                </span>
-                <span className="tabular shrink-0 text-[11px] text-muted">
-                  {masked ? MASKED : formatAmount(wallet.cached.balance.total, unit)}
+                {/* Two lines: the name gets the full width, the balance
+                    reads below it — names are the thing being chosen. */}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate font-ui text-sm font-medium text-text">
+                    {wallet.name}
+                  </span>
+                  <span className="tabular truncate text-[11px] text-muted">
+                    {masked ? MASKED : formatAmount(wallet.cached.balance.total, unit)}
+                  </span>
                 </span>
                 {current && (
                   <Check

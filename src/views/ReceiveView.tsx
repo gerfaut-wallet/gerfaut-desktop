@@ -83,6 +83,16 @@ export function ReceiveView({ walletId }: { walletId: string }) {
                   <p className="selectable break-all rounded-sm bg-sunken p-4 font-data text-[15px] leading-relaxed text-text">
                     {entry.address}
                   </p>
+                  {entry.derivation && (
+                    <p className="mt-1.5 flex items-baseline gap-2 px-0.5">
+                      <span className="font-ui text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
+                        Derivation path
+                      </span>
+                      <span className="selectable font-data text-[12px] text-text">
+                        {entry.derivation}
+                      </span>
+                    </p>
+                  )}
                 </div>
 
                 {!singleAddress && offset >= gapLimit && (

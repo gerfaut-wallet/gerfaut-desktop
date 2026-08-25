@@ -16,9 +16,11 @@ export function UtxoTable({ utxos }: { utxos: UtxoInfo[] }) {
   }
 
   return (
-    <table className="w-full border-collapse">
-      <thead>
-        <tr className="border-b border-border bg-sunken/50 text-left">
+    <table className="w-full border-separate border-spacing-0">
+      {/* The header stays pinned while long UTXO lists scroll under it;
+          it needs an opaque paint or rows would ghost through. */}
+      <thead className="sticky top-0 z-10">
+        <tr className="text-left [&>th]:border-b [&>th]:border-border [&>th]:bg-surface">
           <th className="px-3 py-2 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
             Outpoint
           </th>
@@ -37,7 +39,7 @@ export function UtxoTable({ utxos }: { utxos: UtxoInfo[] }) {
         {utxos.map((utxo) => (
           <tr
             key={`${utxo.txid}:${utxo.vout}`}
-            className="border-b border-border transition-colors duration-100 last:border-b-0 hover:bg-sunken/60"
+            className="transition-colors duration-100 hover:bg-sunken/60 [&>td]:border-b [&>td]:border-border last:[&>td]:border-b-0"
           >
             <td className="px-3 py-2">
               <AddressChip value={`${utxo.txid}:${utxo.vout}`} head={8} tail={6} />

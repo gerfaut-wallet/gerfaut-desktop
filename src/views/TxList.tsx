@@ -69,15 +69,26 @@ export function TxList({ txs }: { txs: TxSummary[] }) {
               <span className="w-36 text-right">
                 <ListAmount sats={tx.net_sats} pending={pending} />
               </span>
-              <ChevronRight
-                size={16}
-                strokeWidth={1.5}
-                aria-hidden
-                className={clsx(
-                  "shrink-0 text-muted transition-opacity duration-150",
-                  selected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-                )}
-              />
+              {/* The chevron stays visible: rows must read as openable
+                  at rest, not only under the pointer. Hover adds the
+                  word for anyone unsure what the chevron means. */}
+              <span className="flex shrink-0 items-center gap-1 text-muted">
+                <span
+                  aria-hidden
+                  className="hidden font-ui text-[11px] font-medium opacity-0 transition-opacity duration-150 group-hover:opacity-100 lg:block"
+                >
+                  Details
+                </span>
+                <ChevronRight
+                  size={16}
+                  strokeWidth={1.5}
+                  aria-hidden
+                  className={clsx(
+                    "transition-opacity duration-150",
+                    selected ? "opacity-100" : "opacity-60 group-hover:opacity-100",
+                  )}
+                />
+              </span>
             </button>
           </li>
         );

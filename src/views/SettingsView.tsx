@@ -3,7 +3,6 @@ import {
   Check,
   Coins,
   Globe,
-  House,
   Info,
   Pencil,
   RefreshCw,
@@ -35,6 +34,7 @@ import {
   useRenameWallet,
   useSetActiveNetwork,
   useSetBackend,
+  useSetGapLimit,
 } from "../state/queries";
 import { useUi } from "../state/store";
 import type { ThemePref } from "../state/store";
@@ -217,8 +217,6 @@ export function SettingsView({
     setFiatCurrency,
     fiatSource,
     setFiatSource,
-    sharedHome,
-    setSharedHome,
     showToast,
   } = useUi();
   const setActiveNetwork = useSetActiveNetwork();
@@ -359,23 +357,7 @@ export function SettingsView({
           </SettingRow>
         </SectionCard>
 
-        <SectionCard icon={<House size={18} strokeWidth={1.5} />} title="Overview">
-          <SettingRow
-            title="Same overview on every wallet"
-            hint="Every wallet shows the same widgets, arranged the same way; editing one edits all. Off, each wallet keeps its own layout."
-          >
-            <Toggle
-              checked={sharedHome}
-              onChange={(checked) => {
-                setSharedHome(checked);
-                showToast("Setting saved");
-              }}
-              label="Same overview on every wallet"
-            />
-          </SettingRow>
-        </SectionCard>
-
-        <WalletsSection wallets={wallets} />
+        <WalletsSection wallets={wallets} gapLimit={settings.gap_limit} />
 
         <AboutSection />
       </div>
@@ -559,7 +541,43 @@ function BackendSection({
   );
 }
 
-function WalletsSection({ wallets }: { wallets: WalletMeta[] }) {
+/** Numeric gap-limit field: commits on blur or Enter, clamped to what
+    the backend accepts, shared by every wallet. */
+function GapLimitField({ gapLimit }: { gapLimit: number }) {
+  const { showToast } = useUi();
+  const setGapLimit = useSetGapLimit();
+  const [draft, setDraft] = useState(String(gapLimit));
+
+  // Follow external changes (another commit, a vault reload).
+  useEffect(() => setDraft(String(gapLimit)), [gapLimit]);
+
+  const commit = () => {
+    const value = Number.parseInt(draft, 10);
+    if (Number.isNaN(value) || value < 1 || value > 500) {
+      setDraft(String(gapLimit));
+      return;
+    }
+    if (value === gapLimit) return;
+    void setGapLimit.mutateAsync(value).then(() => showToast("Setting saved"));
+  };
+
+  return (
+    <input
+      id="gap-limit"
+      value={draft}
+      onChange={(event) => setDraft(event.target.value.replace(/\D/g, ""))}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") commit();
+      }}
+      inputMode="numeric"
+      aria-label="Gap limit"
+      className="selectable h-11 w-24 rounded-sm bg-sunken px-3 text-right font-data text-[13px] text-text outline-none"
+    />
+  );
+}
+
+function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; gapLimit: number }) {
   const { showToast } = useUi();
   const removeWallet = useRemoveWallet();
   const renameWallet = useRenameWallet();
@@ -581,6 +599,14 @@ function WalletsSection({ wallets }: { wallets: WalletMeta[] }) {
       icon={<WalletIcon size={18} strokeWidth={1.5} />}
       title="Wallets"
     >
+      <div className="mb-4 border-b border-border pb-4">
+        <SettingRow
+          title="Gap limit"
+          hint="How many unused addresses in a row syncs scan past the last used one, for every wallet. 20 is the convention most wallets share; raise it only if this descriptor is also used elsewhere with far-ahead addresses. Applies on the next sync; the Receive page warns beyond it."
+        >
+          <GapLimitField gapLimit={gapLimit} />
+        </SettingRow>
+      </div>
       {wallets.length === 0 ? (
         <p className="font-ui text-sm text-muted">No wallets on this network yet.</p>
       ) : (

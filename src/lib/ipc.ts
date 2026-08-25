@@ -142,6 +142,9 @@ export interface AddressEntry {
   index: number;
   address: string;
   used: boolean;
+  /** Derivation path: absolute (`m/84'/1'/0'/0/5`) when unambiguous,
+      keychain-relative otherwise; null for watched single addresses. */
+  derivation: string | null;
 }
 
 export interface WalletSnapshot {
@@ -175,6 +178,8 @@ export type BackendConfig =
 export interface Settings {
   active_network: Network;
   backends: Partial<Record<Network, BackendConfig>>;
+  /** Gap limit shared by every wallet. */
+  gap_limit: number;
   app_prefs: Record<string, string>;
 }
 
@@ -268,6 +273,7 @@ export const ipc = {
   setActiveNetwork: (network: Network) => invoke<void>("set_active_network", { network }),
   setBackend: (network: Network, config: BackendConfig) =>
     invoke<void>("set_backend", { network, config }),
+  setGapLimit: (gapLimit: number) => invoke<void>("set_gap_limit", { gapLimit }),
   setAppPref: (key: string, value: string) => invoke<void>("set_app_pref", { key, value }),
   fetchPrice: (source: PriceSource, currency: FiatCurrency) =>
     invoke<PriceQuote>("fetch_price", { source, currency }),
