@@ -130,6 +130,19 @@ function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => 
         return { rate: 100_000, currency: "eur", source: "coingecko", at: 1_755_000_000 };
       case "fetch_price_history":
         return PRICE_HISTORY;
+      case "fetch_fees":
+        return { fastest: 12, half_hour: 8.5, hour: 4, economy: 2, minimum: 1, at: 1_755_000_000 };
+      case "address_list":
+        return {
+          external: [
+            { index: 0, address: "tb1qexternalzero", used: true, balance_sats: 0 },
+            { index: 1, address: "tb1qexternalone", used: false, balance_sats: 150_000 },
+          ],
+          internal: [
+            { index: 0, address: "tb1qchangezero", used: true, balance_sats: 0 },
+          ],
+          truncated: false,
+        };
       default:
         throw new Error(`unexpected command ${cmd} ${JSON.stringify(args)}`);
     }
@@ -217,6 +230,11 @@ describe("overview", () => {
     expect(screen.queryByRole("button", { name: /customize/i })).not.toBeInTheDocument();
     // One unit only: no sats echo under the BTC figure.
     expect(screen.queryByText(/150 000 sats/)).not.toBeInTheDocument();
+    // Recommended fees, from mempool.space.
+    expect(await screen.findByText("Network fees")).toBeInTheDocument();
+    expect(screen.getByText("12")).toBeInTheDocument();
+    expect(screen.getByText("8.5")).toBeInTheDocument();
+    expect(screen.getByText("Next block")).toBeInTheDocument();
   });
 
   it("shows the price with a signed change pill, no chart", async () => {
@@ -262,8 +280,14 @@ describe("navigation", () => {
     expect(await screen.findByRole("heading", { name: /utxos/i })).toBeInTheDocument();
     expect(screen.getByText("Outpoint")).toBeInTheDocument();
 
+    await user.click(sidebar().getByRole("button", { name: "Addresses" }));
+    expect(await screen.findByRole("heading", { name: /addresses/i })).toBeInTheDocument();
+
     await user.click(sidebar().getByRole("button", { name: "Receive" }));
     expect(await screen.findByRole("heading", { name: /receive/i })).toBeInTheDocument();
+
+    await user.click(sidebar().getByRole("button", { name: "Export" }));
+    expect(await screen.findByRole("heading", { name: /export/i })).toBeInTheDocument();
 
     await user.click(sidebar().getByRole("button", { name: "Settings" }));
     expect(await screen.findByRole("heading", { name: /settings/i })).toBeInTheDocument();
@@ -579,6 +603,64 @@ describe("partial history", () => {
   });
 });
 
+describe("addresses page", () => {
+  beforeEach(() => walletIpc());
+
+  it("lists both keychains with usage and balances", async () => {
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Addresses" }));
+
+    expect(await screen.findByText("External")).toBeInTheDocument();
+    expect(screen.getByText("Change")).toBeInTheDocument();
+    // Two used rows, one fresh, one carrying the funds.
+    expect(screen.getAllByText("Used")).toHaveLength(2);
+    expect(screen.getByText("Fresh")).toBeInTheDocument();
+    expect(within(screen.getByRole("main")).getByText("0.00150000 BTC")).toBeInTheDocument();
+    // No cap note when nothing was truncated.
+    expect(screen.queryByText(/capped/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("export page", () => {
+  it("previews the selection and writes the file", async () => {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const exported = vi.fn((_args: Record<string, unknown>) => 1);
+    walletIpc({
+      export_transactions_csv: (args) => {
+        exported(args);
+        return 1;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Export" }));
+
+    expect(await screen.findByText(/1 of 1 transaction selected/)).toBeInTheDocument();
+    // The premium teaser is visible but inert.
+    expect(screen.getByText("Premium")).toBeInTheDocument();
+    expect(
+      screen.getByRole("switch", { name: /fiat value at transaction time/i }),
+    ).toBeDisabled();
+
+    // Filtering to outgoing leaves nothing: the export button locks.
+    await user.click(screen.getByRole("radio", { name: "Sent" }));
+    expect(await screen.findByText(/0 of 1 transaction selected/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /export csv/i })).toBeDisabled();
+
+    await user.click(screen.getByRole("radio", { name: "All" }));
+    await user.click(screen.getByRole("button", { name: /export csv/i }));
+    await waitFor(() => expect(exported).toHaveBeenCalledTimes(1));
+    expect(save).toHaveBeenCalled();
+    const args = exported.mock.calls[0][0];
+    expect(args.path).toBe("C:/exports/wallet.csv");
+    expect((args.options as Record<string, unknown>).include_pending).toBe(true);
+    expect(await screen.findByText("1 transaction exported")).toBeInTheDocument();
+  });
+});
+
 describe("add wallet flow", () => {
   beforeEach(() => {
     const added: WalletMeta[] = [];
@@ -682,4 +764,8 @@ describe("private material", () => {
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  save: vi.fn(() => Promise.resolve("C:/exports/wallet.csv")),
 }));

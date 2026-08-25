@@ -6,7 +6,13 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import type { BackendConfig, Network, ParsedInput, PriceRange } from "../lib/ipc";
+import type {
+  BackendConfig,
+  ExportOptions,
+  Network,
+  ParsedInput,
+  PriceRange,
+} from "../lib/ipc";
 import { ipc, isCommandError } from "../lib/ipc";
 import { useUi } from "./store";
 
@@ -77,11 +83,13 @@ function useInvalidateWallet() {
       void client.invalidateQueries({ queryKey: ["tx", id] });
       // A sync can mark the shown receive address as used.
       void client.invalidateQueries({ queryKey: keys.receive(id) });
+      void client.invalidateQueries({ queryKey: ["addresses", id] });
     } else {
       void client.invalidateQueries({ queryKey: ["snapshot"] });
       void client.invalidateQueries({ queryKey: ["utxos"] });
       void client.invalidateQueries({ queryKey: ["tx"] });
       void client.invalidateQueries({ queryKey: ["receive"] });
+      void client.invalidateQueries({ queryKey: ["addresses"] });
     }
   };
 }
@@ -154,6 +162,34 @@ export function useSyncAll() {
       }
     },
     onSettled: () => invalidate(),
+  });
+}
+
+export function useAddressList(id: string | null) {
+  return useQuery({
+    queryKey: ["addresses", id ?? "none"],
+    queryFn: () => ipc.addressList(id!),
+    enabled: id !== null,
+  });
+}
+
+/** Recommended network fees, refreshed every five minutes while shown.
+    Regtest has no fee market: callers hide the card there. */
+export function useFees(network: Network | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ["fees", network ?? "none"],
+    queryFn: () => ipc.fetchFees(network!),
+    enabled: enabled && network !== undefined && network !== "regtest",
+    refetchInterval: 300_000,
+    staleTime: 270_000,
+    retry: 1,
+  });
+}
+
+export function useExportCsv() {
+  return useMutation({
+    mutationFn: (args: { id: string; options: ExportOptions; path: string }) =>
+      ipc.exportTransactionsCsv(args.id, args.options, args.path),
   });
 }
 

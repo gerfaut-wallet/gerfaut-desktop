@@ -9,7 +9,14 @@ import type { Unit } from "../lib/format";
 export type ThemePref = "light" | "dark" | "system";
 
 /** The sidebar pages. Settings is global; the rest read one wallet. */
-export type CanvasView = "home" | "transactions" | "utxos" | "receive" | "settings";
+export type CanvasView =
+  | "home"
+  | "transactions"
+  | "utxos"
+  | "addresses"
+  | "receive"
+  | "export"
+  | "settings";
 
 interface UiState {
   view: CanvasView;

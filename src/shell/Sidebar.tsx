@@ -2,11 +2,13 @@ import { clsx } from "clsx";
 import {
   ArrowLeftRight,
   Check,
+  FileDown,
   ChevronsUpDown,
   Coins,
   Eye,
   EyeOff,
   House,
+  MapPin,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -39,7 +41,17 @@ const PAGES: { view: CanvasView; label: string; icon: ReactNode }[] = [
     icon: <ArrowLeftRight size={18} strokeWidth={1.5} aria-hidden />,
   },
   { view: "utxos", label: "UTXOs", icon: <Coins size={18} strokeWidth={1.5} aria-hidden /> },
+  {
+    view: "addresses",
+    label: "Addresses",
+    icon: <MapPin size={18} strokeWidth={1.5} aria-hidden />,
+  },
   { view: "receive", label: "Receive", icon: <QrCode size={18} strokeWidth={1.5} aria-hidden /> },
+  {
+    view: "export",
+    label: "Export",
+    icon: <FileDown size={18} strokeWidth={1.5} aria-hidden />,
+  },
 ];
 
 /** The dark sidebar: brand, wallet switcher, pages, global actions.

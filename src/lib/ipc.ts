@@ -147,6 +147,41 @@ export interface AddressEntry {
   derivation: string | null;
 }
 
+/** One row of the address audit list. */
+export interface AddressRow {
+  index: number;
+  address: string;
+  used: boolean;
+  balance_sats: number;
+}
+
+/** Revealed addresses by keychain, capped server-side (audit view). */
+export interface AddressList {
+  external: AddressRow[];
+  internal: AddressRow[];
+  truncated: boolean;
+}
+
+export type ExportDirection = "incoming" | "outgoing";
+
+/** Filters for a CSV export; empty means everything. */
+export interface ExportOptions {
+  from: number | null;
+  to: number | null;
+  direction: ExportDirection | null;
+  include_pending: boolean;
+}
+
+/** Recommended fee rates in sat/vB (mempool.space). */
+export interface FeeEstimates {
+  fastest: number;
+  half_hour: number;
+  hour: number;
+  economy: number;
+  minimum: number;
+  at: number;
+}
+
 export interface WalletSnapshot {
   meta: WalletMeta;
   balance: BalanceSnapshot;
@@ -263,6 +298,10 @@ export const ipc = {
   utxos: (id: string) => invoke<UtxoInfo[]>("utxos", { id }),
   receiveAddresses: (id: string, lookahead: number) =>
     invoke<AddressEntry[]>("receive_addresses", { id, lookahead }),
+  addressList: (id: string) => invoke<AddressList>("address_list", { id }),
+  exportTransactionsCsv: (id: string, options: ExportOptions, path: string) =>
+    invoke<number>("export_transactions_csv", { id, options, path }),
+  fetchFees: (network: Network) => invoke<FeeEstimates>("fetch_fees", { network }),
   syncWallet: (id: string) => invoke<SyncReport>("sync_wallet", { id }),
   loadMoreHistory: (id: string) => invoke<number>("load_more_history", { id }),
   syncAll: (network?: Network) =>

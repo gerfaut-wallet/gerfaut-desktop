@@ -6,6 +6,8 @@ import { Sidebar } from "./shell/Sidebar";
 import { useSettings, useSyncAll, useWallets } from "./state/queries";
 import { useUi } from "./state/store";
 import { AddWalletModal } from "./views/AddWalletModal";
+import { AddressesView } from "./views/AddressesView";
+import { ExportView } from "./views/ExportView";
 import { HomeView } from "./views/HomeView";
 import { ReceiveView } from "./views/ReceiveView";
 import { SettingsView } from "./views/SettingsView";
@@ -100,7 +102,9 @@ export default function App() {
                     <TransactionsView walletId={activeWallet.id} />
                   )}
                   {view === "utxos" && <UtxosView walletId={activeWallet.id} />}
+                  {view === "addresses" && <AddressesView walletId={activeWallet.id} />}
                   {view === "receive" && <ReceiveView walletId={activeWallet.id} />}
+                  {view === "export" && <ExportView walletId={activeWallet.id} />}
                 </>
               ) : null}
             </div>

@@ -12,9 +12,9 @@ import {
   truncateMiddle,
 } from "../lib/format";
 import { SUPPORTED_RANGES } from "../lib/ipc";
-import type { PriceRange, TxSummary, WalletSnapshot } from "../lib/ipc";
+import type { Network, PriceRange, TxSummary, WalletSnapshot } from "../lib/ipc";
 import { balanceSeries } from "../lib/series";
-import { usePriceHistory, useSnapshot, useSyncing, useUtxos } from "../state/queries";
+import { useFees, usePriceHistory, useSnapshot, useSyncing, useUtxos } from "../state/queries";
 import { useUi } from "../state/store";
 
 const RANGE_LABEL: Record<PriceRange, string> = {
@@ -64,6 +64,7 @@ export function HomeView({ walletId }: { walletId: string }) {
         <div className="flex w-[320px] shrink-0 flex-col gap-4 max-lg:w-full">
           <BalanceCard snapshot={snapshot.data} walletId={walletId} />
           <PriceCard />
+          {meta.network !== "regtest" && <FeesCard network={meta.network} />}
           <StatusCard snapshot={snapshot.data} />
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-4">
@@ -241,6 +242,46 @@ function PriceCard() {
       )}
     </Card>
   );
+}
+
+/** Recommended fee rates: when to hurry, when to consolidate. The one
+    source with per-network estimates is mempool.space; regtest has no
+    fee market and hides the card entirely. */
+function FeesCard({ network }: { network: Network }) {
+  const fees = useFees(network, true);
+  const stats: { label: string; value: number | undefined }[] = [
+    { label: "Next block", value: fees.data?.fastest },
+    { label: "30 min", value: fees.data?.half_hour },
+    { label: "1 hour", value: fees.data?.hour },
+  ];
+  return (
+    <Card
+      label="Network fees"
+      action={<span className="font-ui text-[11px] text-muted">sat/vB · via mempool.space</span>}
+    >
+      {fees.data ? (
+        <div className="flex items-start justify-between gap-3">
+          {stats.map((stat) => (
+            <div key={stat.label} className="min-w-0">
+              <p className="tabular text-lg font-semibold leading-tight text-text">
+                {formatRate(stat.value ?? 0)}
+              </p>
+              <p className="mt-0.5 truncate font-ui text-[11px] text-muted">{stat.label}</p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="font-ui text-sm text-muted">
+          {fees.isPending ? "Loading…" : "The fee source did not answer."}
+        </p>
+      )}
+    </Card>
+  );
+}
+
+/** `2` -> "2", `8.5` -> "8.5": rates read clean, never "2.0". */
+function formatRate(rate: number): string {
+  return Number.isInteger(rate) ? String(rate) : rate.toFixed(1);
 }
 
 function StatusCard({ snapshot }: { snapshot: WalletSnapshot }) {

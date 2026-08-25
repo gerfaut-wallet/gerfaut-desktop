@@ -14,7 +14,7 @@ use gerfaut_core::network::Network;
 use gerfaut_core::store::{Settings, VaultKey};
 use gerfaut_core::wallet::meta::WalletMeta;
 use gerfaut_core::wallet::snapshot::{
-    AddressEntry, SyncReport, TxDetail, UtxoInfo, WalletSnapshot,
+    AddressEntry, AddressList, SyncReport, TxDetail, UtxoInfo, WalletSnapshot,
 };
 use serde::Serialize;
 use tauri::Manager;
@@ -181,6 +181,33 @@ async fn set_app_pref(
 }
 
 #[tauri::command]
+async fn address_list(state: tauri::State<'_, AppState>, id: String) -> CommandResult<AddressList> {
+    Ok(state.manager.address_list(&id).await?)
+}
+
+/// Builds the filtered CSV and writes it where the user chose. Returns
+/// the number of exported rows.
+#[tauri::command]
+async fn export_transactions_csv(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    options: gerfaut_core::export::ExportOptions,
+    path: String,
+) -> CommandResult<u32> {
+    let result = state.manager.export_transactions(&id, &options).await?;
+    std::fs::write(&path, result.csv.as_bytes()).map_err(|e| CommandError {
+        kind: "internal",
+        message: format!("could not write {path}: {e}"),
+    })?;
+    Ok(result.rows)
+}
+
+#[tauri::command]
+async fn fetch_fees(network: Network) -> CommandResult<gerfaut_core::fees::FeeEstimates> {
+    Ok(gerfaut_core::fees::fetch_fees(network).await?)
+}
+
+#[tauri::command]
 async fn fetch_price(
     source: gerfaut_core::price::PriceSource,
     currency: gerfaut_core::price::FiatCurrency,
@@ -215,8 +242,8 @@ fn vault_key() -> Result<VaultKey, String> {
         .map_err(|e| format!("credential store unavailable: {e}"))?;
     match entry.get_password() {
         Ok(stored) => {
-            let bytes = hex::decode(&stored)
-                .map_err(|_| "stored vault key is not valid hex".to_owned())?;
+            let bytes =
+                hex::decode(&stored).map_err(|_| "stored vault key is not valid hex".to_owned())?;
             let key: [u8; 32] = bytes
                 .try_into()
                 .map_err(|_| "stored vault key has the wrong length".to_owned())?;
@@ -239,6 +266,7 @@ fn vault_key() -> Result<VaultKey, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let key = vault_key().map_err(std::io::Error::other)?;
@@ -255,6 +283,9 @@ pub fn run() {
             tx_detail,
             utxos,
             receive_addresses,
+            address_list,
+            export_transactions_csv,
+            fetch_fees,
             sync_wallet,
             load_more_history,
             sync_all,

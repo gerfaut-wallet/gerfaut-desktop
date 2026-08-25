@@ -2,6 +2,12 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capabilities of the main window",
-  "windows": ["main"],
-  "permissions": ["core:default", "opener:allow-open-url"]
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "opener:allow-open-url",
+    "dialog:allow-save"
+  ]
 }
