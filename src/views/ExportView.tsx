@@ -1,5 +1,5 @@
 import { save } from "@tauri-apps/plugin-dialog";
-import { FileDown } from "lucide-react";
+import { FileDown, Gem } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
@@ -164,7 +164,8 @@ export function ExportView({ walletId }: { walletId: string }) {
             title={
               <span className="flex items-center gap-2">
                 Fiat value at transaction time
-                <span className="rounded-full border border-primary/25 bg-primary/[0.08] px-2 py-0.5 font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-primary">
+                <span className="inline-flex items-center gap-1 rounded-full border border-premium/25 bg-premium-surface px-2 py-0.5 font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-premium">
+                  <Gem size={11} strokeWidth={1.75} aria-hidden />
                   Premium
                 </span>
               </span>
