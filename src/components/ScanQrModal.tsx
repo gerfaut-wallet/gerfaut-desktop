@@ -1,11 +1,15 @@
 import jsQR from "jsqr";
 import { useEffect, useRef, useState } from "react";
+import type { QrProgress } from "../lib/ipc";
+import { ipc, isCommandError } from "../lib/ipc";
 import { Modal } from "./Modal";
 
 type ScanState = "starting" | "scanning" | "denied" | "unavailable";
 
 /** Camera QR scanner: frames are decoded locally with jsQR, nothing
-    leaves the machine. The stream stops the moment the modal closes. */
+    leaves the machine. Animated codes (UR, BBQr) are assembled by the
+    core frame after frame; the modal reports the progress and closes
+    itself with the final text. The stream stops the moment it closes. */
 export function ScanQrModal({
   open,
   onClose,
@@ -13,11 +17,13 @@ export function ScanQrModal({
 }: {
   open: boolean;
   onClose: () => void;
-  /** Called once with the decoded text; the modal closes itself. */
+  /** Called once with the assembled text; the modal closes itself. */
   onScan: (text: string) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [state, setState] = useState<ScanState>("starting");
+  const [progress, setProgress] = useState<QrProgress | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Callback identity must not restart the camera.
   const onScanRef = useRef(onScan);
@@ -28,12 +34,55 @@ export function ScanQrModal({
   useEffect(() => {
     if (!open) return;
     setState("starting");
+    setProgress(null);
+    setError(null);
     let stream: MediaStream | null = null;
     let raf = 0;
     let lastDecode = 0;
     let done = false;
+    let assembling = false;
+    let pending: string | null = null;
+    const frames: string[] = [];
+    const seen = new Set<string>();
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d", { willReadFrequently: true });
+
+    // One assembly at a time; a frame seen meanwhile waits its turn
+    // rather than being lost until the animation loops back to it.
+    const feed = async (frame: string) => {
+      if (seen.has(frame)) return;
+      if (assembling) {
+        pending = frame;
+        return;
+      }
+      seen.add(frame);
+      frames.push(frame);
+      assembling = true;
+      try {
+        const result = await ipc.assembleQr(frames);
+        if (done) return;
+        setError(null);
+        setProgress(result);
+        if (result.complete && result.text) {
+          done = true;
+          onScanRef.current(result.text);
+          onCloseRef.current();
+        }
+      } catch (err) {
+        // A frame the core refuses (a PSBT, an unknown envelope) is said
+        // once and dropped: the camera keeps looking for the right code.
+        setError(isCommandError(err) ? err.message : String(err));
+        frames.length = 0;
+        seen.clear();
+      } finally {
+        assembling = false;
+      }
+      if (pending !== null && !done) {
+        const next = pending;
+        pending = null;
+        void feed(next);
+      }
+    };
 
     const tick = (now: number) => {
       const video = videoRef.current;
@@ -47,13 +96,10 @@ export function ScanQrModal({
           inversionAttempts: "dontInvert",
         });
         if (code && code.data.trim().length > 0 && !done) {
-          done = true;
-          onScanRef.current(code.data.trim());
-          onCloseRef.current();
-          return;
+          void feed(code.data.trim());
         }
       }
-      raf = requestAnimationFrame(tick);
+      if (!done) raf = requestAnimationFrame(tick);
     };
 
     navigator.mediaDevices
@@ -73,10 +119,13 @@ export function ScanQrModal({
       });
 
     return () => {
+      done = true;
       cancelAnimationFrame(raf);
       stream?.getTracks().forEach((track) => track.stop());
     };
   }, [open]);
+
+  const multiPart = progress !== null && progress.total > 1 && !progress.complete;
 
   return (
     <Modal open={open} onClose={onClose} title="Scan a QR code" width={480} z={60} centered>
@@ -104,11 +153,41 @@ export function ScanQrModal({
               {state === "unavailable" && "No usable camera was found on this machine."}
             </p>
           )}
+          {multiPart && (
+            <div
+              role="progressbar"
+              aria-label="Animated QR code"
+              aria-valuemin={0}
+              aria-valuemax={progress.total}
+              aria-valuenow={progress.received}
+              className="absolute inset-x-3 bottom-3 rounded-md bg-black/60 px-3 py-2 backdrop-blur-sm"
+            >
+              <div className="mb-1.5 flex items-baseline justify-between font-ui text-xs text-white">
+                <span>Keep the camera on the animated code</span>
+                <span className="tabular">
+                  {progress.received} / {progress.total}
+                </span>
+              </div>
+              <div className="h-1 overflow-hidden rounded-full bg-white/20">
+                <div
+                  className="h-full rounded-full bg-white transition-[width] duration-200"
+                  style={{ width: `${(100 * progress.received) / progress.total}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
-        <p className="font-ui text-xs text-muted">
-          Point the camera at a descriptor, extended public key, or address QR
-          code. Frames are decoded on this machine and never leave it.
-        </p>
+        {error ? (
+          <p role="alert" className="font-ui text-xs text-muted">
+            {error}
+          </p>
+        ) : (
+          <p className="font-ui text-xs text-muted">
+            Point the camera at a descriptor, extended public key, or address QR
+            code: plain text, UR, or BBQr, animated or not. Frames are decoded
+            on this machine and never leave it.
+          </p>
+        )}
       </div>
     </Modal>
   );

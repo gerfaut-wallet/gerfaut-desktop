@@ -8,6 +8,7 @@
 use gerfaut_core::WalletManager;
 use gerfaut_core::chain::BackendConfig;
 use gerfaut_core::error::CoreError;
+use gerfaut_core::input::qr::QrProgress;
 use gerfaut_core::input::{ParsedInput, ScriptKind};
 use gerfaut_core::manager::SyncAllReport;
 use gerfaut_core::network::Network;
@@ -59,6 +60,12 @@ struct AppState {
 #[tauri::command]
 fn parse_input(input: String, script: Option<ScriptKind>) -> CommandResult<ParsedInput> {
     Ok(gerfaut_core::input::parse_input_with(&input, script)?)
+}
+
+/// Assembles the QR frames scanned so far (plain, UR, BBQr).
+#[tauri::command]
+fn assemble_qr(frames: Vec<String>) -> CommandResult<QrProgress> {
+    Ok(gerfaut_core::input::qr::assemble(&frames)?)
 }
 
 #[tauri::command]
@@ -288,6 +295,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             parse_input,
+            assemble_qr,
             add_wallet,
             list_wallets,
             wallet_snapshot,

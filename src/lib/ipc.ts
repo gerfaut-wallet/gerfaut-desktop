@@ -43,6 +43,17 @@ export interface ParsedInput {
   preview_address: string | null;
 }
 
+export type QrFormat = "plain" | "ur" | "bbqr";
+
+/** Where a camera scan stands after the frames seen so far. */
+export interface QrProgress {
+  format: QrFormat;
+  received: number;
+  total: number;
+  complete: boolean;
+  text: string | null;
+}
+
 export type WalletKind =
   | { type: "descriptors"; external: string; internal: string | null; script: ScriptKind }
   | { type: "single_address"; address: string };
@@ -295,6 +306,7 @@ export function isCommandError(error: unknown): error is CommandError {
 export const ipc = {
   parseInput: (input: string, script?: ScriptKind) =>
     invoke<ParsedInput>("parse_input", { input, script: script ?? null }),
+  assembleQr: (frames: string[]) => invoke<QrProgress>("assemble_qr", { frames }),
   addWallet: (name: string, parsed: ParsedInput, network: Network) =>
     invoke<WalletMeta>("add_wallet", { name, parsed, network }),
   listWallets: (network?: Network) =>
