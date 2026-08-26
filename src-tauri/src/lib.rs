@@ -8,7 +8,7 @@
 use gerfaut_core::WalletManager;
 use gerfaut_core::chain::BackendConfig;
 use gerfaut_core::error::CoreError;
-use gerfaut_core::input::ParsedInput;
+use gerfaut_core::input::{ParsedInput, ScriptKind};
 use gerfaut_core::manager::SyncAllReport;
 use gerfaut_core::network::Network;
 use gerfaut_core::store::{Settings, VaultKey};
@@ -57,8 +57,8 @@ struct AppState {
 // --- commands ----------------------------------------------------------
 
 #[tauri::command]
-fn parse_input(input: String) -> CommandResult<ParsedInput> {
-    Ok(gerfaut_core::input::parse_input(&input)?)
+fn parse_input(input: String, script: Option<ScriptKind>) -> CommandResult<ParsedInput> {
+    Ok(gerfaut_core::input::parse_input_with(&input, script)?)
 }
 
 #[tauri::command]
@@ -262,13 +262,24 @@ fn vault_key() -> Result<VaultKey, String> {
     }
 }
 
+/// Where the vault lives. Development builds honour `GERFAUT_DATA_DIR`
+/// so that a test instance never opens the vault of an app already
+/// running on the machine; release builds always use the app data dir.
+fn data_dir(app: &tauri::App) -> tauri::Result<std::path::PathBuf> {
+    #[cfg(debug_assertions)]
+    if let Some(dir) = std::env::var_os("GERFAUT_DATA_DIR") {
+        return Ok(std::path::PathBuf::from(dir));
+    }
+    app.path().app_data_dir()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let data_dir = app.path().app_data_dir()?;
+            let data_dir = data_dir(app)?;
             let key = vault_key().map_err(std::io::Error::other)?;
             let manager = WalletManager::open(&data_dir, key)
                 .map_err(|e| std::io::Error::other(e.to_string()))?;

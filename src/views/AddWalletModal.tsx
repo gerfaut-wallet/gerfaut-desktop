@@ -28,7 +28,7 @@ const SCRIPT_LABEL: Record<ScriptKind, string> = {
 };
 
 const WARNING_LABEL: Record<InputWarning, string> = {
-  assumed_segwit: "The key does not say its script type: Native SegWit was assumed.",
+  assumed_segwit: "This key carries no script type: check the one selected below.",
   slip132_converted: "The SLIP-132 prefix was converted to a standard extended key.",
   change_not_tracked: "No change path was provided: change outputs will not be tracked.",
   multiple_accounts_in_file: "The file holds several account types; the preferred one was selected.",
@@ -49,6 +49,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
   const [raw, setRaw] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [parsed, setParsed] = useState<ParsedInput | null>(null);
+  const [script, setScript] = useState<ScriptKind | null>(null);
   const [name, setName] = useState("");
   const [network, setNetwork] = useState<Network>(activeNetwork);
   const [scanOpen, setScanOpen] = useState(false);
@@ -61,6 +62,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
     setRaw("");
     setError(null);
     setParsed(null);
+    setScript(null);
     setName("");
     addWallet.reset();
   };
@@ -69,17 +71,26 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
     reset();
   };
 
-  const parse = async (input: string) => {
+  const parse = async (input: string, chosen?: ScriptKind) => {
     setError(null);
     try {
-      const result = await ipc.parseInput(input);
+      const result = await ipc.parseInput(input, chosen);
       setParsed(result);
-      setNetwork(
-        result.networks.includes(activeNetwork) ? activeNetwork : result.networks[0],
-      );
+      if (chosen === undefined) {
+        setNetwork(
+          result.networks.includes(activeNetwork) ? activeNetwork : result.networks[0],
+        );
+      }
     } catch (err) {
       setError(isCommandError(err) ? err.message : String(err));
     }
+  };
+
+  /** The script type is rebuilt by the core, never patched locally:
+      the descriptors and the preview address must come from one place. */
+  const chooseScript = (chosen: ScriptKind) => {
+    setScript(chosen);
+    void parse(raw, chosen);
   };
 
   const importFile = async (file: File) => {
@@ -193,6 +204,17 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
                 {parsed.payload.address}
               </p>
             )}
+            {parsed.preview_address && (
+              <p className="mt-2 flex flex-wrap items-baseline gap-x-2 font-ui text-xs text-muted">
+                <span>First address</span>
+                <span
+                  data-testid="preview-address"
+                  className="selectable break-all font-data text-[13px] text-text"
+                >
+                  {parsed.preview_address}
+                </span>
+              </p>
+            )}
             {parsed.warnings.length > 0 && (
               <ul className="mt-3 flex flex-col gap-1.5">
                 {parsed.warnings.map((warning) => (
@@ -204,6 +226,32 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
               </ul>
             )}
           </div>
+
+          {parsed.script_options.length > 0 && parsed.payload.type === "descriptors" && (
+            <div>
+              <label
+                htmlFor="wallet-script"
+                className="mb-1 block font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted"
+              >
+                Script type
+              </label>
+              <select
+                id="wallet-script"
+                value={script ?? parsed.payload.script}
+                onChange={(event) => chooseScript(event.target.value as ScriptKind)}
+                className="h-11 w-full cursor-pointer rounded-sm bg-sunken px-3 font-ui text-base text-text outline-none"
+              >
+                {parsed.script_options.map((option) => (
+                  <option key={option} value={option}>
+                    {SCRIPT_LABEL[option]}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1.5 font-ui text-xs text-muted">
+                Compare the first address above with your wallet.
+              </p>
+            </div>
+          )}
 
           <div className="flex gap-3">
             <div className="flex-1">

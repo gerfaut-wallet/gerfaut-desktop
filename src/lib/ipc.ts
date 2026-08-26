@@ -37,6 +37,10 @@ export interface ParsedInput {
   networks: Network[];
   payload: ParsedPayload;
   warnings: InputWarning[];
+  /** Script types the user may switch to; empty when the input fixes it. */
+  script_options: ScriptKind[];
+  /** First receive address on the first candidate network, when derivable. */
+  preview_address: string | null;
 }
 
 export type WalletKind =
@@ -65,6 +69,7 @@ export interface WalletMeta {
   recognized_as: RecognizedKind;
   created_at: number;
   gap_limit: number;
+  scan_gap: number;
   labels: Record<string, string>;
   last_sync: SyncStamp | null;
   cached: { balance: BalanceSnapshot; tx_count: number };
@@ -288,7 +293,8 @@ export function isCommandError(error: unknown): error is CommandError {
 // --- commands ----------------------------------------------------------
 
 export const ipc = {
-  parseInput: (input: string) => invoke<ParsedInput>("parse_input", { input }),
+  parseInput: (input: string, script?: ScriptKind) =>
+    invoke<ParsedInput>("parse_input", { input, script: script ?? null }),
   addWallet: (name: string, parsed: ParsedInput, network: Network) =>
     invoke<WalletMeta>("add_wallet", { name, parsed, network }),
   listWallets: (network?: Network) =>
