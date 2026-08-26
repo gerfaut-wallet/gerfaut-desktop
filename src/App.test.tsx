@@ -33,6 +33,7 @@ const WALLET: WalletMeta = {
   recognized_as: "extended_key",
   created_at: 1_755_000_000,
   gap_limit: 20,
+  scan_gap: 20,
   labels: {},
   last_sync: { at: 1_755_000_100, tip_height: 200_000, backend: "mempool.space" },
   cached: {
@@ -73,6 +74,21 @@ const PARSED_TPUB: ParsedInput = {
     script: "segwit",
   },
   warnings: ["assumed_segwit"],
+  script_options: ["legacy", "nested_segwit", "segwit", "taproot"],
+  preview_address: "tb1qpreview0segwit000000000000000000000000",
+};
+
+/** What the core answers when the user picks Taproot for the same key. */
+const PARSED_TPUB_TAPROOT: ParsedInput = {
+  ...PARSED_TPUB,
+  payload: {
+    type: "descriptors",
+    external: "tr(tpub.../0/*)#cccccccc",
+    internal: "tr(tpub.../1/*)#dddddddd",
+    script: "taproot",
+  },
+  warnings: [],
+  preview_address: "tb1ppreview0taproot00000000000000000000000",
 };
 
 const PRICE_HISTORY = {
@@ -257,6 +273,24 @@ describe("overview", () => {
     expect(
       await screen.findByRole("img", { name: /wallet balance over time/i }),
     ).toBeInTheDocument();
+  });
+
+  it("states a failed sync on the dashboard instead of a silent figure", async () => {
+    useUi.setState({ syncErrors: { [WALLET.id]: "mempool.space: connection timed out" } });
+    renderApp();
+    expect(await screen.findByText("Sync failed")).toBeInTheDocument();
+    expect(screen.getByText("Sync failed: showing the last known balance.")).toBeInTheDocument();
+    expect(screen.getByLabelText(/mempool\.space: connection timed out/)).toBeInTheDocument();
+  });
+
+  it("never pretends a wallet that has not synced holds nothing", async () => {
+    const unsynced: WalletMeta = { ...WALLET, last_sync: null };
+    walletIpc({
+      list_wallets: () => [unsynced],
+      wallet_snapshot: () => ({ ...SNAPSHOT, meta: unsynced, txs: [] }),
+    });
+    renderApp();
+    expect(await screen.findByText("Not synced yet.")).toBeInTheDocument();
   });
 
   it("navigates from the count rows", async () => {
@@ -720,7 +754,13 @@ describe("add wallet flow", () => {
 
     // Confirmation step: recognition is explicit, never silent.
     expect(await screen.findByText(/recognized as/i)).toBeInTheDocument();
-    expect(screen.getByText(/native segwit was assumed/i)).toBeInTheDocument();
+    expect(screen.getByText(/carries no script type/i)).toBeInTheDocument();
+    // A lone key leaves the script type open: the choice is offered,
+    // preset on the core's default, next to the address it produces.
+    expect(screen.getByLabelText(/script type/i)).toHaveValue("segwit");
+    expect(screen.getByTestId("preview-address")).toHaveTextContent(
+      PARSED_TPUB.preview_address as string,
+    );
 
     await user.type(screen.getByLabelText(/^name$/i), "Cold storage");
     await user.click(screen.getByRole("button", { name: /^add wallet$/i }));
@@ -729,6 +769,52 @@ describe("add wallet flow", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
     expect(await screen.findByText("0.00150000")).toBeInTheDocument();
+  });
+
+  it("rebuilds the descriptors through the core when the script type changes", async () => {
+    const parseCalls: unknown[] = [];
+    const addCalls: unknown[] = [];
+    mockIPC((cmd, args) => {
+      const payload = (args ?? {}) as Record<string, unknown>;
+      switch (cmd) {
+        case "get_settings":
+          return SETTINGS;
+        case "list_wallets":
+          return [];
+        case "parse_input":
+          parseCalls.push(payload.script);
+          return payload.script === "taproot" ? PARSED_TPUB_TAPROOT : PARSED_TPUB;
+        case "add_wallet":
+          addCalls.push(payload.parsed);
+          return WALLET;
+        case "set_app_pref":
+        case "sync_wallet":
+          return undefined;
+        default:
+          return undefined;
+      }
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await user.click((await screen.findAllByRole("button", { name: /add a wallet/i }))[0]);
+    await user.type(screen.getByLabelText(/descriptor, extended public key/i), "tpubDDnGNapGEY6...");
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    await user.selectOptions(await screen.findByLabelText(/script type/i), "taproot");
+    // The core answered with new descriptors and a new first address.
+    await waitFor(() => {
+      expect(screen.getByTestId("preview-address")).toHaveTextContent(
+        PARSED_TPUB_TAPROOT.preview_address as string,
+      );
+    });
+    expect(screen.getByLabelText(/script type/i)).toHaveValue("taproot");
+    expect(screen.queryByText(/carries no script type/i)).not.toBeInTheDocument();
+    expect(parseCalls).toEqual([null, "taproot"]);
+
+    await user.type(screen.getByLabelText(/^name$/i), "Taproot cold");
+    await user.click(screen.getByRole("button", { name: /^add wallet$/i }));
+    await waitFor(() => expect(addCalls).toHaveLength(1));
+    expect((addCalls[0] as ParsedInput).payload).toMatchObject({ script: "taproot" });
   });
 });
 

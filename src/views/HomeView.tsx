@@ -1,5 +1,12 @@
 import { clsx } from "clsx";
-import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, ChevronRight, Coins } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDownLeft,
+  ArrowLeftRight,
+  ArrowUpRight,
+  ChevronRight,
+  Coins,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { Balance, ListAmount } from "../components/Amount";
 import { BalanceChart } from "../components/BalanceChart";
@@ -11,7 +18,7 @@ import {
   truncateMiddle,
 } from "../lib/format";
 import { SUPPORTED_RANGES } from "../lib/ipc";
-import type { Network, PriceRange, TxSummary, WalletSnapshot } from "../lib/ipc";
+import type { Network, PriceRange, TxSummary, WalletMeta, WalletSnapshot } from "../lib/ipc";
 import { balanceSeries } from "../lib/series";
 import { useFees, usePriceHistory, useSnapshot, useUtxos } from "../state/queries";
 import { useUi } from "../state/store";
@@ -29,6 +36,7 @@ const RANGE_LABEL: Record<PriceRange, string> = {
     and its latest activity. Sized to the window, nothing to arrange. */
 export function HomeView({ walletId }: { walletId: string }) {
   const snapshot = useSnapshot(walletId);
+  const { syncErrors } = useUi();
 
   if (snapshot.isPending) {
     return <p className="px-1 py-4 font-ui text-sm text-muted">Loading wallet…</p>;
@@ -53,10 +61,14 @@ export function HomeView({ walletId }: { walletId: string }) {
 
       <div className="flex min-h-0 flex-1 gap-4 max-lg:flex-col">
         <div className="flex w-[320px] shrink-0 flex-col gap-4 max-lg:w-full">
-          <BalanceCard snapshot={snapshot.data} walletId={walletId} />
+          <BalanceCard
+            snapshot={snapshot.data}
+            walletId={walletId}
+            error={syncErrors[walletId] ?? null}
+          />
           <PriceCard />
           {meta.network !== "regtest" && <FeesCard network={meta.network} />}
-          <StatusCard snapshot={snapshot.data} />
+          <StatusCard snapshot={snapshot.data} error={syncErrors[walletId] ?? null} />
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <HistoryCard snapshot={snapshot.data} />
@@ -96,7 +108,24 @@ function Card({
 
 // --- left column --------------------------------------------------------
 
-function BalanceCard({ snapshot, walletId }: { snapshot: WalletSnapshot; walletId: string }) {
+/** The figure alone can lie: a wallet that never reached a backend shows
+    zero. The note says where the number comes from. */
+function balanceNote(meta: WalletMeta, pending: number, error: string | null): string {
+  if (error && !meta.last_sync) return "Sync failed: nothing fetched yet.";
+  if (error) return "Sync failed: showing the last known balance.";
+  if (!meta.last_sync) return "Not synced yet.";
+  return pending > 0 ? "Includes pending funds not yet confirmed." : "All funds confirmed.";
+}
+
+function BalanceCard({
+  snapshot,
+  walletId,
+  error,
+}: {
+  snapshot: WalletSnapshot;
+  walletId: string;
+  error: string | null;
+}) {
   const utxos = useUtxos(walletId, true);
   const { setView } = useUi();
   const { balance, meta } = snapshot;
@@ -105,9 +134,7 @@ function BalanceCard({ snapshot, walletId }: { snapshot: WalletSnapshot; walletI
     <Card label="Total balance" className="flex-1">
       <div className="flex h-full flex-col">
         <Balance sats={balance.total} />
-        <p className="mt-2 font-ui text-xs text-muted">
-          {pending > 0 ? "Includes pending funds not yet confirmed." : "All funds confirmed."}
-        </p>
+        <p className="mt-2 font-ui text-xs text-muted">{balanceNote(meta, pending, error)}</p>
         <div className="flex-1" />
         <div className="-mx-2 mt-3 border-t border-border/60 pt-2">
           <CountRow
@@ -276,12 +303,21 @@ function formatRate(rate: number): string {
   return Number.isInteger(rate) ? String(rate) : rate.toFixed(1);
 }
 
-function StatusCard({ snapshot }: { snapshot: WalletSnapshot }) {
+function StatusCard({ snapshot, error }: { snapshot: WalletSnapshot; error: string | null }) {
   const { meta, tip_height } = snapshot;
   const rows: { label: string; value: ReactNode }[] = [
     {
       label: "Last sync",
-      value: meta.last_sync ? (
+      value: error ? (
+        <span
+          className="inline-flex items-center gap-1 text-pending"
+          title={error}
+          aria-label={`Sync failed: ${error}`}
+        >
+          <AlertTriangle size={13} strokeWidth={1.5} aria-hidden />
+          Sync failed
+        </span>
+      ) : meta.last_sync ? (
         <span className="tabular">{relativeTime(meta.last_sync.at)}</span>
       ) : (
         "never"

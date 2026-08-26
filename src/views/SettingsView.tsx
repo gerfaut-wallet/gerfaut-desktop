@@ -323,7 +323,7 @@ export function SettingsView({
             </SettingRow>
             <SettingRow
               title="Price source"
-              hint="Serves the fiat value and the overview price. Fee estimates on the overview come from mempool.space."
+              hint="Serves the fiat value and the overview price. Fee estimates on the overview come from mempool.space, or mempool.emzy.de when it does not answer."
             >
               <Segmented
                 label="Price source"
@@ -450,7 +450,7 @@ function BackendSection({
             {
               value: "public_esplora",
               label: "Public API",
-              hint: "mempool.space and blockstream.info, no setup. The server operator can see this wallet's addresses.",
+              hint: "mempool.space, blockstream.info and mempool.emzy.de, no setup. The operator that answers can see this wallet's addresses.",
             },
             {
               value: "custom_esplora",
