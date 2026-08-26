@@ -225,7 +225,9 @@ describe("overview", () => {
     // Counts lead to their pages.
     expect(await screen.findByRole("button", { name: /1 UTXO/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /1 transaction/ })).toBeInTheDocument();
-    expect(screen.getByText(/synced .* mempool\.space/i)).toBeInTheDocument();
+    // The freshness line lives in Watch status only, not under the title.
+    expect(screen.queryByText(/synced .* mempool\.space/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Backend")).toBeInTheDocument();
     // Nothing to customize: the dashboard is fixed.
     expect(screen.queryByRole("button", { name: /customize/i })).not.toBeInTheDocument();
     // One unit only: no sats echo under the BTC figure.
@@ -235,6 +237,8 @@ describe("overview", () => {
     expect(screen.getByText("12")).toBeInTheDocument();
     expect(screen.getByText("8.5")).toBeInTheDocument();
     expect(screen.getByText("Next block")).toBeInTheDocument();
+    expect(screen.getByText("~3 blocks")).toBeInTheDocument();
+    expect(screen.queryByText(/via mempool\.space/)).not.toBeInTheDocument();
   });
 
   it("shows the price with a signed change pill, no chart", async () => {

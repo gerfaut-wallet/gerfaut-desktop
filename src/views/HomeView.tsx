@@ -3,7 +3,6 @@ import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, ChevronRight, Coins } from
 import type { ReactNode } from "react";
 import { Balance, ListAmount } from "../components/Amount";
 import { BalanceChart } from "../components/BalanceChart";
-import { SyncIndicator } from "../components/SyncIndicator";
 import {
   MASKED,
   formatTimestamp,
@@ -14,7 +13,7 @@ import {
 import { SUPPORTED_RANGES } from "../lib/ipc";
 import type { Network, PriceRange, TxSummary, WalletSnapshot } from "../lib/ipc";
 import { balanceSeries } from "../lib/series";
-import { useFees, usePriceHistory, useSnapshot, useSyncing, useUtxos } from "../state/queries";
+import { useFees, usePriceHistory, useSnapshot, useUtxos } from "../state/queries";
 import { useUi } from "../state/store";
 
 const RANGE_LABEL: Record<PriceRange, string> = {
@@ -29,9 +28,7 @@ const RANGE_LABEL: Record<PriceRange, string> = {
     and counts, the BTC price, watch status, the wallet's balance curve,
     and its latest activity. Sized to the window, nothing to arrange. */
 export function HomeView({ walletId }: { walletId: string }) {
-  const { syncErrors } = useUi();
   const snapshot = useSnapshot(walletId);
-  const syncing = useSyncing();
 
   if (snapshot.isPending) {
     return <p className="px-1 py-4 font-ui text-sm text-muted">Loading wallet…</p>;
@@ -47,17 +44,11 @@ export function HomeView({ walletId }: { walletId: string }) {
 
   return (
     <div className="flex h-full min-h-[560px] flex-col pb-2">
+      {/* No freshness line here: Watch status carries it below. */}
       <header className="px-1 pb-4 pt-2">
         <h1 className="font-display text-2xl font-semibold tracking-[-0.01em] text-text">
           {meta.name}
         </h1>
-        <div className="mt-1">
-          <SyncIndicator
-            stamp={meta.last_sync}
-            syncing={syncing}
-            error={syncErrors[walletId] ?? null}
-          />
-        </div>
       </header>
 
       <div className="flex min-h-0 flex-1 gap-4 max-lg:flex-col">
@@ -244,29 +235,30 @@ function PriceCard() {
   );
 }
 
-/** Recommended fee rates: when to hurry, when to consolidate. The one
-    source with per-network estimates is mempool.space; regtest has no
-    fee market and hides the card entirely. */
+/** Recommended fee rates: when to hurry, when to consolidate. Three
+    tiles, each a target in blocks, the unit the estimates are made in.
+    Regtest has no fee market and hides the card entirely. */
 function FeesCard({ network }: { network: Network }) {
   const fees = useFees(network, true);
   const stats: { label: string; value: number | undefined }[] = [
     { label: "Next block", value: fees.data?.fastest },
-    { label: "30 min", value: fees.data?.half_hour },
-    { label: "1 hour", value: fees.data?.hour },
+    { label: "~3 blocks", value: fees.data?.half_hour },
+    { label: "~6 blocks", value: fees.data?.hour },
   ];
   return (
-    <Card
-      label="Network fees"
-      action={<span className="font-ui text-[11px] text-muted">sat/vB · via mempool.space</span>}
-    >
+    <Card label="Network fees">
       {fees.data ? (
-        <div className="flex items-start justify-between gap-3">
+        <div className="grid grid-cols-3 gap-2">
           {stats.map((stat) => (
-            <div key={stat.label} className="min-w-0">
-              <p className="tabular text-lg font-semibold leading-tight text-text">
+            <div
+              key={stat.label}
+              className="flex flex-col items-center rounded-md bg-sunken/70 px-2 py-2.5 text-center"
+            >
+              <p className="tabular text-base font-semibold leading-tight text-text">
                 {formatRate(stat.value ?? 0)}
+                <span className="ml-1 font-ui text-[11px] font-normal text-muted">sat/vB</span>
               </p>
-              <p className="mt-0.5 truncate font-ui text-[11px] text-muted">{stat.label}</p>
+              <p className="mt-1 font-ui text-[11px] text-muted">{stat.label}</p>
             </div>
           ))}
         </div>

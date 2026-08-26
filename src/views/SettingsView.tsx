@@ -323,7 +323,7 @@ export function SettingsView({
             </SettingRow>
             <SettingRow
               title="Price source"
-              hint="Serves the fiat value and the price chart. Remove the chart widget from the overview to stop its requests."
+              hint="Serves the fiat value and the overview price. Fee estimates on the overview come from mempool.space."
             >
               <Segmented
                 label="Price source"
@@ -602,7 +602,7 @@ function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; gapLimit
       <div className="mb-4 border-b border-border pb-4">
         <SettingRow
           title="Gap limit"
-          hint="How many unused addresses in a row syncs scan past the last used one, for every wallet. 20 is the convention most wallets share; raise it only if this descriptor is also used elsewhere with far-ahead addresses. Applies on the next sync; the Receive page warns beyond it."
+          hint="How many unused addresses Gerfaut scans past the last used one. 20 is the norm."
         >
           <GapLimitField gapLimit={gapLimit} />
         </SettingRow>
