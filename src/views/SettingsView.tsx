@@ -4,9 +4,12 @@ import {
   Coins,
   Globe,
   Info,
+  Monitor,
+  Moon,
   Pencil,
   RefreshCw,
   Server,
+  Sun,
   SunMoon,
   Trash2,
   Wallet as WalletIcon,
@@ -118,7 +121,7 @@ function Segmented<T extends string>({
   label,
 }: {
   value: T;
-  options: { value: T; label: string }[];
+  options: { value: T; label: string; icon?: ReactNode }[];
   onChange: (value: T) => void;
   label: string;
 }) {
@@ -136,12 +139,17 @@ function Segmented<T extends string>({
           aria-checked={value === option.value}
           onClick={() => onChange(option.value)}
           className={clsx(
-            "cursor-pointer rounded-[6px] px-3 py-1.5 font-ui text-sm font-medium transition-colors duration-150",
+            "inline-flex cursor-pointer items-center gap-1.5 rounded-[6px] px-3 py-1.5 font-ui text-sm font-medium transition-colors duration-150",
             value === option.value
               ? "bg-surface text-text shadow-[inset_0_0_0_1px_var(--color-border)]"
               : "text-muted hover:text-text",
           )}
         >
+          {option.icon && (
+            <span aria-hidden className="shrink-0">
+              {option.icon}
+            </span>
+          )}
           {option.label}
         </button>
       ))}
@@ -304,7 +312,7 @@ export function SettingsView({
             </SettingRow>
             <SettingRow
               title="Fiat value"
-              hint="Shows the fiat value next to every amount. Price requests expose this app's IP address to the selected provider; they carry no wallet data."
+              hint="Shows the fiat value next to every amount."
             >
               <Toggle checked={fiatEnabled} onChange={setFiatEnabled} label="Show fiat value" />
             </SettingRow>
@@ -323,7 +331,7 @@ export function SettingsView({
             </SettingRow>
             <SettingRow
               title="Price source"
-              hint="Serves the fiat value and the overview price. Fee estimates on the overview come from mempool.space, or mempool.emzy.de when it does not answer."
+              hint="Serves the fiat value and the overview price."
             >
               <Segmented
                 label="Price source"
@@ -349,9 +357,21 @@ export function SettingsView({
               value={theme}
               onChange={(value) => setTheme(value as ThemePref)}
               options={[
-                { value: "light", label: "Light" },
-                { value: "dark", label: "Dark" },
-                { value: "system", label: "System" },
+                {
+                  value: "light",
+                  label: "Light",
+                  icon: <Sun size={15} strokeWidth={1.5} />,
+                },
+                {
+                  value: "dark",
+                  label: "Dark",
+                  icon: <Moon size={15} strokeWidth={1.5} />,
+                },
+                {
+                  value: "system",
+                  label: "System",
+                  icon: <Monitor size={15} strokeWidth={1.5} />,
+                },
               ]}
             />
           </SettingRow>
@@ -533,7 +553,7 @@ function BackendSection({
         </p>
       )}
       <div className="mt-4">
-        <Button variant="secondary" onClick={save} disabled={saving || !valid}>
+        <Button variant="primary" onClick={save} disabled={saving || !valid}>
           Save backend
         </Button>
       </div>
@@ -602,7 +622,7 @@ function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; gapLimit
       <div className="mb-4 border-b border-border pb-4">
         <SettingRow
           title="Gap limit"
-          hint="How many unused addresses Gerfaut scans past the last used one. 20 is the norm."
+          hint="How many unused addresses Gerfaut scans past the last used one."
         >
           <GapLimitField gapLimit={gapLimit} />
         </SettingRow>
@@ -713,7 +733,7 @@ function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; gapLimit
                       </Button>
                       <Button
                         variant="ghost"
-                        className="h-9"
+                        className="h-9 hover:bg-surface hover:shadow-[inset_0_0_0_1px_var(--color-border)] dark:hover:bg-sunken dark:hover:shadow-none"
                         onClick={() => setConfirmRemove(null)}
                       >
                         Cancel

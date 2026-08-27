@@ -20,7 +20,8 @@ export type RecognizedKind =
   | "multipath_descriptor"
   | "extended_key"
   | "address"
-  | "wallet_export";
+  | "wallet_export"
+  | "bsms";
 
 export type InputWarning =
   | "assumed_segwit"

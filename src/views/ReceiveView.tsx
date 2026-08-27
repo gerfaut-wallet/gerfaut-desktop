@@ -33,7 +33,7 @@ export function ReceiveView({ walletId }: { walletId: string }) {
   };
 
   return (
-    <div className="mx-auto max-w-[880px] pb-8">
+    <div className="pb-8">
       <header className="px-1 pb-5 pt-2">
         <h1 className="font-display text-2xl font-semibold tracking-[-0.01em] text-text">
           Receive

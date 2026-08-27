@@ -15,6 +15,7 @@ const KIND_LABEL: Record<RecognizedKind, string> = {
   extended_key: "Extended public key",
   address: "Single address",
   wallet_export: "Wallet export file",
+  bsms: "BSMS record",
 };
 
 const SCRIPT_LABEL: Record<ScriptKind, string> = {
@@ -168,7 +169,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
             <input
               ref={fileRef}
               type="file"
-              accept=".txt,.json,.desc,text/plain,application/json"
+              accept=".txt,.json,.desc,.bsms,text/plain,application/json"
               className="hidden"
               onChange={(event) => {
                 const file = event.target.files?.[0];

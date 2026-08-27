@@ -429,6 +429,25 @@ describe("display settings", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps the settings copy short and labels the themes with icons", async () => {
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+    expect(await screen.findByText("Shows the fiat value next to every amount.")).toBeInTheDocument();
+    expect(screen.getByText("Serves the fiat value and the overview price.")).toBeInTheDocument();
+    expect(
+      screen.getByText("How many unused addresses Gerfaut scans past the last used one."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/20 is the norm/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/expose this app's IP/)).not.toBeInTheDocument();
+    for (const name of ["Light", "Dark", "System"]) {
+      expect(screen.getByRole("radio", { name }).querySelector("svg")).not.toBeNull();
+    }
+    // The backend form has one primary action, like every other form.
+    expect(screen.getByRole("button", { name: "Save backend" })).toHaveClass("bg-primary");
+  });
+
   it("saves the shared gap limit from settings", async () => {
     const setGapLimit = vi.fn();
     walletIpc({

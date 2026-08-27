@@ -82,14 +82,13 @@ export function ExportView({ walletId }: { walletId: string }) {
   };
 
   return (
-    <div className="mx-auto max-w-[880px] pb-8">
+    <div className="pb-8">
       <header className="px-1 pb-5 pt-2">
         <h1 className="font-display text-2xl font-semibold tracking-[-0.01em] text-text">
           Export
         </h1>
         <p className="mt-1 font-ui text-sm text-muted">
-          This wallet's transaction history as a CSV file. Everything stays on
-          this machine.
+          This wallet's transaction history as a CSV file.
         </p>
       </header>
 
@@ -170,14 +169,14 @@ export function ExportView({ walletId }: { walletId: string }) {
                 </span>
               </span>
             }
-            hint="Adds the price at each transaction's date to the file. Coming with the Gerfaut server."
+            hint="Adds the price at each transaction's date to the file."
           >
             <button
               type="button"
               role="switch"
               aria-checked={false}
               disabled
-              aria-label="Fiat value at transaction time (premium, coming later)"
+              aria-label="Fiat value at transaction time (premium)"
               className="relative h-6 w-11 cursor-default rounded-full bg-border opacity-50"
             >
               <span

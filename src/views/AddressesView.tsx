@@ -90,7 +90,7 @@ function AddressTable({
   empty?: string;
 }) {
   return (
-    <section aria-label={title} className="overflow-hidden rounded-lg border border-border bg-surface">
+    <section aria-label={title} className="overflow-clip rounded-lg border border-border bg-surface">
       <div className="flex items-baseline justify-between gap-3 px-4 pb-1 pt-3">
         <h2 className="font-ui text-sm font-semibold text-text">{title}</h2>
         <p className="font-ui text-xs text-muted">{hint}</p>
@@ -99,7 +99,10 @@ function AddressTable({
         <p className="px-4 pb-4 pt-1 font-ui text-sm text-muted">{empty ?? "Nothing here yet."}</p>
       ) : (
         <table className="w-full border-separate border-spacing-0">
-          <thead>
+          {/* Pinned while the list scrolls under it: the section clips
+              its corners with overflow-clip, which, unlike hidden, leaves
+              the canvas as the scrolling ancestor. */}
+          <thead className="sticky top-0 z-10">
             <tr className="text-left [&>th]:border-b [&>th]:border-border [&>th]:bg-surface">
               <Th className="w-16">Index</Th>
               <Th>Address</Th>
