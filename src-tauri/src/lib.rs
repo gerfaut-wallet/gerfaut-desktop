@@ -209,9 +209,21 @@ async fn export_transactions_csv(
     Ok(result.rows)
 }
 
+/// Fee estimates come from the backend configured for the network: the
+/// host that already serves this wallet, or the public rotation.
 #[tauri::command]
-async fn fetch_fees(network: Network) -> CommandResult<gerfaut_core::fees::FeeEstimates> {
-    Ok(gerfaut_core::fees::fetch_fees(network).await?)
+async fn fetch_fees(
+    state: tauri::State<'_, AppState>,
+    network: Network,
+) -> CommandResult<gerfaut_core::fees::FeeEstimates> {
+    let backend = state.manager.settings().await.backend_for(network);
+    Ok(gerfaut_core::fees::fetch_fees_for(network, &backend).await?)
+}
+
+/// The public servers offered for a network, in settings order.
+#[tauri::command]
+fn public_servers(network: Network) -> Vec<gerfaut_core::chain::public::PublicServer> {
+    gerfaut_core::chain::public::public_servers(network)
 }
 
 #[tauri::command]
@@ -305,6 +317,7 @@ pub fn run() {
             address_list,
             export_transactions_csv,
             fetch_fees,
+            public_servers,
             sync_wallet,
             load_more_history,
             sync_all,

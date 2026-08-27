@@ -223,9 +223,21 @@ export interface SyncAllReport {
 }
 
 export type BackendConfig =
-  | { type: "public_esplora" }
+  /** `server` names one public operator; absent, every public Esplora
+      instance is tried in order. */
+  | { type: "public_esplora"; server?: string }
   | { type: "custom_esplora"; url: string }
   | { type: "custom_electrum"; url: string };
+
+export type ServerProtocol = "esplora" | "electrum";
+
+/** One public server offered for a network. */
+export interface PublicServer {
+  id: string;
+  label: string;
+  protocol: ServerProtocol;
+  url: string;
+}
 
 export interface Settings {
   active_network: Network;
@@ -236,7 +248,54 @@ export interface Settings {
 }
 
 export type PriceSource = "coingecko" | "kraken" | "mempool_space";
-export type FiatCurrency = "eur" | "usd" | "gbp" | "chf";
+
+/** Mirror of `FiatCurrency` in gerfaut-core, in the same order: the
+    seven every source quotes, then the ones CoinGecko alone publishes. */
+export const SHARED_CURRENCIES = ["eur", "usd", "gbp", "chf", "jpy", "cad", "aud"] as const;
+
+export const COINGECKO_ONLY_CURRENCIES = [
+  "inr",
+  "cny",
+  "brl",
+  "ngn",
+  "idr",
+  "pkr",
+  "bdt",
+  "rub",
+  "mxn",
+  "php",
+  "vnd",
+  "try",
+  "ars",
+  "krw",
+  "zar",
+  "thb",
+  "uah",
+  "pln",
+  "sek",
+  "sgd",
+  "hkd",
+  "aed",
+  "nzd",
+] as const;
+
+export type FiatCurrency =
+  | (typeof SHARED_CURRENCIES)[number]
+  | (typeof COINGECKO_ONLY_CURRENCIES)[number];
+
+export const ALL_CURRENCIES: readonly FiatCurrency[] = [
+  ...SHARED_CURRENCIES,
+  ...COINGECKO_ONLY_CURRENCIES,
+];
+
+/** Mirror of `PriceSource::supports_currency`: Kraken lists seven fiat
+    pairs against XBT and the mempool projects publish the same seven. */
+export function quotesCurrency(source: PriceSource, currency: FiatCurrency): boolean {
+  return (
+    source === "coingecko" ||
+    (SHARED_CURRENCIES as readonly string[]).includes(currency)
+  );
+}
 
 export interface PriceQuote {
   /** Price of 1 BTC in the currency. */
@@ -328,6 +387,8 @@ export const ipc = {
   renameWallet: (id: string, name: string) => invoke<void>("rename_wallet", { id, name }),
   removeWallet: (id: string) => invoke<void>("remove_wallet", { id }),
   getSettings: () => invoke<Settings>("get_settings"),
+  publicServers: (network: Network) =>
+    invoke<PublicServer[]>("public_servers", { network }),
   setActiveNetwork: (network: Network) => invoke<void>("set_active_network", { network }),
   setBackend: (network: Network, config: BackendConfig) =>
     invoke<void>("set_backend", { network, config }),

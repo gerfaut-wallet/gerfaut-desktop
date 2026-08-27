@@ -103,6 +103,28 @@ const PRICE_HISTORY = {
   at: 1_755_000_000,
 };
 
+/** What the core publishes for signet, the workspace network here. */
+const PUBLIC_SERVERS = [
+  {
+    id: "mempool.space",
+    label: "mempool.space",
+    protocol: "esplora",
+    url: "https://mempool.space/signet/api",
+  },
+  {
+    id: "blockstream.info",
+    label: "blockstream.info",
+    protocol: "esplora",
+    url: "https://blockstream.info/signet/api",
+  },
+  {
+    id: "electrum:mempool.space",
+    label: "mempool.space:60602",
+    protocol: "electrum",
+    url: "ssl://mempool.space:60602",
+  },
+];
+
 function receiveEntries(lookahead: number): AddressEntry[] {
   return Array.from({ length: lookahead + 1 }, (_, index) => ({
     index,
@@ -120,6 +142,8 @@ function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => 
     switch (cmd) {
       case "get_settings":
         return SETTINGS;
+      case "public_servers":
+        return PUBLIC_SERVERS;
       case "list_wallets":
         return [WALLET];
       case "wallet_snapshot":
@@ -448,6 +472,96 @@ describe("display settings", () => {
     expect(screen.getByRole("button", { name: "Save backend" })).toHaveClass("bg-primary");
   });
 
+  it("names the public server that answers, or leaves it automatic", async () => {
+    const setBackend = vi.fn();
+    walletIpc({
+      set_backend: (args) => {
+        setBackend(args.config);
+        return undefined;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+
+    const select = await screen.findByRole("combobox", { name: "Public server" });
+    expect(select).toHaveValue("");
+    expect(
+      screen.getByText("Every public server is tried in turn until one answers."),
+    ).toBeInTheDocument();
+    // Every operator the core publishes, with its protocol.
+    expect(
+      within(select).getByRole("option", { name: "blockstream.info · Esplora" }),
+    ).toBeInTheDocument();
+    expect(
+      within(select).getByRole("option", { name: "mempool.space:60602 · Electrum" }),
+    ).toBeInTheDocument();
+
+    await user.selectOptions(select, "blockstream.info");
+    expect(
+      screen.getByText(/Only this server is asked/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    await waitFor(() =>
+      expect(setBackend).toHaveBeenCalledWith({
+        type: "public_esplora",
+        server: "blockstream.info",
+      }),
+    );
+
+    // An Electrum server cannot serve a single-address wallet, and says so.
+    await user.selectOptions(select, "electrum:mempool.space");
+    expect(
+      screen.getByText(/Electrum servers cannot serve a single-address wallet/),
+    ).toBeInTheDocument();
+
+    // Back to automatic: the stored shape carries no operator.
+    await user.selectOptions(select, "");
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    await waitFor(() =>
+      expect(setBackend).toHaveBeenLastCalledWith({ type: "public_esplora" }),
+    );
+  });
+
+  it("offers every currency and moves the source when only one quotes it", async () => {
+    walletIpc();
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+
+    const currency = await screen.findByRole("combobox", { name: "Fiat currency" });
+    expect(within(currency).getAllByRole("option")).toHaveLength(30);
+    // The seven every source quotes come first, under their own group.
+    expect(within(currency).getByRole("option", { name: "JPY" })).toBeInTheDocument();
+    expect(within(currency).getByRole("option", { name: "NGN" })).toBeInTheDocument();
+
+    // A shared currency leaves every source available.
+    await user.selectOptions(currency, "jpy");
+    expect(screen.getByRole("radio", { name: "Kraken" })).toBeEnabled();
+    expect(useUi.getState().fiatSource).toBe("coingecko");
+
+    await user.selectOptions(currency, "inr");
+    expect(useUi.getState().fiatCurrency).toBe("inr");
+    expect(screen.getByRole("radio", { name: "Kraken" })).toBeDisabled();
+    expect(screen.getByRole("radio", { name: "mempool.space" })).toBeDisabled();
+    expect(
+      screen.getByText("CoinGecko is the only source that quotes INR."),
+    ).toBeInTheDocument();
+  });
+
+  it("credits CoinGecko while its data is on screen", async () => {
+    walletIpc();
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+    expect(await screen.findByText("Powered by CoinGecko")).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: "Kraken" }));
+    expect(screen.queryByText("Powered by CoinGecko")).not.toBeInTheDocument();
+  });
+
   it("saves the shared gap limit from settings", async () => {
     const setGapLimit = vi.fn();
     walletIpc({
@@ -677,6 +791,40 @@ describe("addresses page", () => {
     expect(within(screen.getByRole("main")).getByText("0.00150000 BTC")).toBeInTheDocument();
     // No cap note when nothing was truncated.
     expect(screen.queryByText(/capped/i)).not.toBeInTheDocument();
+  });
+
+  it("scrolls the list alone and pills both address states", async () => {
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Addresses" }));
+    await screen.findByText("External");
+
+    // The page fills the canvas and scrolls in one place, the list,
+    // exactly like the UTXO page: the title never moves.
+    const main = screen.getByRole("main");
+    const page = main.querySelector("header")!.parentElement!;
+    expect(page.className).toContain("h-full");
+    expect(page.className).toContain("flex-col");
+    const scrollers = page.querySelectorAll(".overflow-y-auto");
+    expect(scrollers).toHaveLength(1);
+    expect(scrollers[0].className).toContain("min-h-0");
+    expect(scrollers[0].className).toContain("flex-1");
+    expect(scrollers[0].contains(main.querySelector("h1"))).toBe(false);
+    expect(scrollers[0].querySelector("table")).not.toBe(null);
+
+    // The keychain name and the column labels pin together.
+    const head = main.querySelector("thead");
+    expect(head?.className).toContain("sticky");
+    expect(head?.querySelectorAll("tr")).toHaveLength(2);
+
+    // Used is Alerte, fresh is Glacier; neither is a bare word.
+    const used = screen.getAllByText("Used")[0];
+    expect(used.className).toContain("text-alert");
+    expect(used.className).toContain("rounded-full");
+    const fresh = screen.getByText("Fresh");
+    expect(fresh.className).toContain("text-primary");
+    expect(fresh.className).toContain("rounded-full");
   });
 });
 

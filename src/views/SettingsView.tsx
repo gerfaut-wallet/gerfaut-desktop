@@ -20,6 +20,11 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { Button, IconButton } from "../components/Button";
+import {
+  COINGECKO_ONLY_CURRENCIES,
+  SHARED_CURRENCIES,
+  quotesCurrency,
+} from "../lib/ipc";
 import type {
   BackendConfig,
   FiatCurrency,
@@ -35,6 +40,7 @@ import {
   useFiatRate,
   useRemoveWallet,
   useRenameWallet,
+  usePublicServers,
   useSetActiveNetwork,
   useSetBackend,
   useSetGapLimit,
@@ -43,6 +49,12 @@ import { useUi } from "../state/store";
 import type { ThemePref } from "../state/store";
 
 const APP_VERSION = "0.1.0";
+
+const PRICE_SOURCES: { value: PriceSource; label: string }[] = [
+  { value: "coingecko", label: "CoinGecko" },
+  { value: "kraken", label: "Kraken" },
+  { value: "mempool_space", label: "mempool.space" },
+];
 
 const NETWORKS: { value: Network; label: string; hint: string }[] = [
   { value: "mainnet", label: "Mainnet", hint: "The Bitcoin network" },
@@ -121,7 +133,7 @@ function Segmented<T extends string>({
   label,
 }: {
   value: T;
-  options: { value: T; label: string; icon?: ReactNode }[];
+  options: { value: T; label: string; icon?: ReactNode; disabled?: boolean }[];
   onChange: (value: T) => void;
   label: string;
 }) {
@@ -137,12 +149,16 @@ function Segmented<T extends string>({
           type="button"
           role="radio"
           aria-checked={value === option.value}
+          disabled={option.disabled}
           onClick={() => onChange(option.value)}
           className={clsx(
-            "inline-flex cursor-pointer items-center gap-1.5 rounded-[6px] px-3 py-1.5 font-ui text-sm font-medium transition-colors duration-150",
+            "inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 font-ui text-sm font-medium transition-colors duration-150",
+            option.disabled
+              ? "cursor-not-allowed text-muted/45"
+              : "cursor-pointer",
             value === option.value
               ? "bg-surface text-text shadow-[inset_0_0_0_1px_var(--color-border)]"
-              : "text-muted hover:text-text",
+              : !option.disabled && "text-muted hover:text-text",
           )}
         >
           {option.icon && (
@@ -154,6 +170,34 @@ function Segmented<T extends string>({
         </button>
       ))}
     </div>
+  );
+}
+
+/** Native select, styled like the app's inputs. Used where the choices
+    are too many for a segmented row. */
+function Select({
+  id,
+  value,
+  onChange,
+  label,
+  children,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <select
+      id={id}
+      aria-label={label}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="h-9 cursor-pointer rounded-sm bg-sunken px-2 font-ui text-sm text-text outline-none"
+    >
+      {children}
+    </select>
   );
 }
 
@@ -320,32 +364,55 @@ export function SettingsView({
               title="Currency"
               hint="Used by the fiat value and the overview price chart."
             >
-              <Segmented
+              <Select
+                id="fiat-currency"
                 label="Fiat currency"
                 value={fiatCurrency}
-                onChange={setFiatCurrency}
-                options={(["eur", "usd", "gbp", "chf"] as FiatCurrency[]).map(
-                  (currency) => ({ value: currency, label: currency.toUpperCase() }),
-                )}
-              />
+                onChange={(value) => setFiatCurrency(value as FiatCurrency)}
+              >
+                <optgroup label="Every source">
+                  {SHARED_CURRENCIES.map((currency) => (
+                    <option key={currency} value={currency}>
+                      {currency.toUpperCase()}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="CoinGecko only">
+                  {COINGECKO_ONLY_CURRENCIES.map((currency) => (
+                    <option key={currency} value={currency}>
+                      {currency.toUpperCase()}
+                    </option>
+                  ))}
+                </optgroup>
+              </Select>
             </SettingRow>
-            <SettingRow
-              title="Price source"
-              hint="Serves the fiat value and the overview price."
-            >
-              <Segmented
-                label="Price source"
-                value={fiatSource}
-                onChange={setFiatSource}
-                options={
-                  [
-                    { value: "coingecko", label: "CoinGecko" },
-                    { value: "kraken", label: "Kraken" },
-                    { value: "mempool_space", label: "mempool.space" },
-                  ] as { value: PriceSource; label: string }[]
-                }
-              />
-            </SettingRow>
+            <div>
+              <SettingRow
+                title="Price source"
+                hint="Serves the fiat value and the overview price."
+              >
+                <Segmented
+                  label="Price source"
+                  value={fiatSource}
+                  onChange={setFiatSource}
+                  options={PRICE_SOURCES.map((source) => ({
+                    ...source,
+                    disabled: !quotesCurrency(source.value, fiatCurrency),
+                  }))}
+                />
+              </SettingRow>
+              {!quotesCurrency("kraken", fiatCurrency) && (
+                <p className="mt-1.5 font-ui text-xs text-muted">
+                  CoinGecko is the only source that quotes{" "}
+                  {fiatCurrency.toUpperCase()}.
+                </p>
+              )}
+              {/* Required by the CoinGecko API terms whenever their data
+                  is on screen. */}
+              {fiatSource === "coingecko" && (
+                <p className="mt-1.5 font-ui text-[11px] text-muted">Powered by CoinGecko</p>
+              )}
+            </div>
             {fiatEnabled && <RatePreview />}
           </div>
         </SectionCard>
@@ -418,7 +485,12 @@ function BackendSection({
   saving: boolean;
 }) {
   const current = settings.backends[network] ?? { type: "public_esplora" };
+  const servers = usePublicServers(network);
   const [kind, setKind] = useState<BackendConfig["type"]>(current.type);
+  // "" is the automatic rotation over every public instance.
+  const [publicServer, setPublicServer] = useState(
+    current.type === "public_esplora" ? (current.server ?? "") : "",
+  );
   const [esploraUrl, setEsploraUrl] = useState(
     current.type === "custom_esplora" ? current.url : "",
   );
@@ -434,6 +506,7 @@ function BackendSection({
   useEffect(() => {
     const config = settings.backends[network] ?? { type: "public_esplora" };
     setKind(config.type);
+    setPublicServer(config.type === "public_esplora" ? (config.server ?? "") : "");
     setEsploraUrl(config.type === "custom_esplora" ? config.url : "");
     const electrum =
       config.type === "custom_electrum"
@@ -449,13 +522,20 @@ function BackendSection({
     (kind === "custom_esplora" && esploraUrl.trim().length > 0) ||
     (kind === "custom_electrum" && host.trim().length > 0 && /^\d+$/.test(port.trim()));
 
+  // A server the app no longer lists falls back to the rotation, the
+  // same resolution the core makes.
+  const known = servers.data?.some((server) => server.id === publicServer) ?? false;
+  const chosen = known ? publicServer : "";
+
   const save = () => {
-    if (kind === "public_esplora") onSave({ type: "public_esplora" });
+    if (kind === "public_esplora")
+      onSave(chosen ? { type: "public_esplora", server: chosen } : { type: "public_esplora" });
     else if (kind === "custom_esplora")
       onSave({ type: "custom_esplora", url: esploraUrl.trim() });
     else onSave({ type: "custom_electrum", url: buildElectrumUrl(host, port, tls) });
   };
 
+  const chosenProtocol = servers.data?.find((server) => server.id === chosen)?.protocol;
   const networkLabel = NETWORKS.find((option) => option.value === network)?.label;
 
   return (
@@ -470,7 +550,7 @@ function BackendSection({
             {
               value: "public_esplora",
               label: "Public API",
-              hint: "mempool.space, blockstream.info and mempool.emzy.de, no setup. The operator that answers can see this wallet's addresses.",
+              hint: "Free, keyless servers, no setup. The operator that answers can see this wallet's addresses.",
             },
             {
               value: "custom_esplora",
@@ -503,6 +583,31 @@ function BackendSection({
         ))}
       </fieldset>
 
+      {kind === "public_esplora" && (
+        <div className="mt-3">
+          <FieldLabel htmlFor="public-server">Server</FieldLabel>
+          <Select
+            id="public-server"
+            label="Public server"
+            value={chosen}
+            onChange={setPublicServer}
+          >
+            <option value="">Automatic</option>
+            {(servers.data ?? []).map((server) => (
+              <option key={server.id} value={server.id}>
+                {server.label} · {server.protocol === "esplora" ? "Esplora" : "Electrum"}
+              </option>
+            ))}
+          </Select>
+          <p className="mt-1.5 font-ui text-xs text-muted">
+            {chosen
+              ? "Only this server is asked, for chain data and for fee estimates."
+              : "Every public server is tried in turn until one answers."}
+            {chosenProtocol === "electrum" &&
+              " Electrum servers cannot serve a single-address wallet."}
+          </p>
+        </div>
+      )}
       {kind === "custom_esplora" && (
         <div className="mt-3">
           <FieldLabel htmlFor="backend-url">Server URL</FieldLabel>

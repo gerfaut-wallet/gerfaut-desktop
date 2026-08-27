@@ -2,6 +2,7 @@
 // what the interface itself decides: selection, navigation, preferences.
 
 import { create } from "zustand";
+import { ALL_CURRENCIES, quotesCurrency } from "../lib/ipc";
 import type { FiatCurrency, PriceRange, PriceSource } from "../lib/ipc";
 import { ipc } from "../lib/ipc";
 import type { Unit } from "../lib/format";
@@ -120,6 +121,13 @@ export const useUi = create<UiState>((set, get) => ({
   setFiatCurrency: (fiatCurrency) => {
     set({ fiatCurrency });
     persist("display.fiat_currency", fiatCurrency);
+    // Most currencies past the shared seven have one keyless publisher.
+    // Moving to one of them moves the source with it rather than
+    // leaving a pair no source can quote.
+    if (!quotesCurrency(get().fiatSource, fiatCurrency)) {
+      set({ fiatSource: "coingecko" });
+      persist("display.fiat_source", "coingecko");
+    }
   },
   setFiatSource: (fiatSource) => {
     set({ fiatSource });
@@ -151,8 +159,12 @@ export const useUi = create<UiState>((set, get) => ({
   hydratePrefs: (prefs) => {
     const theme = (prefs["desktop.theme"] as ThemePref) ?? "light";
     const unit = prefs["display.unit"] === "sats" ? "sats" : "btc";
-    const currency = prefs["display.fiat_currency"] as FiatCurrency;
-    const source = prefs["display.fiat_source"] as PriceSource;
+    const stored = prefs["display.fiat_currency"] as FiatCurrency;
+    const currency = ALL_CURRENCIES.includes(stored) ? stored : "eur";
+    const storedSource = prefs["display.fiat_source"] as PriceSource;
+    const source = ["coingecko", "kraken", "mempool_space"].includes(storedSource)
+      ? storedSource
+      : "coingecko";
     set({
       theme: ["light", "dark", "system"].includes(theme) ? theme : "light",
       masked: prefs["desktop.masked"] === "1",
@@ -160,10 +172,10 @@ export const useUi = create<UiState>((set, get) => ({
       unit,
       fiatEnabled: prefs["display.fiat"] === "1",
       explorerAck: prefs["privacy.explorer_ack"] === "1",
-      fiatCurrency: ["eur", "usd", "gbp", "chf"].includes(currency) ? currency : "eur",
-      fiatSource: ["coingecko", "kraken", "mempool_space"].includes(source)
-        ? source
-        : "coingecko",
+      fiatCurrency: currency,
+      // A pair no source can quote would show a permanent dash: the
+      // currency wins, the source follows.
+      fiatSource: quotesCurrency(source, currency) ? source : "coingecko",
       priceRange: (["day", "week", "month", "year"] as PriceRange[]).includes(
         prefs["home.price_range"] as PriceRange,
       )

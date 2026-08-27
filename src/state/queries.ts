@@ -29,6 +29,16 @@ export function useSettings() {
   return useQuery({ queryKey: keys.settings, queryFn: ipc.getSettings });
 }
 
+/** The public servers offered for a network. A static catalogue: it
+    only changes when the app is updated. */
+export function usePublicServers(network: Network) {
+  return useQuery({
+    queryKey: ["public-servers", network],
+    queryFn: () => ipc.publicServers(network),
+    staleTime: Infinity,
+  });
+}
+
 export function useWallets(network?: Network) {
   return useQuery({
     queryKey: keys.wallets(network),
