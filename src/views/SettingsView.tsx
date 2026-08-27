@@ -538,6 +538,79 @@ function BackendSection({
   const chosenProtocol = servers.data?.find((server) => server.id === chosen)?.protocol;
   const networkLabel = NETWORKS.find((option) => option.value === network)?.label;
 
+  /** The field the selected source needs, rendered under its own option
+      so no reader has to guess which one it belongs to. */
+  const fields: Record<BackendConfig["type"], ReactNode> = {
+    public_esplora: (
+      <>
+        <FieldLabel htmlFor="public-server">Server</FieldLabel>
+        <Select
+          id="public-server"
+          label="Public server"
+          value={chosen}
+          onChange={setPublicServer}
+        >
+          <option value="">Automatic</option>
+          {(servers.data ?? []).map((server) => (
+            <option key={server.id} value={server.id}>
+              {server.label} · {server.protocol === "esplora" ? "Esplora" : "Electrum"}
+            </option>
+          ))}
+        </Select>
+        <p className="mt-1.5 font-ui text-xs text-muted">
+          {chosen
+            ? "Only this server is asked, for chain data and for fee estimates."
+            : "Every public server is tried in turn until one answers."}
+          {chosenProtocol === "electrum" &&
+            " Electrum servers cannot serve a single-address wallet."}
+        </p>
+      </>
+    ),
+    custom_esplora: (
+      <>
+        <FieldLabel htmlFor="backend-url">Server URL</FieldLabel>
+        <input
+          id="backend-url"
+          value={esploraUrl}
+          onChange={(event) => setEsploraUrl(event.target.value)}
+          spellCheck={false}
+          placeholder="https://node.example.org:3002/api"
+          className="selectable h-11 w-full rounded-sm bg-sunken px-3 font-data text-[13px] text-text outline-none placeholder:text-muted/60"
+        />
+      </>
+    ),
+    custom_electrum: (
+      <div className="flex items-end gap-3">
+        <div className="min-w-0 flex-1">
+          <FieldLabel htmlFor="electrum-host">Host</FieldLabel>
+          <input
+            id="electrum-host"
+            value={host}
+            onChange={(event) => setHost(event.target.value)}
+            spellCheck={false}
+            placeholder="node.example.org or xxxxxxxx.onion"
+            className="selectable h-11 w-full rounded-sm bg-sunken px-3 font-data text-[13px] text-text outline-none placeholder:text-muted/60"
+          />
+        </div>
+        <div className="w-24">
+          <FieldLabel htmlFor="electrum-port">Port</FieldLabel>
+          <input
+            id="electrum-port"
+            value={port}
+            onChange={(event) => setPort(event.target.value.replace(/\D/g, ""))}
+            inputMode="numeric"
+            placeholder="50002"
+            className="selectable h-11 w-full rounded-sm bg-sunken px-3 font-data text-[13px] text-text outline-none placeholder:text-muted/60"
+          />
+        </div>
+        <div className="flex h-11 items-center gap-2 pb-0.5">
+          <Toggle checked={tls} onChange={setTls} label="Use TLS" />
+          <span className="font-ui text-sm text-text">TLS</span>
+        </div>
+      </div>
+    ),
+  };
+
   return (
     <SectionCard
       icon={<Server size={18} strokeWidth={1.5} />}
@@ -564,93 +637,30 @@ function BackendSection({
             },
           ] as const
         ).map((option) => (
-          <label key={option.value} className="flex cursor-pointer items-start gap-3">
-            <input
-              type="radio"
-              name="backend"
-              value={option.value}
-              checked={kind === option.value}
-              onChange={() => setKind(option.value)}
-              className="mt-1 accent-(--color-primary)"
-            />
-            <span>
-              <span className="block font-ui text-sm font-medium text-text">
-                {option.label}
+          <div key={option.value}>
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="radio"
+                name="backend"
+                value={option.value}
+                checked={kind === option.value}
+                onChange={() => setKind(option.value)}
+                className="mt-1 accent-(--color-primary)"
+              />
+              <span>
+                <span className="block font-ui text-sm font-medium text-text">
+                  {option.label}
+                </span>
+                <span className="block font-ui text-xs text-muted">{option.hint}</span>
               </span>
-              <span className="block font-ui text-xs text-muted">{option.hint}</span>
-            </span>
-          </label>
+            </label>
+            {kind === option.value && (
+              <div className="mt-3 pl-7">{fields[option.value]}</div>
+            )}
+          </div>
         ))}
       </fieldset>
 
-      {kind === "public_esplora" && (
-        <div className="mt-3">
-          <FieldLabel htmlFor="public-server">Server</FieldLabel>
-          <Select
-            id="public-server"
-            label="Public server"
-            value={chosen}
-            onChange={setPublicServer}
-          >
-            <option value="">Automatic</option>
-            {(servers.data ?? []).map((server) => (
-              <option key={server.id} value={server.id}>
-                {server.label} · {server.protocol === "esplora" ? "Esplora" : "Electrum"}
-              </option>
-            ))}
-          </Select>
-          <p className="mt-1.5 font-ui text-xs text-muted">
-            {chosen
-              ? "Only this server is asked, for chain data and for fee estimates."
-              : "Every public server is tried in turn until one answers."}
-            {chosenProtocol === "electrum" &&
-              " Electrum servers cannot serve a single-address wallet."}
-          </p>
-        </div>
-      )}
-      {kind === "custom_esplora" && (
-        <div className="mt-3">
-          <FieldLabel htmlFor="backend-url">Server URL</FieldLabel>
-          <input
-            id="backend-url"
-            value={esploraUrl}
-            onChange={(event) => setEsploraUrl(event.target.value)}
-            spellCheck={false}
-            placeholder="https://node.example.org:3002/api"
-            className="selectable h-11 w-full rounded-sm bg-sunken px-3 font-data text-[13px] text-text outline-none placeholder:text-muted/60"
-          />
-        </div>
-      )}
-      {kind === "custom_electrum" && (
-        <div className="mt-3 flex items-end gap-3">
-          <div className="min-w-0 flex-1">
-            <FieldLabel htmlFor="electrum-host">Host</FieldLabel>
-            <input
-              id="electrum-host"
-              value={host}
-              onChange={(event) => setHost(event.target.value)}
-              spellCheck={false}
-              placeholder="node.example.org or xxxxxxxx.onion"
-              className="selectable h-11 w-full rounded-sm bg-sunken px-3 font-data text-[13px] text-text outline-none placeholder:text-muted/60"
-            />
-          </div>
-          <div className="w-24">
-            <FieldLabel htmlFor="electrum-port">Port</FieldLabel>
-            <input
-              id="electrum-port"
-              value={port}
-              onChange={(event) => setPort(event.target.value.replace(/\D/g, ""))}
-              inputMode="numeric"
-              placeholder="50002"
-              className="selectable h-11 w-full rounded-sm bg-sunken px-3 font-data text-[13px] text-text outline-none placeholder:text-muted/60"
-            />
-          </div>
-          <div className="flex h-11 items-center gap-2 pb-0.5">
-            <Toggle checked={tls} onChange={setTls} label="Use TLS" />
-            <span className="font-ui text-sm text-text">TLS</span>
-          </div>
-        </div>
-      )}
       {kind !== "public_esplora" && (
         <p className="mt-3 font-ui text-xs text-muted">
           Onion addresses go through the Tor proxy at 127.0.0.1:9050. Start Tor
