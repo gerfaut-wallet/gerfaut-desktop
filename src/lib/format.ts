@@ -78,9 +78,13 @@ export function formatAmountSigned(sats: number, unit: Unit): string {
 /** Fiat value of an amount at a given BTC rate, in the user's locale. */
 export function formatFiat(sats: number, rate: number, currency: string): string {
   const value = (sats / 100_000_000) * rate;
+  // Each currency sets its own precision: yen, won and dong carry no
+  // decimals, and forcing two on them reads as an error. Under one unit
+  // the ceiling is raised to four so a small amount does not collapse
+  // to zero, whatever the currency.
   return new Intl.NumberFormat(undefined, {
     style: "currency",
     currency: currency.toUpperCase(),
-    maximumFractionDigits: Math.abs(value) < 1 ? 4 : 2,
+    ...(Math.abs(value) < 1 ? { maximumFractionDigits: 4 } : {}),
   }).format(value);
 }
