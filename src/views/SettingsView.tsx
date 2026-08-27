@@ -180,12 +180,15 @@ function Select({
   value,
   onChange,
   label,
+  className,
   children,
 }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
   label: string;
+  /** Form fields take the input gabarit; settings rows stay compact. */
+  className?: string;
   children: ReactNode;
 }) {
   return (
@@ -194,7 +197,10 @@ function Select({
       aria-label={label}
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="h-9 cursor-pointer rounded-sm bg-sunken px-2 font-ui text-sm text-text outline-none"
+      className={
+        className ??
+        "h-9 cursor-pointer rounded-sm bg-sunken px-2 font-ui text-sm text-text outline-none"
+      }
     >
       {children}
     </select>
@@ -549,6 +555,7 @@ function BackendSection({
           label="Public server"
           value={chosen}
           onChange={setPublicServer}
+          className="h-11 w-full cursor-pointer rounded-sm bg-sunken px-3 font-ui text-base text-text outline-none"
         >
           <option value="">Automatic</option>
           {(servers.data ?? []).map((server) => (
