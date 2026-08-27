@@ -183,8 +183,8 @@ function StatusChip({ used }: { used: boolean }) {
     <span
       className={`inline-flex rounded-full border px-2 py-0.5 font-ui text-[11px] font-medium ${
         used
-          ? "border-alert/25 bg-alert-surface text-alert dark:bg-alert/12"
-          : "border-primary/25 bg-primary/10 text-primary dark:bg-primary/12"
+          ? "border-alert/25 bg-alert-surface text-alert dark:bg-alert/10"
+          : "border-primary/25 bg-primary/10 text-primary dark:bg-primary/10"
       }`}
     >
       {used ? "Used" : "Fresh"}
