@@ -1,8 +1,11 @@
+import { Check, Clock } from "lucide-react";
 import type { TxStatus } from "../lib/ipc";
 
-/** Confirmed / pending pill: a leading dot plus the label, never colour
-    alone. Light theme: tinted surface + dark text + 25% border (measured
-    rule); dark theme: coloured text on the surface, no tint. */
+/** Confirmed / pending pill: a leading icon plus the label, never colour
+    alone. The check and the clock differ in shape, so the state survives
+    colour blindness and monochrome screenshots. Light theme: tinted
+    surface + dark text + 25% border (measured rule); dark theme:
+    coloured text on the surface, no tint. */
 export function StatusPill({ status, confirmations }: { status: TxStatus; confirmations?: number }) {
   const confirmed = status.state === "confirmed";
   const label = confirmed
@@ -18,7 +21,11 @@ export function StatusPill({ status, confirmations }: { status: TxStatus; confir
           : "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-pending/25 bg-pending-surface py-0.5 pl-2 pr-2.5 font-ui text-xs font-medium text-pending"
       }
     >
-      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current" />
+      {confirmed ? (
+        <Check size={12} strokeWidth={2} aria-hidden className="shrink-0" />
+      ) : (
+        <Clock size={12} strokeWidth={2} aria-hidden className="shrink-0" />
+      )}
       {label}
     </span>
   );

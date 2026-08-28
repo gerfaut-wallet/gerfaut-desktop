@@ -847,6 +847,41 @@ describe("partial history", () => {
   });
 });
 
+describe("transaction status marker", () => {
+  beforeEach(() => {
+    walletIpc({
+      wallet_snapshot: () => ({
+        ...SNAPSHOT,
+        txs: [
+          ...SNAPSHOT.txs,
+          {
+            txid: "ef".repeat(32),
+            net_sats: -20_000,
+            fee_sats: 210,
+            status: { state: "pending" as const },
+            confirmations: 0,
+          },
+        ],
+      }),
+    });
+  });
+
+  it("tells the two states apart by shape, not by colour alone", async () => {
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Transactions" }));
+    const confirmed = (await screen.findAllByText("Confirmed"))[0];
+    const pending = screen.getAllByText("Pending")[0];
+    // A check and a clock: readable on a monochrome screenshot too.
+    expect(confirmed.querySelector("svg.lucide-check")).not.toBe(null);
+    expect(pending.querySelector("svg.lucide-clock")).not.toBe(null);
+    // The old colour-only dot is gone from both.
+    expect(confirmed.querySelector(".bg-current")).toBe(null);
+    expect(pending.querySelector(".bg-current")).toBe(null);
+  });
+});
+
 describe("receive page audit", () => {
   const manyExternal = Array.from({ length: 8 }, (_, index) => ({
     index,
