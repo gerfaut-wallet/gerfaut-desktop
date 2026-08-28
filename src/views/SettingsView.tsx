@@ -20,6 +20,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { Button, IconButton } from "../components/Button";
+import { Select } from "../components/Select";
 import {
   COINGECKO_ONLY_CURRENCIES,
   SHARED_CURRENCIES,
@@ -49,6 +50,41 @@ import { useUi } from "../state/store";
 import type { ThemePref } from "../state/store";
 
 const APP_VERSION = "0.1.0";
+
+/** Plain names beside the codes: a list of thirty triplets is not a
+    list anyone can read. */
+const CURRENCY_NAME: Record<FiatCurrency, string> = {
+  eur: "Euro",
+  usd: "US dollar",
+  gbp: "Pound sterling",
+  chf: "Swiss franc",
+  jpy: "Japanese yen",
+  cad: "Canadian dollar",
+  aud: "Australian dollar",
+  inr: "Indian rupee",
+  cny: "Chinese yuan",
+  brl: "Brazilian real",
+  ngn: "Nigerian naira",
+  idr: "Indonesian rupiah",
+  pkr: "Pakistani rupee",
+  bdt: "Bangladeshi taka",
+  rub: "Russian ruble",
+  mxn: "Mexican peso",
+  php: "Philippine peso",
+  vnd: "Vietnamese dong",
+  try: "Turkish lira",
+  ars: "Argentine peso",
+  krw: "South Korean won",
+  zar: "South African rand",
+  thb: "Thai baht",
+  uah: "Ukrainian hryvnia",
+  pln: "Polish zloty",
+  sek: "Swedish krona",
+  sgd: "Singapore dollar",
+  hkd: "Hong Kong dollar",
+  aed: "UAE dirham",
+  nzd: "New Zealand dollar",
+};
 
 const PRICE_SOURCES: { value: PriceSource; label: string }[] = [
   { value: "coingecko", label: "CoinGecko" },
@@ -170,40 +206,6 @@ function Segmented<T extends string>({
         </button>
       ))}
     </div>
-  );
-}
-
-/** Native select, styled like the app's inputs. Used where the choices
-    are too many for a segmented row. */
-function Select({
-  id,
-  value,
-  onChange,
-  label,
-  className,
-  children,
-}: {
-  id: string;
-  value: string;
-  onChange: (value: string) => void;
-  label: string;
-  /** Form fields take the input gabarit; settings rows stay compact. */
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <select
-      id={id}
-      aria-label={label}
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      className={
-        className ??
-        "h-9 cursor-pointer rounded-sm bg-sunken px-2 font-ui text-sm text-text outline-none"
-      }
-    >
-      {children}
-    </select>
   );
 }
 
@@ -373,24 +375,25 @@ export function SettingsView({
               <Select
                 id="fiat-currency"
                 label="Fiat currency"
+                size="sm"
+                className="w-40"
                 value={fiatCurrency}
-                onChange={(value) => setFiatCurrency(value as FiatCurrency)}
-              >
-                <optgroup label="Every source">
-                  {SHARED_CURRENCIES.map((currency) => (
-                    <option key={currency} value={currency}>
-                      {currency.toUpperCase()}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="CoinGecko only">
-                  {COINGECKO_ONLY_CURRENCIES.map((currency) => (
-                    <option key={currency} value={currency}>
-                      {currency.toUpperCase()}
-                    </option>
-                  ))}
-                </optgroup>
-              </Select>
+                onChange={setFiatCurrency}
+                options={[
+                  ...SHARED_CURRENCIES.map((currency) => ({
+                    value: currency,
+                    label: currency.toUpperCase(),
+                    hint: CURRENCY_NAME[currency],
+                    group: "Every source",
+                  })),
+                  ...COINGECKO_ONLY_CURRENCIES.map((currency) => ({
+                    value: currency,
+                    label: currency.toUpperCase(),
+                    hint: CURRENCY_NAME[currency],
+                    group: "CoinGecko only",
+                  })),
+                ]}
+              />
             </SettingRow>
             <div>
               <SettingRow
@@ -553,17 +556,22 @@ function BackendSection({
         <Select
           id="public-server"
           label="Public server"
+          className="max-w-md"
           value={chosen}
           onChange={setPublicServer}
-          className="h-11 w-full cursor-pointer rounded-sm bg-sunken px-3 font-ui text-base text-text outline-none"
-        >
-          <option value="">Automatic</option>
-          {(servers.data ?? []).map((server) => (
-            <option key={server.id} value={server.id}>
-              {server.label} · {server.protocol === "esplora" ? "Esplora" : "Electrum"}
-            </option>
-          ))}
-        </Select>
+          options={[
+            {
+              value: "",
+              label: "Automatic",
+              hint: "Every public Esplora instance, tried in turn",
+            },
+            ...(servers.data ?? []).map((server) => ({
+              value: server.id,
+              label: server.label,
+              hint: server.protocol === "esplora" ? "Esplora" : "Electrum",
+            })),
+          ]}
+        />
         <p className="mt-1.5 font-ui text-xs text-muted">
           {chosen
             ? "Only this server is asked, for chain data and for fee estimates."

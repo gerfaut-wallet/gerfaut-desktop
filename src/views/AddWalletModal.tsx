@@ -2,6 +2,7 @@ import { FileUp, Info, ScanLine } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
+import { Select } from "../components/Select";
 import { ScanQrModal } from "../components/ScanQrModal";
 import type { InputWarning, Network, ParsedInput, RecognizedKind, ScriptKind } from "../lib/ipc";
 import { ipc, isCommandError } from "../lib/ipc";
@@ -33,6 +34,17 @@ const WARNING_LABEL: Record<InputWarning, string> = {
   slip132_converted: "The SLIP-132 prefix was converted to a standard extended key.",
   change_not_tracked: "No change path was provided: change outputs will not be tracked.",
   multiple_accounts_in_file: "The file holds several account types; the preferred one was selected.",
+};
+
+/** What each script type means to the person choosing, in one line. */
+const SCRIPT_HINT: Record<ScriptKind, string> = {
+  legacy: "P2PKH, addresses starting with 1",
+  nested_segwit: "P2SH-P2WPKH, addresses starting with 3",
+  segwit: "P2WPKH, addresses starting with bc1q",
+  taproot: "P2TR, addresses starting with bc1p",
+  witness_script: "P2WSH multisig or script",
+  legacy_script: "P2SH multisig or script",
+  bare: "Raw script",
 };
 
 const NETWORK_LABEL: Record<Network, string> = {
@@ -236,18 +248,17 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
               >
                 Script type
               </label>
-              <select
+              <Select
                 id="wallet-script"
+                label="Script type"
                 value={script ?? parsed.payload.script}
-                onChange={(event) => chooseScript(event.target.value as ScriptKind)}
-                className="h-11 w-full cursor-pointer rounded-sm bg-sunken px-3 font-ui text-base text-text outline-none"
-              >
-                {parsed.script_options.map((option) => (
-                  <option key={option} value={option}>
-                    {SCRIPT_LABEL[option]}
-                  </option>
-                ))}
-              </select>
+                onChange={chooseScript}
+                options={parsed.script_options.map((option) => ({
+                  value: option,
+                  label: SCRIPT_LABEL[option],
+                  hint: SCRIPT_HINT[option],
+                }))}
+              />
               <p className="mt-1.5 font-ui text-xs text-muted">
                 Compare the first address above with your wallet.
               </p>
@@ -284,19 +295,18 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
               >
                 Network
               </label>
-              <select
+              <Select
                 id="wallet-network"
+                label="Network"
+                className="w-40"
                 value={network}
-                onChange={(event) => setNetwork(event.target.value as Network)}
+                onChange={setNetwork}
                 disabled={parsed.networks.length === 1}
-                className="h-11 cursor-pointer rounded-sm bg-sunken px-3 font-ui text-base text-text outline-none"
-              >
-                {parsed.networks.map((candidate) => (
-                  <option key={candidate} value={candidate}>
-                    {NETWORK_LABEL[candidate]}
-                  </option>
-                ))}
-              </select>
+                options={parsed.networks.map((candidate) => ({
+                  value: candidate,
+                  label: NETWORK_LABEL[candidate],
+                }))}
+              />
             </div>
           </div>
 
