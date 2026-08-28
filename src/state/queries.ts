@@ -316,3 +316,26 @@ export function useSetBackend() {
     onSuccess: () => void client.invalidateQueries({ queryKey: keys.settings }),
   });
 }
+
+/** Asks what an Electrum server's certificate amounts to. Reads only:
+    accepting one is [useTrustCertificate]. */
+export function useInspectCertificate() {
+  return useMutation({ mutationFn: (url: string) => ipc.inspectCertificate(url) });
+}
+
+export function useTrustCertificate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { url: string; fingerprint: string }) =>
+      ipc.trustCertificate(args.url, args.fingerprint),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.settings }),
+  });
+}
+
+export function useForgetCertificate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (host: string) => ipc.forgetCertificate(host),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.settings }),
+  });
+}

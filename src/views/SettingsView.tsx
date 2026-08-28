@@ -9,6 +9,7 @@ import {
   Pencil,
   RefreshCw,
   Server,
+  ShieldCheck,
   Sun,
   SunMoon,
   Trash2,
@@ -20,6 +21,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { Button, IconButton } from "../components/Button";
+import { Modal } from "../components/Modal";
 import { Select } from "../components/Select";
 import {
   COINGECKO_ONLY_CURRENCIES,
@@ -28,6 +30,7 @@ import {
 } from "../lib/ipc";
 import type {
   BackendConfig,
+  CertificateReport,
   FiatCurrency,
   Network,
   PriceSource,
@@ -39,12 +42,15 @@ import { formatFiat, relativeTime } from "../lib/format";
 import {
   useCheckUpdate,
   useFiatRate,
+  useForgetCertificate,
+  useInspectCertificate,
   useRemoveWallet,
   useRenameWallet,
   usePublicServers,
   useSetActiveNetwork,
   useSetBackend,
   useSetGapLimit,
+  useTrustCertificate,
 } from "../state/queries";
 import { useUi } from "../state/store";
 import type { ThemePref } from "../state/store";
@@ -256,6 +262,238 @@ export function buildElectrumUrl(host: string, port: string, tls: boolean): stri
   return `${tls ? "ssl" : "tcp"}://${host.trim()}:${port.trim()}`;
 }
 
+// --- certificates -------------------------------------------------------
+
+/** A fingerprint laid out to be compared by eye: two rows of sixteen
+    bytes, in the same uppercase hex pairs `openssl` prints. */
+export function Fingerprint({ value, tone = "text" }: { value: string; tone?: "text" | "alert" }) {
+  const bytes = value.split(":");
+  const rows = [bytes.slice(0, 16).join(":"), bytes.slice(16).join(":")].filter(Boolean);
+  return (
+    <p
+      className={clsx(
+        "selectable rounded-sm bg-sunken px-3 py-2 font-data text-[13px] leading-6 tracking-[0.02em]",
+        tone === "alert" ? "text-alert" : "text-text",
+      )}
+    >
+      {rows.map((row) => (
+        <span key={row} className="block">
+          {row}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+/** One labelled fact of a certificate. */
+function CertFact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="font-ui text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
+        {label}
+      </dt>
+      <dd className="mt-0.5 break-words font-ui text-sm text-text">{children}</dd>
+    </div>
+  );
+}
+
+/** The day a certificate stops being valid, in the reader's locale. */
+function expiryLabel(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+/**
+ * The decision Gerfaut cannot make for the user: whether this
+ * certificate is the one their server presents.
+ *
+ * A certificate nothing vouches for is a question, not an error: it is
+ * asked calmly, with the fingerprint as the subject of the dialog. One
+ * that changed after being accepted is an alert, and trusting the new
+ * one takes a second, deliberate confirmation.
+ */
+export function CertificateDialog({
+  report,
+  busy,
+  onAccept,
+  onCancel,
+}: {
+  report: CertificateReport;
+  busy: boolean;
+  onAccept: (fingerprint: string) => void;
+  onCancel: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const changed = report.status === "changed";
+  const fingerprint =
+    report.status === "changed"
+      ? report.presented
+      : report.status === "unknown"
+        ? report.fingerprint
+        : "";
+
+  return (
+    <Modal
+      open
+      onClose={onCancel}
+      centered
+      width={560}
+      title={changed ? "This server's certificate changed" : "This server signs its own certificate"}
+    >
+      <div className="flex flex-col gap-4">
+        {changed ? (
+          <>
+            <div className="flex items-start gap-2.5 rounded-md border border-alert/25 bg-alert-surface p-3">
+              <AlertTriangle
+                size={16}
+                strokeWidth={1.75}
+                aria-hidden
+                className="mt-0.5 shrink-0 text-alert"
+              />
+              <p className="font-ui text-sm text-text">
+                {report.host} was accepted with another certificate. Either whoever runs it
+                replaced it, or something is answering in its place.
+              </p>
+            </div>
+            <div>
+              <p className="mb-1 font-ui text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
+                Accepted before
+              </p>
+              <Fingerprint value={report.stored} />
+            </div>
+            <div>
+              <p className="mb-1 font-ui text-[11px] font-medium uppercase tracking-[0.04em] text-alert">
+                Presented now
+              </p>
+              <Fingerprint value={report.presented} tone="alert" />
+            </div>
+            <p className="font-ui text-sm text-muted">
+              Ask whoever runs the server before accepting this one.
+            </p>
+          </>
+        ) : (
+          report.status === "unknown" && (
+            <>
+              <p className="font-ui text-sm text-text">
+                No public authority vouches for the certificate of {report.host}. Compare the
+                fingerprint below with the one your server shows, then accept it once: Gerfaut
+                remembers it and refuses anything else afterwards.
+              </p>
+              <Fingerprint value={report.fingerprint} />
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+                {report.subject && <CertFact label="Subject">{report.subject}</CertFact>}
+                {report.expires !== null && (
+                  <CertFact label="Valid until">{expiryLabel(report.expires)}</CertFact>
+                )}
+                <CertFact label="Why it is asked">{report.reason}</CertFact>
+              </dl>
+              <p className="font-ui text-xs text-muted">
+                On the server:{" "}
+                <span className="selectable font-data text-[12px] text-text">
+                  openssl x509 -noout -fingerprint -sha256 -in cert.pem
+                </span>
+              </p>
+            </>
+          )
+        )}
+
+        <div className="mt-1 flex flex-wrap items-center justify-end gap-3">
+          {changed ? (
+            <>
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() => (confirming ? onAccept(fingerprint) : setConfirming(true))}
+              >
+                {confirming ? "Yes, trust the new certificate" : "Trust the new certificate"}
+              </Button>
+              <Button variant="primary" onClick={onCancel}>
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" onClick={onCancel}>
+                Cancel
+              </Button>
+              <Button variant="primary" disabled={busy} onClick={() => onAccept(fingerprint)}>
+                {busy ? "Saving…" : "Accept and save"}
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/** The certificates the user accepted, and the way back out of one. */
+export function CertificatesSection({ certs }: { certs: Record<string, string> }) {
+  const forget = useForgetCertificate();
+  const { showToast } = useUi();
+  const [pending, setPending] = useState<string | null>(null);
+  const hosts = Object.keys(certs).sort();
+  if (hosts.length === 0) return null;
+
+  return (
+    <SectionCard icon={<ShieldCheck size={18} strokeWidth={1.5} />} title="Trusted certificates">
+      <ul className="flex flex-col divide-y divide-border">
+        {hosts.map((host) => (
+          <li key={host} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-data text-[13px] text-text">{host}</p>
+              <p className="truncate font-data text-[11px] text-muted" title={certs[host]}>
+                {certs[host]}
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              className="h-9 shrink-0 px-2"
+              aria-label={`Forget the certificate accepted for ${host}`}
+              onClick={() => setPending(host)}
+            >
+              <Trash2 size={14} strokeWidth={1.5} aria-hidden />
+              Forget
+            </Button>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 font-ui text-xs text-muted">
+        Each line is a certificate you accepted for that server. Forget one and Gerfaut asks
+        again the next time it connects.
+      </p>
+      {pending && (
+        <Modal open onClose={() => setPending(null)} centered width={440} title="Forget this certificate?">
+          <p className="font-ui text-sm text-text">
+            Gerfaut will ask again the next time it connects to {pending}, and refuse until the
+            certificate is accepted.
+          </p>
+          <div className="mt-4 flex items-center justify-end gap-3">
+            <Button variant="ghost" onClick={() => setPending(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={forget.isPending}
+              onClick={() =>
+                void forget.mutateAsync(pending).then(() => {
+                  setPending(null);
+                  showToast("Certificate forgotten");
+                })
+              }
+            >
+              Forget it
+            </Button>
+          </div>
+        </Modal>
+      )}
+    </SectionCard>
+  );
+}
+
 // --- the view -----------------------------------------------------------
 
 /** Settings: workspace, backend, display, appearance, wallets, about. */
@@ -348,6 +586,8 @@ export function SettingsView({
           }
           saving={setBackend.isPending}
         />
+
+        <CertificatesSection certs={settings.electrum_certs ?? {}} />
 
         <SectionCard icon={<Coins size={18} strokeWidth={1.5} />} title="Display">
           <div className="flex flex-col gap-4">
@@ -510,6 +750,15 @@ function BackendSection({
   const [host, setHost] = useState(initialElectrum.host);
   const [port, setPort] = useState(initialElectrum.port);
   const [tls, setTls] = useState(initialElectrum.tls);
+  const inspect = useInspectCertificate();
+  const trust = useTrustCertificate();
+  const { showToast } = useUi();
+  // The certificate the user has to settle before this backend is saved.
+  const [pending, setPending] = useState<{
+    url: string;
+    config: BackendConfig;
+    report: CertificateReport;
+  } | null>(null);
 
   // Re-seed the form when the workspace network changes.
   useEffect(() => {
@@ -536,12 +785,46 @@ function BackendSection({
   const known = servers.data?.some((server) => server.id === publicServer) ?? false;
   const chosen = known ? publicServer : "";
 
-  const save = () => {
+  /** What the form describes right now. */
+  const draft = (): BackendConfig => {
     if (kind === "public_esplora")
-      onSave(chosen ? { type: "public_esplora", server: chosen } : { type: "public_esplora" });
-    else if (kind === "custom_esplora")
-      onSave({ type: "custom_esplora", url: esploraUrl.trim() });
-    else onSave({ type: "custom_electrum", url: buildElectrumUrl(host, port, tls) });
+      return chosen ? { type: "public_esplora", server: chosen } : { type: "public_esplora" };
+    if (kind === "custom_esplora") return { type: "custom_esplora", url: esploraUrl.trim() };
+    return { type: "custom_electrum", url: buildElectrumUrl(host, port, tls) };
+  };
+
+  /** The Electrum address a configuration talks to, if any: the only case
+      where a certificate has to be settled before saving. */
+  const electrumUrlOf = (config: BackendConfig): string | null => {
+    if (config.type === "custom_electrum") return config.url;
+    if (config.type !== "public_esplora" || !config.server) return null;
+    const server = servers.data?.find((entry) => entry.id === config.server);
+    return server?.protocol === "electrum" ? server.url : null;
+  };
+
+  const save = async () => {
+    const config = draft();
+    const url = electrumUrlOf(config);
+    if (!url) return onSave(config);
+    // A bridge that cannot answer must not block a setting: the sync
+    // meets the same certificate and says so.
+    const report = await inspect.mutateAsync(url).catch(() => null);
+    if (report?.status === "unknown" || report?.status === "changed") {
+      setPending({ url, config, report });
+      return;
+    }
+    if (report?.status === "unreachable") {
+      showToast("Saved. The server did not answer, so its certificate is unchecked.");
+    }
+    onSave(config);
+  };
+
+  const accept = (fingerprint: string) => {
+    if (!pending) return;
+    void trust.mutateAsync({ url: pending.url, fingerprint }).then(() => {
+      onSave(pending.config);
+      setPending(null);
+    });
   };
 
   const chosenProtocol = servers.data?.find((server) => server.id === chosen)?.protocol;
@@ -568,7 +851,12 @@ function BackendSection({
             ...(servers.data ?? []).map((server) => ({
               value: server.id,
               label: server.label,
-              hint: server.protocol === "esplora" ? "Esplora" : "Electrum",
+              hint:
+                server.protocol === "esplora"
+                  ? "Esplora"
+                  : server.self_signed
+                    ? "Electrum · signs its own certificate"
+                    : "Electrum",
             })),
           ]}
         />
@@ -626,6 +914,8 @@ function BackendSection({
     ),
   };
 
+  const plainTcp = kind === "custom_electrum" && !tls;
+
   return (
     <SectionCard
       icon={<Server size={18} strokeWidth={1.5} />}
@@ -682,11 +972,29 @@ function BackendSection({
           on this machine before syncing; a built-in Tor client is planned.
         </p>
       )}
+      {plainTcp && (
+        <p className="mt-3 font-ui text-xs text-muted">
+          Without TLS everything travels in the clear: anything on the path between this
+          machine and the server reads the addresses being watched.
+        </p>
+      )}
       <div className="mt-4">
-        <Button variant="primary" onClick={save} disabled={saving || !valid}>
-          Save backend
+        <Button
+          variant="primary"
+          onClick={() => void save()}
+          disabled={saving || inspect.isPending || !valid}
+        >
+          {inspect.isPending ? "Checking the certificate…" : "Save backend"}
         </Button>
       </div>
+      {pending && (
+        <CertificateDialog
+          report={pending.report}
+          busy={trust.isPending || saving}
+          onAccept={accept}
+          onCancel={() => setPending(null)}
+        />
+      )}
     </SectionCard>
   );
 }

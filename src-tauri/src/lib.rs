@@ -179,6 +179,30 @@ async fn set_gap_limit(state: tauri::State<'_, AppState>, gap_limit: u32) -> Com
     Ok(state.manager.set_gap_limit(gap_limit).await?)
 }
 
+/// What an Electrum server's certificate amounts to right now. Reads
+/// only: accepting one is a separate, explicit call.
+#[tauri::command]
+async fn inspect_certificate(
+    state: tauri::State<'_, AppState>,
+    url: String,
+) -> CommandResult<gerfaut_core::chain::CertificateReport> {
+    Ok(state.manager.inspect_certificate(&url).await?)
+}
+
+#[tauri::command]
+async fn trust_certificate(
+    state: tauri::State<'_, AppState>,
+    url: String,
+    fingerprint: String,
+) -> CommandResult<()> {
+    Ok(state.manager.trust_certificate(&url, &fingerprint).await?)
+}
+
+#[tauri::command]
+async fn forget_certificate(state: tauri::State<'_, AppState>, host: String) -> CommandResult<()> {
+    Ok(state.manager.forget_certificate(&host).await?)
+}
+
 #[tauri::command]
 async fn set_app_pref(
     state: tauri::State<'_, AppState>,
@@ -362,6 +386,9 @@ pub fn run() {
             set_active_network,
             set_backend,
             set_gap_limit,
+            inspect_certificate,
+            trust_certificate,
+            forget_certificate,
             set_app_pref,
             fetch_price,
             fetch_price_history,

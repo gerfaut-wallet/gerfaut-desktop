@@ -18,7 +18,14 @@ const SETTINGS: Settings = {
   backends: {},
   gap_limit: 20,
   app_prefs: {},
+  electrum_certs: {},
 };
+
+/** A SHA-256 fingerprint in the shape openssl prints, as the core sends it. */
+const FINGERPRINT =
+  "4B:CD:74:8E:B9:34:A1:16:FD:6E:8D:08:D3:21:AC:2B:BE:03:50:E1:56:B6:21:92:9C:CA:55:18:BC:A7:36:4F";
+const OTHER_FINGERPRINT =
+  "11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00";
 
 const WALLET: WalletMeta = {
   id: "w-1",
@@ -110,18 +117,28 @@ const PUBLIC_SERVERS = [
     label: "mempool.space",
     protocol: "esplora",
     url: "https://mempool.space/signet/api",
+    self_signed: false,
   },
   {
     id: "blockstream.info",
     label: "blockstream.info",
     protocol: "esplora",
     url: "https://blockstream.info/signet/api",
+    self_signed: false,
   },
   {
     id: "electrum:mempool.space",
     label: "mempool.space:60602",
     protocol: "electrum",
     url: "ssl://mempool.space:60602",
+    self_signed: false,
+  },
+  {
+    id: "electrum:own.example",
+    label: "own.example:50002",
+    protocol: "electrum",
+    url: "ssl://own.example:50002",
+    self_signed: true,
   },
 ];
 
@@ -894,6 +911,185 @@ describe("receive page audit", () => {
   });
 });
 
+describe("electrum certificates", () => {
+  /** Reaching the Electrum form and filling in one host. */
+  async function fillElectrumForm(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+    await user.click(
+      await screen.findByRole("radio", { name: /My own Electrum server/ }),
+    );
+    await user.type(await screen.findByLabelText("Host"), "node.example.org");
+  }
+
+  it("asks about a certificate nothing vouches for, and stores it only once accepted", async () => {
+    const trusted: unknown[] = [];
+    const saved: unknown[] = [];
+    walletIpc({
+      inspect_certificate: () => ({
+        host: "node.example.org:50002",
+        status: "unknown",
+        fingerprint: FINGERPRINT,
+        reason: "self-signed, or signed by an authority this machine does not know",
+        subject: "CN=node.example.org",
+        expires: 1_800_000_000,
+      }),
+      trust_certificate: (args) => {
+        trusted.push(args);
+        return undefined;
+      },
+      set_backend: (args) => {
+        saved.push(args.config);
+        return undefined;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/No public authority vouches/)).toBeInTheDocument();
+    // The fingerprint is shown whole, in two rows that can be compared
+    // against what the server prints.
+    expect(dialog.textContent).toContain(FINGERPRINT.split(":").slice(0, 16).join(":"));
+    expect(dialog.textContent).toContain(FINGERPRINT.split(":").slice(16).join(":"));
+    expect(within(dialog).getByText("CN=node.example.org")).toBeInTheDocument();
+    expect(within(dialog).getByText(/openssl x509/)).toBeInTheDocument();
+    // Nothing is trusted and nothing is saved until the user says so.
+    expect(trusted).toHaveLength(0);
+    expect(saved).toHaveLength(0);
+
+    await user.click(within(dialog).getByRole("button", { name: "Accept and save" }));
+    await waitFor(() =>
+      expect(trusted[0]).toMatchObject({
+        url: "ssl://node.example.org:50002",
+        fingerprint: FINGERPRINT,
+      }),
+    );
+    await waitFor(() =>
+      expect(saved[0]).toMatchObject({
+        type: "custom_electrum",
+        url: "ssl://node.example.org:50002",
+      }),
+    );
+  });
+
+  it("keeps a refused certificate out of the vault when the dialog is cancelled", async () => {
+    const trusted: unknown[] = [];
+    const saved: unknown[] = [];
+    walletIpc({
+      inspect_certificate: () => ({
+        host: "node.example.org:50002",
+        status: "unknown",
+        fingerprint: FINGERPRINT,
+        reason: "self-signed",
+        subject: null,
+        expires: null,
+      }),
+      trust_certificate: (args) => {
+        trusted.push(args);
+        return undefined;
+      },
+      set_backend: (args) => {
+        saved.push(args.config);
+        return undefined;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(trusted).toHaveLength(0);
+    expect(saved).toHaveLength(0);
+  });
+
+  it("refuses a certificate that changed, and takes two deliberate clicks to accept it", async () => {
+    const trusted: unknown[] = [];
+    walletIpc({
+      inspect_certificate: () => ({
+        host: "node.example.org:50002",
+        status: "changed",
+        stored: FINGERPRINT,
+        presented: OTHER_FINGERPRINT,
+      }),
+      trust_certificate: (args) => {
+        trusted.push(args);
+        return undefined;
+      },
+      set_backend: () => undefined,
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/was accepted with another certificate/)).toBeInTheDocument();
+    expect(dialog.textContent).toContain(FINGERPRINT.split(":").slice(0, 16).join(":"));
+    expect(dialog.textContent).toContain(OTHER_FINGERPRINT.split(":").slice(0, 16).join(":"));
+    // Cancelling is the primary shape here: the safe way out is the
+    // obvious one.
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveClass("bg-primary");
+
+    await user.click(within(dialog).getByRole("button", { name: "Trust the new certificate" }));
+    expect(trusted).toHaveLength(0);
+    await user.click(
+      within(dialog).getByRole("button", { name: "Yes, trust the new certificate" }),
+    );
+    await waitFor(() => expect(trusted[0]).toMatchObject({ fingerprint: OTHER_FINGERPRINT }));
+  });
+
+  it("says which public servers sign their own certificate", async () => {
+    walletIpc();
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+    await user.click(await screen.findByRole("combobox", { name: "Public server" }));
+    const list = await screen.findByRole("listbox", { name: "Public server" });
+    expect(
+      within(list).getByRole("option", { name: /own\.example:50002 Electrum · signs its own certificate/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(list).getByRole("option", { name: /mempool\.space:60602 Electrum$/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("lists the certificates already accepted and forgets one on request", async () => {
+    const forgotten: unknown[] = [];
+    walletIpc({
+      get_settings: () => ({
+        ...SETTINGS,
+        electrum_certs: { "node.example.org:50002": FINGERPRINT },
+      }),
+      forget_certificate: (args) => {
+        forgotten.push(args.host);
+        return undefined;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+
+    expect(await screen.findByText("Trusted certificates")).toBeInTheDocument();
+    expect(screen.getByText("node.example.org:50002")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", {
+        name: "Forget the certificate accepted for node.example.org:50002",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Forget it" }));
+    await waitFor(() => expect(forgotten).toEqual(["node.example.org:50002"]));
+  });
+});
+
 describe("broadcast page", () => {
   it("previews a transaction, confirms, and follows it", async () => {
     const broadcastCalls: unknown[] = [];
@@ -941,9 +1137,15 @@ describe("broadcast page", () => {
     await waitFor(() => expect(broadcastCalls).toHaveLength(1));
     expect(broadcastCalls[0]).toMatchObject({ network: "signet", hex: PREVIEW.hex });
 
-    // The same page follows the transaction.
+    // The same page follows the transaction, in as few words as it takes.
     expect(await screen.findByText("In the mempool")).toBeInTheDocument();
-    expect(screen.getByText(/checks again every 30 seconds/)).toBeInTheDocument();
+    expect(screen.getByText("Waiting to be mined.")).toBeInTheDocument();
+    expect(screen.queryByText(/checks again every 30 seconds/)).not.toBeInTheDocument();
+    // Starting over is this screen's one action, so it wears the one
+    // primary shape every other screen uses.
+    expect(
+      main.getByRole("button", { name: "Broadcast another transaction" }),
+    ).toHaveClass("bg-primary");
     expect(useUi.getState().recentBroadcasts[0]).toMatchObject({
       txid: PREVIEW.txid,
       backend: "mempool.space",

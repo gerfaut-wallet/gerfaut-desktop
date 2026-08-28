@@ -237,6 +237,9 @@ export interface PublicServer {
   label: string;
   protocol: ServerProtocol;
   url: string;
+  /** Whether the server signs its own certificate, so the picker says it
+      before it is chosen rather than after. */
+  self_signed: boolean;
 }
 
 export interface Settings {
@@ -245,7 +248,28 @@ export interface Settings {
   /** Gap limit shared by every wallet. */
   gap_limit: number;
   app_prefs: Record<string, string>;
+  /** Electrum certificates the user accepted, by `host:port`. */
+  electrum_certs: Record<string, string>;
 }
+
+/** What a server's certificate amounts to, mirroring `CertificateStatus`
+    in gerfaut-core. `host` is `host:port`, the key an acceptance is
+    recorded against. */
+export type CertificateReport = { host: string } & (
+  | { status: "not_tls" }
+  | { status: "tor" }
+  | { status: "trusted" }
+  | { status: "pinned"; fingerprint: string }
+  | {
+      status: "unknown";
+      fingerprint: string;
+      reason: string;
+      subject: string | null;
+      expires: number | null;
+    }
+  | { status: "changed"; stored: string; presented: string }
+  | { status: "unreachable"; detail: string }
+);
 
 export type PriceSource = "coingecko" | "kraken" | "mempool_space";
 
@@ -480,6 +504,10 @@ export const ipc = {
   setBackend: (network: Network, config: BackendConfig) =>
     invoke<void>("set_backend", { network, config }),
   setGapLimit: (gapLimit: number) => invoke<void>("set_gap_limit", { gapLimit }),
+  inspectCertificate: (url: string) => invoke<CertificateReport>("inspect_certificate", { url }),
+  trustCertificate: (url: string, fingerprint: string) =>
+    invoke<void>("trust_certificate", { url, fingerprint }),
+  forgetCertificate: (host: string) => invoke<void>("forget_certificate", { host }),
   setAppPref: (key: string, value: string) => invoke<void>("set_app_pref", { key, value }),
   fetchPrice: (source: PriceSource, currency: FiatCurrency) =>
     invoke<PriceQuote>("fetch_price", { source, currency }),
