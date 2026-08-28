@@ -1,13 +1,31 @@
-import { AlertTriangle, Check, Copy, RotateCcw, SkipForward } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Maximize2,
+  RotateCcw,
+  SkipForward,
+} from "lucide-react";
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { renderSVG } from "uqr";
+import { AddressChip } from "../components/AddressChip";
+import { StackedAmount } from "../components/Amount";
 import { Button } from "../components/Button";
-import { useReceiveAddresses, useSnapshot } from "../state/queries";
+import { Modal } from "../components/Modal";
+import type { AddressRow } from "../lib/ipc";
+import { useAddressList, useReceiveAddresses, useSnapshot } from "../state/queries";
 import { useUi } from "../state/store";
 
-/** Receive page: the QR of the next unused address, the address in
-    full, copy with explicit feedback, and a way to skip to the next
-    unused index. Single-address wallets show their one address. */
+/** Rows each keychain shows before "Show all". */
+const FOLDED_ROWS = 5;
+
+/** Receive page: the next unused address first (QR, the address in
+    full, copy, skip), then the audit of every revealed address, one
+    card per keychain, folded to a few rows. Single-address wallets
+    show their one address and its one row. */
 export function ReceiveView({ walletId }: { walletId: string }) {
   const { showToast } = useUi();
   const snapshot = useSnapshot(walletId);
@@ -15,7 +33,9 @@ export function ReceiveView({ walletId }: { walletId: string }) {
   // retired, and a restart returns to the first unused address.
   const [offset, setOffset] = useState(0);
   const addresses = useReceiveAddresses(walletId, offset);
+  const list = useAddressList(walletId);
   const [copied, setCopied] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
 
   // A wallet switch resets the peek: offsets are not comparable.
   useEffect(() => setOffset(0), [walletId]);
@@ -54,109 +74,297 @@ export function ReceiveView({ walletId }: { walletId: string }) {
         </p>
       )}
 
-      {entry && (
-        <div className="flex flex-col gap-4">
-          <div className="rounded-lg border border-border bg-surface p-6">
-            <div className="flex flex-col items-center gap-6 lg:flex-row lg:items-stretch lg:gap-8">
-              {/* A QR code stays dark-on-light in every theme: scanners
-                  expect it, and inverting hurts contrast for cameras. */}
-              <div className="flex shrink-0 items-center justify-center">
+      <div className="flex flex-col gap-4">
+        {entry && (
+          <>
+            <div className="rounded-lg border border-border bg-surface p-5">
+              <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-stretch sm:gap-6">
+                {/* A QR code stays dark-on-light in every theme: scanners
+                    expect it, and inverting hurts contrast for cameras.
+                    Small here, full size on click. */}
+                <button
+                  type="button"
+                  onClick={() => setQrOpen(true)}
+                  aria-label="Enlarge the address QR code"
+                  className="group relative shrink-0 cursor-zoom-in self-center rounded-lg border border-border bg-white p-2.5 transition-shadow duration-150 hover:shadow-[0_0_0_2px_var(--color-primary)] focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--color-primary)]"
+                >
+                  <div
+                    aria-hidden
+                    className="w-[132px] [&_svg]:block [&_svg]:h-full [&_svg]:w-full"
+                    dangerouslySetInnerHTML={{
+                      __html: renderSVG(entry.address, { border: 0, blackColor: "#0d1317" }),
+                    }}
+                  />
+                  <span
+                    aria-hidden
+                    className="absolute bottom-1.5 right-1.5 inline-flex size-6 items-center justify-center rounded-md bg-white/90 text-[#0d1317] opacity-0 shadow-[0_1px_2px_rgba(13,19,23,0.25)] transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+                  >
+                    <Maximize2 size={13} strokeWidth={1.75} />
+                  </span>
+                </button>
+
+                <div className="flex min-w-0 flex-1 flex-col justify-center gap-3">
+                  <div>
+                    <p className="mb-1.5 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
+                      {singleAddress
+                        ? "Watched address"
+                        : offset === 0
+                          ? `Next unused address · index ${entry.index}`
+                          : `Unused address · index ${entry.index}`}
+                    </p>
+                    <p className="selectable break-all rounded-sm bg-sunken p-3.5 font-data text-[15px] leading-relaxed text-text">
+                      {entry.address}
+                    </p>
+                    {entry.derivation && (
+                      <p className="mt-1.5 flex items-baseline gap-2 px-0.5">
+                        <span className="font-ui text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
+                          Derivation path
+                        </span>
+                        <span className="selectable font-data text-[12px] text-text">
+                          {entry.derivation}
+                        </span>
+                      </p>
+                    )}
+                  </div>
+
+                  {!singleAddress && offset >= gapLimit && (
+                    <div className="flex items-start gap-2 rounded-md bg-pending-surface p-3">
+                      <AlertTriangle
+                        size={15}
+                        strokeWidth={1.75}
+                        aria-hidden
+                        className="mt-0.5 shrink-0 text-pending"
+                      />
+                      <p className="font-ui text-xs text-pending">
+                        This is {offset} addresses past the next unused one — beyond
+                        the gap limit of {gapLimit}, other wallet software may not
+                        detect funds received here.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button variant="primary" onClick={() => void copy()}>
+                      {copied ? (
+                        <Check size={16} strokeWidth={1.5} aria-hidden />
+                      ) : (
+                        <Copy size={16} strokeWidth={1.5} aria-hidden />
+                      )}
+                      {copied ? "Copied" : "Copy address"}
+                    </Button>
+                    {!singleAddress && (
+                      <>
+                        <Button variant="secondary" onClick={() => setOffset(offset + 1)}>
+                          <SkipForward size={15} strokeWidth={1.5} aria-hidden />
+                          Next address
+                        </Button>
+                        {offset > 0 && (
+                          <Button variant="ghost" onClick={() => setOffset(0)}>
+                            <RotateCcw size={14} strokeWidth={1.5} aria-hidden />
+                            First unused
+                          </Button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2.5 rounded-md border border-alert/25 bg-alert-surface p-4">
+              <AlertTriangle
+                size={16}
+                strokeWidth={1.75}
+                aria-hidden
+                className="mt-0.5 shrink-0 text-alert"
+              />
+              <div>
+                <p className="font-ui text-sm font-medium text-alert">
+                  Verify this address on your signing device before sharing it.
+                </p>
+                <p className="mt-0.5 font-ui text-xs text-muted">
+                  Gerfaut only watches: it never holds the keys behind it.
+                </p>
+              </div>
+            </div>
+
+            <Modal open={qrOpen} onClose={() => setQrOpen(false)} title="Address QR code" centered>
+              <div className="flex flex-col items-center gap-4">
                 <div
-                  aria-label="Address QR code"
                   role="img"
-                  className="w-[264px] rounded-lg border border-border bg-white p-4 [&_svg]:block [&_svg]:h-full [&_svg]:w-full"
+                  aria-label="Address QR code"
+                  className="w-[360px] max-w-full rounded-lg border border-border bg-white p-5 [&_svg]:block [&_svg]:h-full [&_svg]:w-full"
                   dangerouslySetInnerHTML={{
                     __html: renderSVG(entry.address, { border: 0, blackColor: "#0d1317" }),
                   }}
                 />
+                <p className="selectable break-all text-center font-data text-[13px] text-text">
+                  {entry.address}
+                </p>
               </div>
+            </Modal>
+          </>
+        )}
 
-              <div className="flex min-w-0 flex-1 flex-col justify-center gap-4">
-                <div>
-                  <p className="mb-1.5 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
-                    {singleAddress
-                      ? "Watched address"
-                      : offset === 0
-                        ? `Next unused address · index ${entry.index}`
-                        : `Unused address · index ${entry.index}`}
-                  </p>
-                  <p className="selectable break-all rounded-sm bg-sunken p-4 font-data text-[15px] leading-relaxed text-text">
-                    {entry.address}
-                  </p>
-                  {entry.derivation && (
-                    <p className="mt-1.5 flex items-baseline gap-2 px-0.5">
-                      <span className="font-ui text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
-                        Derivation path
-                      </span>
-                      <span className="selectable font-data text-[12px] text-text">
-                        {entry.derivation}
-                      </span>
-                    </p>
-                  )}
-                </div>
-
-                {!singleAddress && offset >= gapLimit && (
-                  <div className="flex items-start gap-2 rounded-md bg-pending-surface p-3">
-                    <AlertTriangle
-                      size={15}
-                      strokeWidth={1.75}
-                      aria-hidden
-                      className="mt-0.5 shrink-0 text-pending"
-                    />
-                    <p className="font-ui text-xs text-pending">
-                      This is {offset} addresses past the next unused one — beyond
-                      the gap limit of {gapLimit}, other wallet software may not
-                      detect funds received here.
-                    </p>
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="primary" onClick={() => void copy()}>
-                    {copied ? (
-                      <Check size={16} strokeWidth={1.5} aria-hidden />
-                    ) : (
-                      <Copy size={16} strokeWidth={1.5} aria-hidden />
-                    )}
-                    {copied ? "Copied" : "Copy address"}
-                  </Button>
-                  {!singleAddress && (
-                    <>
-                      <Button variant="secondary" onClick={() => setOffset(offset + 1)}>
-                        <SkipForward size={15} strokeWidth={1.5} aria-hidden />
-                        Next address
-                      </Button>
-                      {offset > 0 && (
-                        <Button variant="ghost" onClick={() => setOffset(0)}>
-                          <RotateCcw size={14} strokeWidth={1.5} aria-hidden />
-                          First unused
-                        </Button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-2.5 rounded-md border border-alert/25 bg-alert-surface p-4">
-            <AlertTriangle
-              size={16}
-              strokeWidth={1.75}
-              aria-hidden
-              className="mt-0.5 shrink-0 text-alert"
+        {/* The audit of what was revealed so far, per keychain. */}
+        {list.isPending && (
+          <p className="px-1 font-ui text-sm text-muted">Loading addresses…</p>
+        )}
+        {list.isError && (
+          <p className="px-1 font-ui text-sm text-muted">The addresses could not be loaded.</p>
+        )}
+        {list.data && (
+          <>
+            <AddressCard
+              title={singleAddress ? "Watched address" : "External"}
+              hint={
+                singleAddress
+                  ? "The one address this wallet watches."
+                  : "Receive addresses, in derivation order."
+              }
+              rows={list.data.external}
             />
-            <div>
-              <p className="font-ui text-sm font-medium text-alert">
-                Verify this address on your signing device before sharing it.
+            {!singleAddress && (
+              <AddressCard
+                title="Change"
+                hint="Internal addresses used by outgoing transactions."
+                rows={list.data.internal}
+                empty="No change addresses revealed yet."
+              />
+            )}
+            {list.data.truncated && (
+              <p className="px-1 font-ui text-xs text-muted">
+                Long keychains are capped: only the first 200 addresses of each are listed.
               </p>
-              <p className="mt-0.5 font-ui text-xs text-muted">
-                Gerfaut only watches: it never holds the keys behind it.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+            )}
+          </>
+        )}
+      </div>
     </div>
+  );
+}
+
+/** One keychain: its rows folded to a handful, with a count and a
+    control to see them all. Its own card, never merged with the other
+    keychain's. */
+function AddressCard({
+  title,
+  hint,
+  rows,
+  empty,
+}: {
+  title: string;
+  hint: string;
+  rows: AddressRow[];
+  empty?: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? rows : rows.slice(0, FOLDED_ROWS);
+  const hidden = rows.length - shown.length;
+  const used = rows.filter((row) => row.used).length;
+
+  return (
+    <section aria-label={title} className="overflow-clip rounded-lg border border-border bg-surface">
+      <div className="flex items-baseline justify-between gap-3 px-4 pb-1 pt-3">
+        <h2 className="flex items-baseline gap-2 font-ui text-sm font-semibold text-text">
+          {title}
+          {rows.length > 0 && (
+            <span className="tabular rounded-full bg-sunken px-2 py-0.5 font-ui text-[11px] font-medium text-muted">
+              {rows.length}
+              {used > 0 && ` · ${used} used`}
+            </span>
+          )}
+        </h2>
+        <p className="font-ui text-xs text-muted">{hint}</p>
+      </div>
+      {rows.length === 0 ? (
+        <p className="px-4 pb-4 pt-1 font-ui text-sm text-muted">{empty ?? "Nothing here yet."}</p>
+      ) : (
+        <>
+          <table className="w-full border-separate border-spacing-0">
+            <thead>
+              <tr className="text-left [&>th]:border-b [&>th]:border-border [&>th]:bg-surface">
+                <Th className="w-16">Index</Th>
+                <Th>Address</Th>
+                <Th className="w-24">Status</Th>
+                <Th className="w-40 text-right">Balance</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((row) => (
+                <tr
+                  key={row.index}
+                  className="transition-colors duration-100 hover:bg-sunken/60 [&>td]:border-b [&>td]:border-border"
+                >
+                  <td className="tabular px-3 py-2 text-[13px] text-muted">{row.index}</td>
+                  <td className="px-3 py-2">
+                    <AddressChip value={row.address} head={16} tail={10} />
+                  </td>
+                  <td className="px-3 py-2">
+                    <StatusChip used={row.used} />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {row.balance_sats > 0 ? (
+                      <StackedAmount sats={row.balance_sats} />
+                    ) : (
+                      <span className="font-ui text-[13px] text-muted">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {rows.length > FOLDED_ROWS && (
+            <button
+              type="button"
+              onClick={() => setExpanded(!expanded)}
+              aria-expanded={expanded}
+              className="flex w-full cursor-pointer items-center justify-center gap-1.5 px-4 py-2.5 font-ui text-xs font-medium text-muted transition-colors duration-150 hover:bg-sunken/60 hover:text-text"
+            >
+              {expanded ? (
+                <>
+                  <ChevronUp size={14} strokeWidth={1.75} aria-hidden />
+                  Show less
+                </>
+              ) : (
+                <>
+                  <ChevronDown size={14} strokeWidth={1.75} aria-hidden />
+                  Show all {rows.length}
+                  <span className="font-normal">({hidden} more)</span>
+                </>
+              )}
+            </button>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+/** Whether an address has ever appeared on chain. Both states are read
+    side by side down one column, so both are pills: Alerte for an
+    address that must not be handed out again, Glacier for one still
+    untouched. */
+function StatusChip({ used }: { used: boolean }) {
+  return (
+    <span
+      className={`inline-flex rounded-full border px-2 py-0.5 font-ui text-[11px] font-medium ${
+        used
+          ? "border-alert/25 bg-alert-surface text-alert dark:bg-alert/10"
+          : "border-primary/25 bg-primary/10 text-primary dark:bg-primary/10"
+      }`}
+    >
+      {used ? "Used" : "Fresh"}
+    </span>
+  );
+}
+
+function Th({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <th
+      className={`px-3 py-2 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted ${className ?? ""}`}
+    >
+      {children}
+    </th>
   );
 }

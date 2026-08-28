@@ -204,6 +204,53 @@ function sidebar() {
   return within(screen.getByRole("navigation", { name: "Navigation" }));
 }
 
+/** Picks a row of the shared Select by its visible label. */
+async function choose(user: ReturnType<typeof userEvent.setup>, name: string | RegExp, label: string) {
+  await user.click(screen.getByRole("combobox", { name }));
+  const list = await screen.findByRole("listbox", { name });
+  await user.click(within(list).getByRole("option", { name: new RegExp(`^${label}`) }));
+}
+
+/** A preview as the core returns it for a signed, well-formed
+    transaction spending one watched coin. */
+const PREVIEW = {
+  txid: "ab".repeat(32),
+  source: "psbt",
+  network: "signet",
+  inputs: [
+    {
+      txid: "cd".repeat(32),
+      vout: 0,
+      value_sats: 150_000,
+      address: "tb1qutxoaddress",
+      signed: true,
+      wallet: { id: "w-1", name: "Cold storage" },
+    },
+  ],
+  outputs: [
+    { index: 0, value_sats: 100_000, address: "tb1qsomeoneelse", op_return: null, wallet: null, change: false },
+    {
+      index: 1,
+      value_sats: 49_000,
+      address: "tb1qchangezero",
+      op_return: null,
+      wallet: { id: "w-1", name: "Cold storage" },
+      change: true,
+    },
+  ],
+  fee_sats: 1_000,
+  fee_rate_sat_vb: 7.1,
+  vsize: 141,
+  weight: 561,
+  size: 222,
+  version: 2,
+  locktime: 0,
+  rbf: true,
+  ready: true,
+  warnings: [{ kind: "spends_watched", message: "Spends coins of Cold storage." }],
+  hex: "02000000deadbeef",
+};
+
 beforeEach(() => {
   useUi.setState({
     view: "home",
@@ -342,11 +389,12 @@ describe("navigation", () => {
     expect(await screen.findByRole("heading", { name: /utxos/i })).toBeInTheDocument();
     expect(screen.getByText("Outpoint")).toBeInTheDocument();
 
-    await user.click(sidebar().getByRole("button", { name: "Addresses" }));
-    expect(await screen.findByRole("heading", { name: /addresses/i })).toBeInTheDocument();
-
     await user.click(sidebar().getByRole("button", { name: "Receive" }));
     expect(await screen.findByRole("heading", { name: /receive/i })).toBeInTheDocument();
+    expect(sidebar().queryByRole("button", { name: "Addresses" })).not.toBeInTheDocument();
+
+    await user.click(sidebar().getByRole("button", { name: "Broadcast" }));
+    expect(await screen.findByRole("heading", { name: /broadcast/i })).toBeInTheDocument();
 
     await user.click(sidebar().getByRole("button", { name: "Export" }));
     expect(await screen.findByRole("heading", { name: /export/i })).toBeInTheDocument();
@@ -486,19 +534,20 @@ describe("display settings", () => {
     await user.click(sidebar().getByRole("button", { name: "Settings" }));
 
     const select = await screen.findByRole("combobox", { name: "Public server" });
-    expect(select).toHaveValue("");
+    expect(select).toHaveTextContent("Automatic");
     expect(
       screen.getByText("Every public server is tried in turn until one answers."),
     ).toBeInTheDocument();
-    // Every operator the core publishes, with its protocol.
+    // Every operator the core publishes, with its protocol on a second line.
+    await user.click(select);
+    const list = await screen.findByRole("listbox", { name: "Public server" });
+    expect(within(list).getByRole("option", { name: /blockstream\.info Esplora/ })).toBeInTheDocument();
     expect(
-      within(select).getByRole("option", { name: "blockstream.info · Esplora" }),
+      within(list).getByRole("option", { name: /mempool\.space:60602 Electrum/ }),
     ).toBeInTheDocument();
-    expect(
-      within(select).getByRole("option", { name: "mempool.space:60602 · Electrum" }),
-    ).toBeInTheDocument();
-
-    await user.selectOptions(select, "blockstream.info");
+    await user.click(within(list).getByRole("option", { name: /^blockstream\.info/ }));
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(select).toHaveTextContent("blockstream.info");
     expect(
       screen.getByText(/Only this server is asked/),
     ).toBeInTheDocument();
@@ -511,13 +560,13 @@ describe("display settings", () => {
     );
 
     // An Electrum server cannot serve a single-address wallet, and says so.
-    await user.selectOptions(select, "electrum:mempool.space");
+    await choose(user, "Public server", "mempool.space:60602");
     expect(
       screen.getByText(/Electrum servers cannot serve a single-address wallet/),
     ).toBeInTheDocument();
 
     // Back to automatic: the stored shape carries no operator.
-    await user.selectOptions(select, "");
+    await choose(user, "Public server", "Automatic");
     await user.click(screen.getByRole("button", { name: "Save backend" }));
     await waitFor(() =>
       expect(setBackend).toHaveBeenLastCalledWith({ type: "public_esplora" }),
@@ -532,17 +581,22 @@ describe("display settings", () => {
     await user.click(sidebar().getByRole("button", { name: "Settings" }));
 
     const currency = await screen.findByRole("combobox", { name: "Fiat currency" });
-    expect(within(currency).getAllByRole("option")).toHaveLength(30);
-    // The seven every source quotes come first, under their own group.
-    expect(within(currency).getByRole("option", { name: "JPY" })).toBeInTheDocument();
-    expect(within(currency).getByRole("option", { name: "NGN" })).toBeInTheDocument();
+    await user.click(currency);
+    const list = await screen.findByRole("listbox", { name: "Fiat currency" });
+    expect(within(list).getAllByRole("option")).toHaveLength(30);
+    // The seven every source quotes come first, under their own group,
+    // each with its plain name beside the code.
+    expect(within(list).getByText("Every source")).toBeInTheDocument();
+    expect(within(list).getByText("CoinGecko only")).toBeInTheDocument();
+    expect(within(list).getByRole("option", { name: /JPY Japanese yen/ })).toBeInTheDocument();
+    expect(within(list).getByRole("option", { name: /NGN Nigerian naira/ })).toBeInTheDocument();
 
     // A shared currency leaves every source available.
-    await user.selectOptions(currency, "jpy");
+    await user.click(within(list).getByRole("option", { name: /^JPY/ }));
     expect(screen.getByRole("radio", { name: "Kraken" })).toBeEnabled();
     expect(useUi.getState().fiatSource).toBe("coingecko");
 
-    await user.selectOptions(currency, "inr");
+    await choose(user, "Fiat currency", "INR");
     expect(useUi.getState().fiatCurrency).toBe("inr");
     expect(screen.getByRole("radio", { name: "Kraken" })).toBeDisabled();
     expect(screen.getByRole("radio", { name: "mempool.space" })).toBeDisabled();
@@ -598,7 +652,9 @@ describe("receive page", () => {
     await user.click(sidebar().getByRole("button", { name: "Receive" }));
 
     expect(await screen.findByText(/next unused address · index 0/i)).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: /address qr code/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /enlarge the address qr code/i }),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /next address/i }));
     expect(await screen.findByText(/unused address · index 1/i)).toBeInTheDocument();
@@ -774,57 +830,189 @@ describe("partial history", () => {
   });
 });
 
-describe("addresses page", () => {
-  beforeEach(() => walletIpc());
+describe("receive page audit", () => {
+  const manyExternal = Array.from({ length: 8 }, (_, index) => ({
+    index,
+    address: `tb1qexternal${index}`,
+    used: index < 2,
+    balance_sats: index === 1 ? 150_000 : 0,
+  }));
 
-  it("lists both keychains with usage and balances", async () => {
+  beforeEach(() =>
+    walletIpc({
+      address_list: () => ({
+        external: manyExternal,
+        internal: [{ index: 0, address: "tb1qchangezero", used: true, balance_sats: 0 }],
+        truncated: false,
+      }),
+    }),
+  );
+
+  it("lists both keychains in their own cards, folded to five rows", async () => {
     renderApp();
     const user = userEvent.setup();
     await screen.findByText("Bitcoin price");
-    await user.click(sidebar().getByRole("button", { name: "Addresses" }));
+    await user.click(sidebar().getByRole("button", { name: "Receive" }));
 
-    expect(await screen.findByText("External")).toBeInTheDocument();
-    expect(screen.getByText("Change")).toBeInTheDocument();
-    // Two used rows, one fresh, one carrying the funds.
-    expect(screen.getAllByText("Used")).toHaveLength(2);
-    expect(screen.getByText("Fresh")).toBeInTheDocument();
-    expect(within(screen.getByRole("main")).getByText("0.00150000 BTC")).toBeInTheDocument();
-    // No cap note when nothing was truncated.
-    expect(screen.queryByText(/capped/i)).not.toBeInTheDocument();
-  });
+    const external = await screen.findByRole("region", { name: "External" });
+    const change = screen.getByRole("region", { name: "Change" });
+    // Two cards, two tables: never one list.
+    expect(external.querySelector("table")).not.toBe(null);
+    expect(change.querySelector("table")).not.toBe(null);
+    expect(within(external).getAllByRole("row")).toHaveLength(1 + 5);
+    expect(within(external).getByText(/^8 · 2 used$/)).toBeInTheDocument();
 
-  it("scrolls the list alone and pills both address states", async () => {
-    renderApp();
-    const user = userEvent.setup();
-    await screen.findByText("Bitcoin price");
-    await user.click(sidebar().getByRole("button", { name: "Addresses" }));
-    await screen.findByText("External");
-
-    // The page fills the canvas and scrolls in one place, the list,
-    // exactly like the UTXO page: the title never moves.
-    const main = screen.getByRole("main");
-    const page = main.querySelector("header")!.parentElement!;
-    expect(page.className).toContain("h-full");
-    expect(page.className).toContain("flex-col");
-    const scrollers = page.querySelectorAll(".overflow-y-auto");
-    expect(scrollers).toHaveLength(1);
-    expect(scrollers[0].className).toContain("min-h-0");
-    expect(scrollers[0].className).toContain("flex-1");
-    expect(scrollers[0].contains(main.querySelector("h1"))).toBe(false);
-    expect(scrollers[0].querySelector("table")).not.toBe(null);
-
-    // The keychain name and the column labels pin together.
-    const head = main.querySelector("thead");
-    expect(head?.className).toContain("sticky");
-    expect(head?.querySelectorAll("tr")).toHaveLength(2);
+    await user.click(within(external).getByRole("button", { name: /show all 8/i }));
+    expect(within(external).getAllByRole("row")).toHaveLength(1 + 8);
+    await user.click(within(external).getByRole("button", { name: /show less/i }));
+    expect(within(external).getAllByRole("row")).toHaveLength(1 + 5);
+    // The change card is short: no fold control there.
+    expect(within(change).queryByRole("button", { name: /show all/i })).not.toBeInTheDocument();
 
     // Used is Alerte, fresh is Glacier; neither is a bare word.
-    const used = screen.getAllByText("Used")[0];
+    const used = within(external).getAllByText("Used")[0];
     expect(used.className).toContain("text-alert");
     expect(used.className).toContain("rounded-full");
-    const fresh = screen.getByText("Fresh");
+    const fresh = within(external).getAllByText("Fresh")[0];
     expect(fresh.className).toContain("text-primary");
     expect(fresh.className).toContain("rounded-full");
+    expect(within(external).getByText("0.00150000 BTC")).toBeInTheDocument();
+  });
+
+  it("enlarges the QR code on demand", async () => {
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Receive" }));
+    const small = await screen.findByRole("button", { name: /enlarge the address qr code/i });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.click(small);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("img", { name: "Address QR code" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+});
+
+describe("broadcast page", () => {
+  it("previews a transaction, confirms, and follows it", async () => {
+    const broadcastCalls: unknown[] = [];
+    walletIpc({
+      preview_transaction: () => PREVIEW,
+      broadcast_transaction: (args) => {
+        broadcastCalls.push(args);
+        return { txid: PREVIEW.txid, backend: "mempool.space", at: 1_755_000_000 };
+      },
+      transaction_status: () => ({
+        txid: PREVIEW.txid,
+        found: true,
+        confirmed: false,
+        block_height: null,
+        confirmations: 0,
+        backend: "mempool.space",
+        at: 1_755_000_100,
+      }),
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Broadcast" }));
+
+    const field = await screen.findByLabelText("Signed transaction");
+    expect(screen.getByRole("button", { name: "Preview" })).toBeDisabled();
+    await user.type(field, "cHNidP8BAH");
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+
+    // What the transaction does, before anything leaves the machine.
+    expect(await screen.findByText("Ready to broadcast")).toBeInTheDocument();
+    expect(screen.getByText("PSBT")).toBeInTheDocument();
+    expect(screen.getByText("Spends coins of Cold storage.")).toBeInTheDocument();
+    expect(screen.getByText("1 input")).toBeInTheDocument();
+    expect(screen.getByText("2 outputs")).toBeInTheDocument();
+    expect(screen.getByText("7.1 sat/vB")).toBeInTheDocument();
+    expect(screen.getByText("Cold storage · change")).toBeInTheDocument();
+
+    // Broadcasting asks first, then hands the hex to the backend.
+    const main = within(screen.getByRole("main"));
+    await user.click(main.getByRole("button", { name: "Broadcast" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/cannot be taken back/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Broadcast" }));
+    await waitFor(() => expect(broadcastCalls).toHaveLength(1));
+    expect(broadcastCalls[0]).toMatchObject({ network: "signet", hex: PREVIEW.hex });
+
+    // The same page follows the transaction.
+    expect(await screen.findByText("In the mempool")).toBeInTheDocument();
+    expect(screen.getByText(/checks again every 30 seconds/)).toBeInTheDocument();
+    expect(useUi.getState().recentBroadcasts[0]).toMatchObject({
+      txid: PREVIEW.txid,
+      backend: "mempool.space",
+    });
+  });
+
+  it("keeps an unsigned transaction on the machine and shows the node's refusal verbatim", async () => {
+    walletIpc({
+      preview_transaction: (args) =>
+        args.input === "unsigned"
+          ? {
+              ...PREVIEW,
+              ready: false,
+              hex: null,
+              inputs: [{ ...PREVIEW.inputs[0], signed: false }],
+              warnings: [
+                {
+                  kind: "unsigned",
+                  message: "1 of 1 inputs carry no signature: the network will refuse this transaction.",
+                },
+              ],
+            }
+          : PREVIEW,
+      broadcast_transaction: () => {
+        throw { kind: "sync", message: "mempool.space: bad-txns-inputs-missingorspent" };
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Broadcast" }));
+
+    const field = await screen.findByLabelText("Signed transaction");
+    await user.type(field, "unsigned");
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    expect(await screen.findByText("Not fully signed")).toBeInTheDocument();
+    expect(screen.getByText(/carry no signature/)).toBeInTheDocument();
+    const main = within(screen.getByRole("main"));
+    expect(main.getByRole("button", { name: "Broadcast" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Start over" }));
+    await user.type(await screen.findByLabelText("Signed transaction"), "signed");
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    await user.click(await main.findByRole("button", { name: "Broadcast" }));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Broadcast" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The network refused this transaction.");
+    expect(alert).toHaveTextContent("bad-txns-inputs-missingorspent");
+  });
+
+  it("points a transaction pasted into the wallet import at the broadcast page", async () => {
+    walletIpc({
+      parse_input: () => {
+        throw {
+          kind: "invalid_input",
+          message: "invalid transaction: this is a transaction, not a wallet to watch: the Broadcast page sends it",
+        };
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    act(() => useUi.getState().setAddWalletOpen(true));
+    await user.type(
+      await screen.findByLabelText(/descriptor, extended public key/i),
+      "cHNidP8BAH",
+    );
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Broadcast page/);
   });
 });
 
@@ -924,7 +1112,7 @@ describe("add wallet flow", () => {
     expect(screen.getByText(/carries no script type/i)).toBeInTheDocument();
     // A lone key leaves the script type open: the choice is offered,
     // preset on the core's default, next to the address it produces.
-    expect(screen.getByLabelText(/script type/i)).toHaveValue("segwit");
+    expect(screen.getByRole("combobox", { name: "Script type" })).toHaveTextContent("Native SegWit");
     expect(screen.getByTestId("preview-address")).toHaveTextContent(
       PARSED_TPUB.preview_address as string,
     );
@@ -967,14 +1155,15 @@ describe("add wallet flow", () => {
     await user.type(screen.getByLabelText(/descriptor, extended public key/i), "tpubDDnGNapGEY6...");
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
-    await user.selectOptions(await screen.findByLabelText(/script type/i), "taproot");
+    await screen.findByRole("combobox", { name: "Script type" });
+    await choose(user, "Script type", "Taproot");
     // The core answered with new descriptors and a new first address.
     await waitFor(() => {
       expect(screen.getByTestId("preview-address")).toHaveTextContent(
         PARSED_TPUB_TAPROOT.preview_address as string,
       );
     });
-    expect(screen.getByLabelText(/script type/i)).toHaveValue("taproot");
+    expect(screen.getByRole("combobox", { name: "Script type" })).toHaveTextContent("Taproot");
     expect(screen.queryByText(/carries no script type/i)).not.toBeInTheDocument();
     expect(parseCalls).toEqual([null, "taproot"]);
 
