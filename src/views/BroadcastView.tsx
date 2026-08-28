@@ -212,7 +212,8 @@ export function BroadcastView({ network }: { network: Network }) {
           <>
             <StatusCard entry={sent} onForget={() => forgetBroadcast(sent.txid)} live />
             <div className="px-1">
-              <Button variant="secondary" onClick={startOver}>
+              <Button variant="primary" onClick={startOver}>
+                <Radio size={16} strokeWidth={1.5} aria-hidden />
                 Broadcast another transaction
               </Button>
             </div>
@@ -751,7 +752,7 @@ function StatusCard({
           (standing.confirmed
             ? `Mined in block ${groupThousands(String(standing.block_height ?? 0))}, ${standing.confirmations} confirmation${standing.confirmations === 1 ? "" : "s"} as of ${relativeTime(standing.at)}.`
             : standing.found
-              ? `Waiting to be mined. ${standing.backend} holds it in its mempool; this page checks again every 30 seconds.`
+              ? "Waiting to be mined."
               : `${standing.backend} does not have this transaction. It may not have been relayed, or it was dropped or replaced. Broadcasting it again does no harm.`)}
       </p>
 
