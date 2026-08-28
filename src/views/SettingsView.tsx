@@ -384,7 +384,11 @@ export function CertificateDialog({
               </p>
               <Fingerprint value={report.fingerprint} />
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
-                {report.subject && <CertFact label="Subject">{report.subject}</CertFact>}
+                {report.subject && (
+                  <div className="col-span-2">
+                    <CertFact label="Subject">{report.subject}</CertFact>
+                  </div>
+                )}
                 {report.expires !== null && (
                   <CertFact label="Valid until">{expiryLabel(report.expires)}</CertFact>
                 )}
