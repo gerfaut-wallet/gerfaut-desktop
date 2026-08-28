@@ -220,6 +220,37 @@ async fn fetch_fees(
     Ok(gerfaut_core::fees::fetch_fees_for(network, &backend).await?)
 }
 
+/// Decodes a transaction (PSBT or raw, any text form) and shows what it
+/// does before anything leaves the machine.
+#[tauri::command]
+async fn preview_transaction(
+    state: tauri::State<'_, AppState>,
+    input: String,
+    network: Network,
+) -> CommandResult<gerfaut_core::broadcast::TxPreview> {
+    Ok(state.manager.preview_transaction(&input, network).await?)
+}
+
+/// Hands a fully signed transaction to the configured backend.
+#[tauri::command]
+async fn broadcast_transaction(
+    state: tauri::State<'_, AppState>,
+    network: Network,
+    hex: String,
+) -> CommandResult<gerfaut_core::broadcast::BroadcastReport> {
+    Ok(state.manager.broadcast_transaction(network, &hex).await?)
+}
+
+/// Where a broadcast transaction stands now.
+#[tauri::command]
+async fn transaction_status(
+    state: tauri::State<'_, AppState>,
+    network: Network,
+    hex: String,
+) -> CommandResult<gerfaut_core::broadcast::BroadcastStatus> {
+    Ok(state.manager.transaction_status(network, &hex).await?)
+}
+
 /// The public servers offered for a network, in settings order.
 #[tauri::command]
 fn public_servers(network: Network) -> Vec<gerfaut_core::chain::public::PublicServer> {
@@ -318,6 +349,9 @@ pub fn run() {
             export_transactions_csv,
             fetch_fees,
             public_servers,
+            preview_transaction,
+            broadcast_transaction,
+            transaction_status,
             sync_wallet,
             load_more_history,
             sync_all,

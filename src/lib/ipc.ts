@@ -329,6 +329,87 @@ export interface PriceHistory {
   at: number;
 }
 
+// --- broadcast ------------------------------------------------------------
+
+export type TxSource = "raw_transaction" | "psbt";
+
+export interface WalletRef {
+  id: string;
+  name: string;
+}
+
+export interface TxInputPreview {
+  txid: string;
+  vout: number;
+  value_sats: number | null;
+  address: string | null;
+  signed: boolean;
+  wallet: WalletRef | null;
+}
+
+export interface TxOutputPreview {
+  index: number;
+  value_sats: number;
+  address: string | null;
+  op_return: OpReturnData | null;
+  wallet: WalletRef | null;
+  change: boolean;
+}
+
+export type TxWarningKind =
+  | "unsigned"
+  | "high_fee_rate"
+  | "high_fee_share"
+  | "locked"
+  | "input_unknown"
+  | "input_spent"
+  | "fee_unknown"
+  | "dust_output"
+  | "spends_watched";
+
+export interface TxWarning {
+  kind: TxWarningKind;
+  message: string;
+}
+
+/** Everything shown before a transaction is broadcast. */
+export interface TxPreview {
+  txid: string;
+  source: TxSource;
+  network: Network;
+  inputs: TxInputPreview[];
+  outputs: TxOutputPreview[];
+  fee_sats: number | null;
+  fee_rate_sat_vb: number | null;
+  vsize: number;
+  weight: number;
+  size: number;
+  version: number;
+  locktime: number;
+  rbf: boolean;
+  /** Every input signed: the transaction can be sent. */
+  ready: boolean;
+  warnings: TxWarning[];
+  /** The transaction as the network takes it; present only when ready. */
+  hex: string | null;
+}
+
+export interface BroadcastReport {
+  txid: string;
+  backend: string;
+  at: number;
+}
+
+export interface BroadcastStatus {
+  txid: string;
+  found: boolean;
+  confirmed: boolean;
+  block_height: number | null;
+  confirmations: number;
+  backend: string;
+  at: number;
+}
+
 export interface UpdateCheck {
   latest: string;
   url: string;
@@ -389,6 +470,12 @@ export const ipc = {
   getSettings: () => invoke<Settings>("get_settings"),
   publicServers: (network: Network) =>
     invoke<PublicServer[]>("public_servers", { network }),
+  previewTransaction: (input: string, network: Network) =>
+    invoke<TxPreview>("preview_transaction", { input, network }),
+  broadcastTransaction: (network: Network, hex: string) =>
+    invoke<BroadcastReport>("broadcast_transaction", { network, hex }),
+  transactionStatus: (network: Network, hex: string) =>
+    invoke<BroadcastStatus>("transaction_status", { network, hex }),
   setActiveNetwork: (network: Network) => invoke<void>("set_active_network", { network }),
   setBackend: (network: Network, config: BackendConfig) =>
     invoke<void>("set_backend", { network, config }),

@@ -230,6 +230,34 @@ export function usePriceHistory(range: PriceRange, enabled: boolean) {
   });
 }
 
+/** Decodes a pasted, imported or scanned transaction into its preview. */
+export function usePreviewTransaction() {
+  return useMutation({
+    mutationFn: (args: { input: string; network: Network }) =>
+      ipc.previewTransaction(args.input, args.network),
+  });
+}
+
+/** Sends a ready transaction through the configured backend. */
+export function useBroadcastTransaction() {
+  return useMutation({
+    mutationFn: (args: { network: Network; hex: string }) =>
+      ipc.broadcastTransaction(args.network, args.hex),
+  });
+}
+
+/** Follows a broadcast transaction: every 30 seconds while pending,
+    stopping once it has confirmed. */
+export function useTransactionStatus(network: Network, hex: string | null) {
+  return useQuery({
+    queryKey: ["broadcast-status", network, hex ?? "none"],
+    queryFn: () => ipc.transactionStatus(network, hex!),
+    enabled: hex !== null,
+    refetchInterval: (query) => (query.state.data?.confirmed ? false : 30_000),
+    retry: 1,
+  });
+}
+
 export function useCheckUpdate() {
   return useMutation({ mutationFn: () => ipc.checkUpdate() });
 }
