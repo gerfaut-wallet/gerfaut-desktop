@@ -968,7 +968,10 @@ describe("broadcast page", () => {
             }
           : PREVIEW,
       broadcast_transaction: () => {
-        throw { kind: "sync", message: "mempool.space: bad-txns-inputs-missingorspent" };
+        throw {
+          kind: "broadcast",
+          message: "mempool.space refused the transaction: bad-txns-inputs-missingorspent",
+        };
       },
     });
     renderApp();

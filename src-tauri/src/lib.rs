@@ -38,6 +38,7 @@ impl From<CoreError> for CommandError {
             CoreError::DuplicateWallet(_) => "duplicate_wallet",
             CoreError::Vault(_) => "vault",
             CoreError::Sync { .. } => "sync",
+            CoreError::Broadcast { .. } => "broadcast",
             CoreError::BackendUnavailable(_) => "backend_unavailable",
             CoreError::Descriptor(_) => "descriptor",
             CoreError::Internal(_) => "internal",
