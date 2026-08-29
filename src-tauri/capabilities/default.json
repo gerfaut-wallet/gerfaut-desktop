@@ -8,6 +8,8 @@
   "permissions": [
     "core:default",
     "opener:allow-open-url",
-    "dialog:allow-save"
+    "dialog:allow-save",
+    "dialog:allow-open",
+    "notification:default"
   ]
 }

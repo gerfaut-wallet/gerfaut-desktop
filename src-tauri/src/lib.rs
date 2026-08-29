@@ -6,10 +6,12 @@
 //! credential store).
 
 use gerfaut_core::WalletManager;
+use gerfaut_core::backup::{BackupBundle, BackupOptions, BackupPreview, ImportChoices, ImportReport};
 use gerfaut_core::chain::BackendConfig;
 use gerfaut_core::error::CoreError;
 use gerfaut_core::input::qr::QrProgress;
-use gerfaut_core::input::{ParsedInput, ScriptKind};
+use gerfaut_core::input::{DerivationChoice, ImportOptions, ParsedInput, ScriptKind};
+use gerfaut_core::lock::{AppLock, LockKind, LockVerdict};
 use gerfaut_core::manager::SyncAllReport;
 use gerfaut_core::network::Network;
 use gerfaut_core::store::{Settings, VaultKey};
@@ -58,9 +60,16 @@ struct AppState {
 
 // --- commands ----------------------------------------------------------
 
+/// Classifies pasted or scanned material. `script` and `derivation`
+/// only apply to a lone extended key; everything else fixes its own.
 #[tauri::command]
-fn parse_input(input: String, script: Option<ScriptKind>) -> CommandResult<ParsedInput> {
-    Ok(gerfaut_core::input::parse_input_with(&input, script)?)
+fn parse_input(
+    input: String,
+    script: Option<ScriptKind>,
+    derivation: Option<DerivationChoice>,
+) -> CommandResult<ParsedInput> {
+    let options = ImportOptions { script, derivation };
+    Ok(gerfaut_core::input::parse_input_with_options(&input, &options)?)
 }
 
 /// Assembles the QR frames scanned so far (plain, UR, BBQr).
@@ -121,6 +130,13 @@ async fn receive_addresses(
 #[tauri::command]
 async fn sync_wallet(state: tauri::State<'_, AppState>, id: String) -> CommandResult<SyncReport> {
     Ok(state.manager.sync_wallet(&id).await?)
+}
+
+/// Scans a wallet again from its first address with the current gap
+/// limit, for funds an incremental sync can no longer see.
+#[tauri::command]
+async fn rescan_wallet(state: tauri::State<'_, AppState>, id: String) -> CommandResult<SyncReport> {
+    Ok(state.manager.rescan_wallet(&id).await?)
 }
 
 /// Fetches an older round of history for a watched address. Returns how
@@ -305,6 +321,107 @@ async fn check_update(app: tauri::AppHandle) -> CommandResult<gerfaut_core::upda
     Ok(gerfaut_core::updates::check_update("gerfaut-wallet/gerfaut-desktop", &current).await?)
 }
 
+// --- app lock ----------------------------------------------------------
+
+/// The lock in place, without its hash; null when there is none.
+#[tauri::command]
+async fn app_lock(state: tauri::State<'_, AppState>) -> CommandResult<Option<AppLock>> {
+    Ok(state.manager.app_lock().await)
+}
+
+/// Sets a lock, or replaces its secret; replacing needs the current one.
+#[tauri::command]
+async fn set_app_lock(
+    state: tauri::State<'_, AppState>,
+    kind: LockKind,
+    secret: String,
+    current: Option<String>,
+) -> CommandResult<()> {
+    Ok(state
+        .manager
+        .set_app_lock(kind, &secret, current.as_deref())
+        .await?)
+}
+
+#[tauri::command]
+async fn clear_app_lock(state: tauri::State<'_, AppState>, current: String) -> CommandResult<()> {
+    Ok(state.manager.clear_app_lock(&current).await?)
+}
+
+/// Tries a secret; the verdict carries the delay after repeated failures.
+#[tauri::command]
+async fn verify_app_lock(
+    state: tauri::State<'_, AppState>,
+    secret: String,
+) -> CommandResult<LockVerdict> {
+    Ok(state.manager.verify_app_lock(&secret).await?)
+}
+
+/// Seconds away from the app before it locks again; null means only at
+/// launch and on request.
+#[tauri::command]
+async fn set_auto_lock(state: tauri::State<'_, AppState>, secs: Option<u32>) -> CommandResult<()> {
+    Ok(state.manager.set_auto_lock(secs).await?)
+}
+
+// --- backup ------------------------------------------------------------
+
+/// Seals the chosen wallets under a password: base64 for a file, UR
+/// frames for an animated QR.
+#[tauri::command]
+async fn export_backup(
+    state: tauri::State<'_, AppState>,
+    options: BackupOptions,
+    password: String,
+) -> CommandResult<BackupBundle> {
+    Ok(state.manager.export_backup(&options, &password).await?)
+}
+
+/// Writes a sealed backup (base64 from `export_backup`) where the user
+/// chose. The bytes are already encrypted: this is plain I/O.
+#[tauri::command]
+async fn save_backup_file(path: String, data: String) -> CommandResult<()> {
+    let bytes = gerfaut_core::backup::decode_source(&data)?;
+    std::fs::write(&path, bytes).map_err(|e| CommandError {
+        kind: "internal",
+        message: format!("could not write {path}: {e}"),
+    })
+}
+
+/// Reads a backup file into the base64 form the core opens. Any file
+/// is read; the core says whether it is a backup.
+#[tauri::command]
+async fn read_backup_file(path: String) -> CommandResult<String> {
+    let bytes = std::fs::read(&path).map_err(|e| CommandError {
+        kind: "internal",
+        message: format!("could not read {path}: {e}"),
+    })?;
+    Ok(data_encoding::BASE64.encode(&bytes))
+}
+
+/// Opens a backup and lists what it holds, before anything is added.
+#[tauri::command]
+async fn preview_backup(
+    state: tauri::State<'_, AppState>,
+    source: String,
+    password: String,
+) -> CommandResult<BackupPreview> {
+    Ok(state.manager.preview_backup(&source, &password).await?)
+}
+
+#[tauri::command]
+async fn import_backup(
+    state: tauri::State<'_, AppState>,
+    source: String,
+    password: String,
+    choices: ImportChoices,
+) -> CommandResult<ImportReport> {
+    Ok(state
+        .manager
+        .import_backup(&source, &password, &choices)
+        .await?)
+}
+
 // --- vault key ---------------------------------------------------------
 
 const KEYRING_SERVICE: &str = "Gerfaut";
@@ -353,6 +470,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let data_dir = data_dir(app)?;
             let key = vault_key().map_err(std::io::Error::other)?;
@@ -378,6 +496,7 @@ pub fn run() {
             broadcast_transaction,
             transaction_status,
             sync_wallet,
+            rescan_wallet,
             load_more_history,
             sync_all,
             rename_wallet,
@@ -392,7 +511,17 @@ pub fn run() {
             set_app_pref,
             fetch_price,
             fetch_price_history,
-            check_update
+            check_update,
+            app_lock,
+            set_app_lock,
+            clear_app_lock,
+            verify_app_lock,
+            set_auto_lock,
+            export_backup,
+            save_backup_file,
+            read_backup_file,
+            preview_backup,
+            import_backup
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

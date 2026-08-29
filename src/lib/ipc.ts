@@ -27,7 +27,18 @@ export type InputWarning =
   | "assumed_segwit"
   | "slip132_converted"
   | "change_not_tracked"
-  | "multiple_accounts_in_file";
+  | "multiple_accounts_in_file"
+  | "non_standard_derivation";
+
+/** Where a lone extended key derives its addresses: receive and change
+    branches under the key (`0/*`, `1/*`), and the key origin. */
+export interface DerivationChoice {
+  receive: string;
+  /** Null leaves change untracked. */
+  change: string | null;
+  /** `[fingerprint/path]`; null keeps the one the input carried. */
+  origin: string | null;
+}
 
 export type ParsedPayload =
   | { type: "descriptors"; external: string; internal: string | null; script: ScriptKind }
@@ -42,6 +53,10 @@ export interface ParsedInput {
   script_options: ScriptKind[];
   /** First receive address on the first candidate network, when derivable. */
   preview_address: string | null;
+  /** The derivation in effect; set only for a lone extended key. */
+  derivation: DerivationChoice | null;
+  /** True when the input leaves the derivation open (a lone key). */
+  derivation_editable: boolean;
 }
 
 export type QrFormat = "plain" | "ur" | "bbqr";
@@ -208,9 +223,17 @@ export interface WalletSnapshot {
   truncated: boolean;
 }
 
+/** A transaction a sync brought in for the first time. */
+export interface NewTx {
+  txid: string;
+  net_sats: number;
+  confirmed: boolean;
+}
+
 export interface SyncReport {
   wallet_id: string;
   new_tx_count: number;
+  new_txs: NewTx[];
   balance: BalanceSnapshot;
   tip_height: number;
   took_ms: number;
@@ -242,6 +265,23 @@ export interface PublicServer {
   self_signed: boolean;
 }
 
+export type LockKind = "pin" | "password";
+
+/** The app lock as the apps see it: kind and timing, never the hash. */
+export interface AppLock {
+  kind: LockKind;
+  /** Seconds away before locking again; null means only at launch. */
+  auto_lock_secs: number | null;
+  biometric: boolean;
+}
+
+export interface LockVerdict {
+  unlocked: boolean;
+  failures: number;
+  /** Seconds before the next attempt is looked at; 0 when it can be. */
+  retry_after_secs: number;
+}
+
 export interface Settings {
   active_network: Network;
   backends: Partial<Record<Network, BackendConfig>>;
@@ -250,6 +290,52 @@ export interface Settings {
   app_prefs: Record<string, string>;
   /** Electrum certificates the user accepted, by `host:port`. */
   electrum_certs: Record<string, string>;
+  /** The lock in place, without its hash; null when there is none. */
+  app_lock: AppLock | null;
+}
+
+// --- backup ---------------------------------------------------------------
+
+export interface BackupOptions {
+  /** Null exports every wallet on every network. */
+  wallet_ids: string[] | null;
+  include_settings: boolean;
+}
+
+/** A sealed backup in both transport forms. */
+export interface BackupBundle {
+  /** Base64 of the encrypted file bytes. */
+  data: string;
+  /** UR frames to loop as an animated QR. */
+  frames: string[];
+  wallet_count: number;
+  size_bytes: number;
+}
+
+export interface BackupWalletPreview {
+  index: number;
+  name: string;
+  network: Network;
+  kind: WalletKind;
+  already_watched: boolean;
+}
+
+export interface BackupPreview {
+  created_at: number;
+  wallets: BackupWalletPreview[];
+  has_settings: boolean;
+}
+
+export interface ImportChoices {
+  /** Null imports every wallet of the backup. */
+  indexes: number[] | null;
+  apply_settings: boolean;
+}
+
+export interface ImportReport {
+  added: WalletMeta[];
+  skipped: number;
+  settings_applied: boolean;
 }
 
 /** What a server's certificate amounts to, mirroring `CertificateStatus`
@@ -452,6 +538,7 @@ export interface CommandError {
     | "sync"
     | "backend_unavailable"
     | "descriptor"
+    | "tor"
     | "internal";
   message: string;
 }
@@ -469,8 +556,12 @@ export function isCommandError(error: unknown): error is CommandError {
 // --- commands ----------------------------------------------------------
 
 export const ipc = {
-  parseInput: (input: string, script?: ScriptKind) =>
-    invoke<ParsedInput>("parse_input", { input, script: script ?? null }),
+  parseInput: (input: string, script?: ScriptKind, derivation?: DerivationChoice) =>
+    invoke<ParsedInput>("parse_input", {
+      input,
+      script: script ?? null,
+      derivation: derivation ?? null,
+    }),
   assembleQr: (frames: string[]) => invoke<QrProgress>("assemble_qr", { frames }),
   addWallet: (name: string, parsed: ParsedInput, network: Network) =>
     invoke<WalletMeta>("add_wallet", { name, parsed, network }),
@@ -486,6 +577,7 @@ export const ipc = {
     invoke<number>("export_transactions_csv", { id, options, path }),
   fetchFees: (network: Network) => invoke<FeeEstimates>("fetch_fees", { network }),
   syncWallet: (id: string) => invoke<SyncReport>("sync_wallet", { id }),
+  rescanWallet: (id: string) => invoke<SyncReport>("rescan_wallet", { id }),
   loadMoreHistory: (id: string) => invoke<number>("load_more_history", { id }),
   syncAll: (network?: Network) =>
     invoke<SyncAllReport>("sync_all", { network: network ?? null }),
@@ -514,4 +606,19 @@ export const ipc = {
   fetchPriceHistory: (source: PriceSource, currency: FiatCurrency, range: PriceRange) =>
     invoke<PriceHistory>("fetch_price_history", { source, currency, range }),
   checkUpdate: () => invoke<UpdateCheck>("check_update"),
+  appLock: () => invoke<AppLock | null>("app_lock"),
+  setAppLock: (kind: LockKind, secret: string, current?: string) =>
+    invoke<void>("set_app_lock", { kind, secret, current: current ?? null }),
+  clearAppLock: (current: string) => invoke<void>("clear_app_lock", { current }),
+  verifyAppLock: (secret: string) => invoke<LockVerdict>("verify_app_lock", { secret }),
+  setAutoLock: (secs: number | null) => invoke<void>("set_auto_lock", { secs }),
+  exportBackup: (options: BackupOptions, password: string) =>
+    invoke<BackupBundle>("export_backup", { options, password }),
+  saveBackupFile: (path: string, data: string) =>
+    invoke<void>("save_backup_file", { path, data }),
+  readBackupFile: (path: string) => invoke<string>("read_backup_file", { path }),
+  previewBackup: (source: string, password: string) =>
+    invoke<BackupPreview>("preview_backup", { source, password }),
+  importBackup: (source: string, password: string, choices: ImportChoices) =>
+    invoke<ImportReport>("import_backup", { source, password, choices }),
 };

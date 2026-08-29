@@ -34,6 +34,8 @@ const WARNING_LABEL: Record<InputWarning, string> = {
   slip132_converted: "The SLIP-132 prefix was converted to a standard extended key.",
   change_not_tracked: "No change path was provided: change outputs will not be tracked.",
   multiple_accounts_in_file: "The file holds several account types; the preferred one was selected.",
+  non_standard_derivation:
+    "The paths chosen are not the usual 0/* and 1/*: compare the first address with your wallet.",
 };
 
 /** What each script type means to the person choosing, in one line. */

@@ -19,6 +19,7 @@ const SETTINGS: Settings = {
   gap_limit: 20,
   app_prefs: {},
   electrum_certs: {},
+  app_lock: null,
 };
 
 /** A SHA-256 fingerprint in the shape openssl prints, as the core sends it. */
@@ -82,6 +83,8 @@ const PARSED_TPUB: ParsedInput = {
   },
   warnings: ["assumed_segwit"],
   script_options: ["legacy", "nested_segwit", "segwit", "taproot"],
+  derivation: { receive: "0/*", change: "1/*", origin: null },
+  derivation_editable: true,
   preview_address: "tb1qpreview0segwit000000000000000000000000",
 };
 
