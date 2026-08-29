@@ -1,10 +1,17 @@
-import { FileUp, Info, ScanLine } from "lucide-react";
+import { ChevronDown, ChevronUp, FileUp, Info, ScanLine } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { Select } from "../components/Select";
 import { ScanQrModal } from "../components/ScanQrModal";
-import type { InputWarning, Network, ParsedInput, RecognizedKind, ScriptKind } from "../lib/ipc";
+import type {
+  DerivationChoice,
+  InputWarning,
+  Network,
+  ParsedInput,
+  RecognizedKind,
+  ScriptKind,
+} from "../lib/ipc";
 import { ipc, isCommandError } from "../lib/ipc";
 import { useAddWallet, useSetActiveNetwork, useSyncWallet } from "../state/queries";
 import { useUi } from "../state/store";
@@ -68,6 +75,13 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
   const [name, setName] = useState("");
   const [network, setNetwork] = useState<Network>(activeNetwork);
   const [scanOpen, setScanOpen] = useState(false);
+  // The advanced disclosure, and what it holds. The fields survive a
+  // re-parse: whoever tried one branch tries the next from there.
+  const [advanced, setAdvanced] = useState(false);
+  const [receive, setReceive] = useState("0/*");
+  const [change, setChange] = useState("1/*");
+  const [origin, setOrigin] = useState("");
+  const [derivationError, setDerivationError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const addWallet = useAddWallet();
   const sync = useSyncWallet();
@@ -86,26 +100,53 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
     reset();
   };
 
-  const parse = async (input: string, chosen?: ScriptKind) => {
+  /** What the derivation fields amount to, in the core's shape. */
+  const derivation = (): DerivationChoice => ({
+    receive: receive.trim(),
+    change: change.trim() || null,
+    origin: origin.trim() || null,
+  });
+
+  /** Fills the fields with the paths the core says are in effect, so
+      opening the disclosure shows what is actually used. */
+  const seedDerivation = (result: ParsedInput) => {
+    if (!result.derivation) return;
+    setReceive(result.derivation.receive);
+    setChange(result.derivation.change ?? "");
+    setOrigin(result.derivation.origin ?? "");
+  };
+
+  const parse = async (
+    input: string,
+    chosen?: ScriptKind,
+    paths?: DerivationChoice,
+  ) => {
     setError(null);
     try {
-      const result = await ipc.parseInput(input, chosen);
+      const result = await ipc.parseInput(input, chosen, paths);
       setParsed(result);
-      if (chosen === undefined) {
+      seedDerivation(result);
+      setDerivationError(null);
+      if (chosen === undefined && paths === undefined) {
         setNetwork(
           result.networks.includes(activeNetwork) ? activeNetwork : result.networks[0],
         );
       }
     } catch (err) {
-      setError(isCommandError(err) ? err.message : String(err));
+      const message = isCommandError(err) ? err.message : String(err);
+      // A refused path belongs under the fields that caused it; the
+      // card above keeps the parse that did work.
+      if (paths) setDerivationError(message);
+      else setError(message);
     }
   };
 
   /** The script type is rebuilt by the core, never patched locally:
-      the descriptors and the preview address must come from one place. */
+      the descriptors and the preview address must come from one place.
+      The derivation goes along, or picking a script would undo it. */
   const chooseScript = (chosen: ScriptKind) => {
     setScript(chosen);
-    void parse(raw, chosen);
+    void parse(raw, chosen, advanced ? derivation() : undefined);
   };
 
   const importFile = async (file: File) => {
@@ -267,6 +308,71 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
             </div>
           )}
 
+          {/* Only a lone extended key leaves the branches open;
+              everything else carries its own and the core ignores a
+              choice made here. */}
+          {parsed.derivation_editable && parsed.payload.type === "descriptors" && (
+            <div>
+              <Button
+                variant="ghost"
+                className="h-9 px-2"
+                aria-expanded={advanced}
+                onClick={() => setAdvanced(!advanced)}
+              >
+                {advanced ? (
+                  <ChevronUp size={14} strokeWidth={1.5} aria-hidden />
+                ) : (
+                  <ChevronDown size={14} strokeWidth={1.5} aria-hidden />
+                )}
+                Advanced
+              </Button>
+              {advanced && (
+                <div className="mt-2 flex flex-col gap-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <PathField
+                      id="derivation-receive"
+                      label="Receive path"
+                      value={receive}
+                      placeholder="0/*"
+                      onChange={setReceive}
+                    />
+                    <PathField
+                      id="derivation-change"
+                      label="Change path"
+                      value={change}
+                      placeholder="Leave empty to not track change"
+                      onChange={setChange}
+                    />
+                  </div>
+                  <PathField
+                    id="derivation-origin"
+                    label="Key origin"
+                    value={origin}
+                    placeholder="[deadbeef/84'/0'/0']"
+                    onChange={setOrigin}
+                  />
+                  <p className="font-ui text-xs text-muted">
+                    For a key used outside the usual branches. The first
+                    address above updates so you can check.
+                  </p>
+                  {derivationError && (
+                    <p className="font-ui text-xs text-muted">{derivationError}</p>
+                  )}
+                  <span>
+                    <Button
+                      variant="secondary"
+                      onClick={() =>
+                        void parse(raw, script ?? undefined, derivation())
+                      }
+                    >
+                      Apply
+                    </Button>
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex gap-3">
             <div className="flex-1">
               <label
@@ -341,5 +447,41 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
         }}
       />
     </Modal>
+  );
+}
+
+/** One derivation field: an identifier, so it reads in the mono face. */
+function PathField({
+  id,
+  label,
+  value,
+  placeholder,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label
+        htmlFor={id}
+        className="mb-1 block font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted"
+      >
+        {label}
+      </label>
+      <input
+        id={id}
+        type="text"
+        spellCheck={false}
+        autoComplete="off"
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-11 w-full rounded-sm bg-sunken px-3 font-data text-[13px] text-text outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-primary"
+      />
+    </div>
   );
 }

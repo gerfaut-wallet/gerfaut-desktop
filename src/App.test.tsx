@@ -1339,6 +1339,90 @@ describe("add wallet flow", () => {
     });
   });
 
+  it("offers the derivation only for a key that leaves it open", async () => {
+    const calls: unknown[] = [];
+    mockIPC((cmd, args) => {
+      switch (cmd) {
+        case "get_settings":
+          return SETTINGS;
+        case "list_wallets":
+          return [];
+        case "parse_input": {
+          calls.push(args);
+          const paths = (args as { derivation?: { receive: string } | null })
+            .derivation;
+          if (paths?.receive === "0'/*") {
+            return Promise.reject({
+              kind: "invalid_input",
+              message: "invalid derivation path: a hardened step cannot be derived",
+            });
+          }
+          return paths
+            ? {
+                ...PARSED_TPUB,
+                derivation: {
+                  receive: paths.receive,
+                  change:
+                    (args as { derivation: { change: string | null } }).derivation
+                      .change,
+                  origin: null,
+                },
+                preview_address: "tb1qother0preview00000000000000000000000",
+              }
+            : PARSED_TPUB;
+        }
+        case "set_app_pref":
+          return undefined;
+        case "sync_all":
+          return { reports: [], failures: [] };
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+
+    renderApp();
+    const user = userEvent.setup();
+    await user.click((await screen.findAllByRole("button", { name: /add a wallet/i }))[0]);
+    await user.type(
+      screen.getByLabelText(/descriptor, extended public key/i),
+      "tpubDDnGNapGEY6...",
+    );
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await screen.findByText(/recognized as/i);
+
+    await user.click(screen.getByRole("button", { name: /advanced/i }));
+    const receive = screen.getByLabelText(/receive path/i);
+    const change = screen.getByLabelText(/change path/i);
+    expect(receive).toHaveValue("0/*");
+
+    // An empty change branch means "do not track change", not "0/*".
+    await user.clear(receive);
+    await user.type(receive, "5/*");
+    await user.clear(change);
+    await user.click(screen.getByRole("button", { name: /^apply$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("preview-address")).toHaveTextContent(
+        "tb1qother0preview00000000000000000000000",
+      );
+    });
+    const applied = calls.at(-1) as { derivation: { receive: string; change: null } };
+    expect(applied.derivation.receive).toBe("5/*");
+    expect(applied.derivation.change).toBeNull();
+
+    // A path the core refuses is said under the fields, and the card
+    // above keeps the parse that did work.
+    await user.clear(screen.getByLabelText(/receive path/i));
+    await user.type(screen.getByLabelText(/receive path/i), "0'/*");
+    await user.click(screen.getByRole("button", { name: /^apply$/i }));
+    expect(
+      await screen.findByText(/a hardened step cannot be derived/i),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("preview-address")).toHaveTextContent(
+      "tb1qother0preview00000000000000000000000",
+    );
+  });
+
   it("parses, confirms, and adds", async () => {
     renderApp();
     const user = userEvent.setup();
