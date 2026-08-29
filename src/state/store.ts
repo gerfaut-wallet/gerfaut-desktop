@@ -60,6 +60,8 @@ interface UiState {
   notificationsRefused: boolean;
   /** The welcome tour has been seen. */
   onboardingSeen: boolean;
+  /** It was dismissed in this session, whatever the vault says yet. */
+  tourDismissed: boolean;
   toast: string | null;
   /** Last sync failure per wallet id, cleared on the next success. */
   syncErrors: Record<string, string>;
@@ -83,6 +85,7 @@ interface UiState {
   setNotificationsRefused: (refused: boolean) => void;
   setNotifyInterval: (seconds: number) => void;
   setOnboardingSeen: (seen: boolean) => void;
+  markTourSeen: () => void;
   showToast: (message: string) => void;
   setSyncError: (walletId: string, message: string | null) => void;
   rememberBroadcast: (entry: RecentBroadcast) => void;
@@ -136,6 +139,7 @@ export const useUi = create<UiState>((set, get) => ({
   notifyInterval: 0,
   notificationsRefused: false,
   onboardingSeen: false,
+  tourDismissed: false,
   toast: null,
   syncErrors: {},
   recentBroadcasts: [],
@@ -210,6 +214,9 @@ export const useUi = create<UiState>((set, get) => ({
     set({ onboardingSeen });
     persist("onboarding.seen", onboardingSeen ? "1" : "0");
   },
+  // The tour reads the vault's own preference, which the write above
+  // does not refresh: remember here that this session has seen it.
+  markTourSeen: () => set({ onboardingSeen: true, tourDismissed: true }),
   showToast: (message) => {
     clearTimeout(toastTimer);
     set({ toast: message });

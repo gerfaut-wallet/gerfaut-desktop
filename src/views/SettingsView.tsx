@@ -26,6 +26,7 @@ import { Button, IconButton } from "../components/Button";
 import { BackupSection } from "./settings/BackupSection";
 import { NotificationsSection } from "./settings/NotificationsSection";
 import { SecuritySection } from "./settings/SecuritySection";
+import { TorSection } from "./settings/TorSection";
 import { WelcomeTour } from "./WelcomeTour";
 import { Modal } from "../components/Modal";
 import { Select } from "../components/Select";
@@ -561,6 +562,8 @@ export function SettingsView({
           </SettingRow>
         </SectionCard>
 
+        <TorSection tor={settings.tor} />
+
         <SecuritySection lock={settings.app_lock} />
 
         <NotificationsSection />
@@ -842,8 +845,8 @@ function BackendSection({
 
       {kind !== "public_esplora" && (
         <p className="mt-3 font-ui text-xs text-muted">
-          Onion addresses go through the Tor proxy at 127.0.0.1:9050. Start Tor
-          on this machine before syncing; a built-in Tor client is planned.
+          An address ending in .onion goes through Tor; the Tor card below says
+          which one and lets you test it.
         </p>
       )}
       {plainTcp && (

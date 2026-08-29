@@ -6,7 +6,7 @@
 // slows repeated guesses down; this store holds only whether the lock
 // screen is showing and when it should show again.
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { create } from "zustand";
 import type { AppLock, LockVerdict } from "../lib/ipc";
 import { ipc } from "../lib/ipc";
@@ -31,10 +31,19 @@ interface LockState {
   lock: AppLock | null;
   /** The lock screen is showing and nothing else is in the tree. */
   locked: boolean;
-  /** The vault has been asked; before that nothing is decided. */
-  loaded: boolean;
-  load: () => Promise<void>;
-  refresh: () => Promise<void>;
+  /** The vault has been read once, so a lock present has already put
+      the screen up. */
+  seen: boolean;
+  /** When the user last did something, so the idle clock starts from
+      the unlock and not from whenever the app was mounted. */
+  lastActive: number;
+  touch: () => void;
+  /** Takes the lock from the settings the vault just handed over.
+      The vault is the single source of truth here; this store only
+      knows whether the screen is up right now. The first read with a
+      lock in it locks — a later one never does, so turning a lock on
+      does not shut the user out of the screen they are standing on. */
+  syncFromSettings: (lock: AppLock | null) => void;
   unlock: (secret: string) => Promise<LockVerdict>;
   lockNow: () => void;
 }
@@ -42,34 +51,21 @@ interface LockState {
 export const useLock = create<LockState>((set, get) => ({
   lock: null,
   locked: false,
-  loaded: false,
+  seen: false,
+  lastActive: Date.now(),
 
-  /** Reads the lock the vault holds. A lock present means the app
-      starts locked: the first thing it asks is the secret. */
-  load: async () => {
-    try {
-      const lock = await ipc.appLock();
-      set({ lock, locked: lock !== null, loaded: true });
-    } catch {
-      // A vault that cannot say has no lock to show: the startup error
-      // screen is the one that speaks, not a lock nobody can pass.
-      set({ lock: null, locked: false, loaded: true });
-    }
-  },
+  touch: () => set({ lastActive: Date.now() }),
 
-  /** Reloads after the settings changed the lock, leaving the screen
-      as it is: turning a lock on does not lock the user out at once. */
-  refresh: async () => {
-    try {
-      set({ lock: await ipc.appLock(), loaded: true });
-    } catch {
-      // Keep what is on screen: a failed read is not an unlock.
-    }
+  syncFromSettings: (lock) => {
+    const first = !get().seen;
+    set({ lock, seen: true, locked: first ? lock !== null : get().locked });
   },
 
   unlock: async (secret) => {
     const verdict = await ipc.verifyAppLock(secret);
-    if (verdict.unlocked) set({ locked: false });
+    // The idle clock restarts here: typing a secret on the lock screen
+    // is not activity the auto-lock ever saw.
+    if (verdict.unlocked) set({ locked: false, lastActive: Date.now() });
     return verdict;
   },
 
@@ -89,17 +85,14 @@ const TICK_MS = 5000;
 export function useAutoLock(): void {
   const lock = useLock((state) => state.lock);
   const locked = useLock((state) => state.locked);
-  const lastActive = useRef(Date.now());
 
   useEffect(() => {
     if (lock === null || locked) return;
     const autoLockSecs = lock.auto_lock_secs;
 
-    const touch = () => {
-      lastActive.current = Date.now();
-    };
+    const touch = () => useLock.getState().touch();
     const check = () => {
-      const away = (Date.now() - lastActive.current) / 1000;
+      const away = (Date.now() - useLock.getState().lastActive) / 1000;
       if (shouldLock({ awaySecs: away, autoLockSecs })) useLock.getState().lockNow();
     };
     const onBlur = () => {

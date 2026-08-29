@@ -32,19 +32,20 @@ export default function App() {
     hydratePrefs,
     notifyInterval,
     notifyNewTx,
+    tourDismissed,
   } = useUi();
   const hydrated = useRef(false);
   const autosynced = useRef(false);
-  const lockLoaded = useLock((state) => state.loaded);
   const locked = useLock((state) => state.locked);
-  const loadLock = useLock((state) => state.load);
+  const syncLock = useLock((state) => state.syncFromSettings);
   const [tourOpen, setTourOpen] = useState(false);
   useAutoLock();
 
-  // Asking the vault is what decides whether the app starts locked.
+  // The vault says whether a lock exists; the first read with one in it
+  // is what puts the lock screen up.
   useEffect(() => {
-    if (!lockLoaded) void loadLock();
-  }, [lockLoaded, loadLock]);
+    if (settings.data) syncLock(settings.data.app_lock);
+  }, [settings.data, syncLock]);
 
   // Hydrate UI prefs from the vault once.
   useEffect(() => {
@@ -62,27 +63,38 @@ export default function App() {
     }
   }, [wallets.data, network, syncAll]);
 
-  // And then on the rhythm the user chose, while the window is open.
-  // It talks to the configured backend and to nothing else.
+  // And then on the rhythm the user chose, while the window is open and
+  // unlocked. It talks to the configured backend and to nothing else.
+  //
+  // The mutation object is read through a ref: TanStack returns a fresh
+  // one on every render, and this component re-renders on every toast,
+  // so keeping it in the dependencies would restart the timer before it
+  // ever fired.
   const hasWallets = (wallets.data?.length ?? 0) > 0;
+  const syncAllRef = useRef(syncAll);
+  syncAllRef.current = syncAll;
   useEffect(() => {
     if (!notifyNewTx || notifyInterval <= 0 || !network || !hasWallets) return;
     const timer = setInterval(() => {
-      if (!syncing) syncAll.mutate(network);
+      // Nothing runs behind the lock screen: a sync there would post a
+      // notification naming a wallet and an amount over it.
+      if (useLock.getState().locked) return;
+      syncAllRef.current.mutate(network);
     }, notifyInterval * 1000);
     return () => clearInterval(timer);
-  }, [notifyNewTx, notifyInterval, network, hasWallets, syncing, syncAll]);
+  }, [notifyNewTx, notifyInterval, network, hasWallets]);
 
   // The tour only ever stands in front of an empty vault: someone with
   // wallets already knows what this is. The vault's own preference is
   // what decides, not the hydrated copy, which lands a frame later.
   const emptyVault = (wallets.data?.length ?? 0) === 0;
-  const tourSeen = settings.data?.app_prefs["onboarding.seen"] === "1";
+  const tourSeen =
+    settings.data?.app_prefs["onboarding.seen"] === "1" || tourDismissed;
   useEffect(() => {
     if (settings.data && emptyVault && !tourSeen && !locked) setTourOpen(true);
   }, [settings.data, emptyVault, tourSeen, locked]);
 
-  if (settings.isPending || wallets.isPending || !lockLoaded) {
+  if (settings.isPending || wallets.isPending) {
     return (
       <div className="shell-rail flex h-full items-center justify-center bg-shell">
         <p className="font-ui text-sm text-muted">Opening vault…</p>

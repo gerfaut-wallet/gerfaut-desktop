@@ -17,6 +17,19 @@ import { useUi } from "./state/store";
 
 // A vault opened before: the welcome tour is behind this user, so the
 // app lands on itself the way it does every other day.
+/** What the core answers about Tor on a machine with no daemon. */
+const TOR_STATUS = {
+  mode: "auto" as const,
+  socks_proxy: "127.0.0.1:9050",
+  via: null,
+  socks: null,
+  running: false,
+  bootstrapped: false,
+  bootstrap_percent: 0,
+  error: null,
+  embedded_available: false,
+};
+
 const SETTINGS: Settings = {
   active_network: "signet",
   backends: {},
@@ -1327,6 +1340,8 @@ describe("add wallet flow", () => {
           return PRICE_HISTORY;
         case "set_app_pref":
           return undefined;
+        case "tor_status":
+          return TOR_STATUS;
         case "sync_wallet":
           return {
             wallet_id: WALLET.id,
@@ -1555,11 +1570,11 @@ describe("the app lock", () => {
   };
 
   beforeEach(() => {
-    useLock.setState({ lock: null, locked: false, loaded: false });
+    useLock.setState({ lock: null, locked: false, seen: false });
   });
 
   afterEach(() => {
-    useLock.setState({ lock: null, locked: false, loaded: false });
+    useLock.setState({ lock: null, locked: false, seen: false });
   });
 
   function mockLocked(verdicts: LockVerdict[]) {
@@ -1659,7 +1674,7 @@ describe("the welcome tour", () => {
   // would otherwise decide for the next one.
   beforeEach(() => {
     useUi.setState({ onboardingSeen: false });
-    useLock.setState({ lock: null, locked: false, loaded: false });
+    useLock.setState({ lock: null, locked: false, seen: false });
   });
 
   function mockEmptyVault(prefs: Record<string, string>) {
@@ -1731,5 +1746,89 @@ describe("the welcome tour", () => {
       expect(prefs["onboarding.seen"]).toBe("1");
     });
     expect(screen.queryByText("Keep it yours")).not.toBeInTheDocument();
+  });
+});
+
+describe("tor", () => {
+  it("says which Tor a build carries, and refuses the one it does not", async () => {
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "get_settings":
+          return SETTINGS;
+        case "list_wallets":
+          return [WALLET];
+        case "tor_status":
+          return TOR_STATUS;
+        case "wallet_snapshot":
+          return SNAPSHOT;
+        case "utxos":
+          return [];
+        case "receive_addresses":
+          return receiveEntries(0);
+        case "fetch_price_history":
+          return PRICE_HISTORY;
+        case "set_app_pref":
+          return undefined;
+        case "sync_all":
+          return { reports: [], failures: [] };
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderApp();
+    const user = userEvent.setup();
+    // The sidebar only exists once the vault and its wallets are in.
+    await screen.findByRole("navigation", { name: "Navigation" });
+    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+
+    // No built-in client here: the option is shown, not offered, and
+    // the copy says why rather than failing later.
+    expect(
+      await screen.findByText(/this build has no tor of its own/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Built-in" })).toBeDisabled();
+    // The address is configurable: a Tor Browser listens on 9150.
+    expect(screen.getByLabelText(/socks address/i)).toBeInTheDocument();
+  });
+
+  it("stores the mode the user picks", async () => {
+    let sent: unknown = null;
+    mockIPC((cmd, args) => {
+      switch (cmd) {
+        case "get_settings":
+          return SETTINGS;
+        case "list_wallets":
+          return [WALLET];
+        case "tor_status":
+          return { ...TOR_STATUS, embedded_available: true };
+        case "set_tor_settings":
+          sent = args;
+          return undefined;
+        case "wallet_snapshot":
+          return SNAPSHOT;
+        case "utxos":
+          return [];
+        case "receive_addresses":
+          return receiveEntries(0);
+        case "fetch_price_history":
+          return PRICE_HISTORY;
+        case "set_app_pref":
+          return undefined;
+        case "sync_all":
+          return { reports: [], failures: [] };
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByRole("navigation", { name: "Navigation" });
+    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+
+    await user.click(await screen.findByRole("radio", { name: "Built-in" }));
+    await waitFor(() => {
+      expect(sent).not.toBeNull();
+    });
+    expect((sent as { settings: { mode: string } }).settings.mode).toBe("embedded");
   });
 });

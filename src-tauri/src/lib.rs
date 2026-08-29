@@ -259,8 +259,7 @@ async fn fetch_fees(
     state: tauri::State<'_, AppState>,
     network: Network,
 ) -> CommandResult<gerfaut_core::fees::FeeEstimates> {
-    let backend = state.manager.settings().await.backend_for(network);
-    Ok(gerfaut_core::fees::fetch_fees_for(network, &backend).await?)
+    Ok(state.manager.fetch_fees(network).await?)
 }
 
 /// Decodes a transaction (PSBT or raw, any text form) and shows what it

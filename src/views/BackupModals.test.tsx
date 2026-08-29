@@ -85,6 +85,10 @@ function renderModal(node: React.ReactNode) {
 }
 
 afterEach(() => {
+  // Restored here and not at the end of the test that installs them:
+  // a failure there would otherwise leave every later test hanging on
+  // a clock that never advances.
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 
@@ -234,7 +238,6 @@ describe("exporting a backup", () => {
         screen.getByRole("img", { name: "Backup QR code, frame 2 of 2" }),
       ).toBeInTheDocument();
     });
-    vi.useRealTimers();
   });
 });
 
@@ -310,6 +313,13 @@ describe("restoring a backup", () => {
     expect(boxes[0]).toBeChecked();
     expect(screen.getByRole("button", { name: /restore 1 wallet/i })).toBeInTheDocument();
 
+    // Unchecking the only pickable wallet leaves nothing to restore,
+    // and the action says so instead of sending an empty list.
+    await user.click(boxes[0]);
+    expect(boxes[0]).not.toBeChecked();
+    expect(screen.getByRole("button", { name: /restore 0 wallets/i })).toBeDisabled();
+
+    await user.click(boxes[0]);
     await user.click(screen.getByRole("switch", { name: /apply node settings/i }));
     await user.click(screen.getByRole("button", { name: /restore 1 wallet/i }));
 

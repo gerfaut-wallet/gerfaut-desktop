@@ -43,6 +43,7 @@ const STEPS: Step[] = [
 export function WelcomeTour({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [step, setStep] = useState(0);
   const setOnboardingSeen = useUi((state) => state.setOnboardingSeen);
+  const markTourSeen = useUi((state) => state.markTourSeen);
 
   useEffect(() => {
     if (open) setStep(0);
@@ -50,6 +51,7 @@ export function WelcomeTour({ open, onClose }: { open: boolean; onClose: () => v
 
   const done = () => {
     setOnboardingSeen(true);
+    markTourSeen();
     onClose();
   };
   const last = step === STEPS.length - 1;

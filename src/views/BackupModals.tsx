@@ -1,6 +1,6 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { Eye, EyeOff } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatedQr } from "../components/AnimatedQr";
 import { Button, IconButton } from "../components/Button";
 import { Modal } from "../components/Modal";
@@ -96,8 +96,23 @@ export function BackupExportModal({
   const [problem, setProblem] = useState<string | null>(null);
   const [bundle, setBundle] = useState<BackupBundle | null>(null);
   const [showQr, setShowQr] = useState(false);
+  const openRef = useRef(isOpen);
+  openRef.current = isOpen;
 
   const onNetwork = wallets.filter((w) => w.network === activeNetwork);
+  // Both modals stay mounted while closed, so an answer that lands
+  // after the user walked away must not come back with the next
+  // opening — with the password and the options they abandoned.
+  useEffect(() => {
+    if (!isOpen) {
+      setPassword("");
+      setConfirm("");
+      setProblem(null);
+      setBundle(null);
+      setShowQr(false);
+    }
+  }, [isOpen]);
+
   const close = () => {
     setPassword("");
     setConfirm("");
@@ -127,8 +142,10 @@ export function BackupExportModal({
         },
         password,
       });
+      if (!openRef.current) return;
       setBundle(made);
     } catch (error) {
+      if (!openRef.current) return;
       setProblem(isCommandError(error) ? error.message : String(error));
     }
   };
@@ -284,6 +301,18 @@ export function BackupRestoreModal({
   const [chosen, setChosen] = useState<Set<number>>(new Set());
   const [applySettings, setApplySettings] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
+  // Same reason as the export modal: this one stays mounted too.
+  useEffect(() => {
+    if (!isOpen) {
+      setSource(null);
+      setSourceLabel("");
+      setPassword("");
+      setProblem(null);
+      setPreview(null);
+      setChosen(new Set());
+      setApplySettings(false);
+    }
+  }, [isOpen]);
 
   const close = () => {
     setSource(null);
@@ -297,17 +326,23 @@ export function BackupRestoreModal({
   };
 
   const openFile = async () => {
-    const path = await open({
-      multiple: false,
-      filters: [
-        { name: "Gerfaut backup", extensions: ["gerfaut"] },
-        { name: "All files", extensions: ["*"] },
-      ],
-    });
-    if (typeof path !== "string") return;
-    setSource(await ipc.readBackupFile(path));
-    setSourceLabel(`File: ${path.split(/[\\/]/).pop() ?? path}`);
-    setProblem(null);
+    try {
+      const path = await open({
+        multiple: false,
+        filters: [
+          { name: "Gerfaut backup", extensions: ["gerfaut"] },
+          { name: "All files", extensions: ["*"] },
+        ],
+      });
+      if (typeof path !== "string") return;
+      setSource(await ipc.readBackupFile(path));
+      setSourceLabel(`File: ${path.split(/[\\/]/).pop() ?? path}`);
+      setProblem(null);
+    } catch (error) {
+      // A file too large, gone, or unreadable: say so rather than
+      // leaving a button that does nothing.
+      setProblem(message(error));
+    }
   };
 
   const message = (error: unknown) => {

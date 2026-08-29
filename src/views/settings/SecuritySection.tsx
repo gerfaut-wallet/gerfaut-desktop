@@ -56,7 +56,6 @@ function SecretField({
     says when it comes back. */
 export function SecuritySection({ lock }: { lock: AppLock | null }) {
   const { showToast } = useUi();
-  const refresh = useLock((state) => state.refresh);
   const lockNow = useLock((state) => state.lockNow);
   const setAppLock = useSetAppLock();
   const clearAppLock = useClearAppLock();
@@ -104,7 +103,6 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
         // computer must not be enough to set a new PIN.
         current: dialog === "change" ? current : undefined,
       });
-      await refresh();
       showToast(dialog === "change" ? "Setting saved" : "App lock on");
       close();
     } catch (error) {
@@ -115,7 +113,6 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
   const turnOff = async () => {
     try {
       await clearAppLock.mutateAsync(current);
-      await refresh();
       showToast("App lock off");
       close();
     } catch (error) {
@@ -124,8 +121,13 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
   };
 
   const chooseDelay = async (value: string) => {
-    await setAutoLock.mutateAsync(value === "never" ? null : Number(value));
-    await refresh();
+    try {
+      await setAutoLock.mutateAsync(value === "never" ? null : Number(value));
+    } catch (error) {
+      // A refused change must not leave the control showing a delay
+      // the vault does not hold.
+      setProblem(isCommandError(error) ? error.message : String(error));
+    }
   };
 
   return (
