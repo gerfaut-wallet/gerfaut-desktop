@@ -265,6 +265,39 @@ export interface PublicServer {
   self_signed: boolean;
 }
 
+export type TorMode = "auto" | "system" | "embedded";
+
+/** How `.onion` backends reach Tor: a system daemon found on the
+    SOCKS port, the client built into Gerfaut, or whichever answers. */
+export interface TorSettings {
+  mode: TorMode;
+  /** `host:port` of the system SOCKS proxy; null means 127.0.0.1:9050. */
+  socks_proxy: string | null;
+}
+
+export type TorVia = "system" | "embedded";
+
+export interface TorRoute {
+  socks: string;
+  via: TorVia;
+}
+
+/** Where Tor stands right now, mirroring `TorStatus` in gerfaut-core. */
+export interface TorStatus {
+  mode: TorMode;
+  /** The effective system proxy address. */
+  socks_proxy: string;
+  via: TorVia | null;
+  /** The SOCKS address in use, once a route was resolved. */
+  socks: string | null;
+  running: boolean;
+  bootstrapped: boolean;
+  bootstrap_percent: number;
+  error: string | null;
+  /** Whether this build carries the built-in client. */
+  embedded_available: boolean;
+}
+
 export type LockKind = "pin" | "password";
 
 /** The app lock as the apps see it: kind and timing, never the hash. */
@@ -292,6 +325,8 @@ export interface Settings {
   electrum_certs: Record<string, string>;
   /** The lock in place, without its hash; null when there is none. */
   app_lock: AppLock | null;
+  /** How `.onion` backends reach Tor. */
+  tor: TorSettings;
 }
 
 // --- backup ---------------------------------------------------------------
@@ -621,4 +656,7 @@ export const ipc = {
     invoke<BackupPreview>("preview_backup", { source, password }),
   importBackup: (source: string, password: string, choices: ImportChoices) =>
     invoke<ImportReport>("import_backup", { source, password, choices }),
+  torStatus: () => invoke<TorStatus>("tor_status"),
+  setTorSettings: (settings: TorSettings) => invoke<void>("set_tor_settings", { settings }),
+  torConnect: () => invoke<TorRoute>("tor_connect"),
 };

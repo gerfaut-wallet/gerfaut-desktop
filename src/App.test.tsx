@@ -24,6 +24,7 @@ const SETTINGS: Settings = {
   app_prefs: { "onboarding.seen": "1" },
   electrum_certs: {},
   app_lock: null,
+  tor: { mode: "auto", socks_proxy: null },
 };
 
 /** A SHA-256 fingerprint in the shape openssl prints, as the core sends it. */

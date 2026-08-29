@@ -8,6 +8,7 @@
 use gerfaut_core::WalletManager;
 use gerfaut_core::backup::{BackupBundle, BackupOptions, BackupPreview, ImportChoices, ImportReport};
 use gerfaut_core::chain::BackendConfig;
+use gerfaut_core::chain::tor::{TorRoute, TorSettings, TorStatus};
 use gerfaut_core::error::CoreError;
 use gerfaut_core::input::qr::QrProgress;
 use gerfaut_core::input::{DerivationChoice, ImportOptions, ParsedInput, ScriptKind};
@@ -43,6 +44,7 @@ impl From<CoreError> for CommandError {
             CoreError::Broadcast { .. } => "broadcast",
             CoreError::BackendUnavailable(_) => "backend_unavailable",
             CoreError::Descriptor(_) => "descriptor",
+            CoreError::Tor(_) => "tor",
             CoreError::Internal(_) => "internal",
         };
         CommandError {
@@ -321,6 +323,31 @@ async fn check_update(app: tauri::AppHandle) -> CommandResult<gerfaut_core::upda
     Ok(gerfaut_core::updates::check_update("gerfaut-wallet/gerfaut-desktop", &current).await?)
 }
 
+// --- tor ---------------------------------------------------------------
+
+/// Where Tor stands for `.onion` backends: the mode, the route in use,
+/// and how far the built-in client has bootstrapped.
+#[tauri::command]
+async fn tor_status(state: tauri::State<'_, AppState>) -> CommandResult<TorStatus> {
+    Ok(state.manager.tor_status().await)
+}
+
+#[tauri::command]
+async fn set_tor_settings(
+    state: tauri::State<'_, AppState>,
+    settings: TorSettings,
+) -> CommandResult<()> {
+    Ok(state.manager.set_tor_settings(settings).await?)
+}
+
+/// Resolves the route now, bootstrapping the built-in client if that is
+/// the path: a warm-up from the settings, which can take up to a minute
+/// and a half on a first run.
+#[tauri::command]
+async fn tor_connect(state: tauri::State<'_, AppState>) -> CommandResult<TorRoute> {
+    Ok(state.manager.tor_connect().await?)
+}
+
 // --- app lock ----------------------------------------------------------
 
 /// The lock in place, without its hash; null when there is none.
@@ -521,7 +548,10 @@ pub fn run() {
             save_backup_file,
             read_backup_file,
             preview_backup,
-            import_backup
+            import_backup,
+            tor_status,
+            set_tor_settings,
+            tor_connect
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
