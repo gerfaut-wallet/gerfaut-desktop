@@ -529,7 +529,7 @@ describe("display settings", () => {
     expect(await screen.findByText("Shows the fiat value next to every amount.")).toBeInTheDocument();
     expect(screen.getByText("Serves the fiat value and the overview price.")).toBeInTheDocument();
     expect(
-      screen.getByText("How many unused addresses Gerfaut scans past the last used one."),
+      screen.getByText(/How many unused addresses Gerfaut scans past the last used one\./),
     ).toBeInTheDocument();
     expect(screen.queryByText(/20 is the norm/)).not.toBeInTheDocument();
     expect(screen.queryByText(/expose this app's IP/)).not.toBeInTheDocument();

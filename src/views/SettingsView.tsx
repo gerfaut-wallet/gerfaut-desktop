@@ -8,6 +8,7 @@ import {
   Moon,
   Pencil,
   RefreshCw,
+  ScanSearch,
   Server,
   ShieldCheck,
   Sun,
@@ -21,6 +22,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { Button, IconButton } from "../components/Button";
+import { NotificationsSection } from "./settings/NotificationsSection";
 import { Modal } from "../components/Modal";
 import { Select } from "../components/Select";
 import { FieldLabel, SectionCard, Segmented, SettingRow, Toggle } from "./settings/primitives";
@@ -47,6 +49,7 @@ import {
   useInspectCertificate,
   useRemoveWallet,
   useRenameWallet,
+  useRescanWallet,
   usePublicServers,
   useSetActiveNetwork,
   useSetBackend,
@@ -554,6 +557,8 @@ export function SettingsView({
           </SettingRow>
         </SectionCard>
 
+        <NotificationsSection />
+
         <WalletsSection wallets={wallets} gapLimit={settings.gap_limit} />
 
         <AboutSection />
@@ -897,11 +902,13 @@ function GapLimitField({ gapLimit }: { gapLimit: number }) {
 }
 
 function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; gapLimit: number }) {
-  const { showToast } = useUi();
+  const { showToast, syncErrors } = useUi();
   const removeWallet = useRemoveWallet();
   const renameWallet = useRenameWallet();
+  const rescan = useRescanWallet();
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+  const [rescanning, setRescanning] = useState<string | null>(null);
 
   const commitRename = () => {
     if (!renaming || renaming.name.trim().length === 0) return;
@@ -921,7 +928,7 @@ function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; gapLimit
       <div className="mb-4 border-b border-border pb-4">
         <SettingRow
           title="Gap limit"
-          hint="How many unused addresses Gerfaut scans past the last used one."
+          hint="How many unused addresses Gerfaut scans past the last used one. Rescan a wallet to look again from its first address."
         >
           <GapLimitField gapLimit={gapLimit} />
         </SettingRow>
@@ -988,6 +995,22 @@ function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; gapLimit
                       <Button
                         variant="ghost"
                         className="h-9"
+                        disabled={rescanning !== null}
+                        onClick={() => {
+                          setRescanning(wallet.id);
+                          void rescan
+                            .mutateAsync(wallet.id)
+                            .catch(() => undefined)
+                            .finally(() => setRescanning(null));
+                        }}
+                      >
+                        <ScanSearch size={14} strokeWidth={1.5} aria-hidden />
+                        {rescanning === wallet.id ? "Rescanning…" : "Rescan"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="h-9"
+                        disabled={rescanning !== null}
                         onClick={() => {
                           setConfirmRemove(null);
                           setRenaming({ id: wallet.id, name: wallet.name });
@@ -999,6 +1022,7 @@ function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; gapLimit
                       <Button
                         variant="ghost"
                         className="h-9 text-alert hover:text-alert"
+                        disabled={rescanning !== null}
                         onClick={() => {
                           setRenaming(null);
                           setConfirmRemove(wallet.id);
@@ -1010,6 +1034,11 @@ function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; gapLimit
                     </span>
                   )}
                 </div>
+                {syncErrors[wallet.id] && (
+                  <p className="mt-2 font-ui text-xs text-muted">
+                    {syncErrors[wallet.id]}
+                  </p>
+                )}
                 {confirmRemove === wallet.id && (
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-alert/25 bg-alert-surface p-3">
                     <span className="flex items-center gap-2 font-ui text-sm text-alert">

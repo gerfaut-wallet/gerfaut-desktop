@@ -51,6 +51,15 @@ interface UiState {
   priceRange: PriceRange;
   /** External explorer warning acknowledged: skip the dialog when set. */
   explorerAck: boolean;
+  /** A notification when a sync finds a transaction; off by default. */
+  notifyNewTx: boolean;
+  /** Seconds between background syncs while open; 0 leaves it to the
+      user's own Sync all. */
+  notifyInterval: number;
+  /** The system refused notifications the last time we asked. */
+  notificationsRefused: boolean;
+  /** The welcome tour has been seen. */
+  onboardingSeen: boolean;
   toast: string | null;
   /** Last sync failure per wallet id, cleared on the next success. */
   syncErrors: Record<string, string>;
@@ -70,6 +79,10 @@ interface UiState {
   setFiatSource: (source: PriceSource) => void;
   setPriceRange: (range: PriceRange) => void;
   setExplorerAck: (acknowledged: boolean) => void;
+  setNotifyNewTx: (enabled: boolean) => void;
+  setNotificationsRefused: (refused: boolean) => void;
+  setNotifyInterval: (seconds: number) => void;
+  setOnboardingSeen: (seen: boolean) => void;
   showToast: (message: string) => void;
   setSyncError: (walletId: string, message: string | null) => void;
   rememberBroadcast: (entry: RecentBroadcast) => void;
@@ -119,6 +132,10 @@ export const useUi = create<UiState>((set, get) => ({
   fiatSource: "coingecko",
   priceRange: "month",
   explorerAck: false,
+  notifyNewTx: false,
+  notifyInterval: 0,
+  notificationsRefused: false,
+  onboardingSeen: false,
   toast: null,
   syncErrors: {},
   recentBroadcasts: [],
@@ -180,6 +197,19 @@ export const useUi = create<UiState>((set, get) => ({
     set({ explorerAck });
     persist("privacy.explorer_ack", explorerAck ? "1" : "0");
   },
+  setNotifyNewTx: (notifyNewTx) => {
+    set({ notifyNewTx });
+    persist("notify.new_tx", notifyNewTx ? "1" : "0");
+  },
+  setNotificationsRefused: (notificationsRefused) => set({ notificationsRefused }),
+  setNotifyInterval: (notifyInterval) => {
+    set({ notifyInterval });
+    persist("notify.interval", String(notifyInterval));
+  },
+  setOnboardingSeen: (onboardingSeen) => {
+    set({ onboardingSeen });
+    persist("onboarding.seen", onboardingSeen ? "1" : "0");
+  },
   showToast: (message) => {
     clearTimeout(toastTimer);
     set({ toast: message });
@@ -221,6 +251,10 @@ export const useUi = create<UiState>((set, get) => ({
       recentBroadcasts: parseRecentBroadcasts(prefs["broadcast.recent"]),
       theme: ["light", "dark", "system"].includes(theme) ? theme : "light",
       masked: prefs["desktop.masked"] === "1",
+      // Both are opt-in: an explicit "1" is the only yes.
+      notifyNewTx: prefs["notify.new_tx"] === "1",
+      notifyInterval: Number(prefs["notify.interval"] ?? "0") || 0,
+      onboardingSeen: prefs["onboarding.seen"] === "1",
       sidebarCollapsed: prefs["desktop.sidebar"] === "collapsed",
       unit,
       fiatEnabled: prefs["display.fiat"] === "1",

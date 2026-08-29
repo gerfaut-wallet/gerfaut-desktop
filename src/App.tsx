@@ -23,7 +23,7 @@ export default function App() {
   // Any sync in flight, not only this hook's: the one a fresh wallet
   // starts, or a single wallet's refresh, must turn the sidebar icon.
   const syncing = useSyncing();
-  const { view, activeWalletId, hydratePrefs } = useUi();
+  const { view, activeWalletId, hydratePrefs, notifyInterval, notifyNewTx } = useUi();
   const hydrated = useRef(false);
   const autosynced = useRef(false);
 
@@ -42,6 +42,17 @@ export default function App() {
       syncAll.mutate(network);
     }
   }, [wallets.data, network, syncAll]);
+
+  // And then on the rhythm the user chose, while the window is open.
+  // It talks to the configured backend and to nothing else.
+  const hasWallets = (wallets.data?.length ?? 0) > 0;
+  useEffect(() => {
+    if (!notifyNewTx || notifyInterval <= 0 || !network || !hasWallets) return;
+    const timer = setInterval(() => {
+      if (!syncing) syncAll.mutate(network);
+    }, notifyInterval * 1000);
+    return () => clearInterval(timer);
+  }, [notifyNewTx, notifyInterval, network, hasWallets, syncing, syncAll]);
 
   if (settings.isPending || wallets.isPending) {
     return (
