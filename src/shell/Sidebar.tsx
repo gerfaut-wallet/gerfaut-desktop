@@ -8,6 +8,7 @@ import {
   Eye,
   EyeOff,
   House,
+  Lock,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -63,6 +64,7 @@ export function Sidebar({
   network,
   syncing,
   onSyncAll,
+  onLock,
 }: {
   wallets: WalletMeta[];
   /** Effective selection, derived by the app (fallback included). */
@@ -70,6 +72,8 @@ export function Sidebar({
   network: Network;
   syncing: boolean;
   onSyncAll: () => void;
+  /** Locks the app now; absent when no lock is set. */
+  onLock?: () => void;
 }) {
   const { view, setView, sidebarCollapsed, toggleSidebar, masked, toggleMasked } = useUi();
   const collapsed = sidebarCollapsed;
@@ -158,6 +162,15 @@ export function Sidebar({
       />
 
       <div className={clsx("flex flex-col gap-0.5 py-2 pb-3", collapsed ? "px-2" : "px-3")}>
+        {onLock && (
+          <NavItem
+            label="Lock"
+            icon={<Lock size={18} strokeWidth={1.5} aria-hidden />}
+            collapsed={collapsed}
+            active={false}
+            onClick={onLock}
+          />
+        )}
         <NavItem
           label="Settings"
           icon={<Settings size={18} strokeWidth={1.5} aria-hidden />}

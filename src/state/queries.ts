@@ -9,6 +9,7 @@ import {
 import type {
   BackendConfig,
   ExportOptions,
+  LockKind,
   Network,
   ParsedInput,
   PriceRange,
@@ -392,6 +393,31 @@ export function useTrustCertificate() {
   return useMutation({
     mutationFn: (args: { url: string; fingerprint: string }) =>
       ipc.trustCertificate(args.url, args.fingerprint),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.settings }),
+  });
+}
+
+export function useSetAppLock() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { kind: LockKind; secret: string; current?: string }) =>
+      ipc.setAppLock(args.kind, args.secret, args.current),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.settings }),
+  });
+}
+
+export function useClearAppLock() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (current: string) => ipc.clearAppLock(current),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.settings }),
+  });
+}
+
+export function useSetAutoLock() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (secs: number | null) => ipc.setAutoLock(secs),
     onSuccess: () => void client.invalidateQueries({ queryKey: keys.settings }),
   });
 }

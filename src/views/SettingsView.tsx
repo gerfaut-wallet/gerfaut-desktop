@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Check,
   Coins,
+  Compass,
   Globe,
   Info,
   Monitor,
@@ -23,6 +24,8 @@ import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { Button, IconButton } from "../components/Button";
 import { NotificationsSection } from "./settings/NotificationsSection";
+import { SecuritySection } from "./settings/SecuritySection";
+import { WelcomeTour } from "./WelcomeTour";
 import { Modal } from "../components/Modal";
 import { Select } from "../components/Select";
 import { FieldLabel, SectionCard, Segmented, SettingRow, Toggle } from "./settings/primitives";
@@ -557,6 +560,8 @@ export function SettingsView({
           </SettingRow>
         </SectionCard>
 
+        <SecuritySection lock={settings.app_lock} />
+
         <NotificationsSection />
 
         <WalletsSection wallets={wallets} gapLimit={settings.gap_limit} />
@@ -1081,6 +1086,7 @@ function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; gapLimit
 function AboutSection() {
   const check = useCheckUpdate();
   const [result, setResult] = useState<UpdateCheck | "failed" | null>(null);
+  const [tourOpen, setTourOpen] = useState(false);
 
   return (
     <SectionCard
@@ -1126,6 +1132,13 @@ function AboutSection() {
           </Button>
         </span>
       </div>
+      <div className="mt-3">
+        <Button variant="ghost" onClick={() => setTourOpen(true)}>
+          <Compass size={14} strokeWidth={1.5} aria-hidden />
+          Show the welcome tour
+        </Button>
+      </div>
+      <WelcomeTour open={tourOpen} onClose={() => setTourOpen(false)} />
     </SectionCard>
   );
 }

@@ -6,18 +6,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import type {
   AddressEntry,
+  LockVerdict,
   ParsedInput,
   Settings,
   WalletMeta,
   WalletSnapshot,
 } from "./lib/ipc";
+import { useLock } from "./state/lock";
 import { useUi } from "./state/store";
 
+// A vault opened before: the welcome tour is behind this user, so the
+// app lands on itself the way it does every other day.
 const SETTINGS: Settings = {
   active_network: "signet",
   backends: {},
   gap_limit: 20,
-  app_prefs: {},
+  app_prefs: { "onboarding.seen": "1" },
   electrum_certs: {},
   app_lock: null,
 };
@@ -1542,3 +1546,189 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   save: vi.fn(() => Promise.resolve("C:/exports/wallet.csv")),
 }));
+
+describe("the app lock", () => {
+  const LOCKED: Settings = {
+    ...SETTINGS,
+    app_lock: { kind: "pin", auto_lock_secs: 60, biometric: false },
+  };
+
+  beforeEach(() => {
+    useLock.setState({ lock: null, locked: false, loaded: false });
+  });
+
+  afterEach(() => {
+    useLock.setState({ lock: null, locked: false, loaded: false });
+  });
+
+  function mockLocked(verdicts: LockVerdict[]) {
+    let attempt = 0;
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "get_settings":
+          return LOCKED;
+        case "app_lock":
+          return LOCKED.app_lock;
+        case "verify_app_lock":
+          return verdicts[Math.min(attempt++, verdicts.length - 1)];
+        case "list_wallets":
+          return [WALLET];
+        case "wallet_snapshot":
+          return SNAPSHOT;
+        case "utxos":
+          return [];
+        case "receive_addresses":
+          return receiveEntries(0);
+        case "fetch_price_history":
+          return PRICE_HISTORY;
+        case "set_app_pref":
+          return undefined;
+        case "sync_all":
+          return { reports: [], failures: [] };
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+  }
+
+  it("opens locked, with nothing of a wallet behind it", async () => {
+    mockLocked([{ unlocked: false, failures: 1, retry_after_secs: 0 }]);
+    renderApp();
+
+    expect(await screen.findByText("Locked")).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Navigation" })).not.toBeInTheDocument();
+    expect(screen.queryByText(WALLET.name)).not.toBeInTheDocument();
+  });
+
+  it("says a wrong PIN plainly and stays", async () => {
+    mockLocked([{ unlocked: false, failures: 1, retry_after_secs: 0 }]);
+    renderApp();
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByLabelText("PIN"), "9999");
+    await user.click(screen.getByRole("button", { name: /unlock/i }));
+
+    expect(await screen.findByText("Wrong PIN")).toBeInTheDocument();
+    expect(screen.getByText("Locked")).toBeInTheDocument();
+  });
+
+  it("counts down the wait the core imposes, and refuses to try meanwhile", async () => {
+    mockLocked([{ unlocked: false, failures: 3, retry_after_secs: 5 }]);
+    renderApp();
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByLabelText("PIN"), "0000");
+    await user.click(screen.getByRole("button", { name: /unlock/i }));
+
+    expect(
+      await screen.findByText("Too many attempts. Try again in 5 s"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /unlock/i })).toBeDisabled();
+    expect(screen.getByLabelText("PIN")).toBeDisabled();
+  });
+
+  it("the right PIN opens the app", async () => {
+    mockLocked([{ unlocked: true, failures: 0, retry_after_secs: 0 }]);
+    renderApp();
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByLabelText("PIN"), "1234");
+    await user.click(screen.getByRole("button", { name: /unlock/i }));
+
+    expect(
+      await screen.findByRole("navigation", { name: "Navigation" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Locked")).not.toBeInTheDocument();
+  });
+
+  it("a PIN field takes digits only", async () => {
+    mockLocked([{ unlocked: false, failures: 1, retry_after_secs: 0 }]);
+    renderApp();
+    const user = userEvent.setup();
+
+    const field = await screen.findByLabelText("PIN");
+    await user.type(field, "12ab34");
+    expect(field).toHaveValue("1234");
+    expect(field).toHaveAttribute("inputmode", "numeric");
+  });
+});
+
+describe("the welcome tour", () => {
+  // Both stores live at module scope: a test that turned the tour off
+  // would otherwise decide for the next one.
+  beforeEach(() => {
+    useUi.setState({ onboardingSeen: false });
+    useLock.setState({ lock: null, locked: false, loaded: false });
+  });
+
+  function mockEmptyVault(prefs: Record<string, string>) {
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "get_settings":
+          return { ...SETTINGS, app_prefs: prefs };
+        case "list_wallets":
+          return [];
+        case "app_lock":
+          return null;
+        case "set_app_pref":
+          return undefined;
+        case "sync_all":
+          return { reports: [], failures: [] };
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+  }
+
+  it("introduces the app on a vault with nothing in it", async () => {
+    mockEmptyVault({});
+    renderApp();
+
+    expect(await screen.findByText("Watch, never spend")).toBeInTheDocument();
+  });
+
+  it("is not shown again once seen", async () => {
+    mockEmptyVault({ "onboarding.seen": "1" });
+    renderApp();
+
+    expect(await screen.findByText(/no wallets watched yet/i)).toBeInTheDocument();
+    expect(screen.queryByText("Watch, never spend")).not.toBeInTheDocument();
+  });
+
+  it("walking to the end remembers it", async () => {
+    const prefs: Record<string, string> = {};
+    mockIPC((cmd, args) => {
+      switch (cmd) {
+        case "get_settings":
+          return { ...SETTINGS, app_prefs: prefs };
+        case "list_wallets":
+          return [];
+        case "app_lock":
+          return null;
+        case "set_app_pref": {
+          const { key, value } = args as { key: string; value: string };
+          prefs[key] = value;
+          return undefined;
+        }
+        case "sync_all":
+          return { reports: [], failures: [] };
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderApp();
+    const user = userEvent.setup();
+
+    await screen.findByText("Watch, never spend");
+    for (let step = 0; step < 3; step++) {
+      await user.click(screen.getByRole("button", { name: /^next$/i }));
+    }
+    expect(screen.getByText("Keep it yours")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /get started/i }));
+
+    await waitFor(() => {
+      expect(prefs["onboarding.seen"]).toBe("1");
+    });
+    expect(screen.queryByText("Keep it yours")).not.toBeInTheDocument();
+  });
+});

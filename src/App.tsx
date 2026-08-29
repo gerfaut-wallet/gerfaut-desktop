@@ -1,8 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "./components/Button";
 import { EmptyState } from "./components/EmptyState";
 import { Toast } from "./components/Toast";
 import { Sidebar } from "./shell/Sidebar";
+import { useAutoLock, useLock } from "./state/lock";
+import { LockScreen } from "./views/LockScreen";
+import { WelcomeTour } from "./views/WelcomeTour";
 import { useSettings, useSyncAll, useSyncing, useWallets } from "./state/queries";
 import { useUi } from "./state/store";
 import { AddWalletModal } from "./views/AddWalletModal";
@@ -23,9 +26,25 @@ export default function App() {
   // Any sync in flight, not only this hook's: the one a fresh wallet
   // starts, or a single wallet's refresh, must turn the sidebar icon.
   const syncing = useSyncing();
-  const { view, activeWalletId, hydratePrefs, notifyInterval, notifyNewTx } = useUi();
+  const {
+    view,
+    activeWalletId,
+    hydratePrefs,
+    notifyInterval,
+    notifyNewTx,
+  } = useUi();
   const hydrated = useRef(false);
   const autosynced = useRef(false);
+  const lockLoaded = useLock((state) => state.loaded);
+  const locked = useLock((state) => state.locked);
+  const loadLock = useLock((state) => state.load);
+  const [tourOpen, setTourOpen] = useState(false);
+  useAutoLock();
+
+  // Asking the vault is what decides whether the app starts locked.
+  useEffect(() => {
+    if (!lockLoaded) void loadLock();
+  }, [lockLoaded, loadLock]);
 
   // Hydrate UI prefs from the vault once.
   useEffect(() => {
@@ -54,7 +73,16 @@ export default function App() {
     return () => clearInterval(timer);
   }, [notifyNewTx, notifyInterval, network, hasWallets, syncing, syncAll]);
 
-  if (settings.isPending || wallets.isPending) {
+  // The tour only ever stands in front of an empty vault: someone with
+  // wallets already knows what this is. The vault's own preference is
+  // what decides, not the hydrated copy, which lands a frame later.
+  const emptyVault = (wallets.data?.length ?? 0) === 0;
+  const tourSeen = settings.data?.app_prefs["onboarding.seen"] === "1";
+  useEffect(() => {
+    if (settings.data && emptyVault && !tourSeen && !locked) setTourOpen(true);
+  }, [settings.data, emptyVault, tourSeen, locked]);
+
+  if (settings.isPending || wallets.isPending || !lockLoaded) {
     return (
       <div className="shell-rail flex h-full items-center justify-center bg-shell">
         <p className="font-ui text-sm text-muted">Opening vault…</p>
@@ -72,6 +100,10 @@ export default function App() {
     );
   }
 
+  // Nothing of a wallet is in the tree behind the lock: it replaces
+  // the shell rather than covering it.
+  if (locked) return <LockScreen />;
+
   const walletList = wallets.data ?? [];
   // Selection is derived, never reset by effects: a stale list between
   // an add and its refetch must not steal the selection.
@@ -88,6 +120,7 @@ export default function App() {
         network={settings.data.active_network}
         syncing={syncing}
         onSyncAll={() => syncAll.mutate(settings.data.active_network)}
+        onLock={settings.data.app_lock ? useLock.getState().lockNow : undefined}
       />
 
       <main className="min-w-0 flex-1 p-2 pl-0">
@@ -132,6 +165,7 @@ export default function App() {
         <TxDetailModal walletId={activeWallet.id} network={activeWallet.network} />
       )}
       <AddWalletModal activeNetwork={settings.data.active_network} />
+      <WelcomeTour open={tourOpen} onClose={() => setTourOpen(false)} />
       <Toast />
     </div>
   );
