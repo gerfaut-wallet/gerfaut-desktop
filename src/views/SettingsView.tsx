@@ -23,6 +23,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { Button, IconButton } from "../components/Button";
+import { BackupSection } from "./settings/BackupSection";
 import { NotificationsSection } from "./settings/NotificationsSection";
 import { SecuritySection } from "./settings/SecuritySection";
 import { WelcomeTour } from "./WelcomeTour";
@@ -563,6 +564,8 @@ export function SettingsView({
         <SecuritySection lock={settings.app_lock} />
 
         <NotificationsSection />
+
+        <BackupSection activeNetwork={settings.active_network} />
 
         <WalletsSection wallets={wallets} gapLimit={settings.gap_limit} />
 

@@ -112,7 +112,7 @@ export function useReceiveAddresses(id: string | null, lookahead: number) {
 }
 
 /** Invalidates everything that changes when chain state moves. */
-function useInvalidateWallet() {
+export function useInvalidateWallet() {
   const client = useQueryClient();
   return (id?: string) => {
     void client.invalidateQueries({ queryKey: ["wallets"] });
