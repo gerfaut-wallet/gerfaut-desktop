@@ -386,8 +386,12 @@ async fn verify_app_lock(
 /// Seconds away from the app before it locks again; null means only at
 /// launch and on request.
 #[tauri::command]
-async fn set_auto_lock(state: tauri::State<'_, AppState>, secs: Option<u32>) -> CommandResult<()> {
-    Ok(state.manager.set_auto_lock(secs).await?)
+async fn set_auto_lock(
+    state: tauri::State<'_, AppState>,
+    secs: Option<u32>,
+    current: String,
+) -> CommandResult<()> {
+    Ok(state.manager.set_auto_lock(secs, &current).await?)
 }
 
 // --- backup ------------------------------------------------------------

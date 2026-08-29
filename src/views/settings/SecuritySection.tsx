@@ -61,7 +61,11 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
   const clearAppLock = useClearAppLock();
   const setAutoLock = useSetAutoLock();
 
-  const [dialog, setDialog] = useState<"on" | "off" | "change" | null>(null);
+  const [dialog, setDialog] = useState<"on" | "off" | "change" | "delay" | null>(
+    null,
+  );
+  /** The delay waiting for the secret that confirms it. */
+  const [pendingDelay, setPendingDelay] = useState<number | null>(null);
   const [kind, setKind] = useState<LockKind>("pin");
   const [current, setCurrent] = useState("");
   const [secret, setSecret] = useState("");
@@ -120,12 +124,21 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
     }
   };
 
-  const chooseDelay = async (value: string) => {
+  // Changing when the lock comes back is a change to the lock: it asks
+  // for the secret, like turning it off does. Someone standing at an
+  // unlocked computer must not be able to set "Never" quietly.
+  const chooseDelay = (value: string) => {
+    setPendingDelay(value === "never" ? null : Number(value));
+    setProblem(null);
+    setDialog("delay");
+  };
+
+  const saveDelay = async () => {
     try {
-      await setAutoLock.mutateAsync(value === "never" ? null : Number(value));
+      await setAutoLock.mutateAsync({ secs: pendingDelay, current });
+      showToast("Setting saved");
+      close();
     } catch (error) {
-      // A refused change must not leave the control showing a delay
-      // the vault does not hold.
       setProblem(isCommandError(error) ? error.message : String(error));
     }
   };
@@ -158,7 +171,7 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
               <Segmented
                 label="Lock after"
                 value={lock.auto_lock_secs === null ? "never" : String(lock.auto_lock_secs)}
-                onChange={(value) => void chooseDelay(value)}
+                onChange={chooseDelay}
                 options={DELAYS}
               />
             </SettingRow>
@@ -243,6 +256,36 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
             </Button>
             <Button variant="primary" onClick={() => void save()}>
               {dialog === "change" ? "Change" : "Turn on"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={dialog === "delay"}
+        onClose={close}
+        centered
+        width={440}
+        title="Change when the lock comes back"
+      >
+        <div className="flex flex-col gap-4">
+          <SecretField
+            id="lock-current-delay"
+            label={lock?.kind === "pin" ? "PIN" : "Password"}
+            value={current}
+            onChange={(value) => {
+              setCurrent(value);
+              setProblem(null);
+            }}
+            autoFocus
+          />
+          {problem && <p className="font-ui text-xs text-muted">{problem}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={close}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={() => void saveDelay()}>
+              Save
             </Button>
           </div>
         </div>

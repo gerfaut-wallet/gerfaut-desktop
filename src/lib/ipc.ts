@@ -646,7 +646,8 @@ export const ipc = {
     invoke<void>("set_app_lock", { kind, secret, current: current ?? null }),
   clearAppLock: (current: string) => invoke<void>("clear_app_lock", { current }),
   verifyAppLock: (secret: string) => invoke<LockVerdict>("verify_app_lock", { secret }),
-  setAutoLock: (secs: number | null) => invoke<void>("set_auto_lock", { secs }),
+  setAutoLock: (secs: number | null, current: string) =>
+    invoke<void>("set_auto_lock", { secs, current }),
   exportBackup: (options: BackupOptions, password: string) =>
     invoke<BackupBundle>("export_backup", { options, password }),
   saveBackupFile: (path: string, data: string) =>
