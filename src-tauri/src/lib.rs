@@ -416,9 +416,23 @@ async fn save_backup_file(path: String, data: String) -> CommandResult<()> {
 }
 
 /// Reads a backup file into the base64 form the core opens. Any file
-/// is read; the core says whether it is a backup.
+/// is read; the core says whether it is a backup. The size is checked
+/// first, so picking a disc image by mistake costs nothing.
 #[tauri::command]
 async fn read_backup_file(path: String) -> CommandResult<String> {
+    let too_large = || CommandError {
+        kind: "invalid_input",
+        message: "this file is far too large to be a Gerfaut backup".to_owned(),
+    };
+    let size = std::fs::metadata(&path)
+        .map_err(|e| CommandError {
+            kind: "internal",
+            message: format!("could not read {path}: {e}"),
+        })?
+        .len();
+    if size > gerfaut_core::backup::MAX_BACKUP_TEXT as u64 {
+        return Err(too_large());
+    }
     let bytes = std::fs::read(&path).map_err(|e| CommandError {
         kind: "internal",
         message: format!("could not read {path}: {e}"),
