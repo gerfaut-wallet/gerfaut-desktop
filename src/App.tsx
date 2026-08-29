@@ -3,7 +3,7 @@ import { Button } from "./components/Button";
 import { EmptyState } from "./components/EmptyState";
 import { Toast } from "./components/Toast";
 import { Sidebar } from "./shell/Sidebar";
-import { useSettings, useSyncAll, useWallets } from "./state/queries";
+import { useSettings, useSyncAll, useSyncing, useWallets } from "./state/queries";
 import { useUi } from "./state/store";
 import { AddWalletModal } from "./views/AddWalletModal";
 import { BroadcastView } from "./views/BroadcastView";
@@ -20,6 +20,9 @@ export default function App() {
   const network = settings.data?.active_network;
   const wallets = useWallets(network);
   const syncAll = useSyncAll();
+  // Any sync in flight, not only this hook's: the one a fresh wallet
+  // starts, or a single wallet's refresh, must turn the sidebar icon.
+  const syncing = useSyncing();
   const { view, activeWalletId, hydratePrefs } = useUi();
   const hydrated = useRef(false);
   const autosynced = useRef(false);
@@ -72,7 +75,7 @@ export default function App() {
         wallets={walletList}
         activeWalletId={activeWallet?.id ?? null}
         network={settings.data.active_network}
-        syncing={syncAll.isPending}
+        syncing={syncing}
         onSyncAll={() => syncAll.mutate(settings.data.active_network)}
       />
 

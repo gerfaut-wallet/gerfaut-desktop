@@ -178,6 +178,7 @@ export function Sidebar({
           collapsed={collapsed}
           active={false}
           disabled={syncing || !hasWallets}
+          busy={syncing}
           onClick={onSyncAll}
         />
         <NavItem
@@ -205,6 +206,7 @@ function NavItem({
   collapsed,
   active,
   disabled = false,
+  busy = false,
   pressed,
   onClick,
 }: {
@@ -213,6 +215,9 @@ function NavItem({
   collapsed: boolean;
   active: boolean;
   disabled?: boolean;
+  /** Working right now: not clickable, but not dimmed either. Dimmed
+      reads as unavailable, and a turning icon at 40 % looks broken. */
+  busy?: boolean;
   /** For toggle rows (hide amounts): state without the page accent. */
   pressed?: boolean;
   onClick: () => void;
@@ -222,13 +227,15 @@ function NavItem({
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-busy={busy || undefined}
       aria-current={active ? "page" : undefined}
       aria-pressed={pressed}
       title={collapsed ? label : undefined}
       aria-label={collapsed ? label : undefined}
       className={clsx(
         "group relative flex w-full cursor-pointer items-center rounded-md text-left font-ui text-sm font-medium",
-        "transition-colors duration-150 disabled:cursor-default disabled:opacity-40",
+        "transition-colors duration-150 disabled:cursor-default",
+        !busy && "disabled:opacity-40",
         collapsed ? "h-10 justify-center" : "gap-2.5 px-3 py-2",
         active
           ? "bg-sunken text-text"
