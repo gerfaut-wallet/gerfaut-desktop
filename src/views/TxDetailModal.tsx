@@ -27,15 +27,18 @@ import {
   formatAmount,
   formatAmountSigned,
   formatFiat,
+  formatLocktime,
   formatTimestamp,
   groupThousands,
+  locktimeIsTime,
   opReturnPreview,
+  sumSats,
 } from "../lib/format";
 import { explorerTxUrl } from "../lib/explorer";
 import { useTxDetail } from "../state/queries";
 import { useUi } from "../state/store";
 import { AddressChip } from "../components/AddressChip";
-import { StackedAmount, useFiatValue } from "../components/Amount";
+import { StackedAmount, useAmountText, useFiatValue } from "../components/Amount";
 import { Button, IconButton } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { Notice } from "../components/Notice";
@@ -337,6 +340,16 @@ function TechnicalFacts({ detail }: { detail: TxDetail }) {
       <Fact label="Confirmations">
         <Value>{groupThousands(String(detail.summary.confirmations))}</Value>
       </Fact>
+      {/* The hero shows the height beside the status pill; a fact one
+          goes looking for needs its label, and the flow summary that
+          used to carry it is gone. */}
+      <Fact label="Block">
+        {detail.summary.status.state === "confirmed" ? (
+          <Value>{groupThousands(String(detail.summary.status.height))}</Value>
+        ) : (
+          <Value muted>—</Value>
+        )}
+      </Fact>
       {extras ? (
         <>
           <Fact label="Size">
@@ -351,8 +364,10 @@ function TechnicalFacts({ detail }: { detail: TxDetail }) {
           <Fact label="Version">
             <Value>{extras.version}</Value>
           </Fact>
+          {/* Above the threshold a locktime is a moment, not a height:
+              printed raw it reads as a block nobody will ever mine. */}
           <Fact label="Locktime">
-            <Value>{extras.locktime > 0 ? groupThousands(String(extras.locktime)) : "none"}</Value>
+            <Value muted={extras.locktime <= 0}>{formatLocktime(extras.locktime)}</Value>
           </Fact>
           <Fact label="Sigops">
             <Value>{groupThousands(String(extras.sigops))}</Value>
@@ -476,7 +491,11 @@ function Flags({ extras, outputs }: { extras: TxExtras; outputs: TxIo[] }) {
   return (
     <span className="flex flex-wrap justify-end gap-1.5">
       {extras.is_coinbase ? (
-        <Badge tone="confirmed" icon={<Pickaxe size={12} strokeWidth={1.75} aria-hidden />}>
+        <Badge
+          tone="confirmed"
+          icon={<Pickaxe size={12} strokeWidth={1.75} aria-hidden />}
+          title="Coinbase: the block reward, coins minted by the miner"
+        >
           Coinbase{extras.coinbase_pool ? ` · ${extras.coinbase_pool}` : ""}
         </Badge>
       ) : extras.rbf_signaled ? (
@@ -518,13 +537,21 @@ function Flags({ extras, outputs }: { extras: TxExtras; outputs: TxIo[] }) {
         <Badge
           tone="neutral"
           icon={<Clock size={12} strokeWidth={1.75} aria-hidden />}
-          title="Earliest block this transaction could be mined in"
+          title={
+            locktimeIsTime(extras.locktime)
+              ? "Earliest time this transaction could be mined"
+              : "Earliest block this transaction could be mined in"
+          }
         >
           Locktime
         </Badge>
       )}
       {hasOpReturn && (
-        <Badge tone="pending" icon={<ScrollText size={12} strokeWidth={1.75} aria-hidden />}>
+        <Badge
+          tone="pending"
+          icon={<ScrollText size={12} strokeWidth={1.75} aria-hidden />}
+          title="An output carries data instead of spendable coins"
+        >
           OP_RETURN
         </Badge>
       )}
@@ -599,10 +626,18 @@ function IoList({
   coinbaseValue: number | null;
 }) {
   const coinbase = extras?.is_coinbase ?? false;
+  // What the side carries, on the heading that counts it: the flow
+  // summary used to say it, and a count alone answers half the question.
+  // A coinbase input spends nothing, so its side is worth the reward.
+  const total = useAmountText(
+    coinbase && side === "in"
+      ? coinbaseValue
+      : sumSats(ios.map((io) => io.value_sats)),
+  );
   return (
     <section aria-label={title} className="min-w-0">
       <h2 className="mb-2 px-1 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
-        {title} ({ios.length})
+        {title} ({ios.length}) <span className="tabular">· {total}</span>
       </h2>
       <ul className="flex flex-col gap-1.5">
         {ios.map((io, index) => {

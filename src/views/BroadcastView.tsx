@@ -2,23 +2,30 @@ import {
   AlertTriangle,
   ArrowDownLeft,
   ArrowUpRight,
+  Ban,
   Check,
+  CircleHelp,
   Clock,
+  Coins,
   ExternalLink,
   FileUp,
-  Info,
+  Flame,
+  Percent,
+  PenOff,
   Radio,
   RefreshCw,
   ScanLine,
   Trash2,
   Undo2,
+  Wallet as WalletIcon,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { AddressChip } from "../components/AddressChip";
-import { StackedAmount } from "../components/Amount";
+import { StackedAmount, useAmountText } from "../components/Amount";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { Notice } from "../components/Notice";
@@ -30,16 +37,19 @@ import type {
   TxInputPreview,
   TxOutputPreview,
   TxPreview,
-  TxWarning,
+  TxWarningKind,
 } from "../lib/ipc";
 import { isCommandError } from "../lib/ipc";
 import { explorerTxUrl } from "../lib/explorer";
 import {
   MASKED,
+  NETWORK_LABEL,
   formatAmount,
+  formatLocktime,
   groupThousands,
   opReturnPreview,
   relativeTime,
+  sumSats,
 } from "../lib/format";
 import {
   useBroadcastTransaction,
@@ -177,7 +187,7 @@ export function BroadcastView({ network }: { network: Network }) {
 
         {preview.data && !sent && (
           <>
-            <PreviewCard preview={preview.data} />
+            <PreviewCard preview={preview.data} network={network} />
             {/* A node that says no risks neither funds nor privacy —
                 but nothing else on the page says the send failed. */}
             {broadcastError && (
@@ -208,6 +218,11 @@ export function BroadcastView({ network }: { network: Network }) {
         {sent && (
           <>
             <StatusCard entry={sent} onForget={() => forgetBroadcast(sent.txid)} live />
+            {/* The status is inserted, it does not replace: what was
+                just sent is exactly when one wants to re-read what it
+                does. The two platforms differ in the facts they can
+                offer, never in the layout. */}
+            {preview.data && <PreviewCard preview={preview.data} network={network} />}
             <div className="px-1">
               <Button variant="primary" onClick={startOver}>
                 <Radio size={16} strokeWidth={1.5} aria-hidden />
@@ -249,6 +264,7 @@ export function BroadcastView({ network }: { network: Network }) {
       <ScanQrModal
         open={scanOpen}
         onClose={() => setScanOpen(false)}
+        caption="Point the camera at a signed transaction or PSBT QR code: crypto-psbt UR or BBQr, animated or not."
         onScan={(text) => {
           setScanOpen(false);
           setRaw(text);
@@ -345,16 +361,18 @@ function InputCard({
 
 // --- preview -----------------------------------------------------------------
 
-const WARNING_STYLE: Record<TxWarning["kind"], "alert" | "pending" | "info"> = {
-  unsigned: "alert",
-  input_spent: "alert",
-  input_unknown: "alert",
-  high_fee_rate: "pending",
-  high_fee_share: "pending",
-  locked: "pending",
-  fee_unknown: "pending",
-  dust_output: "pending",
-  spends_watched: "info",
+/** The glyph of each caution. The tone is the core's answer and is read
+    off `severity`; this only says what the caution is about. */
+const WARNING_ICON: Record<TxWarningKind, LucideIcon> = {
+  unsigned: PenOff,
+  high_fee_rate: Flame,
+  high_fee_share: Percent,
+  locked: Clock,
+  input_unknown: CircleHelp,
+  input_spent: Ban,
+  fee_unknown: CircleHelp,
+  dust_output: Coins,
+  spends_watched: WalletIcon,
 };
 
 /** The inputs of a transaction waiting to be sent, as diagram branches:
@@ -382,14 +400,14 @@ function previewOutputBranches(outputs: TxOutputPreview[]): TxBranch[] {
           : "external-out",
       label: output.op_return
         ? opReturnPreview(output.op_return)
-        : (output.address ?? "non-standard script"),
+        : (output.address ?? "Script output"),
       amount: output.value_sats,
       isMine: output.wallet !== null,
     }),
   );
 }
 
-function PreviewCard({ preview }: { preview: TxPreview }) {
+function PreviewCard({ preview, network }: { preview: TxPreview; network: Network }) {
   const { masked, unit } = useUi();
   const amount = (sats: number | null) =>
     sats === null ? "n/a" : masked ? MASKED : formatAmount(sats, unit);
@@ -412,8 +430,10 @@ function PreviewCard({ preview }: { preview: TxPreview }) {
               Ready to broadcast
             </Pill>
           ) : (
-            <Pill tone="pending" icon={<AlertTriangle size={12} strokeWidth={2} aria-hidden />}>
-              Not fully signed
+            // A transaction believed ready that the network cannot take
+            // is one of the four cases red is kept for.
+            <Pill tone="alert" icon={<AlertTriangle size={12} strokeWidth={2} aria-hidden />}>
+              Unsigned
             </Pill>
           )}
           {preview.rbf && <Pill tone="neutral">RBF</Pill>}
@@ -428,48 +448,23 @@ function PreviewCard({ preview }: { preview: TxPreview }) {
       />
 
       {preview.warnings.length > 0 && (
-        <ul aria-label="Cautions" className="flex flex-col gap-2">
-          {preview.warnings.map((warning) => {
-            const tone = WARNING_STYLE[warning.kind];
-            return (
-              <li
-                key={warning.kind + warning.message}
-                className={clsx(
-                  "flex items-start gap-2.5 rounded-md border p-3",
-                  tone === "alert" && "border-alert/25 bg-alert-surface",
-                  tone === "pending" && "border-pending/25 bg-pending-surface",
-                  tone === "info" && "border-border bg-sunken/40",
-                )}
-              >
-                {/* The glyph rides the first line of the message, the
-                    way the shared note does it: a box exactly one line
-                    tall, never a nudge that is right at one size only. */}
-                <span className="flex h-4 shrink-0 items-center">
-                  {tone === "info" ? (
-                    <Info size={15} strokeWidth={1.75} aria-hidden className="text-muted" />
-                  ) : (
-                    <AlertTriangle
-                      size={15}
-                      strokeWidth={1.75}
-                      aria-hidden
-                      className={tone === "alert" ? "text-alert" : "text-pending"}
-                    />
-                  )}
-                </span>
-                <p
-                  className={clsx(
-                    "font-ui text-xs leading-4",
-                    tone === "alert" && "text-alert",
-                    tone === "pending" && "text-pending",
-                    tone === "info" && "text-muted",
-                  )}
-                >
+        <section aria-label="Before you send">
+          <h2 className="mb-2 px-1 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
+            Before you send
+          </h2>
+          <ul className="flex flex-col gap-2">
+            {preview.warnings.map((warning) => (
+              // The core answers the one question that picks the tone,
+              // so the same caution never reads red here and amber on
+              // the phone. The glyph only says what it is about.
+              <li key={warning.kind + warning.message}>
+                <Notice tone={warning.severity} icon={WARNING_ICON[warning.kind]}>
                   {warning.message}
-                </p>
+                </Notice>
               </li>
-            );
-          })}
-        </ul>
+            ))}
+          </ul>
+        </section>
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -478,22 +473,30 @@ function PreviewCard({ preview }: { preview: TxPreview }) {
       </div>
 
       {/* The fee node carries the amount; the rate belongs here. */}
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-md border border-border p-4 sm:grid-cols-4">
-        <Fact label="Size">{groupThousands(String(preview.size))} B</Fact>
-        <Fact label="Virtual size">{groupThousands(String(preview.vsize))} vB</Fact>
-        <Fact label="Weight">{groupThousands(String(preview.weight))} WU</Fact>
-        <Fact label="Version">{preview.version}</Fact>
-        <Fact label="Locktime">
-          {preview.locktime > 0 ? groupThousands(String(preview.locktime)) : "none"}
-        </Fact>
-        {/* RBF, the word the chain gave it and the one people look
-            for — the same name the transaction detail uses. */}
-        <Fact label="RBF">{preview.rbf ? "signalled (BIP-125)" : "not signalled"}</Fact>
-        <Fact label="Fee">{amount(preview.fee_sats)}</Fact>
-        <Fact label="Fee rate">
-          {preview.fee_rate_sat_vb !== null ? `${preview.fee_rate_sat_vb.toFixed(1)} sat/vB` : "n/a"}
-        </Fact>
-      </dl>
+      <section aria-label="Technical" className="rounded-md border border-border p-4">
+        <h2 className="mb-2.5 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
+          Technical
+        </h2>
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-4">
+          <Fact label="Network">{NETWORK_LABEL[network]}</Fact>
+          <Fact label="Size">{groupThousands(String(preview.size))} B</Fact>
+          <Fact label="Virtual size">{groupThousands(String(preview.vsize))} vB</Fact>
+          <Fact label="Weight">{groupThousands(String(preview.weight))} WU</Fact>
+          <Fact label="Version">{preview.version}</Fact>
+          {/* A locktime past the threshold is a date, not a height:
+              printed raw it reads as a block nobody will ever see. */}
+          <Fact label="Locktime">{formatLocktime(preview.locktime)}</Fact>
+          {/* RBF, the word the chain gave it and the one people look
+              for — the same name the transaction detail uses. */}
+          <Fact label="RBF">{preview.rbf ? "signalled (BIP-125)" : "not signalled"}</Fact>
+          <Fact label="Fee">{amount(preview.fee_sats)}</Fact>
+          <Fact label="Fee rate">
+            {preview.fee_rate_sat_vb !== null
+              ? `${preview.fee_rate_sat_vb.toFixed(1)} sat/vB`
+              : "n/a"}
+          </Fact>
+        </dl>
+      </section>
     </div>
   );
 }
@@ -507,10 +510,13 @@ function IoList({
   side: "in" | "out";
   ios: (TxInputPreview | TxOutputPreview)[];
 }) {
+  // What the side carries, on the heading that counts it: the flow
+  // summary used to say it, and a count alone answers half the question.
+  const total = useAmountText(sumSats(ios.map((io) => io.value_sats)));
   return (
     <section aria-label={title} className="min-w-0">
       <h2 className="mb-2 px-1 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
-        {title} ({ios.length})
+        {title} ({ios.length}) <span className="tabular">· {total}</span>
       </h2>
       <ul className="flex flex-col gap-1.5">
         {ios.map((io, index) => {
@@ -557,7 +563,7 @@ function IoList({
                     {input.txid.slice(0, 10)}…{input.txid.slice(-6)}:{input.vout}
                   </span>
                 ) : (
-                  <span className="font-ui text-[13px] text-muted">non-standard script</span>
+                  <span className="font-ui text-[13px] text-muted">Script output</span>
                 )}
                 <span className="flex flex-wrap items-center gap-1.5">
                   {io.wallet && (
@@ -575,7 +581,7 @@ function IoList({
                 {io.value_sats !== null ? (
                   <StackedAmount sats={io.value_sats} />
                 ) : (
-                  <span className="font-ui text-[13px] text-muted">unknown</span>
+                  <span className="font-ui text-[13px] text-muted">n/a</span>
                 )}
               </span>
             </li>
@@ -602,7 +608,7 @@ function Pill({
   icon,
   children,
 }: {
-  tone: "neutral" | "confirmed" | "pending";
+  tone: "neutral" | "confirmed" | "pending" | "alert";
   icon?: ReactNode;
   children: ReactNode;
 }) {
@@ -613,6 +619,7 @@ function Pill({
         tone === "neutral" && "border-border bg-sunken text-muted",
         tone === "confirmed" && "border-confirmed/25 bg-confirmed-surface text-confirmed",
         tone === "pending" && "border-pending/25 bg-pending-surface text-pending",
+        tone === "alert" && "border-alert/25 bg-alert-surface text-alert",
       )}
     >
       {icon}
@@ -643,7 +650,7 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
                 }`}
         </Fact>
       </dl>
-      {preview.warnings.some((w) => WARNING_STYLE[w.kind] !== "info") && (
+      {preview.warnings.some((warning) => warning.severity === "alert") && (
         <p className="font-ui text-xs text-pending">
           The cautions listed on the preview still apply.
         </p>
@@ -677,13 +684,11 @@ function StatusCard({
   };
 
   const standing = status.data;
-  const tone = !standing
-    ? "neutral"
-    : standing.confirmed
-      ? "confirmed"
-      : standing.found
-        ? "pending"
-        : "alert";
+  // A transaction the backend has not seen is most often one it has not
+  // indexed yet, and the line below says broadcasting it again does no
+  // harm: nothing is lost, so nothing is red. Amber, with its own glyph
+  // and its own words — the colour is never the only carrier.
+  const tone = !standing ? "neutral" : standing.confirmed ? "confirmed" : "pending";
 
   return (
     <div
@@ -708,13 +713,12 @@ function StatusCard({
                 "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 font-ui text-xs font-medium",
                 tone === "confirmed" && "border-confirmed/25 bg-confirmed-surface text-confirmed",
                 tone === "pending" && "border-pending/25 bg-pending-surface text-pending",
-                tone === "alert" && "border-alert/25 bg-alert-surface text-alert",
               )}
               aria-live="polite"
             >
-              {tone === "confirmed" ? (
+              {standing.confirmed ? (
                 <Check size={12} strokeWidth={2} aria-hidden />
-              ) : tone === "pending" ? (
+              ) : standing.found ? (
                 <Clock size={12} strokeWidth={2} aria-hidden />
               ) : (
                 <AlertTriangle size={12} strokeWidth={2} aria-hidden />

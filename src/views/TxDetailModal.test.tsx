@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TxDetailModal } from "./TxDetailModal";
 import type { TxDetail, TxIo } from "../lib/ipc";
+import { formatTimestamp } from "../lib/format";
 import { useUi } from "../state/store";
 
 const opener = vi.hoisted(() => ({ openUrl: vi.fn() }));
@@ -111,6 +112,76 @@ describe("TxDetailModal", () => {
       outputs: [io({ address: "tb1qchange", value_sats: 199_790, is_mine: true, change: true })],
     });
     expect(await screen.findByText("Sent to yourself")).toBeInTheDocument();
+  });
+
+  it("carries a labelled Block row, the hero's height and no more", async () => {
+    open();
+    const technical = within(await screen.findByRole("region", { name: "Technical" }));
+    // The flow summary used to carry it; the hero's bare "block N"
+    // beside the pill is not a fact one can go looking for.
+    expect(technical.getByText("Block")).toBeInTheDocument();
+    expect(technical.getByText("200 000")).toBeInTheDocument();
+  });
+
+  it("says — for the block of a transaction nobody has mined yet", async () => {
+    open({
+      ...DETAIL,
+      summary: { ...DETAIL.summary, status: { state: "pending" }, confirmations: 0 },
+    });
+    const technical = within(await screen.findByRole("region", { name: "Technical" }));
+    expect(technical.getByText("Block")).toBeInTheDocument();
+    expect(technical.getByText("—")).toBeInTheDocument();
+  });
+
+  it("totals each side on the heading that counts it", async () => {
+    open();
+    expect(
+      await screen.findByRole("region", { name: "Inputs" }),
+    ).toHaveTextContent("Inputs (1) · 0.00200000 BTC");
+    expect(screen.getByRole("region", { name: "Outputs" })).toHaveTextContent(
+      "Outputs (2) · 0.00199790 BTC",
+    );
+  });
+
+  it("refuses a side total one unknown value would make wrong", async () => {
+    open({ ...DETAIL, inputs: [io({ address: null, value_sats: null })] });
+    expect(await screen.findByRole("region", { name: "Inputs" })).toHaveTextContent(
+      "Inputs (1) · n/a",
+    );
+  });
+
+  it("decodes a time-based locktime instead of calling it a block", async () => {
+    // 1735689600 is 2025-01-01T00:00:00Z. Printed raw it reads as a
+    // block height a thousand centuries away.
+    open({ ...DETAIL, extras: { ...DETAIL.extras!, locktime: 1_735_689_600 } });
+    const technical = within(await screen.findByRole("region", { name: "Technical" }));
+    expect(technical.queryByText("1 735 689 600")).not.toBeInTheDocument();
+    expect(technical.getByText(formatTimestamp(1_735_689_600))).toBeInTheDocument();
+    // And the chip must stop promising a block above the threshold.
+    expect(screen.getByTitle(/earliest time this transaction could be mined/i)).toBeInTheDocument();
+  });
+
+  it("keeps the block wording for a height-based locktime", async () => {
+    open({ ...DETAIL, extras: { ...DETAIL.extras!, locktime: 840_000 } });
+    const technical = within(await screen.findByRole("region", { name: "Technical" }));
+    expect(technical.getByText("block 840 000")).toBeInTheDocument();
+    expect(
+      screen.getByTitle("Earliest block this transaction could be mined in"),
+    ).toBeInTheDocument();
+  });
+
+  it("says what the coinbase and OP_RETURN chips mean", async () => {
+    open({
+      ...DETAIL,
+      outputs: [io({ address: null, value_sats: 0, op_return: { hex: "6a", text: "hi", label: null } })],
+      extras: { ...DETAIL.extras!, is_coinbase: true, coinbase_pool: "Foundry" },
+    });
+    expect(
+      await screen.findByTitle("Coinbase: the block reward, coins minted by the miner"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTitle("An output carries data instead of spendable coins"),
+    ).toBeInTheDocument();
   });
 
   it("reads in the order the questions come in", async () => {
