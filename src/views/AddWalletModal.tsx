@@ -1,7 +1,8 @@
-import { ChevronDown, ChevronUp, FileUp, Info, ScanLine } from "lucide-react";
+import { ChevronDown, ChevronUp, FileUp, ScanLine } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
+import { Notice } from "../components/Notice";
 import { Select } from "../components/Select";
 import { ScanQrModal } from "../components/ScanQrModal";
 import type {
@@ -37,7 +38,7 @@ const SCRIPT_LABEL: Record<ScriptKind, string> = {
 };
 
 const WARNING_LABEL: Record<InputWarning, string> = {
-  assumed_segwit: "This key carries no script type: check the one selected below.",
+  assumed_segwit: "This key carries no script type. Check the one selected below.",
   slip132_converted: "The SLIP-132 prefix was converted to a standard extended key.",
   change_not_tracked: "No change path was provided: change outputs will not be tracked.",
   multiple_accounts_in_file: "The file holds several account types; the preferred one was selected.",
@@ -271,17 +272,20 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
                 </span>
               </p>
             )}
-            {parsed.warnings.length > 0 && (
-              <ul className="mt-3 flex flex-col gap-1.5">
-                {parsed.warnings.map((warning) => (
-                  <li key={warning} className="flex items-start gap-2 font-ui text-xs text-muted">
-                    <Info size={14} strokeWidth={1.5} aria-hidden className="mt-px shrink-0" />
-                    {WARNING_LABEL[warning]}
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
+
+          {/* What the core did not know sits outside the card that says
+              what it recognized, so the two do not read as one block of
+              facts. Nothing here risks funds or privacy: amber. */}
+          {parsed.warnings.length > 0 && (
+            <ul aria-label="Cautions" className="flex flex-col gap-2">
+              {parsed.warnings.map((warning) => (
+                <li key={warning}>
+                  <Notice tone="info">{WARNING_LABEL[warning]}</Notice>
+                </li>
+              ))}
+            </ul>
+          )}
 
           {parsed.script_options.length > 0 && parsed.payload.type === "descriptors" && (
             <div>
