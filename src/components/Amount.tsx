@@ -68,6 +68,21 @@ export function ListAmount({ sats, pending }: { sats: number; pending?: boolean 
   );
 }
 
+/** One line of a transaction's inputs or outputs: the chosen unit and
+    nothing else. No fiat here on purpose — beside a single input nobody
+    can tell whether a figure in euros is the value the coin had when it
+    moved or the value it has now, and a figure nobody can date is worse
+    than no figure. The fiat belongs on the net amount, above. */
+export function UnitAmount({ sats }: { sats: number | null }) {
+  const { masked, unit } = useUi();
+  if (sats === null) return <span className="font-ui text-[13px] text-muted">n/a</span>;
+  return (
+    <span className="selectable whitespace-nowrap tabular text-[13px] font-medium text-text">
+      {masked ? MASKED : formatAmount(sats, unit)}
+    </span>
+  );
+}
+
 /** Unsigned amount stacked over its fiat value, for table cells: the
     amount never wraps, the fiat line carries the small print. */
 export function StackedAmount({ sats }: { sats: number }) {
