@@ -36,6 +36,18 @@ export function truncateMiddle(value: string, head = 6, tail = 4): string {
   return `${value.slice(0, head)}...${value.slice(-tail)}`;
 }
 
+/** Preview text for an OP_RETURN payload: the recognized protocol name
+    when there is one, then decoded text, then a short hex excerpt. */
+export function opReturnPreview(data: {
+  hex: string;
+  text: string | null;
+  label: string | null;
+}): string {
+  if (data.label) return data.label;
+  if (data.text) return truncateMiddle(data.text, 22, 6);
+  return truncateMiddle(data.hex, 12, 6);
+}
+
 /** Relative freshness for sync stamps: "just now", "2 min ago", ... */
 export function relativeTime(unixSeconds: number, nowMs = Date.now()): string {
   const seconds = Math.max(0, Math.floor(nowMs / 1000) - unixSeconds);
