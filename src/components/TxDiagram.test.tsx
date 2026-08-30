@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TxDiagram } from "./TxDiagram";
+import { TxDiagram, shortenBranchLabel } from "./TxDiagram";
 import type { TxBranch } from "./TxDiagram";
 import { useUi } from "../state/store";
 
@@ -16,8 +16,14 @@ function side(name: "Inputs" | "Outputs") {
   return within(screen.getByRole("list", { name }));
 }
 
+function paths(container: HTMLElement): Element[] {
+  return [...container.querySelectorAll("svg.absolute > path")];
+}
+
 /** jsdom lays nothing out, so the connectors are measured against a
-    made-up page: one row per side, the node between them. */
+    made-up page: one box per side, the square between them, the fee
+    below. The square is the only `div` in the mono face and the fee box
+    the only one stacking its lines — nothing else selects them. */
 function stubLayout() {
   const rect = (left: number, top: number, width: number, height: number) =>
     ({
@@ -31,29 +37,38 @@ function stubLayout() {
       y: top,
       toJSON: () => ({}),
     }) as DOMRect;
-  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
-    this: Element,
-  ) {
-    if (this.matches("section")) return rect(0, 0, 900, 200);
-    if (this.matches('ul[aria-label="Inputs"]')) return rect(0, 40, 380, 20);
-    if (this.matches('ul[aria-label="Outputs"]')) return rect(520, 40, 380, 20);
-    if (this.matches("li")) return rect(0, 40, 380, 20);
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    if (this.matches("section")) return rect(0, 0, 900, 260);
+    if (this.matches("li")) {
+      return this.closest('ul[aria-label="Inputs"]')
+        ? rect(0, 40, 380, 20)
+        : rect(520, 40, 380, 20);
+    }
     if (this.matches("div.font-data")) return rect(430, 80, 40, 40);
+    if (this.matches("div.flex-col")) return rect(410, 160, 80, 30);
     return rect(0, 0, 0, 0);
   });
-}
-
-/** Every dot the diagram drew, by radius. */
-function radii(container: HTMLElement): string[] {
-  return [...container.querySelectorAll("svg.absolute > circle")].map(
-    (dot) => dot.getAttribute("r") ?? "",
-  );
 }
 
 describe("TxDiagram", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     useUi.setState({ masked: false });
+  });
+
+  it("draws a one-in, one-out transfer: two boxes, two connectors, a fee", () => {
+    const { container } = render(
+      <TxDiagram
+        inputs={[branch({ role: "wallet-in", isMine: true, amount: 60_000 })]}
+        outputs={[branch({ role: "received", label: MINE, amount: 59_800, isMine: true })]}
+        feeSats={200}
+      />,
+    );
+    expect(side("Inputs").getAllByRole("listitem")).toHaveLength(1);
+    expect(side("Outputs").getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.getByText("TX")).toBeInTheDocument();
+    // One connector per box, plus the one that drops to the fee.
+    expect(paths(container)).toHaveLength(3);
   });
 
   it("draws a plain send: the wallet's coin in, a payment and change out", () => {
@@ -77,19 +92,25 @@ describe("TxDiagram", () => {
 
     expect(screen.getByTitle("Spent from this wallet")).toBeInTheDocument();
     expect(screen.getByTitle("Change back to this wallet")).toBeInTheDocument();
-    expect(screen.getByText("TX")).toBeInTheDocument();
+
+    // A box the wallet owns takes the wash the lists below already use.
+    expect(side("Inputs").getAllByRole("listitem")[0]).toHaveClass("border-primary/40");
+    expect(side("Outputs").getAllByRole("listitem")[0]).toHaveClass("border-border");
 
     // The fee is a branch of its own, amount only.
     expect(screen.getByText("Fee")).toBeInTheDocument();
     expect(screen.getByText("0.00000210 BTC")).toBeInTheDocument();
     expect(screen.queryByText(/sat\/vB/)).not.toBeInTheDocument();
 
-    // One connector per row, plus the one that drops to the fee.
-    expect(container.querySelectorAll("svg.absolute > path")).toHaveLength(4);
+    expect(paths(container)).toHaveLength(4);
     expect(container.querySelector("svg.absolute")).toHaveAttribute("aria-hidden");
+    // A branch touching the wallet inks its connector; the fee never does.
+    const ink = paths(container).map((path) => path.getAttribute("class"));
+    expect(ink).toContain("stroke-primary/55");
+    expect(ink).toContain("stroke-border");
   });
 
-  it("names each row by its role, which only an icon says on screen", () => {
+  it("names each box by its role, which only an icon says on screen", () => {
     render(
       <TxDiagram
         inputs={[branch({ role: "wallet-in", isMine: true, amount: 150_210 })]}
@@ -123,21 +144,8 @@ describe("TxDiagram", () => {
     expect(screen.getByTitle("Received by this wallet")).toBeInTheDocument();
   });
 
-  it("draws a transfer to oneself with the wallet on both sides", () => {
-    render(
-      <TxDiagram
-        inputs={[branch({ role: "wallet-in", isMine: true, amount: 60_000 })]}
-        outputs={[branch({ role: "change", label: MINE, amount: 59_800, isMine: true })]}
-        feeSats={200}
-      />,
-    );
-    expect(screen.getByTitle("Spent from this wallet")).toBeInTheDocument();
-    expect(screen.getByTitle("Change back to this wallet")).toBeInTheDocument();
-    expect(screen.getByText("Fee")).toBeInTheDocument();
-  });
-
   it("draws a coinbase: nothing spent, a reward created, no fee branch", () => {
-    render(
+    const { container } = render(
       <TxDiagram
         inputs={[branch({ role: "coinbase", label: "Coinbase", amount: 312_500_000 })]}
         outputs={[branch({ role: "received", label: MINE, amount: 312_500_000, isMine: true })]}
@@ -146,7 +154,17 @@ describe("TxDiagram", () => {
     );
     expect(screen.getByTitle("Newly minted coins")).toBeInTheDocument();
     expect(side("Inputs").getByText("Coinbase")).toBeInTheDocument();
+    // No fee box, and nothing drawn hanging below the square either.
     expect(screen.queryByText("Fee")).not.toBeInTheDocument();
+    expect(paths(container)).toHaveLength(2);
+  });
+
+  it("draws no fee branch for a fee of zero either", () => {
+    const { container } = render(
+      <TxDiagram inputs={[branch()]} outputs={[branch({ amount: 100_000 })]} feeSats={0} />,
+    );
+    expect(screen.queryByText("Fee")).not.toBeInTheDocument();
+    expect(paths(container)).toHaveLength(2);
   });
 
   it("names an OP_RETURN output by its decoded payload", () => {
@@ -162,71 +180,97 @@ describe("TxDiagram", () => {
     );
     expect(screen.getByTitle("Data output")).toBeInTheDocument();
     expect(side("Outputs").getByText("hello")).toBeInTheDocument();
+    expect(
+      side("Outputs").getByRole("listitem", { name: "Data output, hello, 0.00000000 BTC" }),
+    ).toBeInTheDocument();
   });
 
-  it("folds a huge side into one row that carries what it stands for", () => {
-    const inputs = Array.from({ length: 40 }, (_, index) =>
+  it("folds each side into one box that names the side it stands for", () => {
+    const inputs = Array.from({ length: 12 }, (_, index) =>
       branch({ label: `${TXID}:${index}`, amount: 1_000 }),
     );
-    render(<TxDiagram inputs={inputs} outputs={[branch({ amount: 39_000 })]} feeSats={1_000} />);
+    const outputs = Array.from({ length: 15 }, (_, index) =>
+      branch({ role: "external-out", label: `${THEIRS}${index}`, amount: 2_000 }),
+    );
+    render(<TxDiagram inputs={inputs} outputs={outputs} feeSats={1_000} />);
 
-    // Eight rows whatever the transaction: the complete list is below.
-    expect(side("Inputs").getAllByRole("listitem")).toHaveLength(8);
-    expect(screen.getByText("+33 more")).toBeInTheDocument();
-    // The folded rows keep their weight: 33 inputs of 1 000 sats.
-    expect(side("Inputs").getByText("0.00033000 BTC")).toBeInTheDocument();
+    // Ten boxes a side whatever the transaction: past ten a diagram
+    // stops being one, and the complete lists sit right below it.
+    expect(side("Inputs").getAllByRole("listitem")).toHaveLength(10);
+    expect(side("Outputs").getAllByRole("listitem")).toHaveLength(10);
+    // `+3 more` alone, halfway down a column, does not say more of what.
+    expect(side("Inputs").getByText("+3 more inputs")).toBeInTheDocument();
+    expect(side("Outputs").getByText("+6 more outputs")).toBeInTheDocument();
+    // The folded boxes keep their weight: 3 inputs of 1 000 sats, 6
+    // outputs of 2 000.
+    expect(side("Inputs").getByText("0.00003000 BTC")).toBeInTheDocument();
+    expect(side("Outputs").getByText("0.00012000 BTC")).toBeInTheDocument();
   });
 
-  it("leaves and arrives flat, with the control points the design fixes", () => {
+  it("adds nothing up when a folded branch is worth nobody knows what", () => {
+    const inputs = Array.from({ length: 12 }, (_, index) =>
+      branch({ label: `${TXID}:${index}`, amount: index === 11 ? null : 1_000 }),
+    );
+    render(<TxDiagram inputs={inputs} outputs={[branch({ amount: 10_000 })]} feeSats={null} />);
+    expect(
+      side("Inputs").getByRole("listitem", { name: "Folded rows, +3 more inputs, n/a" }),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves and arrives flat, both control points on the midline", () => {
     stubLayout();
     const { container } = render(
       <TxDiagram
         inputs={[branch({ amount: 100_000 })]}
-        outputs={[branch({ role: "external-out", label: THEIRS, amount: 100_000 })]}
-        feeSats={null}
+        outputs={[branch({ role: "external-out", label: THEIRS, amount: 99_000 })]}
+        feeSats={1_000}
       />,
     );
-    const paths = [...container.querySelectorAll("svg.absolute > path")];
-    // Row centre 50, node centre 100, connector 380 → 430 wide 50:
-    // control points at 20% and 80%, each sharing the y of its end.
-    expect(paths[0]).toHaveAttribute("d", "M380.0,50.0 C390.0,50.0 420.0,100.0 430.0,100.0");
-    expect(paths[1]).toHaveAttribute("d", "M470.0,100.0 C480.0,100.0 510.0,50.0 520.0,50.0");
-    // The dot sits on the inner edge of its column, sized by its share.
-    expect(container.querySelector("svg.absolute > circle")).toHaveAttribute("cx", "380");
+    const drawn = paths(container);
+    // Box centre 50, square centre 100, a span of 380 → 430: both
+    // control points land on 405, the middle of the span, so the curve
+    // leaves and arrives horizontal and bends once, in the middle.
+    expect(drawn[0]).toHaveAttribute("d", "M380.0,50.0 C405.0,50.0 405.0,100.0 430.0,100.0");
+    expect(drawn[1]).toHaveAttribute("d", "M470.0,100.0 C495.0,100.0 495.0,50.0 520.0,50.0");
+    // The fee drops from the bottom edge of the square to the top edge
+    // of its box: the same curve turned a quarter.
+    expect(drawn[2]).toHaveAttribute("d", "M450.0,120.0 C450.0,140.0 450.0,140.0 450.0,160.0");
+    expect(drawn[0]).toHaveAttribute("stroke-linecap", "round");
   });
 
-  it("sizes the dots by their share while the amounts are shown", () => {
+  it("carries the amounts in the boxes, never in a dot", () => {
     stubLayout();
     const { container } = render(
       <TxDiagram
-        inputs={[branch({ amount: 1_000_000 }), branch({ amount: 1_000 })]}
+        inputs={[branch({ amount: 1_000_000 }), branch({ label: `${TXID}:1`, amount: 1_000 })]}
         outputs={[branch({ role: "external-out", label: THEIRS, amount: 999_000 })]}
         feeSats={1_000}
       />,
     );
-    expect(new Set(radii(container)).size).toBeGreaterThan(1);
+    // The dots sized by share are gone: a figure says what a radius
+    // could only suggest, and the connectors are the drawing now.
+    expect(container.querySelector("circle")).toBeNull();
+    expect(side("Inputs").getByText("0.01000000 BTC")).toBeInTheDocument();
+    expect(side("Inputs").getByText("0.00001000 BTC")).toBeInTheDocument();
   });
 
-  it("hides the proportions along with the amounts", () => {
-    stubLayout();
+  it("hides every amount behind the mask, labels untouched", () => {
     useUi.setState({ masked: true });
-    const { container } = render(
+    render(
       <TxDiagram
-        inputs={[branch({ amount: 1_000_000 }), branch({ amount: null })]}
+        inputs={[branch({ amount: 1_000_000 })]}
         outputs={[branch({ role: "external-out", label: THEIRS, amount: 999_000 })]}
         feeSats={1_000}
       />,
     );
-    // A drawing that keeps the shares gives away exactly what the
-    // figures were masked to cover up.
     expect(screen.queryByText(/BTC/)).not.toBeInTheDocument();
-    const drawn = radii(container);
-    expect(drawn).toHaveLength(3);
-    expect(new Set(drawn).size).toBe(1);
+    // Two branches and the fee, all three covered; the labels stay.
+    expect(screen.getAllByText("•••••")).toHaveLength(3);
+    expect(side("Outputs").getByTitle(THEIRS)).toBeInTheDocument();
   });
 
   it("says n/a for an input whose value nobody knows", () => {
-    const { container } = render(
+    render(
       <TxDiagram
         inputs={[branch({ amount: null })]}
         outputs={[branch({ role: "received", label: MINE, amount: 99_000, isMine: true })]}
@@ -234,7 +278,22 @@ describe("TxDiagram", () => {
       />,
     );
     expect(side("Inputs").getByText("n/a")).toBeInTheDocument();
-    // An amount nobody knows is not a size: that dot is drawn hollow.
-    expect(container.querySelector("svg.absolute > circle.fill-none")).toBeInTheDocument();
+    expect(
+      side("Inputs").getByRole("listitem", { name: `External input, ${TXID}:0, n/a` }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("shortenBranchLabel", () => {
+  it("keeps the index of an outpoint, which is what names it", () => {
+    expect(shortenBranchLabel(`${TXID}:12`, 10, 6)).toBe("0123456789...abcdef:12");
+  });
+
+  it("truncates anything else in the middle", () => {
+    expect(shortenBranchLabel(THEIRS, 10, 6)).toBe("tb1qrp33g0...ccfmv3");
+  });
+
+  it("leaves a label short enough to fit alone", () => {
+    expect(shortenBranchLabel("Coinbase", 10, 6)).toBe("Coinbase");
   });
 });

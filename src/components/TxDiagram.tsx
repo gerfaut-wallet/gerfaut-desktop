@@ -34,26 +34,21 @@ export interface TxBranch {
   /** Sats, null when nobody could tell us the value — an input whose
       previous output the backend never resolved. */
   amount: number | null;
-  /** Touches the watched wallet: the connector takes the accent. */
+  /** Touches the watched wallet: the box and its connector take the
+      accent. */
   isMine: boolean;
 }
 
+type Side = "inputs" | "outputs";
+
 /** Rows per side before the rest folds into one. Past this a diagram
-    stops being a diagram; the complete lists sit right below it. */
-const MAX_ROWS = 8;
-/** Dot radius bounds, in px: the square root of the ratio keeps the
-    small branches visible while the big one still reads as the big one. */
-const MIN_DOT = 2;
-const MAX_DOT = 7;
-/** A dot for an amount nobody knows, drawn hollow rather than sized. */
-const UNKNOWN_DOT = 3;
-/** The one size every dot takes while the amounts are hidden: a drawing
-    that keeps the shares gives away what the figures are covering up. */
-const MASKED_DOT = (MIN_DOT + MAX_DOT) / 2;
+    stops being a diagram; the complete lists sit right below it. The
+    phone keeps five — half the height for half the width. */
+const MAX_ROWS = 10;
 /** Below this width the truncations shorten instead of overflowing. */
 const COMPACT_WIDTH = 620;
 
-const ICON = { size: 14, strokeWidth: 1.75, "aria-hidden": true } as const;
+const ICON = { size: 14, strokeWidth: 1.5, "aria-hidden": true } as const;
 
 const ROLES: Record<BranchRole, { title: string; tone: string; icon: ReactNode }> = {
   "wallet-in": {
@@ -75,11 +70,13 @@ const ROLES: Record<BranchRole, { title: string; tone: string; icon: ReactNode }
 
 type Row =
   | { kind: "branch"; branch: TxBranch }
-  | { kind: "more"; count: number; amount: number | null; isMine: boolean };
+  | { kind: "more"; count: number; amount: number | null; isMine: boolean; side: Side };
 
 /** The rows one side actually draws: everything past the cap collapses
-    into a single row carrying the count and the sum it stands for. */
-function fold(branches: TxBranch[]): Row[] {
+    into a single row carrying the count and the sum it stands for. It
+    names its own side — read alone, halfway down a diagram, `+7 more`
+    does not say more of what. */
+function fold(branches: TxBranch[], side: Side): Row[] {
   if (branches.length <= MAX_ROWS) {
     return branches.map((branch) => ({ kind: "branch", branch }));
   }
@@ -90,7 +87,7 @@ function fold(branches: TxBranch[]): Row[] {
     : rest.reduce((total, branch) => total + (branch.amount ?? 0), 0);
   return [
     ...branches.slice(0, MAX_ROWS - 1).map((branch): Row => ({ kind: "branch", branch })),
-    { kind: "more", count: rest.length, amount, isMine: rest.some((branch) => branch.isMine) },
+    { kind: "more", count: rest.length, amount, isMine: rest.some((b) => b.isMine), side },
   ];
 }
 
@@ -116,28 +113,25 @@ export function shortenBranchLabel(label: string, head: number, tail: number): s
 
 const f = (value: number) => value.toFixed(1);
 
-/** A connector: flat where it leaves and flat where it arrives, so the
-    eye follows it into the node instead of meeting it at an angle. */
+/** A connector, box edge to box edge. Both control points sit on the
+    midline of the span, so the curve leaves and arrives perfectly
+    horizontal and turns in one move. Held closer to the ends it grew a
+    long flat middle that read as neither a line nor a curve. */
 function curve(x0: number, y0: number, x1: number, y1: number): string {
   const width = x1 - x0;
-  return `M${f(x0)},${f(y0)} C${f(x0 + width * 0.2)},${f(y0)} ${f(x0 + width * 0.8)},${f(y1)} ${f(x1)},${f(y1)}`;
+  return `M${f(x0)},${f(y0)} C${f(x0 + width * 0.5)},${f(y0)} ${f(x1 - width * 0.5)},${f(y1)} ${f(x1)},${f(y1)}`;
 }
 
-/** The fee branch, leaving the node downward: vertical tangents, the
-    same 20/80 control points turned a quarter. */
+/** The fee leaving the node downward: the same curve turned a quarter,
+    vertical where it leaves and where it arrives. */
 function drop(x0: number, y0: number, x1: number, y1: number): string {
   const height = y1 - y0;
-  return `M${f(x0)},${f(y0)} C${f(x0)},${f(y0 + height * 0.2)} ${f(x1)},${f(y0 + height * 0.8)} ${f(x1)},${f(y1)}`;
+  return `M${f(x0)},${f(y0)} C${f(x0)},${f(y0 + height * 0.5)} ${f(x1)},${f(y1 - height * 0.5)} ${f(x1)},${f(y1)}`;
 }
 
 interface Link {
   d: string;
-  x: number;
-  y: number;
-  r: number;
   mine: boolean;
-  /** False when the amount is unknown: the dot is drawn as a ring. */
-  known: boolean;
 }
 
 interface Geometry {
@@ -149,9 +143,9 @@ interface Geometry {
 
 /** Where the coins come from and where they go, which no list shows.
     Three columns — inputs, the transaction, outputs — every branch a
-    cubic curve into the central node, every dot sized by its share.
-    The strokes are decorative: each row is real text, and the lists
-    below stay the source. */
+    box, every box joined to the central square by a cubic curve, the
+    fee hanging below. The strokes are decorative: each box is real
+    text, and the lists below stay the source. */
 export function TxDiagram({
   inputs,
   outputs,
@@ -161,10 +155,7 @@ export function TxDiagram({
   outputs: TxBranch[];
   feeSats: number | null;
 }) {
-  const { masked } = useUi();
   const frameRef = useRef<HTMLElement>(null);
-  const inColRef = useRef<HTMLUListElement>(null);
-  const outColRef = useRef<HTMLUListElement>(null);
   const nodeRef = useRef<HTMLDivElement>(null);
   const feeRef = useRef<HTMLDivElement>(null);
   const inRowsRef = useRef<(HTMLLIElement | null)[]>([]);
@@ -172,33 +163,18 @@ export function TxDiagram({
   const [geometry, setGeometry] = useState<Geometry | null>(null);
   const [width, setWidth] = useState(0);
 
-  const inRows = fold(inputs);
-  const outRows = fold(outputs);
+  const inRows = fold(inputs, "inputs");
+  const outRows = fold(outputs, "outputs");
   // A zero fee is no branch: nothing left the node downward.
   const fee = feeSats !== null && feeSats > 0 ? feeSats : null;
-  const scale = Math.max(
-    1,
-    fee ?? 0,
-    ...[...inRows, ...outRows].map((row) => rowAmount(row) ?? 0),
-  );
 
-  // Hidden amounts hide the proportions too: every dot takes one middle
-  // size, the fee branch included. Otherwise the picture still shows
-  // the split the figures were masked to keep.
-  const radius = (amount: number | null) => {
-    if (masked) return MASKED_DOT;
-    if (amount === null) return UNKNOWN_DOT;
-    return MIN_DOT + (MAX_DOT - MIN_DOT) * Math.sqrt(amount / scale);
-  };
-
-  // The rows own their heights; the curves read them back from the DOM
-  // rather than repeating a row height the CSS could change tomorrow.
+  // The boxes own their heights; the curves read them back from the DOM
+  // rather than repeating a box height the CSS could change tomorrow.
+  // That is also what makes them land on the edges at any text scale.
   const measure = () => {
     const frame = frameRef.current;
     const node = nodeRef.current;
-    const inCol = inColRef.current;
-    const outCol = outColRef.current;
-    if (!frame || !node || !inCol || !outCol) return;
+    if (!frame || !node) return;
     const origin = frame.getBoundingClientRect();
     const box = (element: Element) => {
       const rect = element.getBoundingClientRect();
@@ -213,38 +189,20 @@ export function TxDiagram({
     };
 
     const nodeBox = box(node);
-    const inEdge = box(inCol).right;
-    const outEdge = box(outCol).left;
     const links: Link[] = [];
 
     inRows.forEach((row, index) => {
       const element = inRowsRef.current[index];
       if (!element) return;
-      const y = box(element).cy;
-      const amount = rowAmount(row);
-      links.push({
-        d: curve(inEdge, y, nodeBox.left, nodeBox.cy),
-        x: inEdge,
-        y,
-        r: radius(amount),
-        mine: rowIsMine(row),
-        known: amount !== null,
-      });
+      const from = box(element);
+      links.push({ d: curve(from.right, from.cy, nodeBox.left, nodeBox.cy), mine: rowIsMine(row) });
     });
 
     outRows.forEach((row, index) => {
       const element = outRowsRef.current[index];
       if (!element) return;
-      const y = box(element).cy;
-      const amount = rowAmount(row);
-      links.push({
-        d: curve(nodeBox.right, nodeBox.cy, outEdge, y),
-        x: outEdge,
-        y,
-        r: radius(amount),
-        mine: rowIsMine(row),
-        known: amount !== null,
-      });
+      const to = box(element);
+      links.push({ d: curve(nodeBox.right, nodeBox.cy, to.left, to.cy), mine: rowIsMine(row) });
     });
 
     const feeNode = feeRef.current;
@@ -303,68 +261,60 @@ export function TxDiagram({
               d={link.d}
               fill="none"
               strokeWidth={1.5}
+              strokeLinecap="round"
               className={link.mine ? "stroke-primary/55" : "stroke-border"}
             />
           ))}
+          {/* What stays behind is nobody's branch: the drop keeps the
+              neutral ink even under a wallet the accent runs through. */}
           {geometry.fee !== null && (
-            <path d={geometry.fee} fill="none" strokeWidth={1.5} className="stroke-border" />
-          )}
-          {geometry.links.map((link, index) => (
-            <circle
-              key={`dot-${index}`}
-              cx={link.x}
-              cy={link.y}
-              r={link.r}
-              strokeWidth={link.known ? 0 : 1.5}
-              className={clsx(
-                link.known && link.mine && "fill-primary/55",
-                link.known && !link.mine && "fill-border",
-                !link.known && link.mine && "fill-none stroke-primary/55",
-                !link.known && !link.mine && "fill-none stroke-border",
-              )}
+            <path
+              d={geometry.fee}
+              fill="none"
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              className="stroke-border"
             />
-          ))}
+          )}
         </svg>
       )}
 
-      <div className="relative flex items-center gap-8 lg:gap-14">
-        {/* The inner padding keeps the text clear of its own dot. */}
-        <ul ref={inColRef} aria-label="Inputs" className="flex min-w-0 flex-1 flex-col pr-2">
-          {inRows.map((row, index) => (
-            <DiagramRow
-              key={index}
-              row={row}
-              head={head}
-              tail={tail}
-              rowRef={(element) => {
-                inRowsRef.current[index] = element;
-              }}
-            />
-          ))}
-        </ul>
+      {/* 56px of gutter each side of the square: any tighter and the
+          bend has no room to turn, which is the whole reading. */}
+      <div className="relative flex items-center gap-14">
+        <Column
+          side="inputs"
+          rows={inRows}
+          head={head}
+          tail={tail}
+          rowRef={(index, element) => {
+            inRowsRef.current[index] = element;
+          }}
+        />
+        {/* A junction, not a card of facts: the square says where the
+            branches meet and nothing else. */}
         <div
           ref={nodeRef}
-          className="shrink-0 rounded-md border border-border bg-surface px-3 py-2 font-data text-[13px] leading-none text-muted"
+          className="flex size-11 shrink-0 items-center justify-center rounded-md border border-border bg-surface font-data text-[13px] leading-none text-muted"
         >
           TX
         </div>
-        <ul ref={outColRef} aria-label="Outputs" className="flex min-w-0 flex-1 flex-col pl-2">
-          {outRows.map((row, index) => (
-            <DiagramRow
-              key={index}
-              row={row}
-              head={head}
-              tail={tail}
-              rowRef={(element) => {
-                outRowsRef.current[index] = element;
-              }}
-            />
-          ))}
-        </ul>
+        <Column
+          side="outputs"
+          rows={outRows}
+          head={head}
+          tail={tail}
+          rowRef={(index, element) => {
+            outRowsRef.current[index] = element;
+          }}
+        />
       </div>
 
+      {/* 18px under the columns, which on a one-branch transaction is
+          18px under the square itself; taller sides only lengthen the
+          drop, and the fee stays where the eye left the node. */}
       {fee !== null && (
-        <div className="relative mt-5 flex justify-center">
+        <div className="relative mt-[18px] flex justify-center">
           <FeeNode ref={feeRef} sats={fee} />
         </div>
       )}
@@ -372,29 +322,72 @@ export function TxDiagram({
   );
 }
 
-/** The fee is not an output, it is what stays behind: its own node,
-    below the transaction, carrying the amount alone — the sat/vB is a
-    fact, and repeating it here blurs the reading. */
+/** One side of the diagram. The boxes stretch to their column, so every
+    connector on a side leaves from the same x and the branches read as
+    one bundle instead of a fan. */
+function Column({
+  side,
+  rows,
+  head,
+  tail,
+  rowRef,
+}: {
+  side: Side;
+  rows: Row[];
+  head: number;
+  tail: number;
+  rowRef: (index: number, element: HTMLLIElement | null) => void;
+}) {
+  return (
+    <ul
+      aria-label={side === "inputs" ? "Inputs" : "Outputs"}
+      className="flex min-w-0 flex-1 flex-col gap-2"
+    >
+      {rows.map((row, index) => (
+        <BranchBox
+          key={index}
+          row={row}
+          head={head}
+          tail={tail}
+          rowRef={(element) => rowRef(index, element)}
+        />
+      ))}
+    </ul>
+  );
+}
+
+/** The wash a box takes when it touches the watched wallet — the exact
+    one the input and output lists below the diagram use, so a branch is
+    recognised the same way whichever of the two the eye lands on. */
+const boxTone = (mine: boolean) =>
+  mine ? "border-primary/40 bg-primary/[0.04]" : "border-border bg-surface";
+
+/** The fee is not an output, it is what stays behind: its own box below
+    the transaction, carrying the amount alone — the sat/vB is a fact,
+    and repeating it here blurs the reading. No role icon either: a fee
+    has no role to name. */
 function FeeNode({ ref, sats }: { ref: Ref<HTMLDivElement>; sats: number }) {
   const { masked, unit } = useUi();
   return (
     <div
       ref={ref}
-      className="inline-flex items-center gap-2 rounded-md border border-border bg-surface px-3 py-1.5"
+      className={clsx("flex flex-col rounded-md border px-2.5 py-1.5", boxTone(false))}
     >
-      <span className="font-ui text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
+      <span className="font-ui text-[11px] font-medium uppercase leading-4 tracking-[0.04em] text-muted">
         Fee
       </span>
-      <span className="selectable tabular text-[12px] font-medium text-text">
+      <span className="selectable tabular text-[11px] font-medium leading-4 text-text">
         {masked ? MASKED : formatAmount(sats, unit)}
       </span>
     </div>
   );
 }
 
-/** One branch of the diagram: its role as an icon, what names it, and
-    what it carries. */
-function DiagramRow({
+/** One branch of the diagram, as a box: its role as an icon, what names
+    it, and what it carries, stacked. The two lines never collapse into
+    one — a label and a figure side by side is the list below, and the
+    diagram would then be a second, worse copy of it. */
+function BranchBox({
   row,
   head,
   tail,
@@ -408,34 +401,41 @@ function DiagramRow({
   const { masked, unit } = useUi();
   const role = row.kind === "branch" ? ROLES[row.branch.role] : null;
   const amount = rowAmount(row);
-  const name = row.kind === "branch" ? row.branch.label : `+${row.count} more`;
+  const name = row.kind === "branch" ? row.branch.label : `+${row.count} more ${row.side}`;
   const figure = amount === null ? "n/a" : masked ? MASKED : formatAmount(amount, unit);
   return (
     // The role is carried by an icon, and an icon is nothing to a
-    // screen reader: it goes into the row's own name, or the reading is
+    // screen reader: it goes into the box's own name, or the reading is
     // an address and a number with no say in what they are.
     <li
       ref={rowRef}
       aria-label={`${role ? role.title : "Folded rows"}, ${name}, ${figure}`}
-      className="flex items-center gap-2 py-1"
+      className={clsx(
+        "flex items-start gap-2 rounded-md border px-2.5 py-1.5",
+        boxTone(rowIsMine(row)),
+      )}
     >
+      {/* One line high, so the glyph sits on the optical centre of the
+          label rather than of the whole box. */}
       <span
         title={role ? role.title : "Folded rows"}
-        className={clsx("flex shrink-0 items-center", role ? role.tone : "text-muted")}
+        className={clsx("flex h-4 shrink-0 items-center", role ? role.tone : "text-muted")}
       >
         {role ? role.icon : <Ellipsis {...ICON} />}
       </span>
-      <span
-        title={row.kind === "branch" ? row.branch.label : undefined}
-        className={clsx(
-          "min-w-0 flex-1 truncate text-[12px] text-muted",
-          row.kind === "branch" ? "selectable font-data" : "font-ui font-medium",
-        )}
-      >
-        {row.kind === "branch" ? shortenBranchLabel(row.branch.label, head, tail) : name}
-      </span>
-      <span className="tabular shrink-0 whitespace-nowrap text-[12px] font-medium text-text">
-        {figure}
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span
+          title={row.kind === "branch" ? row.branch.label : undefined}
+          className={clsx(
+            "truncate text-[11px] leading-4 text-muted",
+            row.kind === "branch" ? "selectable font-data" : "font-ui font-medium",
+          )}
+        >
+          {row.kind === "branch" ? shortenBranchLabel(row.branch.label, head, tail) : name}
+        </span>
+        <span className="selectable tabular text-[11px] font-medium leading-4 text-text">
+          {figure}
+        </span>
       </span>
     </li>
   );
