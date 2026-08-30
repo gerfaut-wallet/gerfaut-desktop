@@ -164,6 +164,15 @@ body {
   letter-spacing: -0.01em;
 }
 
+/* Edge draws its own reveal and clear buttons inside a text field.
+   Gerfaut has its own eye, in the shape the design system gives it:
+   two of them side by side is one too many, and the platform's is
+   neither styled nor themed with the rest. */
+input::-ms-reveal,
+input::-ms-clear {
+  display: none;
+}
+
 /* Focus: 2px ring in the theme's action color, offset 2px. */
 :focus-visible {
   outline: 2px solid var(--color-primary);
