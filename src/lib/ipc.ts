@@ -615,6 +615,7 @@ export const ipc = {
       derivation: derivation ?? null,
     }),
   assembleQr: (frames: string[]) => invoke<QrProgress>("assemble_qr", { frames }),
+  parseBackend: (input: string) => invoke<ScannedBackend>("parse_backend", { input }),
   addWallet: (name: string, parsed: ParsedInput, network: Network) =>
     invoke<WalletMeta>("add_wallet", { name, parsed, network }),
   listWallets: (network?: Network) =>
