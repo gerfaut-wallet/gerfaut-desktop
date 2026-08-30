@@ -20,18 +20,11 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { MASKED, formatAmount } from "../lib/format";
+import { MASKED, NETWORK_LABEL, formatAmount } from "../lib/format";
 import type { Network, WalletMeta } from "../lib/ipc";
 import type { CanvasView } from "../state/store";
 import { useUi } from "../state/store";
 import mark from "../assets/gerfaut-mark-accent-dark.svg";
-
-const NETWORK_LABEL: Record<Network, string> = {
-  mainnet: "Mainnet",
-  signet: "Signet",
-  testnet4: "Testnet 4",
-  regtest: "Regtest",
-};
 
 /** The wallet pages of the sidebar: one word, one icon, every wallet. */
 const PAGES: { view: CanvasView; label: string; icon: ReactNode }[] = [

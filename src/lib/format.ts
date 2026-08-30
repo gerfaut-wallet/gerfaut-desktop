@@ -1,6 +1,8 @@
 // Display formatting. Mirrors gerfaut-core's rules: 8 decimals in BTC,
 // never silently rounded; identifiers truncated in the middle only.
 
+import type { Network } from "./ipc";
+
 const SATS_PER_BTC = 100_000_000;
 /** No-break space for digit grouping: in the UI face a narrow space
     collapses and "1 000 000" reads as one blob. */
@@ -70,6 +72,43 @@ export function formatTimestamp(unixSeconds: number): string {
     minute: "2-digit",
   });
 }
+
+/** The total one side of a transaction carries. A single value nobody
+    knows poisons the sum: better no figure than a wrong one. */
+export function sumSats(values: (number | null)[]): number | null {
+  let total = 0;
+  for (const value of values) {
+    if (value === null) return null;
+    total += value;
+  }
+  return total;
+}
+
+/** Block heights and unix times share the locktime field: at or above
+    this value it is a time, below it a height (BIP-65). */
+export const LOCKTIME_THRESHOLD = 500_000_000;
+
+/** True when a locktime names a moment rather than a block. */
+export function locktimeIsTime(locktime: number): boolean {
+  return locktime >= LOCKTIME_THRESHOLD;
+}
+
+/** A locktime in the terms it was written in. Printed raw, a time-based
+    lock reads as a block height a thousand centuries out of reach. */
+export function formatLocktime(locktime: number): string {
+  if (locktime <= 0) return "none";
+  if (locktimeIsTime(locktime)) return formatTimestamp(locktime);
+  return `block ${groupThousands(String(locktime))}`;
+}
+
+/** Network names as the interface says them, in one place: the sidebar
+    badge and the transaction facts must not spell them two ways. */
+export const NETWORK_LABEL: Record<Network, string> = {
+  mainnet: "Mainnet",
+  signet: "Signet",
+  testnet4: "Testnet 4",
+  regtest: "Regtest",
+};
 
 /** Masked replacement for any amount. */
 export const MASKED = "•••••";
