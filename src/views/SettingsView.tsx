@@ -9,6 +9,7 @@ import {
   Moon,
   Pencil,
   RefreshCw,
+  ScanLine,
   ScanSearch,
   Server,
   ShieldCheck,
@@ -29,11 +30,14 @@ import { SecuritySection } from "./settings/SecuritySection";
 import { TorSection } from "./settings/TorSection";
 import { WelcomeTour } from "./WelcomeTour";
 import { Modal } from "../components/Modal";
+import { ScanQrModal } from "../components/ScanQrModal";
 import { Select } from "../components/Select";
 import { FieldLabel, SectionCard, Segmented, SettingRow, Toggle } from "./settings/primitives";
 import {
   COINGECKO_ONLY_CURRENCIES,
   SHARED_CURRENCIES,
+  ipc,
+  isCommandError,
   quotesCurrency,
 } from "../lib/ipc";
 import type {
@@ -599,7 +603,7 @@ function RatePreview() {
   );
 }
 
-function BackendSection({
+export function BackendSection({
   network,
   settings,
   onSave,
@@ -630,6 +634,9 @@ function BackendSection({
   const inspect = useInspectCertificate();
   const trust = useTrustCertificate();
   const { showToast } = useUi();
+  const [scanOpen, setScanOpen] = useState(false);
+  // Why the core refused the last code read, in its own words.
+  const [scanError, setScanError] = useState<string | null>(null);
   // The certificate the user has to settle before this backend is saved.
   const [pending, setPending] = useState<{
     url: string;
@@ -677,6 +684,33 @@ function BackendSection({
     if (config.type !== "public_esplora" || !config.server) return null;
     const server = servers.data?.find((entry) => entry.id === config.server);
     return server?.protocol === "electrum" ? server.url : null;
+  };
+
+  /** Fills the form from a scanned address. The core says which of the
+      two backends it is and the choice follows: an `https://` read while
+      Electrum is selected is plainly meant for Esplora, and refusing it
+      would be pedantic. Nothing is saved; the person still presses Save. */
+  const applyScan = async (text: string) => {
+    try {
+      const backend = await ipc.parseBackend(text);
+      setScanError(null);
+      if (backend.kind === "esplora") {
+        setKind("custom_esplora");
+        setEsploraUrl(backend.url);
+        return;
+      }
+      setKind("custom_electrum");
+      // An IPv6 literal goes back into its brackets: host and port are
+      // joined again on save, and without them the two cannot be told
+      // apart.
+      setHost(backend.host.includes(":") ? `[${backend.host}]` : backend.host);
+      setPort(backend.port === null ? "" : String(backend.port));
+      setTls(backend.tls);
+    } catch (error) {
+      // Pointing the wrong QR at it is the likely slip, so the refusal
+      // names what was read instead.
+      setScanError(isCommandError(error) ? error.message : String(error));
+    }
   };
 
   const save = async () => {
@@ -748,46 +782,65 @@ function BackendSection({
     ),
     custom_esplora: (
       <>
-        <FieldLabel htmlFor="backend-url">Server URL</FieldLabel>
-        <input
-          id="backend-url"
-          value={esploraUrl}
-          onChange={(event) => setEsploraUrl(event.target.value)}
-          spellCheck={false}
-          placeholder="https://node.example.org:3002/api"
-          className="selectable h-11 w-full rounded-sm bg-sunken px-3 font-data text-[13px] text-text outline-none placeholder:text-muted/60"
-        />
+        <div className="flex items-end gap-3">
+          <div className="min-w-0 flex-1">
+            <FieldLabel htmlFor="backend-url">Server URL</FieldLabel>
+            <input
+              id="backend-url"
+              value={esploraUrl}
+              onChange={(event) => {
+                setEsploraUrl(event.target.value);
+                setScanError(null);
+              }}
+              spellCheck={false}
+              placeholder="https://node.example.org:3002/api"
+              className="selectable h-11 w-full rounded-sm bg-sunken px-3 font-data text-[13px] text-text outline-none placeholder:text-muted/60"
+            />
+          </div>
+          <ScanButton onClick={() => setScanOpen(true)} />
+        </div>
+        <ScanRefusal reason={scanError} />
       </>
     ),
     custom_electrum: (
-      <div className="flex items-end gap-3">
-        <div className="min-w-0 flex-1">
-          <FieldLabel htmlFor="electrum-host">Host</FieldLabel>
-          <input
-            id="electrum-host"
-            value={host}
-            onChange={(event) => setHost(event.target.value)}
-            spellCheck={false}
-            placeholder="node.example.org or xxxxxxxx.onion"
-            className="selectable h-11 w-full rounded-sm bg-sunken px-3 font-data text-[13px] text-text outline-none placeholder:text-muted/60"
-          />
+      <>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-40 flex-1">
+            <FieldLabel htmlFor="electrum-host">Host</FieldLabel>
+            <input
+              id="electrum-host"
+              value={host}
+              onChange={(event) => {
+                setHost(event.target.value);
+                setScanError(null);
+              }}
+              spellCheck={false}
+              placeholder="node.example.org or xxxxxxxx.onion"
+              className="selectable h-11 w-full rounded-sm bg-sunken px-3 font-data text-[13px] text-text outline-none placeholder:text-muted/60"
+            />
+          </div>
+          <div className="w-24">
+            <FieldLabel htmlFor="electrum-port">Port</FieldLabel>
+            <input
+              id="electrum-port"
+              value={port}
+              onChange={(event) => {
+                setPort(event.target.value.replace(/\D/g, ""));
+                setScanError(null);
+              }}
+              inputMode="numeric"
+              placeholder="50002"
+              className="selectable h-11 w-full rounded-sm bg-sunken px-3 font-data text-[13px] text-text outline-none placeholder:text-muted/60"
+            />
+          </div>
+          <div className="flex h-11 items-center gap-2 pb-0.5">
+            <Toggle checked={tls} onChange={setTls} label="Use TLS" />
+            <span className="font-ui text-sm text-text">TLS</span>
+          </div>
+          <ScanButton onClick={() => setScanOpen(true)} />
         </div>
-        <div className="w-24">
-          <FieldLabel htmlFor="electrum-port">Port</FieldLabel>
-          <input
-            id="electrum-port"
-            value={port}
-            onChange={(event) => setPort(event.target.value.replace(/\D/g, ""))}
-            inputMode="numeric"
-            placeholder="50002"
-            className="selectable h-11 w-full rounded-sm bg-sunken px-3 font-data text-[13px] text-text outline-none placeholder:text-muted/60"
-          />
-        </div>
-        <div className="flex h-11 items-center gap-2 pb-0.5">
-          <Toggle checked={tls} onChange={setTls} label="Use TLS" />
-          <span className="font-ui text-sm text-text">TLS</span>
-        </div>
-      </div>
+        <ScanRefusal reason={scanError} />
+      </>
     ),
   };
 
@@ -826,7 +879,10 @@ function BackendSection({
                 name="backend"
                 value={option.value}
                 checked={kind === option.value}
-                onChange={() => setKind(option.value)}
+                onChange={() => {
+                  setKind(option.value);
+                  setScanError(null);
+                }}
                 className="mt-1 accent-(--color-primary)"
               />
               <span>
@@ -872,7 +928,38 @@ function BackendSection({
           onCancel={() => setPending(null)}
         />
       )}
+      <ScanQrModal
+        open={scanOpen}
+        onClose={() => setScanOpen(false)}
+        onScan={(text) => void applyScan(text)}
+      />
     </SectionCard>
+  );
+}
+
+/** Opens the camera on the QR code a node prints beside its Electrum or
+    Esplora app. Nobody retypes a 56-character onion address. */
+function ScanButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button
+      variant="secondary"
+      onClick={onClick}
+      aria-label="Scan a server address QR code"
+    >
+      <ScanLine size={16} strokeWidth={1.5} aria-hidden />
+      Scan
+    </Button>
+  );
+}
+
+/** Why a scanned code was not a server address, in the core's words:
+    pointing the wrong QR at it is the likely slip, so it is named. */
+function ScanRefusal({ reason }: { reason: string | null }) {
+  if (!reason) return null;
+  return (
+    <p role="alert" className="mt-2 font-ui text-xs text-muted">
+      {reason}
+    </p>
   );
 }
 
