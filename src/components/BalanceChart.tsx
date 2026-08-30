@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { formatAmount } from "../lib/format";
+import { LOCALE, formatAmount } from "../lib/format";
 import type { Unit } from "../lib/format";
 import type { BalancePoint } from "../lib/series";
 
@@ -10,19 +10,19 @@ const GUTTER = 56;
 /** Compact axis figure in the display unit: "2 851 BTC", "1.2M sats". */
 function formatCompact(sats: number, unit: Unit): string {
   if (unit === "sats") {
-    return `${new Intl.NumberFormat(undefined, {
+    return `${new Intl.NumberFormat(LOCALE, {
       notation: "compact",
       maximumFractionDigits: 1,
     }).format(sats)}`;
   }
   const btc = sats / 100_000_000;
-  return new Intl.NumberFormat(undefined, {
+  return new Intl.NumberFormat(LOCALE, {
     maximumSignificantDigits: 3,
   }).format(btc);
 }
 
 function formatDate(t: number): string {
-  return new Date(t * 1000).toLocaleDateString(undefined, {
+  return new Date(t * 1000).toLocaleDateString(LOCALE, {
     day: "numeric",
     month: "short",
     year: "numeric",

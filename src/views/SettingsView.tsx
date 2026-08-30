@@ -50,7 +50,7 @@ import type {
   UpdateCheck,
   WalletMeta,
 } from "../lib/ipc";
-import { formatFiat, relativeTime } from "../lib/format";
+import { LOCALE, formatFiat, relativeTime } from "../lib/format";
 import {
   useCheckUpdate,
   useFiatRate,
@@ -166,9 +166,9 @@ function CertFact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** The day a certificate stops being valid, in the reader's locale. */
+/** The day a certificate stops being valid. */
 function expiryLabel(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleDateString(undefined, {
+  return new Date(unixSeconds * 1000).toLocaleDateString(LOCALE, {
     year: "numeric",
     month: "long",
     day: "numeric",

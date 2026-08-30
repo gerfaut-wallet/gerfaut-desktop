@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import { Balance, ListAmount } from "../components/Amount";
 import { BalanceChart } from "../components/BalanceChart";
 import {
+  LOCALE,
   MASKED,
   formatTimestamp,
   groupThousands,
@@ -233,7 +234,7 @@ function PriceCard() {
       {last ? (
         <div className="flex flex-wrap items-center gap-2.5">
           <span className="tabular text-[22px] font-semibold leading-tight text-text">
-            {new Intl.NumberFormat(undefined, {
+            {new Intl.NumberFormat(LOCALE, {
               style: "currency",
               currency: fiatCurrency.toUpperCase(),
               maximumFractionDigits: 0,

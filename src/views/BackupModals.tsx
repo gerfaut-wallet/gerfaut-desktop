@@ -12,6 +12,7 @@ import type {
   WalletMeta,
 } from "../lib/ipc";
 import { ipc, isCommandError } from "../lib/ipc";
+import { formatTimestamp } from "../lib/format";
 import {
   backupFilename,
   formatBytes,
@@ -452,7 +453,7 @@ export function BackupRestoreModal({
       ) : (
         <div className="flex flex-col gap-4">
           <p className="font-ui text-sm text-text">
-            Backup from {new Date(preview.created_at * 1000).toLocaleDateString()} ·{" "}
+            Backup from {formatTimestamp(preview.created_at)} ·{" "}
             {preview.wallets.length === 1 ? "1 wallet" : `${preview.wallets.length} wallets`}
           </p>
           <ul className="flex flex-col gap-2">

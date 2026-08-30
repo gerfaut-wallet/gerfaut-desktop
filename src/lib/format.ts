@@ -62,15 +62,40 @@ export function relativeTime(unixSeconds: number, nowMs = Date.now()): string {
   return `${days} d ago`;
 }
 
-/** Block timestamp -> local date/time, unambiguous and compact. */
+/** The one locale the app prints in. Gerfaut exists in English only,
+    and asking the host for its locale put a French date under an
+    English label on a French machine. Pinned here so no call site can
+    drift back to the system's — every `Intl` and `toLocale*` in the app
+    passes this. */
+export const LOCALE = "en-US";
+
+/** Month names spelled out rather than asked of the platform: the
+    mobile app carries the same table, and a block's date has to read
+    the same on both. */
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/** Block timestamp -> local date/time, unambiguous and compact. The
+    clock is 24-hour: reading when a block landed has no use for AM and
+    PM, and the mobile app states it the same way. */
 export function formatTimestamp(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const local = new Date(unixSeconds * 1000);
+  const day = String(local.getDate()).padStart(2, "0");
+  const hour = String(local.getHours()).padStart(2, "0");
+  const minute = String(local.getMinutes()).padStart(2, "0");
+  return `${MONTHS[local.getMonth()]} ${day}, ${local.getFullYear()}, ${hour}:${minute}`;
 }
 
 /** The total one side of a transaction carries. A single value nobody
@@ -126,14 +151,14 @@ export function formatAmountSigned(sats: number, unit: Unit): string {
   return sats < 0 ? formatSats(sats) : `+${formatSats(sats)}`;
 }
 
-/** Fiat value of an amount at a given BTC rate, in the user's locale. */
+/** Fiat value of an amount at a given BTC rate. */
 export function formatFiat(sats: number, rate: number, currency: string): string {
   const value = (sats / 100_000_000) * rate;
   // Each currency sets its own precision: yen, won and dong carry no
   // decimals, and forcing two on them reads as an error. Under one unit
   // the ceiling is raised to four so a small amount does not collapse
   // to zero, whatever the currency.
-  return new Intl.NumberFormat(undefined, {
+  return new Intl.NumberFormat(LOCALE, {
     style: "currency",
     currency: currency.toUpperCase(),
     ...(Math.abs(value) < 1 ? { maximumFractionDigits: 4 } : {}),

@@ -12,6 +12,24 @@ import {
   truncateMiddle,
 } from "./format";
 
+describe("formatTimestamp", () => {
+  it("prints one language, whatever the host speaks", () => {
+    // Local time, so the assertion is built the same way rather than
+    // pinned to a zone: what is under test is the wording.
+    const at = Date.UTC(2026, 7, 28, 18, 56) / 1000;
+    const local = new Date(at * 1000);
+    const hh = String(local.getHours()).padStart(2, "0");
+    const mm = String(local.getMinutes()).padStart(2, "0");
+    expect(formatTimestamp(at)).toBe(`Aug 28, 2026, ${hh}:${mm}`);
+  });
+
+  it("keeps a 24-hour clock and pads the day", () => {
+    expect(formatTimestamp(Date.UTC(2026, 0, 5, 12, 0) / 1000)).toMatch(
+      /^Jan 05, 2026, \d{2}:\d{2}$/,
+    );
+  });
+});
+
 describe("formatBtc", () => {
   it("keeps all 8 decimals", () => {
     expect(formatBtc(0)).toBe("0.00000000");
