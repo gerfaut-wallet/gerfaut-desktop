@@ -1576,20 +1576,24 @@ describe("the app lock", () => {
 
   beforeEach(() => {
     useLock.setState({ lock: null, locked: false, seen: false });
+    document.documentElement.removeAttribute("data-theme");
   });
 
   afterEach(() => {
     useLock.setState({ lock: null, locked: false, seen: false });
+    useUi.setState({ theme: "light" });
+    document.documentElement.removeAttribute("data-theme");
   });
 
-  function mockLocked(verdicts: LockVerdict[]) {
+  function mockLocked(verdicts: LockVerdict[], prefs?: Record<string, string>) {
+    const settings = prefs ? { ...LOCKED, app_prefs: prefs } : LOCKED;
     let attempt = 0;
     mockIPC((cmd) => {
       switch (cmd) {
         case "get_settings":
-          return LOCKED;
+          return settings;
         case "app_lock":
-          return LOCKED.app_lock;
+          return settings.app_lock;
         case "verify_app_lock":
           return verdicts[Math.min(attempt++, verdicts.length - 1)];
         case "list_wallets":
@@ -1621,6 +1625,51 @@ describe("the app lock", () => {
     expect(screen.queryByText(WALLET.name)).not.toBeInTheDocument();
   });
 
+  it("syncs nothing while the curtain is drawn", async () => {
+    // A sync behind the lock screen posts a notification naming a
+    // wallet and an amount over it — the one thing the screen exists
+    // to stop. The refresh is not dropped, only held back.
+    let syncs = 0;
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "get_settings":
+          return LOCKED;
+        case "app_lock":
+          return LOCKED.app_lock;
+        case "verify_app_lock":
+          return { unlocked: true, failures: 0, retry_after_secs: 0 };
+        case "list_wallets":
+          return [WALLET];
+        case "wallet_snapshot":
+          return SNAPSHOT;
+        case "utxos":
+          return [];
+        case "receive_addresses":
+          return receiveEntries(0);
+        case "fetch_price_history":
+          return PRICE_HISTORY;
+        case "set_app_pref":
+          return undefined;
+        case "sync_all":
+          syncs += 1;
+          return { reports: [], failures: [] };
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderApp();
+    const user = userEvent.setup();
+
+    await screen.findByText("Locked");
+    expect(syncs).toBe(0);
+
+    await user.type(screen.getByLabelText("PIN"), "1234");
+    await user.click(screen.getByRole("button", { name: /unlock/i }));
+    await screen.findByRole("navigation", { name: "Navigation" });
+
+    await waitFor(() => expect(syncs).toBe(1));
+  });
+
   it("says a wrong PIN plainly and stays", async () => {
     mockLocked([{ unlocked: false, failures: 1, retry_after_secs: 0 }]);
     renderApp();
@@ -1641,9 +1690,11 @@ describe("the app lock", () => {
     await user.type(await screen.findByLabelText("PIN"), "0000");
     await user.click(screen.getByRole("button", { name: /unlock/i }));
 
-    expect(
-      await screen.findByText("Too many attempts. Try again in 5 s"),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Too many attempts. Try again in 5 s",
+      );
+    });
     expect(screen.getByRole("button", { name: /unlock/i })).toBeDisabled();
     expect(screen.getByLabelText("PIN")).toBeDisabled();
   });
@@ -1660,6 +1711,79 @@ describe("the app lock", () => {
       await screen.findByRole("navigation", { name: "Navigation" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("Locked")).not.toBeInTheDocument();
+  });
+
+  it("Ctrl+L draws the curtain again", async () => {
+    mockLocked([{ unlocked: true, failures: 0, retry_after_secs: 0 }]);
+    renderApp();
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByLabelText("PIN"), "1234");
+    await user.click(screen.getByRole("button", { name: /unlock/i }));
+    await screen.findByRole("navigation", { name: "Navigation" });
+
+    await user.keyboard("{Control>}l{/Control}");
+
+    expect(await screen.findByText("Locked")).toBeInTheDocument();
+    expect(screen.queryByText(WALLET.name)).not.toBeInTheDocument();
+  });
+
+  it("decides the lock before a wallet or a theme reaches the screen", async () => {
+    // The frame that matters is the one where the vault answers with
+    // the wallet list already in hand — a refetch, a remount, a slow
+    // keychain. Everything is ready to be drawn, and the lock and the
+    // theme both live in the answer that has only just landed. Read
+    // from an ordinary effect they arrive a frame late, and the
+    // sidebar, the wallet names and the light ramp are drawn once
+    // before the lock screen takes their place.
+    mockLocked([{ unlocked: false, failures: 1, retry_after_secs: 0 }], {
+      "onboarding.seen": "1",
+      "desktop.theme": "dark",
+    });
+
+    // One observer for the document and the theme alike, so what it
+    // collects comes back in the order the screen actually changed.
+    const drawn: string[] = [];
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.type === "attributes") {
+          drawn.push(`theme:${document.documentElement.dataset.theme}`);
+          continue;
+        }
+        for (const node of Array.from(record.addedNodes)) {
+          const text = node.textContent ?? "";
+          if (text.includes(WALLET.name)) drawn.push("wallet");
+          else if (text.includes("Locked")) drawn.push("lock");
+        }
+      }
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+      childList: true,
+      subtree: true,
+    });
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    client.setQueryData(["wallets", "signet"], [WALLET]);
+    try {
+      render(
+        <QueryClientProvider client={client}>
+          <App />
+        </QueryClientProvider>,
+      );
+      await screen.findByText("Locked");
+    } finally {
+      observer.disconnect();
+    }
+
+    expect(drawn).not.toContain("wallet");
+    expect(drawn).toContain("lock");
+    // And the theme is the first thing the vault's answer changes, so
+    // no frame is ever painted on the wrong ramp.
+    expect(drawn[0]).toBe("theme:dark");
   });
 
   it("a PIN field takes digits only", async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "./components/Button";
 import { EmptyState } from "./components/EmptyState";
 import { Toast } from "./components/Toast";
@@ -37,31 +37,45 @@ export default function App() {
   const hydrated = useRef(false);
   const autosynced = useRef(false);
   const locked = useLock((state) => state.locked);
+  const lockSeen = useLock((state) => state.seen);
   const syncLock = useLock((state) => state.syncFromSettings);
   const [tourOpen, setTourOpen] = useState(false);
   useLockShortcut();
 
-  // The vault says whether a lock exists; the first read with one in it
-  // is what puts the lock screen up.
-  useEffect(() => {
-    if (settings.data) syncLock(settings.data.app_lock);
-  }, [settings.data, syncLock]);
-
-  // Hydrate UI prefs from the vault once.
-  useEffect(() => {
+  // Both of these read the vault, and both have to land before the
+  // browser paints, so they run in layout effects rather than ordinary
+  // ones: the theme decides what the very first frame looks like, and
+  // the lock decides whether that frame may show a wallet at all. An
+  // effect running after the commit drew the sidebar and the wallet
+  // names once before the lock screen took their place, which is the
+  // one thing a lock exists to prevent. The render below waits on
+  // `lockSeen` so the shell is never even built in that frame.
+  useLayoutEffect(() => {
     if (settings.data && !hydrated.current) {
       hydrated.current = true;
       hydratePrefs(settings.data.app_prefs);
     }
   }, [settings.data, hydratePrefs]);
 
-  // One background refresh at startup; data stays visibly stamped.
+  // The vault says whether a lock exists; the first read with one in it
+  // is what puts the lock screen up.
+  useLayoutEffect(() => {
+    if (settings.data) syncLock(settings.data.app_lock);
+  }, [settings.data, syncLock]);
+
+  // One background refresh at startup; data stays visibly stamped. It
+  // waits for the lock, like the rhythm below: a sync that lands behind
+  // the lock screen posts a notification naming a wallet and an amount
+  // over it, which is the one thing the screen is there to stop. The
+  // refresh is not lost, it is deferred — unlocking runs this effect
+  // again with `autosynced` still false.
   useEffect(() => {
+    if (locked) return;
     if (wallets.data && wallets.data.length > 0 && !autosynced.current && network) {
       autosynced.current = true;
       syncAll.mutate(network);
     }
-  }, [wallets.data, network, syncAll]);
+  }, [wallets.data, network, syncAll, locked]);
 
   // And then on the rhythm the user chose, while the window is open and
   // unlocked. It talks to the configured backend and to nothing else.
@@ -94,20 +108,25 @@ export default function App() {
     if (settings.data && emptyVault && !tourSeen && !locked) setTourOpen(true);
   }, [settings.data, emptyVault, tourSeen, locked]);
 
-  if (settings.isPending || wallets.isPending) {
-    return (
-      <div className="shell-rail flex h-full items-center justify-center bg-shell">
-        <p className="font-ui text-sm text-muted">Opening vault…</p>
-      </div>
-    );
-  }
-  if (settings.isError || wallets.isError || !settings.data) {
+  if (settings.isError || wallets.isError) {
     return (
       <div className="shell-rail flex h-full items-center justify-center bg-shell">
         <p className="max-w-sm text-center font-ui text-sm text-muted">
           The vault could not be opened. Restart Gerfaut; if this persists, the
           OS credential store refused access to the vault key.
         </p>
+      </div>
+    );
+  }
+  // Still opening — and until the lock has been read the vault is, as
+  // far as this screen is concerned, still opening. The splash stays a
+  // self-contained dark island: the theme lives in the vault too, so
+  // there is nothing to follow yet and a light sheet here would flash
+  // white on the way to a dark one.
+  if (settings.isPending || wallets.isPending || !settings.data || !lockSeen) {
+    return (
+      <div className="shell-rail flex h-full items-center justify-center bg-shell">
+        <p className="font-ui text-sm text-muted">Opening vault…</p>
       </div>
     );
   }
