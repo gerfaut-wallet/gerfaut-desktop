@@ -1,5 +1,4 @@
 import {
-  AlertTriangle,
   Check,
   ChevronDown,
   ChevronUp,
@@ -15,6 +14,7 @@ import { AddressChip } from "../components/AddressChip";
 import { StackedAmount } from "../components/Amount";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
+import { Notice } from "../components/Notice";
 import type { AddressRow } from "../lib/ipc";
 import { useAddressList, useReceiveAddresses, useSnapshot } from "../state/queries";
 import { useUi } from "../state/store";
@@ -127,20 +127,14 @@ export function ReceiveView({ walletId }: { walletId: string }) {
                     )}
                   </div>
 
+                  {/* A convention other software follows, not a risk to
+                      funds or privacy: amber, and the info glyph. */}
                   {!singleAddress && offset >= gapLimit && (
-                    <div className="flex items-start gap-2 rounded-md bg-pending-surface p-3">
-                      <AlertTriangle
-                        size={15}
-                        strokeWidth={1.75}
-                        aria-hidden
-                        className="mt-0.5 shrink-0 text-pending"
-                      />
-                      <p className="font-ui text-xs text-pending">
-                        This is {offset} addresses past the next unused one — beyond
-                        the gap limit of {gapLimit}, other wallet software may not
-                        detect funds received here.
-                      </p>
-                    </div>
+                    <Notice tone="info">
+                      This is {offset} addresses past the next unused one — beyond
+                      the gap limit of {gapLimit}, other wallet software may not
+                      detect funds received here.
+                    </Notice>
                   )}
 
                   <div className="flex flex-wrap items-center gap-2">
@@ -171,22 +165,14 @@ export function ReceiveView({ walletId }: { walletId: string }) {
               </div>
             </div>
 
-            <div className="flex items-start gap-2.5 rounded-md border border-alert/25 bg-alert-surface p-4">
-              <AlertTriangle
-                size={16}
-                strokeWidth={1.75}
-                aria-hidden
-                className="mt-0.5 shrink-0 text-alert"
-              />
-              <div>
-                <p className="font-ui text-sm font-medium text-alert">
-                  Verify this address on your signing device before sharing it.
-                </p>
-                <p className="mt-0.5 font-ui text-xs text-muted">
-                  Gerfaut only watches: it never holds the keys behind it.
-                </p>
-              </div>
-            </div>
+            <Notice tone="alert">
+              <span className="font-medium">
+                Verify this address on your signing device before sharing it.
+              </span>
+              <span className="mt-0.5 block text-xs text-muted">
+                Gerfaut only watches: it never holds the keys behind it.
+              </span>
+            </Notice>
 
             <Modal open={qrOpen} onClose={() => setQrOpen(false)} title="Address QR code" centered>
               <div className="flex flex-col items-center gap-4">

@@ -1,5 +1,4 @@
 import {
-  AlertTriangle,
   Check,
   Coins,
   Compass,
@@ -30,6 +29,7 @@ import { SecuritySection } from "./settings/SecuritySection";
 import { TorSection } from "./settings/TorSection";
 import { WelcomeTour } from "./WelcomeTour";
 import { Modal } from "../components/Modal";
+import { Notice } from "../components/Notice";
 import { ScanQrModal } from "../components/ScanQrModal";
 import { Select } from "../components/Select";
 import { FieldLabel, SectionCard, Segmented, SettingRow, Toggle } from "./settings/primitives";
@@ -215,18 +215,10 @@ export function CertificateDialog({
       <div className="flex flex-col gap-4">
         {changed ? (
           <>
-            <div className="flex items-start gap-2.5 rounded-md border border-alert/25 bg-alert-surface p-3">
-              <AlertTriangle
-                size={16}
-                strokeWidth={1.75}
-                aria-hidden
-                className="mt-0.5 shrink-0 text-alert"
-              />
-              <p className="font-ui text-sm text-text">
-                {report.host} was accepted with another certificate. Either whoever runs it
-                replaced it, or something is answering in its place.
-              </p>
-            </div>
+            <Notice tone="alert">
+              {report.host} was accepted with another certificate. Either whoever runs it
+              replaced it, or something is answering in its place.
+            </Notice>
             <div>
               <p className="mb-1 font-ui text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
                 Accepted before
@@ -1138,13 +1130,10 @@ function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; gapLimit
                   </p>
                 )}
                 {confirmRemove === wallet.id && (
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-alert/25 bg-alert-surface p-3">
-                    <span className="flex items-center gap-2 font-ui text-sm text-alert">
-                      <AlertTriangle size={16} strokeWidth={1.5} aria-hidden />
-                      You are removing "{wallet.name}" from Gerfaut. This only
-                      stops watching. Nothing moves on chain.
-                    </span>
-                    <span className="flex items-center gap-2">
+                  <Notice
+                    tone="info"
+                    className="mt-3"
+                    action={<span className="flex items-center gap-2">
                       <Button
                         variant="danger"
                         className="h-9"
@@ -1164,8 +1153,11 @@ function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; gapLimit
                       >
                         Cancel
                       </Button>
-                    </span>
-                  </div>
+                    </span>}
+                  >
+                    You are removing "{wallet.name}" from Gerfaut. This only
+                    stops watching. Nothing moves on chain.
+                  </Notice>
                 )}
               </li>
             );

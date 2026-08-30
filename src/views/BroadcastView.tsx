@@ -21,6 +21,7 @@ import { AddressChip } from "../components/AddressChip";
 import { StackedAmount } from "../components/Amount";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
+import { Notice } from "../components/Notice";
 import { ScanQrModal } from "../components/ScanQrModal";
 import { TxDiagram } from "../components/TxDiagram";
 import type { TxBranch } from "../components/TxDiagram";
@@ -177,26 +178,15 @@ export function BroadcastView({ network }: { network: Network }) {
         {preview.data && !sent && (
           <>
             <PreviewCard preview={preview.data} />
+            {/* A node that says no risks neither funds nor privacy —
+                but nothing else on the page says the send failed. */}
             {broadcastError && (
-              <div
-                role="alert"
-                className="flex items-start gap-2.5 rounded-md border border-alert/25 bg-alert-surface p-4"
-              >
-                <AlertTriangle
-                  size={16}
-                  strokeWidth={1.75}
-                  aria-hidden
-                  className="mt-0.5 shrink-0 text-alert"
-                />
-                <div className="min-w-0">
-                  <p className="font-ui text-sm font-medium text-alert">
-                    The network refused this transaction.
-                  </p>
-                  <p className="selectable mt-0.5 break-words font-data text-xs text-muted">
-                    {broadcastError}
-                  </p>
-                </div>
-              </div>
+              <Notice tone="info" role="alert">
+                <span className="font-medium">The network refused this transaction.</span>
+                <span className="selectable mt-0.5 block break-words font-data text-xs text-muted">
+                  {broadcastError}
+                </span>
+              </Notice>
             )}
             <div className="flex flex-wrap items-center justify-between gap-3 px-1">
               <Button variant="ghost" onClick={startOver}>
@@ -788,15 +778,16 @@ function StatusCard({
         title="Open an external explorer?"
         centered
       >
-        <div className="flex items-start gap-2.5 rounded-md border border-alert/25 bg-alert-surface p-4">
-          <AlertTriangle size={16} strokeWidth={1.75} aria-hidden className="mt-0.5 shrink-0 text-alert" />
-          <div>
-            <p className="font-ui text-sm font-medium text-alert">
-              The explorer's operator can link this transaction to your IP address.
-            </p>
-            <p className="mt-0.5 font-ui text-xs text-muted">Use a VPN or Tor if that matters to you.</p>
-          </div>
-        </div>
+        {/* Handing an operator the link between this transaction and an
+            IP address is a privacy loss: red, by the rule. */}
+        <Notice tone="alert">
+          <span className="font-medium">
+            The explorer's operator can link this transaction to your IP address.
+          </span>
+          <span className="mt-0.5 block text-xs text-muted">
+            Use a VPN or Tor if that matters to you.
+          </span>
+        </Notice>
         <label className="mt-4 flex cursor-pointer items-center gap-2 font-ui text-sm text-text">
           <input
             type="checkbox"
