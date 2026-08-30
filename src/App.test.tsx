@@ -1571,7 +1571,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 describe("the app lock", () => {
   const LOCKED: Settings = {
     ...SETTINGS,
-    app_lock: { kind: "pin", auto_lock_secs: 60, biometric: false },
+    app_lock: { kind: "pin", biometric: false },
   };
 
   beforeEach(() => {

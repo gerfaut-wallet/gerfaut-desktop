@@ -392,17 +392,6 @@ async fn verify_app_lock(
     Ok(state.manager.verify_app_lock(&secret).await?)
 }
 
-/// Seconds away from the app before it locks again; null means only at
-/// launch and on request.
-#[tauri::command]
-async fn set_auto_lock(
-    state: tauri::State<'_, AppState>,
-    secs: Option<u32>,
-    current: String,
-) -> CommandResult<()> {
-    Ok(state.manager.set_auto_lock(secs, &current).await?)
-}
-
 // --- backup ------------------------------------------------------------
 
 /// Seals the chosen wallets under a password: base64 for a file, UR
@@ -570,7 +559,6 @@ pub fn run() {
             set_app_lock,
             clear_app_lock,
             verify_app_lock,
-            set_auto_lock,
             export_backup,
             save_backup_file,
             read_backup_file,

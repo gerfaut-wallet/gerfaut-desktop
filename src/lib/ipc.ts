@@ -317,11 +317,9 @@ export interface TorStatus {
 
 export type LockKind = "pin" | "password";
 
-/** The app lock as the apps see it: kind and timing, never the hash. */
+/** The app lock as the apps see it: kind, never the hash. */
 export interface AppLock {
   kind: LockKind;
-  /** Seconds away before locking again; null means only at launch. */
-  auto_lock_secs: number | null;
   biometric: boolean;
 }
 
@@ -673,8 +671,6 @@ export const ipc = {
     invoke<void>("set_app_lock", { kind, secret, current: current ?? null }),
   clearAppLock: (current: string) => invoke<void>("clear_app_lock", { current }),
   verifyAppLock: (secret: string) => invoke<LockVerdict>("verify_app_lock", { secret }),
-  setAutoLock: (secs: number | null, current: string) =>
-    invoke<void>("set_auto_lock", { secs, current }),
   exportBackup: (options: BackupOptions, password: string) =>
     invoke<BackupBundle>("export_backup", { options, password }),
   saveBackupFile: (path: string, data: string) =>

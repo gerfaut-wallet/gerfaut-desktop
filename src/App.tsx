@@ -3,7 +3,7 @@ import { Button } from "./components/Button";
 import { EmptyState } from "./components/EmptyState";
 import { Toast } from "./components/Toast";
 import { Sidebar } from "./shell/Sidebar";
-import { useAutoLock, useLock } from "./state/lock";
+import { useLock, useLockShortcut } from "./state/lock";
 import { LockScreen } from "./views/LockScreen";
 import { WelcomeTour } from "./views/WelcomeTour";
 import { useSettings, useSyncAll, useSyncing, useWallets } from "./state/queries";
@@ -39,7 +39,7 @@ export default function App() {
   const locked = useLock((state) => state.locked);
   const syncLock = useLock((state) => state.syncFromSettings);
   const [tourOpen, setTourOpen] = useState(false);
-  useAutoLock();
+  useLockShortcut();
 
   // The vault says whether a lock exists; the first read with one in it
   // is what puts the lock screen up.

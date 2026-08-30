@@ -5,22 +5,9 @@ import { Modal } from "../../components/Modal";
 import type { AppLock, LockKind } from "../../lib/ipc";
 import { isCommandError } from "../../lib/ipc";
 import { useLock } from "../../state/lock";
-import {
-  useClearAppLock,
-  useSetAppLock,
-  useSetAutoLock,
-} from "../../state/queries";
+import { useClearAppLock, useSetAppLock } from "../../state/queries";
 import { useUi } from "../../state/store";
 import { FieldLabel, SectionCard, Segmented, SettingRow, Toggle } from "./primitives";
-
-/** How long Gerfaut may sit idle before it asks again. */
-const DELAYS: { value: string; label: string }[] = [
-  { value: "0", label: "Immediately" },
-  { value: "60", label: "1 min" },
-  { value: "300", label: "5 min" },
-  { value: "900", label: "15 min" },
-  { value: "never", label: "Never" },
-];
 
 /** A secret field, hidden as it is typed. */
 function SecretField({
@@ -53,19 +40,14 @@ function SecretField({
 }
 
 /** The settings card that turns the lock on, changes its secret, and
-    says when it comes back. */
+    puts it back up on demand. */
 export function SecuritySection({ lock }: { lock: AppLock | null }) {
   const { showToast } = useUi();
   const lockNow = useLock((state) => state.lockNow);
   const setAppLock = useSetAppLock();
   const clearAppLock = useClearAppLock();
-  const setAutoLock = useSetAutoLock();
 
-  const [dialog, setDialog] = useState<"on" | "off" | "change" | "delay" | null>(
-    null,
-  );
-  /** The delay waiting for the secret that confirms it. */
-  const [pendingDelay, setPendingDelay] = useState<number | null>(null);
+  const [dialog, setDialog] = useState<"on" | "off" | "change" | null>(null);
   const [kind, setKind] = useState<LockKind>("pin");
   const [current, setCurrent] = useState("");
   const [secret, setSecret] = useState("");
@@ -124,31 +106,12 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
     }
   };
 
-  // Changing when the lock comes back is a change to the lock: it asks
-  // for the secret, like turning it off does. Someone standing at an
-  // unlocked computer must not be able to set "Never" quietly.
-  const chooseDelay = (value: string) => {
-    setPendingDelay(value === "never" ? null : Number(value));
-    setProblem(null);
-    setDialog("delay");
-  };
-
-  const saveDelay = async () => {
-    try {
-      await setAutoLock.mutateAsync({ secs: pendingDelay, current });
-      showToast("Setting saved");
-      close();
-    } catch (error) {
-      setProblem(isCommandError(error) ? error.message : String(error));
-    }
-  };
-
   return (
     <SectionCard icon={<Lock size={18} strokeWidth={1.5} />} title="Security">
       <div className="flex flex-col gap-5">
         <SettingRow
           title="App lock"
-          hint="Asked when Gerfaut opens and after it stays idle for a while. The vault is encrypted either way; the lock is what stops someone at your unlocked computer."
+          hint="Asked when Gerfaut opens, and not again until you close it — Ctrl+L locks it before then. The vault is encrypted either way; the lock is what stops someone at your unlocked computer."
         >
           <Toggle
             checked={lock !== null}
@@ -166,31 +129,21 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
         </SettingRow>
 
         {lock && (
-          <>
-            <SettingRow title="Lock after" hint="Never still asks at launch.">
-              <Segmented
-                label="Lock after"
-                value={lock.auto_lock_secs === null ? "never" : String(lock.auto_lock_secs)}
-                onChange={chooseDelay}
-                options={DELAYS}
-              />
-            </SettingRow>
-            <div className="flex gap-2">
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setKind(lock.kind);
-                  setProblem(null);
-                  setDialog("change");
-                }}
-              >
-                {lock.kind === "pin" ? "Change PIN" : "Change password"}
-              </Button>
-              <Button variant="ghost" onClick={lockNow}>
-                Lock now
-              </Button>
-            </div>
-          </>
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setKind(lock.kind);
+                setProblem(null);
+                setDialog("change");
+              }}
+            >
+              {lock.kind === "pin" ? "Change PIN" : "Change password"}
+            </Button>
+            <Button variant="ghost" onClick={lockNow}>
+              Lock now
+            </Button>
+          </div>
         )}
       </div>
 
@@ -256,36 +209,6 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
             </Button>
             <Button variant="primary" onClick={() => void save()}>
               {dialog === "change" ? "Change" : "Turn on"}
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        open={dialog === "delay"}
-        onClose={close}
-        centered
-        width={440}
-        title="Change when the lock comes back"
-      >
-        <div className="flex flex-col gap-4">
-          <SecretField
-            id="lock-current-delay"
-            label={lock?.kind === "pin" ? "PIN" : "Password"}
-            value={current}
-            onChange={(value) => {
-              setCurrent(value);
-              setProblem(null);
-            }}
-            autoFocus
-          />
-          {problem && <p className="font-ui text-xs text-muted">{problem}</p>}
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={close}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={() => void saveDelay()}>
-              Save
             </Button>
           </div>
         </div>

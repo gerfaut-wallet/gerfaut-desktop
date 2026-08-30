@@ -414,15 +414,6 @@ export function useClearAppLock() {
   });
 }
 
-export function useSetAutoLock() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (args: { secs: number | null; current: string }) =>
-      ipc.setAutoLock(args.secs, args.current),
-    onSuccess: () => void client.invalidateQueries({ queryKey: keys.settings }),
-  });
-}
-
 export function useForgetCertificate() {
   const client = useQueryClient();
   return useMutation({
