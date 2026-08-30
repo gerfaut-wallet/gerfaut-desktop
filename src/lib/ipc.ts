@@ -130,6 +130,23 @@ export interface TxIo {
   /** Output on the wallet's change keychain. */
   change: boolean;
   op_return: OpReturnData | null;
+  /** For an input, the transaction of the output it spends. Two inputs
+      can share an address; only the outpoint names one of them. */
+  prev_txid: string | null;
+  /** For an input, the index of the output it spends. */
+  prev_vout: number | null;
+}
+
+/** A server address read out of a scan or a paste. Fills the backend
+    form; nothing is saved until the person presses Save. */
+export interface ScannedBackend {
+  kind: "electrum" | "esplora";
+  /** The address in the form the backend configuration stores. */
+  url: string;
+  host: string;
+  port: number | null;
+  tls: boolean;
+  onion: boolean;
 }
 
 /** Deep transaction facts; null only for watched-address entries synced
