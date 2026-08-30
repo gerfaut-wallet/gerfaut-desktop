@@ -89,9 +89,19 @@ export function WelcomeTour({ open, onClose }: { open: boolean; onClose: () => v
         </div>
 
         <div className="flex w-full items-center justify-between pt-2">
-          <Button variant="ghost" onClick={done}>
-            Skip
-          </Button>
+          {/* A page one can only leave or step past is re-read by
+              starting over: Back takes the left from the second page
+              on, and Skip stays reachable beside it. */}
+          <div className="flex items-center gap-1">
+            {step > 0 && (
+              <Button variant="ghost" onClick={() => setStep(step - 1)}>
+                Back
+              </Button>
+            )}
+            <Button variant="ghost" onClick={done}>
+              Skip
+            </Button>
+          </div>
           <Button
             variant="primary"
             onClick={() => (last ? done() : setStep(step + 1))}
