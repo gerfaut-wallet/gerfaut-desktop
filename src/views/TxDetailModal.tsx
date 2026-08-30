@@ -18,16 +18,19 @@ import {
   Wallet as WalletIcon,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
-import type { Network, TxDetail, TxExtras, TxIo } from "../lib/ipc";
+import type { Network, PriceHistory, PricePoint, TxDetail, TxExtras, TxIo } from "../lib/ipc";
 import {
   MASKED,
   formatAmount,
   formatAmountSigned,
+  formatFiat,
   formatTimestamp,
   groupThousands,
+  opReturnPreview,
 } from "../lib/format";
 import { explorerTxUrl } from "../lib/explorer";
 import { useTxDetail } from "../state/queries";
@@ -35,24 +38,32 @@ import { useUi } from "../state/store";
 import { AddressChip } from "../components/AddressChip";
 import { StackedAmount, useFiatValue } from "../components/Amount";
 import { Button, IconButton } from "../components/Button";
-import { FlowSummary, opReturnPreview } from "../components/FlowSummary";
 import { Modal } from "../components/Modal";
 import { StatusPill } from "../components/StatusPill";
+import { TxDiagram } from "../components/TxDiagram";
+import type { TxBranch } from "../components/TxDiagram";
 
-/** Transaction detail: the amount and its status first, the flow in
-    one line, then two calm fact cards, the inputs and outputs, and the
-    raw transaction behind a disclosure. Same facts as before, read in
-    the order a person asks for them. */
+/** Transaction detail: how much and what state, then the three facts
+    one looks for first, then the diagram, then the inputs and outputs
+    in full, and only then the technical facts and the raw bytes — the
+    order the questions come in, not the order the chain serializes. */
 export function TxDetailModal({ walletId, network }: { walletId: string; network: Network }) {
   const { selectedTxid, selectTx, explorerAck, setExplorerAck } = useUi();
   const detail = useTxDetail(walletId, selectedTxid);
   const [confirmExplorer, setConfirmExplorer] = useState(false);
   const [skipNextTime, setSkipNextTime] = useState(false);
 
-  const explorerUrl = detail.data && explorerTxUrl(network, detail.data.summary.txid);
+  const explorerUrl = detail.data ? explorerTxUrl(network, detail.data.summary.txid) : "";
 
   const openExplorer = () => {
     if (explorerUrl) void openUrl(explorerUrl);
+  };
+
+  // The warning stands between the page and the explorer wherever the
+  // button sits: moving it up the page does not move it out of the way.
+  const askExplorer = () => {
+    if (explorerAck) openExplorer();
+    else setConfirmExplorer(true);
   };
 
   return (
@@ -63,92 +74,15 @@ export function TxDetailModal({ walletId, network }: { walletId: string; network
       )}
       {detail.data && (
         <div className="flex flex-col gap-6">
-          <Hero detail={detail.data} />
+          <Hero detail={detail.data} onExplorer={explorerUrl === "" ? null : askExplorer} />
 
-          <FlowSummary
-            inputs={detail.data.inputs}
-            outputs={detail.data.outputs}
+          <KeyFacts detail={detail.data} />
+
+          <TxDiagram
+            inputs={inputBranches(detail.data)}
+            outputs={outputBranches(detail.data)}
             feeSats={detail.data.summary.fee_sats}
-            feeRate={detail.data.fee_rate_sat_vb}
-            isCoinbase={detail.data.extras?.is_coinbase ?? false}
-            coinbasePool={detail.data.extras?.coinbase_pool ?? null}
           />
-
-          <div className="grid gap-4 lg:grid-cols-2">
-            <FactsCard title="Details">
-              <Fact label="Transaction ID">
-                <AddressChip value={detail.data.summary.txid} head={10} tail={8} />
-              </Fact>
-              <Fact label="Date">
-                {detail.data.summary.status.state === "confirmed" &&
-                detail.data.summary.status.timestamp ? (
-                  <Value>{formatTimestamp(detail.data.summary.status.timestamp)}</Value>
-                ) : (
-                  <Value muted>not yet mined</Value>
-                )}
-              </Fact>
-              <Fact label="Block">
-                {detail.data.summary.status.state === "confirmed" ? (
-                  <Value>{groupThousands(String(detail.data.summary.status.height))}</Value>
-                ) : (
-                  <Value muted>—</Value>
-                )}
-              </Fact>
-              <Fact label="Confirmations">
-                <Value>{groupThousands(String(detail.data.summary.confirmations))}</Value>
-              </Fact>
-              <Fact label="Fee">
-                {detail.data.summary.fee_sats !== null ? (
-                  <FeeAmount sats={detail.data.summary.fee_sats} />
-                ) : (
-                  <Value muted>n/a</Value>
-                )}
-              </Fact>
-              <Fact label="Fee rate">
-                <Value>
-                  {detail.data.fee_rate_sat_vb !== null
-                    ? `${detail.data.fee_rate_sat_vb.toFixed(1)} sat/vB`
-                    : "n/a"}
-                </Value>
-              </Fact>
-            </FactsCard>
-
-            <FactsCard title="Technical">
-              {detail.data.extras ? (
-                <>
-                  <Fact label="Size">
-                    <Value>{groupThousands(String(detail.data.extras.size_bytes))} B</Value>
-                  </Fact>
-                  <Fact label="Virtual size">
-                    <Value>{groupThousands(String(detail.data.extras.vsize))} vB</Value>
-                  </Fact>
-                  <Fact label="Weight">
-                    <Value>{groupThousands(String(detail.data.extras.weight_wu))} WU</Value>
-                  </Fact>
-                  <Fact label="Version">
-                    <Value>{detail.data.extras.version}</Value>
-                  </Fact>
-                  <Fact label="Locktime">
-                    <Value>
-                      {detail.data.extras.locktime > 0
-                        ? groupThousands(String(detail.data.extras.locktime))
-                        : "none"}
-                    </Value>
-                  </Fact>
-                  <Fact label="Sigops">
-                    <Value>{groupThousands(String(detail.data.extras.sigops))}</Value>
-                  </Fact>
-                  <Fact label="Flags">
-                    <Flags extras={detail.data.extras} outputs={detail.data.outputs} />
-                  </Fact>
-                </>
-              ) : (
-                <Fact label="Virtual size">
-                  <Value>{groupThousands(String(detail.data.vsize))} vB</Value>
-                </Fact>
-              )}
-            </FactsCard>
-          </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
             <IoList
@@ -156,10 +90,7 @@ export function TxDetailModal({ walletId, network }: { walletId: string; network
               ios={detail.data.inputs}
               side="in"
               extras={detail.data.extras}
-              coinbaseValue={detail.data.outputs.reduce(
-                (total, io) => total + (io.value_sats ?? 0),
-                0,
-              )}
+              coinbaseValue={coinbaseReward(detail.data)}
             />
             <IoList
               title="Outputs"
@@ -170,25 +101,13 @@ export function TxDetailModal({ walletId, network }: { walletId: string; network
             />
           </div>
 
-          <div className="flex flex-wrap items-start justify-between gap-3 border-t border-border/60 pt-4">
-            {detail.data.extras && detail.data.extras.raw_hex.length > 0 ? (
+          <TechnicalFacts detail={detail.data} />
+
+          {detail.data.extras && detail.data.extras.raw_hex.length > 0 && (
+            <div className="border-t border-border/60 pt-4">
               <RawTransaction hex={detail.data.extras.raw_hex} />
-            ) : (
-              <span />
-            )}
-            {explorerUrl !== "" && explorerUrl !== undefined && (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  if (explorerAck) openExplorer();
-                  else setConfirmExplorer(true);
-                }}
-              >
-                View on mempool.space
-                <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
-              </Button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -246,15 +165,74 @@ export function TxDetailModal({ walletId, network }: { walletId: string; network
   );
 }
 
-/** What happened, in one glance: direction, amount, status. */
-function Hero({ detail }: { detail: TxDetail }) {
+/** A coinbase input spends nothing: what it creates is the reward. */
+function coinbaseReward(detail: TxDetail): number {
+  return detail.outputs.reduce((total, io) => total + (io.value_sats ?? 0), 0);
+}
+
+/** Every input and every output the wallet's own: the net is only the
+    fee, and "Sent" would name it wrong. */
+function isSelfTransfer(detail: TxDetail): boolean {
+  return (
+    detail.inputs.length > 0 &&
+    detail.outputs.length > 0 &&
+    detail.inputs.every((io) => io.is_mine) &&
+    detail.outputs.every((io) => io.is_mine)
+  );
+}
+
+/** Inputs as diagram branches. An input is named by its outpoint: two
+    inputs can carry the same address, never the same outpoint — and the
+    outpoint comes from the transaction, not from the backend, so it is
+    there even when the value is not. */
+function inputBranches(detail: TxDetail): TxBranch[] {
+  const coinbase = detail.extras?.is_coinbase ?? false;
+  const reward = coinbaseReward(detail);
+  return detail.inputs.map((io): TxBranch => {
+    const outpoint = io.prev_txid ? `${io.prev_txid}:${io.prev_vout ?? 0}` : "Unknown input";
+    return {
+      role: coinbase ? "coinbase" : io.is_mine ? "wallet-in" : "external-in",
+      label: coinbase ? "Coinbase" : outpoint,
+      amount: io.value_sats ?? (coinbase ? reward : null),
+      isMine: io.is_mine,
+    };
+  });
+}
+
+/** Outputs as diagram branches: of an output one asks where to. */
+function outputBranches(detail: TxDetail): TxBranch[] {
+  return detail.outputs.map(
+    (io): TxBranch => ({
+      role: io.op_return
+        ? "op-return"
+        : io.is_mine
+          ? io.change
+            ? "change"
+            : "received"
+          : "external-out",
+      label: io.op_return ? opReturnPreview(io.op_return) : (io.address ?? "Script output"),
+      amount: io.value_sats,
+      isMine: io.is_mine,
+    }),
+  );
+}
+
+/** What happened, in one glance: direction, amount, status — and the
+    explorer within reach, behind its warning. */
+function Hero({ detail, onExplorer }: { detail: TxDetail; onExplorer: (() => void) | null }) {
   const { masked, unit } = useUi();
   const sats = detail.summary.net_sats;
   const fiat = useFiatValue(sats);
   const coinbase = detail.extras?.is_coinbase ?? false;
-  const direction = coinbase ? "Block reward" : sats >= 0 ? "Received" : "Sent";
+  const direction = coinbase
+    ? "Block reward"
+    : isSelfTransfer(detail)
+      ? "Sent to yourself"
+      : sats >= 0
+        ? "Received"
+        : "Sent";
   return (
-    <div className="flex flex-wrap items-end justify-between gap-4">
+    <section aria-label="Summary" className="flex flex-wrap items-start justify-between gap-4">
       <div className="selectable">
         <p className="font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
           {direction}
@@ -264,15 +242,149 @@ function Hero({ detail }: { detail: TxDetail }) {
         </p>
         {fiat && <p className="tabular mt-1 text-[13px] text-muted">{fiat}</p>}
       </div>
-      <div className="flex items-center gap-2 pb-1">
-        <StatusPill status={detail.summary.status} confirmations={detail.summary.confirmations} />
-        {detail.summary.status.state === "confirmed" && (
-          <span className="tabular text-xs text-muted">
-            block {groupThousands(String(detail.summary.status.height))}
-          </span>
+      <div className="flex flex-col items-end gap-2.5">
+        <div className="flex items-center gap-2">
+          <StatusPill status={detail.summary.status} confirmations={detail.summary.confirmations} />
+          {detail.summary.status.state === "confirmed" && (
+            <span className="tabular text-xs text-muted">
+              block {groupThousands(String(detail.summary.status.height))}
+            </span>
+          )}
+        </div>
+        {onExplorer && (
+          <Button variant="secondary" onClick={onExplorer}>
+            View on mempool.space
+            <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
+          </Button>
         )}
       </div>
-    </div>
+    </section>
+  );
+}
+
+/** How far a loaded price point may sit from the transaction and still
+    speak for it: a daily sample, either side. */
+const NEAR_ENOUGH_SECONDS = 36 * 3600;
+
+/** The price when the transaction was mined, when the app already holds
+    a series that covers it — the overview loads one. Nothing is fetched
+    from here: a rate we do not have is a fact we do not show. */
+function useRateAtTime(timestamp: number | null): string | null {
+  const { fiatEnabled, fiatCurrency, fiatSource, masked } = useUi();
+  const client = useQueryClient();
+  if (!fiatEnabled || masked || timestamp === null) return null;
+  const cached = client.getQueriesData<PriceHistory>({
+    queryKey: ["price-history", fiatSource, fiatCurrency],
+  });
+  let best: PricePoint | null = null;
+  for (const [, history] of cached) {
+    for (const point of history?.points ?? []) {
+      if (best === null || Math.abs(point.t - timestamp) < Math.abs(best.t - timestamp)) {
+        best = point;
+      }
+    }
+  }
+  if (best === null || Math.abs(best.t - timestamp) > NEAR_ENOUGH_SECONDS) return null;
+  return `${formatFiat(100_000_000, best.rate, fiatCurrency)} / BTC`;
+}
+
+/** The three facts one looks for first. Three, not ten: the rest is
+    technical and waits below the lists. */
+function KeyFacts({ detail }: { detail: TxDetail }) {
+  const status = detail.summary.status;
+  const timestamp = status.state === "confirmed" ? status.timestamp : null;
+  const rate = useRateAtTime(timestamp);
+  return (
+    <dl className="flex flex-wrap items-start gap-x-10 gap-y-3 rounded-lg border border-border bg-surface px-5 py-3.5">
+      <div className="min-w-0">
+        <KeyLabel>Transaction ID</KeyLabel>
+        <dd className="-ml-2 mt-0.5">
+          <AddressChip value={detail.summary.txid} head={12} tail={10} />
+        </dd>
+      </div>
+      <div className="min-w-0">
+        <KeyLabel>Date</KeyLabel>
+        <dd className="mt-1.5">
+          {timestamp !== null ? (
+            <Value>{formatTimestamp(timestamp)}</Value>
+          ) : (
+            <Value muted>not yet mined</Value>
+          )}
+        </dd>
+      </div>
+      {rate !== null && (
+        <div className="min-w-0">
+          <KeyLabel>Rate at the time</KeyLabel>
+          <dd className="mt-1.5">
+            <Value>{rate}</Value>
+          </dd>
+        </div>
+      )}
+    </dl>
+  );
+}
+
+function KeyLabel({ children }: { children: ReactNode }) {
+  return (
+    <dt className="font-ui text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
+      {children}
+    </dt>
+  );
+}
+
+/** The facts one goes looking for, never the ones one reads: they have
+    no business above the diagram. */
+function TechnicalFacts({ detail }: { detail: TxDetail }) {
+  const extras = detail.extras;
+  return (
+    <FactsCard title="Technical">
+      <Fact label="Confirmations">
+        <Value>{groupThousands(String(detail.summary.confirmations))}</Value>
+      </Fact>
+      {extras ? (
+        <>
+          <Fact label="Size">
+            <Value>{groupThousands(String(extras.size_bytes))} B</Value>
+          </Fact>
+          <Fact label="Virtual size">
+            <Value>{groupThousands(String(extras.vsize))} vB</Value>
+          </Fact>
+          <Fact label="Weight">
+            <Value>{groupThousands(String(extras.weight_wu))} WU</Value>
+          </Fact>
+          <Fact label="Version">
+            <Value>{extras.version}</Value>
+          </Fact>
+          <Fact label="Locktime">
+            <Value>{extras.locktime > 0 ? groupThousands(String(extras.locktime)) : "none"}</Value>
+          </Fact>
+          <Fact label="Sigops">
+            <Value>{groupThousands(String(extras.sigops))}</Value>
+          </Fact>
+        </>
+      ) : (
+        <Fact label="Virtual size">
+          <Value>{groupThousands(String(detail.vsize))} vB</Value>
+        </Fact>
+      )}
+      <Fact label="Fee">
+        {detail.summary.fee_sats !== null ? (
+          <FeeAmount sats={detail.summary.fee_sats} />
+        ) : (
+          <Value muted>n/a</Value>
+        )}
+      </Fact>
+      <Fact label="Fee rate">
+        <Value>
+          {detail.fee_rate_sat_vb !== null ? `${detail.fee_rate_sat_vb.toFixed(1)} sat/vB` : "n/a"}
+        </Value>
+      </Fact>
+      {extras && (
+        <Fact label="Flags" wide>
+          <Flags extras={extras} outputs={detail.outputs} />
+        </Fact>
+      )}
+    </FactsCard>
   );
 }
 
@@ -288,15 +400,29 @@ function FactsCard({ title, children }: { title: string; children: ReactNode }) 
       <h2 className="mb-2 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
         {title}
       </h2>
-      <dl className="flex flex-col">{children}</dl>
+      <dl className="grid gap-x-10 lg:grid-cols-2">{children}</dl>
     </section>
   );
 }
 
 /** One label / value line; values keep their own typography. */
-function Fact({ label, children }: { label: string; children: ReactNode }) {
+function Fact({
+  label,
+  wide = false,
+  children,
+}: {
+  label: string;
+  /** Spans both columns: for a value that is a row of its own. */
+  wide?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-border/50 py-2 last:border-b-0">
+    <div
+      className={clsx(
+        "flex items-center justify-between gap-4 border-b border-border/50 py-2 last:border-b-0",
+        wide && "lg:col-span-2",
+      )}
+    >
       <dt className="shrink-0 font-ui text-[13px] text-muted">{label}</dt>
       <dd className="flex min-w-0 justify-end text-right">{children}</dd>
     </div>
@@ -345,7 +471,10 @@ function Badge({
   );
 }
 
-/** The transaction's options as a tidy row of chips inside the facts. */
+/** The transaction's options as a tidy row of chips inside the facts.
+    A flag carries the name the chain gave it: RBF is the word everyone
+    uses, the one people search this page for, and the only one they
+    will find again in another wallet. */
 function Flags({ extras, outputs }: { extras: TxExtras; outputs: TxIo[] }) {
   const hasOpReturn = outputs.some((io) => io.op_return !== null);
   return (
@@ -360,7 +489,7 @@ function Flags({ extras, outputs }: { extras: TxExtras; outputs: TxIo[] }) {
           icon={<Repeat2 size={12} strokeWidth={1.75} aria-hidden />}
           title="Replaceable: the sender can bump the fee (BIP-125)"
         >
-          Replaceable
+          RBF
         </Badge>
       ) : (
         <Badge
@@ -554,7 +683,7 @@ function IoList({
   );
 }
 
-/** Role chips: 32px squares, the same vocabulary as the lists. */
+/** Role chips: 32px squares, the same vocabulary as the diagram. */
 function RoleIcon({ io, side, coinbase }: { io: TxIo; side: "in" | "out"; coinbase: boolean }) {
   const common = { size: 15, strokeWidth: 1.75, "aria-hidden": true } as const;
   const chip = (title: string, tone: string, icon: ReactNode) => (

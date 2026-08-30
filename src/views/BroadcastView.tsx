@@ -22,7 +22,8 @@ import { StackedAmount } from "../components/Amount";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { ScanQrModal } from "../components/ScanQrModal";
-import { opReturnPreview } from "../components/FlowSummary";
+import { TxDiagram } from "../components/TxDiagram";
+import type { TxBranch } from "../components/TxDiagram";
 import type {
   Network,
   TxInputPreview,
@@ -32,7 +33,13 @@ import type {
 } from "../lib/ipc";
 import { isCommandError } from "../lib/ipc";
 import { explorerTxUrl } from "../lib/explorer";
-import { MASKED, formatAmount, groupThousands, relativeTime } from "../lib/format";
+import {
+  MASKED,
+  formatAmount,
+  groupThousands,
+  opReturnPreview,
+  relativeTime,
+} from "../lib/format";
 import {
   useBroadcastTransaction,
   usePreviewTransaction,
@@ -360,14 +367,42 @@ const WARNING_STYLE: Record<TxWarning["kind"], "alert" | "pending" | "info"> = {
   spends_watched: "info",
 };
 
+/** The inputs of a transaction waiting to be sent, as diagram branches:
+    an input is named by the outpoint it spends. */
+function previewInputBranches(inputs: TxInputPreview[]): TxBranch[] {
+  return inputs.map(
+    (input): TxBranch => ({
+      role: input.wallet !== null ? "wallet-in" : "external-in",
+      label: `${input.txid}:${input.vout}`,
+      amount: input.value_sats,
+      isMine: input.wallet !== null,
+    }),
+  );
+}
+
+function previewOutputBranches(outputs: TxOutputPreview[]): TxBranch[] {
+  return outputs.map(
+    (output): TxBranch => ({
+      role: output.op_return
+        ? "op-return"
+        : output.wallet !== null
+          ? output.change
+            ? "change"
+            : "received"
+          : "external-out",
+      label: output.op_return
+        ? opReturnPreview(output.op_return)
+        : (output.address ?? "non-standard script"),
+      amount: output.value_sats,
+      isMine: output.wallet !== null,
+    }),
+  );
+}
+
 function PreviewCard({ preview }: { preview: TxPreview }) {
   const { masked, unit } = useUi();
   const amount = (sats: number | null) =>
     sats === null ? "n/a" : masked ? MASKED : formatAmount(sats, unit);
-  const inTotal = preview.inputs.every((i) => i.value_sats !== null)
-    ? preview.inputs.reduce((sum, i) => sum + (i.value_sats ?? 0), 0)
-    : null;
-  const outTotal = preview.outputs.reduce((sum, o) => sum + o.value_sats, 0);
 
   return (
     <div className="flex flex-col gap-5 rounded-lg border border-border bg-surface p-5">
@@ -395,35 +430,12 @@ function PreviewCard({ preview }: { preview: TxPreview }) {
         </div>
       </div>
 
-      {/* The flow in one line: what goes in, what comes out, the fee. */}
-      <div className="flex items-stretch gap-3 rounded-lg bg-sunken/40 p-4 max-lg:flex-col">
-        <Side
-          title={`${preview.inputs.length} input${preview.inputs.length === 1 ? "" : "s"}`}
-          subtitle="spent"
-          amount={amount(inTotal)}
-        />
-        <div className="flex shrink-0 flex-col items-center justify-center gap-1 px-2 max-lg:py-1">
-          <ArrowUpRight size={20} strokeWidth={1.5} aria-hidden className="text-muted" />
-          <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap rounded-full border border-pending/30 bg-pending-surface px-2.5 py-0.5">
-            <span className="font-ui text-[10px] font-medium uppercase tracking-[0.04em] text-pending">
-              fee
-            </span>
-            <span className="tabular text-[11px] font-medium text-pending">
-              {amount(preview.fee_sats)}
-            </span>
-            {preview.fee_rate_sat_vb !== null && (
-              <span className="tabular text-[11px] text-muted">
-                {preview.fee_rate_sat_vb.toFixed(1)} sat/vB
-              </span>
-            )}
-          </span>
-        </div>
-        <Side
-          title={`${preview.outputs.length} output${preview.outputs.length === 1 ? "" : "s"}`}
-          subtitle="created"
-          amount={amount(outTotal)}
-        />
-      </div>
+      {/* Where the coins come from and where they go, before they go. */}
+      <TxDiagram
+        inputs={previewInputBranches(preview.inputs)}
+        outputs={previewOutputBranches(preview.outputs)}
+        feeSats={preview.fee_sats}
+      />
 
       {preview.warnings.length > 0 && (
         <ul aria-label="Cautions" className="flex flex-col gap-2">
@@ -473,7 +485,8 @@ function PreviewCard({ preview }: { preview: TxPreview }) {
         <IoList title="Outputs" side="out" ios={preview.outputs} />
       </div>
 
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-md border border-border p-4 sm:grid-cols-3 lg:grid-cols-6">
+      {/* The fee node carries the amount; the rate belongs here. */}
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-md border border-border p-4 sm:grid-cols-4">
         <Fact label="Size">{groupThousands(String(preview.size))} B</Fact>
         <Fact label="Virtual size">{groupThousands(String(preview.vsize))} vB</Fact>
         <Fact label="Weight">{groupThousands(String(preview.weight))} WU</Fact>
@@ -482,19 +495,11 @@ function PreviewCard({ preview }: { preview: TxPreview }) {
           {preview.locktime > 0 ? groupThousands(String(preview.locktime)) : "none"}
         </Fact>
         <Fact label="Replaceable">{preview.rbf ? "yes" : "no"}</Fact>
+        <Fact label="Fee">{amount(preview.fee_sats)}</Fact>
+        <Fact label="Fee rate">
+          {preview.fee_rate_sat_vb !== null ? `${preview.fee_rate_sat_vb.toFixed(1)} sat/vB` : "n/a"}
+        </Fact>
       </dl>
-    </div>
-  );
-}
-
-function Side({ title, subtitle, amount }: { title: string; subtitle: string; amount: string }) {
-  return (
-    <div className="flex min-w-0 flex-1 flex-col justify-center rounded-md border border-border bg-surface px-4 py-3">
-      <p className="flex items-center gap-1.5 font-ui text-sm font-medium text-text">
-        {title}
-        <span className="font-normal text-muted">{subtitle}</span>
-      </p>
-      <p className="selectable tabular mt-1 text-[15px] font-semibold text-text">{amount}</p>
     </div>
   );
 }

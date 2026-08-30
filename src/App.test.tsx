@@ -820,8 +820,8 @@ describe("transaction detail", () => {
     await user.click(await screen.findByText("Received"));
     expect(await screen.findByRole("dialog", { name: "Transaction" })).toBeInTheDocument();
     expect(screen.getAllByText("1.5 sat/vB").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("fee")).toBeInTheDocument();
-    expect(screen.getByText("Replaceable")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Transaction diagram" })).toBeInTheDocument();
+    expect(screen.getByText("RBF")).toBeInTheDocument();
     expect(screen.getByText("SegWit")).toBeInTheDocument();
   });
 
@@ -1179,8 +1179,9 @@ describe("broadcast page", () => {
     expect(await screen.findByText("Ready to broadcast")).toBeInTheDocument();
     expect(screen.getByText("PSBT")).toBeInTheDocument();
     expect(screen.getByText("Spends coins of Cold storage.")).toBeInTheDocument();
-    expect(screen.getByText("1 input")).toBeInTheDocument();
-    expect(screen.getByText("2 outputs")).toBeInTheDocument();
+    // The diagram says which coins move, not only how many.
+    const diagram = within(screen.getByRole("region", { name: "Transaction diagram" }));
+    expect(diagram.getAllByRole("listitem")).toHaveLength(3);
     expect(screen.getByText("7.1 sat/vB")).toBeInTheDocument();
     expect(screen.getByText("Cold storage · change")).toBeInTheDocument();
 
