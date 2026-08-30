@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TxDetailModal } from "./TxDetailModal";
 import type { TxDetail, TxIo } from "../lib/ipc";
-import { formatTimestamp } from "../lib/format";
+import { formatFiat, formatTimestamp } from "../lib/format";
 import { useUi } from "../state/store";
 
 const opener = vi.hoisted(() => ({ openUrl: vi.fn() }));
@@ -13,6 +13,8 @@ vi.mock("@tauri-apps/plugin-opener", () => opener);
 
 const TXID = "ab".repeat(32);
 const SPENT = "cd".repeat(32);
+const MINED_AT = 1_755_000_000;
+const RATE = 100_000;
 
 function io(overrides: Partial<TxIo> = {}): TxIo {
   return {
@@ -32,7 +34,7 @@ const DETAIL: TxDetail = {
     txid: TXID,
     net_sats: -150_210,
     fee_sats: 210,
-    status: { state: "confirmed", height: 200_000, timestamp: 1_755_000_000 },
+    status: { state: "confirmed", height: 200_000, timestamp: MINED_AT },
     confirmations: 12,
   },
   inputs: [
@@ -69,7 +71,13 @@ const DETAIL: TxDetail = {
 };
 
 function open(detail: TxDetail = DETAIL) {
-  mockIPC((cmd) => (cmd === "tx_detail" ? detail : undefined));
+  mockIPC((cmd) => {
+    if (cmd === "tx_detail") return detail;
+    if (cmd === "fetch_price") {
+      return { rate: RATE, currency: "eur", source: "coingecko", at: MINED_AT };
+    }
+    return undefined;
+  });
   useUi.setState({ selectedTxid: TXID });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -82,7 +90,7 @@ function open(detail: TxDetail = DETAIL) {
 describe("TxDetailModal", () => {
   beforeEach(() => {
     opener.openUrl.mockClear();
-    useUi.setState({ selectedTxid: null, explorerAck: false });
+    useUi.setState({ selectedTxid: null, explorerAck: false, fiatEnabled: false });
   });
 
   it("names the replaceable flag the way the chain names it", async () => {
@@ -182,6 +190,61 @@ describe("TxDetailModal", () => {
     expect(
       screen.getByTitle("An output carries data instead of spendable coins"),
     ).toBeInTheDocument();
+  });
+
+  it("carries the transaction id and the date once, in the panel on top", async () => {
+    open();
+    const summary = within(await screen.findByRole("region", { name: "Summary" }));
+    expect(summary.getByRole("button", { name: "Copy Transaction ID" })).toBeInTheDocument();
+    expect(summary.getByTitle(TXID)).toBeInTheDocument();
+    expect(screen.getAllByTitle(TXID)).toHaveLength(1);
+
+    const date = summary.getByText(formatTimestamp(MINED_AT));
+    expect(date.tagName).toBe("TIME");
+    expect(screen.getAllByText(formatTimestamp(MINED_AT))).toHaveLength(1);
+  });
+
+  it("says a transaction nobody has mined yet carries no date", async () => {
+    open({
+      ...DETAIL,
+      summary: { ...DETAIL.summary, status: { state: "pending" }, confirmations: 0 },
+    });
+    const summary = within(await screen.findByRole("region", { name: "Summary" }));
+    expect(summary.getByText("not yet mined")).toBeInTheDocument();
+  });
+
+  it("leaves the rate at the time to the export that owns it", async () => {
+    open();
+    await screen.findByRole("region", { name: "Summary" });
+    expect(screen.queryByText(/rate at the time/i)).not.toBeInTheDocument();
+  });
+
+  it("lets the role icon carry the role, with no sub-line saying it again", async () => {
+    open();
+    const inputs = within(await screen.findByRole("region", { name: "Inputs" }));
+    const outputs = within(screen.getByRole("region", { name: "Outputs" }));
+    for (const words of [
+      "Spent from this wallet",
+      "Change back to this wallet",
+      "Received by this wallet",
+    ]) {
+      expect(screen.queryByText(words)).not.toBeInTheDocument();
+    }
+    // The words stay where they cost nothing: the tooltip on the icon.
+    expect(inputs.getByTitle("Spent from this wallet")).toBeInTheDocument();
+    expect(outputs.getByTitle("Change back to this wallet")).toBeInTheDocument();
+  });
+
+  it("counts a line in the chosen unit only, never in fiat", async () => {
+    // Nobody can tell whether a fiat figure beside an output is the
+    // value on the day of the transaction or the value today.
+    useUi.setState({ fiatEnabled: true, fiatCurrency: "eur", fiatSource: "coingecko" });
+    open();
+    // The panel on top carries one, so the quote really did arrive.
+    expect(await screen.findByText(formatFiat(-150_210, RATE, "eur"))).toBeInTheDocument();
+    const outputs = within(screen.getByRole("region", { name: "Outputs" }));
+    expect(outputs.getByText("0.00150000 BTC")).toBeInTheDocument();
+    expect(outputs.queryByText(formatFiat(150_000, RATE, "eur"))).not.toBeInTheDocument();
   });
 
   it("reads in the order the questions come in", async () => {

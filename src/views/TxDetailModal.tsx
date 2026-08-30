@@ -17,16 +17,14 @@ import {
   Wallet as WalletIcon,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
-import type { Network, PriceHistory, PricePoint, TxDetail, TxExtras, TxIo } from "../lib/ipc";
+import type { Network, TxDetail, TxExtras, TxIo } from "../lib/ipc";
 import {
   MASKED,
   formatAmount,
   formatAmountSigned,
-  formatFiat,
   formatLocktime,
   formatTimestamp,
   groupThousands,
@@ -38,7 +36,7 @@ import { explorerTxUrl } from "../lib/explorer";
 import { useTxDetail } from "../state/queries";
 import { useUi } from "../state/store";
 import { AddressChip } from "../components/AddressChip";
-import { StackedAmount, useAmountText, useFiatValue } from "../components/Amount";
+import { UnitAmount, useAmountText, useFiatValue } from "../components/Amount";
 import { Button, IconButton } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { Notice } from "../components/Notice";
@@ -46,10 +44,11 @@ import { StatusPill } from "../components/StatusPill";
 import { TxDiagram } from "../components/TxDiagram";
 import type { TxBranch } from "../components/TxDiagram";
 
-/** Transaction detail: how much and what state, then the three facts
-    one looks for first, then the diagram, then the inputs and outputs
-    in full, and only then the technical facts and the raw bytes — the
-    order the questions come in, not the order the chain serializes. */
+/** Transaction detail: how much and what state, carrying the id and
+    the date under the same hairline, then the diagram, then the inputs
+    and outputs in full, and only then the technical facts and the raw
+    bytes — the order the questions come in, not the order the chain
+    serializes. */
 export function TxDetailModal({ walletId, network }: { walletId: string; network: Network }) {
   const { selectedTxid, selectTx, explorerAck, setExplorerAck } = useUi();
   const detail = useTxDetail(walletId, selectedTxid);
@@ -77,9 +76,7 @@ export function TxDetailModal({ walletId, network }: { walletId: string; network
       )}
       {detail.data && (
         <div className="flex flex-col gap-6">
-          <Hero detail={detail.data} onExplorer={explorerUrl === "" ? null : askExplorer} />
-
-          <KeyFacts detail={detail.data} />
+          <Summary detail={detail.data} onExplorer={explorerUrl === "" ? null : askExplorer} />
 
           <TxDiagram
             inputs={inputBranches(detail.data)}
@@ -217,11 +214,15 @@ function outputBranches(detail: TxDetail): TxBranch[] {
 }
 
 /** What happened, in one glance: direction, amount, status — and the
-    explorer within reach, behind its warning. */
-function Hero({ detail, onExplorer }: { detail: TxDetail; onExplorer: (() => void) | null }) {
+    explorer within reach, behind its warning. Under a hairline in the
+    same panel, what names the transaction and when it happened: two
+    stacked slabs said no more and read as two unrelated cards. */
+function Summary({ detail, onExplorer }: { detail: TxDetail; onExplorer: (() => void) | null }) {
   const { masked, unit } = useUi();
   const sats = detail.summary.net_sats;
   const fiat = useFiatValue(sats);
+  const status = detail.summary.status;
+  const timestamp = status.state === "confirmed" ? status.timestamp : null;
   const coinbase = detail.extras?.is_coinbase ?? false;
   const direction = coinbase
     ? "Block reward"
@@ -231,103 +232,50 @@ function Hero({ detail, onExplorer }: { detail: TxDetail; onExplorer: (() => voi
         ? "Received"
         : "Sent";
   return (
-    <section aria-label="Summary" className="flex flex-wrap items-start justify-between gap-4">
-      <div className="selectable">
-        <p className="font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
-          {direction}
-        </p>
-        <p className="tabular mt-1 text-[28px] font-semibold leading-[1.1] tracking-[-0.02em] text-text">
-          {masked ? MASKED : formatAmountSigned(sats, unit)}
-        </p>
-        {fiat && <p className="tabular mt-1 text-[13px] text-muted">{fiat}</p>}
-      </div>
-      <div className="flex flex-col items-end gap-2.5">
-        <div className="flex items-center gap-2">
-          <StatusPill status={detail.summary.status} confirmations={detail.summary.confirmations} />
-          {detail.summary.status.state === "confirmed" && (
-            <span className="tabular text-xs text-muted">
-              block {groupThousands(String(detail.summary.status.height))}
-            </span>
+    <section aria-label="Summary" className="rounded-lg border border-border bg-surface px-5 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="selectable">
+          <p className="font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
+            {direction}
+          </p>
+          <p className="tabular mt-1 text-[28px] font-semibold leading-[1.1] tracking-[-0.02em] text-text">
+            {masked ? MASKED : formatAmountSigned(sats, unit)}
+          </p>
+          {fiat && <p className="tabular mt-1 text-[13px] text-muted">{fiat}</p>}
+        </div>
+        <div className="flex flex-col items-end gap-2.5">
+          <div className="flex items-center gap-2">
+            <StatusPill status={status} confirmations={detail.summary.confirmations} />
+            {status.state === "confirmed" && (
+              <span className="tabular text-xs text-muted">
+                block {groupThousands(String(status.height))}
+              </span>
+            )}
+          </div>
+          {onExplorer && (
+            <Button variant="secondary" onClick={onExplorer}>
+              View on mempool.space
+              <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
+            </Button>
           )}
         </div>
-        {onExplorer && (
-          <Button variant="secondary" onClick={onExplorer}>
-            View on mempool.space
-            <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
-          </Button>
-        )}
+      </div>
+      <div className="mt-3.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border/60 pt-3">
+        <span className="-ml-2 min-w-0">
+          <AddressChip value={detail.summary.txid} head={16} tail={12} label="Transaction ID" />
+        </span>
+        <span className="inline-flex items-center gap-1.5 font-ui text-[13px] text-muted">
+          <Clock size={14} strokeWidth={1.5} aria-hidden />
+          {timestamp !== null ? (
+            <time className="tabular" dateTime={new Date(timestamp * 1000).toISOString()}>
+              {formatTimestamp(timestamp)}
+            </time>
+          ) : (
+            "not yet mined"
+          )}
+        </span>
       </div>
     </section>
-  );
-}
-
-/** How far a loaded price point may sit from the transaction and still
-    speak for it: a daily sample, either side. */
-const NEAR_ENOUGH_SECONDS = 36 * 3600;
-
-/** The price when the transaction was mined, when the app already holds
-    a series that covers it — the overview loads one. Nothing is fetched
-    from here: a rate we do not have is a fact we do not show. */
-function useRateAtTime(timestamp: number | null): string | null {
-  const { fiatEnabled, fiatCurrency, fiatSource, masked } = useUi();
-  const client = useQueryClient();
-  if (!fiatEnabled || masked || timestamp === null) return null;
-  const cached = client.getQueriesData<PriceHistory>({
-    queryKey: ["price-history", fiatSource, fiatCurrency],
-  });
-  let best: PricePoint | null = null;
-  for (const [, history] of cached) {
-    for (const point of history?.points ?? []) {
-      if (best === null || Math.abs(point.t - timestamp) < Math.abs(best.t - timestamp)) {
-        best = point;
-      }
-    }
-  }
-  if (best === null || Math.abs(best.t - timestamp) > NEAR_ENOUGH_SECONDS) return null;
-  return `${formatFiat(100_000_000, best.rate, fiatCurrency)} / BTC`;
-}
-
-/** The three facts one looks for first. Three, not ten: the rest is
-    technical and waits below the lists. */
-function KeyFacts({ detail }: { detail: TxDetail }) {
-  const status = detail.summary.status;
-  const timestamp = status.state === "confirmed" ? status.timestamp : null;
-  const rate = useRateAtTime(timestamp);
-  return (
-    <dl className="flex flex-wrap items-start gap-x-10 gap-y-3 rounded-lg border border-border bg-surface px-5 py-3.5">
-      <div className="min-w-0">
-        <KeyLabel>Transaction ID</KeyLabel>
-        <dd className="-ml-2 mt-0.5">
-          <AddressChip value={detail.summary.txid} head={12} tail={10} />
-        </dd>
-      </div>
-      <div className="min-w-0">
-        <KeyLabel>Date</KeyLabel>
-        <dd className="mt-1.5">
-          {timestamp !== null ? (
-            <Value>{formatTimestamp(timestamp)}</Value>
-          ) : (
-            <Value muted>not yet mined</Value>
-          )}
-        </dd>
-      </div>
-      {rate !== null && (
-        <div className="min-w-0">
-          <KeyLabel>Rate at the time</KeyLabel>
-          <dd className="mt-1.5">
-            <Value>{rate}</Value>
-          </dd>
-        </div>
-      )}
-    </dl>
-  );
-}
-
-function KeyLabel({ children }: { children: ReactNode }) {
-  return (
-    <dt className="font-ui text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
-      {children}
-    </dt>
   );
 }
 
@@ -340,7 +288,7 @@ function TechnicalFacts({ detail }: { detail: TxDetail }) {
       <Fact label="Confirmations">
         <Value>{groupThousands(String(detail.summary.confirmations))}</Value>
       </Fact>
-      {/* The hero shows the height beside the status pill; a fact one
+      {/* The summary shows the height beside the status pill; a fact one
           goes looking for needs its label, and the flow summary that
           used to carry it is gone. */}
       <Fact label="Block">
@@ -423,19 +371,28 @@ function Fact({
   children,
 }: {
   label: string;
-  /** Spans both columns: for a value that is a row of its own. */
+  /** Spans both columns and starts its value at the label: a row of
+      chips pushed to the far right reads as a second column with
+      nothing to do with the first. */
   wide?: boolean;
   children: ReactNode;
 }) {
   return (
     <div
       className={clsx(
-        "flex items-center justify-between gap-4 border-b border-border/50 py-2 last:border-b-0",
-        wide && "lg:col-span-2",
+        "flex items-center gap-4 border-b border-border/50 py-2 last:border-b-0",
+        wide ? "lg:col-span-2" : "justify-between",
       )}
     >
       <dt className="shrink-0 font-ui text-[13px] text-muted">{label}</dt>
-      <dd className="flex min-w-0 justify-end text-right">{children}</dd>
+      <dd
+        className={clsx(
+          "flex min-w-0",
+          wide ? "flex-1 justify-start text-left" : "justify-end text-right",
+        )}
+      >
+        {children}
+      </dd>
     </div>
   );
 }
@@ -489,7 +446,7 @@ function Badge({
 function Flags({ extras, outputs }: { extras: TxExtras; outputs: TxIo[] }) {
   const hasOpReturn = outputs.some((io) => io.op_return !== null);
   return (
-    <span className="flex flex-wrap justify-end gap-1.5">
+    <span className="flex flex-wrap gap-1.5">
       {extras.is_coinbase ? (
         <Badge
           tone="confirmed"
@@ -677,20 +634,11 @@ function IoList({
                     </span>
                   </>
                 ) : io.address ? (
-                  <>
-                    <span>
-                      <AddressChip value={io.address} head={10} tail={8} emphasis={mine} />
-                    </span>
-                    {mine && (
-                      <span className="font-ui text-[11px] text-muted">
-                        {side === "in"
-                          ? "Spent from this wallet"
-                          : io.change
-                            ? "Change back to this wallet"
-                            : "Received by this wallet"}
-                      </span>
-                    )}
-                  </>
+                  // No sub-line under the address: the role chip beside
+                  // it carries the same words in its tooltip.
+                  <span>
+                    <AddressChip value={io.address} head={10} tail={8} emphasis={mine} />
+                  </span>
                 ) : (
                   <span className="font-ui text-[13px] text-muted">
                     {side === "in" ? "Unknown input" : "Script output"}
@@ -698,13 +646,7 @@ function IoList({
                 )}
               </span>
               <span className="shrink-0 text-right">
-                {io.value_sats !== null ? (
-                  <StackedAmount sats={io.value_sats} />
-                ) : isCoinbaseRow && coinbaseValue !== null ? (
-                  <StackedAmount sats={coinbaseValue} />
-                ) : (
-                  <span className="font-ui text-[13px] text-muted">n/a</span>
-                )}
+                <UnitAmount sats={io.value_sats ?? (isCoinbaseRow ? coinbaseValue : null)} />
               </span>
             </li>
           );
@@ -713,6 +655,7 @@ function IoList({
     </section>
   );
 }
+
 
 /** Role chips: 32px squares, the same vocabulary as the diagram. */
 function RoleIcon({ io, side, coinbase }: { io: TxIo; side: "in" | "out"; coinbase: boolean }) {

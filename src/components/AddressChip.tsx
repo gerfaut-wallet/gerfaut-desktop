@@ -13,11 +13,16 @@ export function AddressChip({
   head = 6,
   tail = 4,
   emphasis = false,
+  label,
 }: {
   value: string;
   head?: number;
   tail?: number;
   emphasis?: boolean;
+  /** What the value identifies, where a run of hex on its own says
+      nothing — "Transaction ID". Read out in place of the digits, which
+      no one wants spelled letter by letter. */
+  label?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const showToast = useUi((s) => s.showToast);
@@ -34,6 +39,7 @@ export function AddressChip({
       type="button"
       onClick={copy}
       title={value}
+      aria-label={label ? `Copy ${label}` : undefined}
       className={clsx(
         "inline-flex cursor-pointer items-center gap-1.5 rounded-sm px-2 py-1 font-data text-[13px] transition-colors duration-150",
         emphasis
