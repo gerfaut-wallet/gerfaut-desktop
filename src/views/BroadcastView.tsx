@@ -441,22 +441,24 @@ function PreviewCard({ preview }: { preview: TxPreview }) {
                   tone === "info" && "border-border bg-sunken/40",
                 )}
               >
-                {tone === "info" ? (
-                  <Info size={15} strokeWidth={1.75} aria-hidden className="mt-0.5 shrink-0 text-muted" />
-                ) : (
-                  <AlertTriangle
-                    size={15}
-                    strokeWidth={1.75}
-                    aria-hidden
-                    className={clsx(
-                      "mt-0.5 shrink-0",
-                      tone === "alert" ? "text-alert" : "text-pending",
-                    )}
-                  />
-                )}
+                {/* The glyph rides the first line of the message, the
+                    way the shared note does it: a box exactly one line
+                    tall, never a nudge that is right at one size only. */}
+                <span className="flex h-4 shrink-0 items-center">
+                  {tone === "info" ? (
+                    <Info size={15} strokeWidth={1.75} aria-hidden className="text-muted" />
+                  ) : (
+                    <AlertTriangle
+                      size={15}
+                      strokeWidth={1.75}
+                      aria-hidden
+                      className={tone === "alert" ? "text-alert" : "text-pending"}
+                    />
+                  )}
+                </span>
                 <p
                   className={clsx(
-                    "font-ui text-xs",
+                    "font-ui text-xs leading-4",
                     tone === "alert" && "text-alert",
                     tone === "pending" && "text-pending",
                     tone === "info" && "text-muted",

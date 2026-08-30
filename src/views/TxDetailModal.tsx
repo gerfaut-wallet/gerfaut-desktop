@@ -1,5 +1,4 @@
 import {
-  AlertTriangle,
   ArrowDownLeft,
   ArrowUpRight,
   Check,
@@ -39,6 +38,7 @@ import { AddressChip } from "../components/AddressChip";
 import { StackedAmount, useFiatValue } from "../components/Amount";
 import { Button, IconButton } from "../components/Button";
 import { Modal } from "../components/Modal";
+import { Notice } from "../components/Notice";
 import { StatusPill } from "../components/StatusPill";
 import { TxDiagram } from "../components/TxDiagram";
 import type { TxBranch } from "../components/TxDiagram";
@@ -120,18 +120,14 @@ export function TxDetailModal({ walletId, network }: { walletId: string; network
         centered
       >
         <div className="flex flex-col gap-4">
-          <div className="flex items-start gap-2.5 rounded-md border border-alert/25 bg-alert-surface p-3">
-            <AlertTriangle
-              size={16}
-              strokeWidth={1.75}
-              aria-hidden
-              className="mt-0.5 shrink-0 text-alert"
-            />
-            <p className="font-ui text-sm font-medium text-alert">
+          {/* Handing an operator the link between this transaction and
+              an IP address is a privacy loss: red, by the rule. */}
+          <Notice tone="alert">
+            <span className="font-medium">
               This opens the transaction on mempool.space, a third-party website. Its
               operator can link this transaction to your IP address.
-            </p>
-          </div>
+            </span>
+          </Notice>
           <p className="font-ui text-sm text-muted">
             Consider a VPN or Tor if that link matters to you.
           </p>
