@@ -47,6 +47,9 @@ const MIN_DOT = 2;
 const MAX_DOT = 7;
 /** A dot for an amount nobody knows, drawn hollow rather than sized. */
 const UNKNOWN_DOT = 3;
+/** The one size every dot takes while the amounts are hidden: a drawing
+    that keeps the shares gives away what the figures are covering up. */
+const MASKED_DOT = (MIN_DOT + MAX_DOT) / 2;
 /** Below this width the truncations shorten instead of overflowing. */
 const COMPACT_WIDTH = 620;
 
@@ -158,6 +161,7 @@ export function TxDiagram({
   outputs: TxBranch[];
   feeSats: number | null;
 }) {
+  const { masked } = useUi();
   const frameRef = useRef<HTMLElement>(null);
   const inColRef = useRef<HTMLUListElement>(null);
   const outColRef = useRef<HTMLUListElement>(null);
@@ -178,8 +182,14 @@ export function TxDiagram({
     ...[...inRows, ...outRows].map((row) => rowAmount(row) ?? 0),
   );
 
-  const radius = (amount: number | null) =>
-    amount === null ? UNKNOWN_DOT : MIN_DOT + (MAX_DOT - MIN_DOT) * Math.sqrt(amount / scale);
+  // Hidden amounts hide the proportions too: every dot takes one middle
+  // size, the fee branch included. Otherwise the picture still shows
+  // the split the figures were masked to keep.
+  const radius = (amount: number | null) => {
+    if (masked) return MASKED_DOT;
+    if (amount === null) return UNKNOWN_DOT;
+    return MIN_DOT + (MAX_DOT - MIN_DOT) * Math.sqrt(amount / scale);
+  };
 
   // The rows own their heights; the curves read them back from the DOM
   // rather than repeating a row height the CSS could change tomorrow.
@@ -398,8 +408,17 @@ function DiagramRow({
   const { masked, unit } = useUi();
   const role = row.kind === "branch" ? ROLES[row.branch.role] : null;
   const amount = rowAmount(row);
+  const name = row.kind === "branch" ? row.branch.label : `+${row.count} more`;
+  const figure = amount === null ? "n/a" : masked ? MASKED : formatAmount(amount, unit);
   return (
-    <li ref={rowRef} className="flex items-center gap-2 py-1">
+    // The role is carried by an icon, and an icon is nothing to a
+    // screen reader: it goes into the row's own name, or the reading is
+    // an address and a number with no say in what they are.
+    <li
+      ref={rowRef}
+      aria-label={`${role ? role.title : "Folded rows"}, ${name}, ${figure}`}
+      className="flex items-center gap-2 py-1"
+    >
       <span
         title={role ? role.title : "Folded rows"}
         className={clsx("flex shrink-0 items-center", role ? role.tone : "text-muted")}
@@ -413,12 +432,10 @@ function DiagramRow({
           row.kind === "branch" ? "selectable font-data" : "font-ui font-medium",
         )}
       >
-        {row.kind === "branch"
-          ? shortenBranchLabel(row.branch.label, head, tail)
-          : `+${row.count} more`}
+        {row.kind === "branch" ? shortenBranchLabel(row.branch.label, head, tail) : name}
       </span>
       <span className="tabular shrink-0 whitespace-nowrap text-[12px] font-medium text-text">
-        {amount === null ? "n/a" : masked ? MASKED : formatAmount(amount, unit)}
+        {figure}
       </span>
     </li>
   );

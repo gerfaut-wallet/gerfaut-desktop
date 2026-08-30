@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TxDiagram } from "./TxDiagram";
 import type { TxBranch } from "./TxDiagram";
+import { useUi } from "../state/store";
 
 const TXID = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const MINE = "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
@@ -42,9 +43,17 @@ function stubLayout() {
   });
 }
 
+/** Every dot the diagram drew, by radius. */
+function radii(container: HTMLElement): string[] {
+  return [...container.querySelectorAll("svg.absolute > circle")].map(
+    (dot) => dot.getAttribute("r") ?? "",
+  );
+}
+
 describe("TxDiagram", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    useUi.setState({ masked: false });
   });
 
   it("draws a plain send: the wallet's coin in, a payment and change out", () => {
@@ -78,6 +87,28 @@ describe("TxDiagram", () => {
     // One connector per row, plus the one that drops to the fee.
     expect(container.querySelectorAll("svg.absolute > path")).toHaveLength(4);
     expect(container.querySelector("svg.absolute")).toHaveAttribute("aria-hidden");
+  });
+
+  it("names each row by its role, which only an icon says on screen", () => {
+    render(
+      <TxDiagram
+        inputs={[branch({ role: "wallet-in", isMine: true, amount: 150_210 })]}
+        outputs={[branch({ role: "change", label: MINE, amount: 150_000, isMine: true })]}
+        feeSats={210}
+      />,
+    );
+    // The icon is decorative and the role sat in a title on a span, so
+    // a screen reader was left with an outpoint and a number.
+    expect(
+      side("Inputs").getByRole("listitem", {
+        name: `Spent from this wallet, ${TXID}:0, 0.00150210 BTC`,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      side("Outputs").getByRole("listitem", {
+        name: `Change back to this wallet, ${MINE}, 0.00150000 BTC`,
+      }),
+    ).toBeInTheDocument();
   });
 
   it("draws a receive: an outside coin in, the wallet's output out", () => {
@@ -162,6 +193,36 @@ describe("TxDiagram", () => {
     expect(paths[1]).toHaveAttribute("d", "M470.0,100.0 C480.0,100.0 510.0,50.0 520.0,50.0");
     // The dot sits on the inner edge of its column, sized by its share.
     expect(container.querySelector("svg.absolute > circle")).toHaveAttribute("cx", "380");
+  });
+
+  it("sizes the dots by their share while the amounts are shown", () => {
+    stubLayout();
+    const { container } = render(
+      <TxDiagram
+        inputs={[branch({ amount: 1_000_000 }), branch({ amount: 1_000 })]}
+        outputs={[branch({ role: "external-out", label: THEIRS, amount: 999_000 })]}
+        feeSats={1_000}
+      />,
+    );
+    expect(new Set(radii(container)).size).toBeGreaterThan(1);
+  });
+
+  it("hides the proportions along with the amounts", () => {
+    stubLayout();
+    useUi.setState({ masked: true });
+    const { container } = render(
+      <TxDiagram
+        inputs={[branch({ amount: 1_000_000 }), branch({ amount: null })]}
+        outputs={[branch({ role: "external-out", label: THEIRS, amount: 999_000 })]}
+        feeSats={1_000}
+      />,
+    );
+    // A drawing that keeps the shares gives away exactly what the
+    // figures were masked to cover up.
+    expect(screen.queryByText(/BTC/)).not.toBeInTheDocument();
+    const drawn = radii(container);
+    expect(drawn).toHaveLength(3);
+    expect(new Set(drawn).size).toBe(1);
   });
 
   it("says n/a for an input whose value nobody knows", () => {
