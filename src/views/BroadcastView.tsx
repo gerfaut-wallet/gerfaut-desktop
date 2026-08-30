@@ -494,7 +494,9 @@ function PreviewCard({ preview }: { preview: TxPreview }) {
         <Fact label="Locktime">
           {preview.locktime > 0 ? groupThousands(String(preview.locktime)) : "none"}
         </Fact>
-        <Fact label="Replaceable">{preview.rbf ? "yes" : "no"}</Fact>
+        {/* RBF, the word the chain gave it and the one people look
+            for — the same name the transaction detail uses. */}
+        <Fact label="RBF">{preview.rbf ? "signalled (BIP-125)" : "not signalled"}</Fact>
         <Fact label="Fee">{amount(preview.fee_sats)}</Fact>
         <Fact label="Fee rate">
           {preview.fee_rate_sat_vb !== null ? `${preview.fee_rate_sat_vb.toFixed(1)} sat/vB` : "n/a"}

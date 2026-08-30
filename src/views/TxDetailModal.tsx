@@ -487,7 +487,7 @@ function Flags({ extras, outputs }: { extras: TxExtras; outputs: TxIo[] }) {
         <Badge
           tone="pending"
           icon={<Repeat2 size={12} strokeWidth={1.75} aria-hidden />}
-          title="Replaceable: the sender can bump the fee (BIP-125)"
+          title="RBF: the sender can still bump the fee (BIP-125)"
         >
           RBF
         </Badge>
