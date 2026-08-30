@@ -1,5 +1,6 @@
 import { clsx } from "clsx";
 import { AlertTriangle, Info } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 type Tone = "alert" | "info";
@@ -33,12 +34,18 @@ type Tone = "alert" | "info";
 export function Notice({
   tone,
   children,
+  icon,
   action,
   role,
   className,
 }: {
   tone: Tone;
   children: ReactNode;
+  /** A glyph in place of the tone's own, for a panel that names one
+      kind of caution — the broadcast cautions pick one per kind. It
+      never changes the tone: the colour still says how much this
+      matters, the glyph only says what it is about. */
+  icon?: LucideIcon;
   /** Optional control on the right, centred on the panel. */
   action?: ReactNode;
   /** Set it when the note appears in reaction to something the user
@@ -47,6 +54,7 @@ export function Notice({
   className?: string;
 }) {
   const alert = tone === "alert";
+  const Glyph = icon ?? (alert ? AlertTriangle : Info);
   return (
     <div
       role={role}
@@ -65,11 +73,7 @@ export function Notice({
           box exactly one line tall centres it there, and it keeps
           holding once the text wraps. No corrective padding. */}
       <span className="flex h-5 shrink-0 items-center">
-        {alert ? (
-          <AlertTriangle size={16} strokeWidth={1.75} aria-hidden />
-        ) : (
-          <Info size={16} strokeWidth={1.75} aria-hidden />
-        )}
+        <Glyph size={16} strokeWidth={1.75} aria-hidden />
       </span>
       <div className="min-w-0 flex-1 font-ui text-sm leading-5">{children}</div>
       {action && <div className="shrink-0 self-center">{action}</div>}

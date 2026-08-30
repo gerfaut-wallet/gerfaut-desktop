@@ -529,9 +529,18 @@ export type TxWarningKind =
   | "dust_output"
   | "spends_watched";
 
+/** How loudly a caution is read. The core answers the one question —
+    can the person lose funds or lose privacy? — so the two applications
+    cannot drift into two tables. */
+export type TxSeverity = "alert" | "info";
+
 export interface TxWarning {
   kind: TxWarningKind;
   message: string;
+  /** The tone to read it in, derived from `kind` by the core. A screen
+      takes it as given: a kind added later must not fall through a
+      hand-written table into a tone nobody chose. */
+  severity: TxSeverity;
 }
 
 /** Everything shown before a transaction is broadcast. */

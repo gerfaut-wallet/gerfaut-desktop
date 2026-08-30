@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { Clock, PenOff } from "lucide-react";
 import { describe, expect, it } from "vitest";
 import { Notice } from "./Notice";
 
@@ -33,6 +34,33 @@ describe("Notice", () => {
     const glyphBox = container.querySelector(".lucide-info")?.parentElement as HTMLElement;
     expect(glyphBox).toHaveClass("h-5", "items-center");
     expect(screen.getByText("Two lines of text, at least.")).toHaveClass("leading-5");
+  });
+
+  it("takes a glyph of its own without letting go of the tone", () => {
+    const { container } = render(
+      <Notice tone="info" icon={Clock}>
+        A time lock keeps this transaction out of the chain for now.
+      </Notice>,
+    );
+    // The colour still says how much this matters; the glyph only says
+    // what it is about. Without the escape hatch, a caution list has to
+    // be hand-rolled to keep its per-kind icons.
+    const panel = container.firstElementChild as HTMLElement;
+    expect(panel).toHaveClass("border-pending/25", "bg-pending-surface", "text-pending");
+    expect(container.querySelector(".lucide-clock")).toBeInTheDocument();
+    expect(container.querySelector(".lucide-info")).not.toBeInTheDocument();
+  });
+
+  it("keeps the red while wearing another glyph", () => {
+    const { container } = render(
+      <Notice tone="alert" icon={PenOff}>
+        Some inputs carry no signature.
+      </Notice>,
+    );
+    const panel = container.firstElementChild as HTMLElement;
+    expect(panel).toHaveClass("border-alert/25", "bg-alert-surface", "text-alert");
+    expect(container.querySelector(".lucide-pen-off")).toBeInTheDocument();
+    expect(container.querySelector(".lucide-triangle-alert")).not.toBeInTheDocument();
   });
 
   it("takes an action on the right", () => {
