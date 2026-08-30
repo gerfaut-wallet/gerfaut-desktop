@@ -921,6 +921,7 @@ export function BackendSection({
         />
       )}
       <ScanQrModal
+        caption="Point the camera at the QR code your node prints beside its Electrum or Esplora app."
         open={scanOpen}
         onClose={() => setScanOpen(false)}
         onScan={(text) => void applyScan(text)}

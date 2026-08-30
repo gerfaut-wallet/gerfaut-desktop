@@ -14,11 +14,17 @@ export function ScanQrModal({
   open,
   onClose,
   onScan,
+  caption,
 }: {
   open: boolean;
   onClose: () => void;
   /** Called once with the assembled text; the modal closes itself. */
   onScan: (text: string) => void;
+  /** What this scan expects to see. The wallet import and the backend
+      settings both open this modal, and telling someone to point at a
+      descriptor when they are holding their node's server QR is worse
+      than saying nothing. */
+  caption?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [state, setState] = useState<ScanState>("starting");
@@ -183,9 +189,9 @@ export function ScanQrModal({
           </p>
         ) : (
           <p className="font-ui text-xs text-muted">
-            Point the camera at a descriptor, extended public key, or address QR
-            code: plain text, UR, or BBQr, animated or not. Frames are decoded
-            on this machine and never leave it.
+            {caption ??
+              "Point the camera at a descriptor, extended public key, or address QR code: plain text, UR, or BBQr, animated or not."}{" "}
+            Frames are decoded on this machine and never leave it.
           </p>
         )}
       </div>
