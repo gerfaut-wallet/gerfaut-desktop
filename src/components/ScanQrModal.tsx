@@ -50,13 +50,29 @@ export function ScanQrModal({
     let pending: string | null = null;
     const frames: string[] = [];
     const seen = new Set<string>();
+    /** Frames the core has already turned down. */
+    const refused = new Set<string>();
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d", { willReadFrequently: true });
+
+    // The scan goes back to nothing and says why. The bar goes with it:
+    // left standing it would show progress towards an assembly that no
+    // longer exists. A lone frame at fault is barred from the next try,
+    // since the camera sees the same code eight times a second and the
+    // answer will not change; further along any of the frames could be
+    // the bad one, so none of them is.
+    const giveUp = (reason: string) => {
+      setError(reason);
+      setProgress(null);
+      if (frames.length === 1) refused.add(frames[0]);
+      frames.length = 0;
+      seen.clear();
+    };
 
     // One assembly at a time; a frame seen meanwhile waits its turn
     // rather than being lost until the animation loops back to it.
     const feed = async (frame: string) => {
-      if (seen.has(frame)) return;
+      if (seen.has(frame) || refused.has(frame)) return;
       if (assembling) {
         pending = frame;
         return;
@@ -69,17 +85,25 @@ export function ScanQrModal({
         if (done) return;
         setError(null);
         setProgress(result);
-        if (result.complete && result.text) {
-          done = true;
-          onScanRef.current(result.text);
-          onCloseRef.current();
+        if (result.complete) {
+          if (result.text) {
+            done = true;
+            onScanRef.current(result.text);
+            onCloseRef.current();
+          } else {
+            // Every part arrived and they add up to nothing. Closing on
+            // that would hand the caller an empty string; saying it
+            // keeps the camera on a code that may be readable elsewhere.
+            giveUp("This code came out empty.");
+          }
         }
       } catch (err) {
         // A frame the core refuses (a PSBT, an unknown envelope) is said
         // once and dropped: the camera keeps looking for the right code.
-        setError(isCommandError(err) ? err.message : String(err));
-        frames.length = 0;
-        seen.clear();
+        // A refusal landing after the modal closed belongs to a scan the
+        // user walked away from, and must not surface in the next one.
+        if (done) return;
+        giveUp(isCommandError(err) ? err.message : String(err));
       } finally {
         assembling = false;
       }
@@ -166,6 +190,9 @@ export function ScanQrModal({
               aria-valuemin={0}
               aria-valuemax={progress.total}
               aria-valuenow={progress.received}
+              // Without it a progress bar is announced as a percentage,
+              // and the count of frames is the whole point here.
+              aria-valuetext={`${progress.received} of ${progress.total} frames received`}
               className="absolute inset-x-3 bottom-3 rounded-md bg-black/60 px-3 py-2 backdrop-blur-sm"
             >
               <div className="mb-1.5 flex items-baseline justify-between font-ui text-xs text-white">

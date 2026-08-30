@@ -178,4 +178,101 @@ describe("ScanQrModal", () => {
     // The refused frame did not linger in the next assembly.
     expect(assembleCalls.at(-1)).toEqual(["wpkh(tpub.../0/*)"]);
   });
+
+  it("says it once, however long the camera stays on the refused code", async () => {
+    // A camera pointed at a PSBT sees it every tick, not once.
+    frames.push("B$HP0100ff", "B$HP0100ff", "B$HP0100ff", "wpkh(tpub.../0/*)");
+    mockAssembly((received) =>
+      received[0].startsWith("B$")
+        ? (Promise.reject({
+            kind: "invalid_input",
+            message: "this QR code holds a PSBT, not a wallet to watch",
+          }) as unknown as QrProgress)
+        : { format: "plain", received: 1, total: 1, complete: true, text: received[0] },
+    );
+    const onScan = vi.fn();
+    render(<ScanQrModal open onClose={vi.fn()} onScan={onScan} />);
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+
+    await tick();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/holds a PSBT/);
+    await tick();
+    await tick();
+    await tick();
+    await waitFor(() => expect(onScan).toHaveBeenCalledWith("wpkh(tpub.../0/*)"));
+    // One refusal, one answer: the two further sightings were dropped
+    // without going back to the core for the same verdict.
+    expect(assembleCalls).toEqual([["B$HP0100ff"], ["wpkh(tpub.../0/*)"]]);
+  });
+
+  it("a refusal takes down the count it had filled in", async () => {
+    frames.push("ur:crypto-output/1-3/aaaa", "ur:crypto-output/2-3/bbbb", "B$HP0100ff");
+    mockAssembly((received) =>
+      received.at(-1)?.startsWith("B$")
+        ? (Promise.reject({
+            kind: "invalid_input",
+            message: "this QR code holds a PSBT, not a wallet to watch",
+          }) as unknown as QrProgress)
+        : { format: "ur", received: received.length, total: 3, complete: false, text: null },
+    );
+    render(<ScanQrModal open onClose={vi.fn()} onScan={vi.fn()} />);
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+
+    await tick();
+    await tick();
+    expect(await screen.findByText("2 / 3")).toBeInTheDocument();
+
+    // The frames counted are dropped with the refusal, so a bar left at
+    // 2 of 3 would promise a scan nothing is working towards any more.
+    await tick();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/holds a PSBT/);
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
+  it("a code that adds up to nothing says so instead of handing over an empty scan", async () => {
+    frames.push("B$HU0100ff");
+    mockAssembly(() => ({
+      format: "bbqr",
+      received: 1,
+      total: 1,
+      complete: true,
+      text: "",
+    }));
+    const onScan = vi.fn();
+    const onClose = vi.fn();
+    render(<ScanQrModal open onClose={onClose} onScan={onScan} />);
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    await tick();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("This code came out empty.");
+    // Closing on it would drop the caller back on a page holding an
+    // empty string, which is the silent stall this scanner had.
+    expect(onScan).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("a refusal that lands after the scanner closed belongs to the scan it came from", async () => {
+    let refuse: (reason: unknown) => void = () => {};
+    mockIPC((cmd) => {
+      if (cmd !== "assemble_qr") throw new Error(`unexpected command ${cmd}`);
+      return new Promise<QrProgress>((_, no) => {
+        refuse = no;
+      });
+    });
+    frames.push("B$HP0100ff");
+    const { rerender } = render(<ScanQrModal open onClose={vi.fn()} onScan={vi.fn()} />);
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    await tick(); // the core has the frame and has not answered yet
+
+    // The user gives up mid-assembly and opens the scanner again later.
+    rerender(<ScanQrModal open={false} onClose={vi.fn()} onScan={vi.fn()} />);
+    rerender(<ScanQrModal open onClose={vi.fn()} onScan={vi.fn()} />);
+    await act(async () => {
+      refuse({ kind: "invalid_input", message: "this QR code holds a PSBT, not a wallet to watch" });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
 });

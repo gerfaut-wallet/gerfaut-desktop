@@ -1,5 +1,7 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { clsx } from "clsx";
 import { Eye, EyeOff } from "lucide-react";
+import type { Ref } from "react";
 import { useEffect, useRef, useState } from "react";
 import { AnimatedQr } from "../components/AnimatedQr";
 import { Button, IconButton } from "../components/Button";
@@ -38,11 +40,20 @@ function PasswordField({
   label,
   value,
   onChange,
+  inputRef,
+  describedBy,
 }: {
   id: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
+  /** Set when the screen has to put the caret here itself. */
+  inputRef?: Ref<HTMLInputElement>;
+  /** What the field is for, when the screen states it above rather
+      than in the label. It is read out when the caret arrives, which a
+      live region cannot promise for a panel that appears at the same
+      moment as the text inside it. */
+  describedBy?: string;
 }) {
   const [hidden, setHidden] = useState(true);
   return (
@@ -51,6 +62,8 @@ function PasswordField({
       <div className="relative">
         <input
           id={id}
+          ref={inputRef}
+          aria-describedby={describedBy}
           type={hidden ? "password" : "text"}
           value={value}
           autoComplete="off"
@@ -279,6 +292,12 @@ export function BackupExportModal({
   );
 }
 
+/** Where the backup being restored was read from. A scan closes the
+    scanner over the screen and a file dialog covers it, so in both
+    cases the person comes back to a page that has to say what it now
+    holds, rather than leave a greyed button to explain itself. */
+type BackupSource = { kind: "qr" } | { kind: "file"; name: string };
+
 /** Opens a backup, lists what it holds, and adds what the user picks. */
 export function BackupRestoreModal({
   open: isOpen,
@@ -295,18 +314,19 @@ export function BackupRestoreModal({
   const previewBackup = usePreviewBackup();
   const importBackup = useImportBackup();
   const [source, setSource] = useState<string | null>(null);
-  const [sourceLabel, setSourceLabel] = useState("");
+  const [from, setFrom] = useState<BackupSource | null>(null);
   const [password, setPassword] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   const [preview, setPreview] = useState<BackupPreview | null>(null);
   const [chosen, setChosen] = useState<Set<number>>(new Set());
   const [applySettings, setApplySettings] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
+  const passwordRef = useRef<HTMLInputElement>(null);
   // Same reason as the export modal: this one stays mounted too.
   useEffect(() => {
     if (!isOpen) {
       setSource(null);
-      setSourceLabel("");
+      setFrom(null);
       setPassword("");
       setProblem(null);
       setPreview(null);
@@ -315,9 +335,16 @@ export function BackupRestoreModal({
     }
   }, [isOpen]);
 
+  // The caret follows the backup that just landed. The scanner returns
+  // focus to the button that opened it, which is a step already taken;
+  // the password is the one that is not.
+  useEffect(() => {
+    if (from !== null) passwordRef.current?.focus();
+  }, [from]);
+
   const close = () => {
     setSource(null);
-    setSourceLabel("");
+    setFrom(null);
     setPassword("");
     setProblem(null);
     setPreview(null);
@@ -337,7 +364,7 @@ export function BackupRestoreModal({
       });
       if (typeof path !== "string") return;
       setSource(await ipc.readBackupFile(path));
-      setSourceLabel(`File: ${path.split(/[\\/]/).pop() ?? path}`);
+      setFrom({ kind: "file", name: path.split(/[\\/]/).pop() ?? path });
       setProblem(null);
     } catch (error) {
       // A file too large, gone, or unreadable: say so rather than
@@ -417,11 +444,33 @@ export function BackupRestoreModal({
               Scan a QR code
             </Button>
           </div>
-          {sourceLabel && <p className="font-ui text-xs text-muted">{sourceLabel}</p>}
+          {/* What was read, in the same words for either source and at
+              the weight of a fact the screen states — not the grey aside
+              a scanner closing over the page reads as a crash. */}
+          {from && (
+            <div
+              id="restore-source"
+              className="rounded-lg border border-border bg-background p-4"
+            >
+              <p className="font-ui text-sm text-text">
+                Backup read from{" "}
+                {from.kind === "qr" ? (
+                  "the QR code"
+                ) : (
+                  <span className="break-all font-medium">{from.name}</span>
+                )}
+              </p>
+              <p className="mt-0.5 font-ui text-xs text-muted">
+                Type its password to open it.
+              </p>
+            </div>
+          )}
           <PasswordField
             id="restore-password"
             label="Password"
             value={password}
+            inputRef={passwordRef}
+            describedBy={from ? "restore-source" : undefined}
             onChange={(value) => {
               setPassword(value);
               setProblem(null);
@@ -445,7 +494,7 @@ export function BackupRestoreModal({
             onClose={() => setScanOpen(false)}
             onScan={(text) => {
               setSource(text);
-              setSourceLabel("QR code scanned");
+              setFrom({ kind: "qr" });
               setProblem(null);
             }}
           />
@@ -459,7 +508,17 @@ export function BackupRestoreModal({
           <ul className="flex flex-col gap-2">
             {preview.wallets.map((wallet) => (
               <li key={wallet.index}>
-                <label className="flex cursor-pointer items-start gap-2.5">
+                {/* A wallet already watched stays on the list, out of
+                    reach: showing what will not be done says more than
+                    dropping it, which would read as a backup missing a
+                    wallet. Its name steps back to the weight of the
+                    line under it — demoted, still readable. */}
+                <label
+                  className={clsx(
+                    "flex items-start gap-2.5",
+                    wallet.already_watched ? "cursor-default" : "cursor-pointer",
+                  )}
+                >
                   <input
                     type="checkbox"
                     className="mt-1 accent-primary"
@@ -473,7 +532,12 @@ export function BackupRestoreModal({
                     }}
                   />
                   <span className="flex min-w-0 flex-col">
-                    <span className="font-ui text-sm font-medium text-text">
+                    <span
+                      className={clsx(
+                        "font-ui text-sm font-medium",
+                        wallet.already_watched ? "text-muted" : "text-text",
+                      )}
+                    >
                       {wallet.name}
                     </span>
                     <span className="font-ui text-xs text-muted">

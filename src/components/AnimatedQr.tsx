@@ -47,8 +47,14 @@ export function AnimatedQr({ frames, size = 320 }: { frames: string[]; size?: nu
         }
         dangerouslySetInnerHTML={{ __html: svg }}
       />
-      <p className="font-ui text-xs text-muted">
-        Scan it with Gerfaut on the other device
+      {/* The counter below is a place in the loop, not a count of what
+          has been sent — the scanner shows a counter that looks exactly
+          the same and does mean progress. The caption names which one
+          this is, so the two numbers are never read as one. */}
+      <p className="text-center font-ui text-xs text-muted">
+        {animated
+          ? "Scan it with Gerfaut on the other device. The code loops: start at any frame."
+          : "Scan it with Gerfaut on the other device."}
       </p>
       {animated && (
         <p className="tabular font-ui text-xs text-muted">
