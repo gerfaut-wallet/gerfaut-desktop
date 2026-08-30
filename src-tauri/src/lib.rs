@@ -8,6 +8,7 @@
 use gerfaut_core::WalletManager;
 use gerfaut_core::backup::{BackupBundle, BackupOptions, BackupPreview, ImportChoices, ImportReport};
 use gerfaut_core::chain::BackendConfig;
+use gerfaut_core::chain::connect::ScannedBackend;
 use gerfaut_core::chain::tor::{TorRoute, TorSettings, TorStatus};
 use gerfaut_core::error::CoreError;
 use gerfaut_core::input::qr::QrProgress;
@@ -72,6 +73,14 @@ fn parse_input(
 ) -> CommandResult<ParsedInput> {
     let options = ImportOptions { script, derivation };
     Ok(gerfaut_core::input::parse_input_with_options(&input, &options)?)
+}
+
+/// Reads a server address scanned or pasted into the backend settings:
+/// the Electrum one-liner `host:port:s|t`, an `ssl://`/`tcp://` address,
+/// or an `http(s)://` Esplora endpoint.
+#[tauri::command]
+fn parse_backend(input: String) -> CommandResult<ScannedBackend> {
+    Ok(gerfaut_core::chain::connect::parse_backend(&input)?)
 }
 
 /// Assembles the QR frames scanned so far (plain, UR, BBQr).
@@ -525,6 +534,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             parse_input,
+            parse_backend,
             assemble_qr,
             add_wallet,
             list_wallets,
