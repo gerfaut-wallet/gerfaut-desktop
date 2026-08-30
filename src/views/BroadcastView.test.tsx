@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BroadcastView } from "./BroadcastView";
 import type { BroadcastStatus, TxPreview, TxWarning } from "../lib/ipc";
 import { useUi } from "../state/store";
+import { formatFiat } from "../lib/format";
 
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 
@@ -19,6 +20,8 @@ vi.mock("../components/ScanQrModal", () => ({
 const TXID = "ab".repeat(32);
 const PREV = "cd".repeat(32);
 const HEX = "0200000000010112ab";
+/** A round rate, so a fiat figure is easy to name in an assertion. */
+const RATE = 50_000;
 
 function warning(kind: TxWarning["kind"], severity: TxWarning["severity"], message: string) {
   return { kind, severity, message };
@@ -91,6 +94,7 @@ function mount(preview: TxPreview = PREVIEW, standing: BroadcastStatus = status(
     if (cmd === "preview_transaction") return preview;
     if (cmd === "broadcast_transaction") return REPORT;
     if (cmd === "transaction_status") return standing;
+    if (cmd === "fetch_price") return { rate: RATE, currency: "eur", at: 0, source: "coingecko" };
     return undefined;
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -198,6 +202,77 @@ describe("BroadcastView", () => {
     expect(pill).toHaveClass("bg-pending-surface", "text-pending");
     expect(pill).not.toHaveClass("bg-alert-surface");
     expect(screen.getByText(/Broadcasting it again does no harm/)).toBeInTheDocument();
+  });
+
+  it("gives a mined block a line of its own, away from the count", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const user = mount(
+      PREVIEW,
+      status({ confirmed: true, block_height: 4_611_010, confirmations: 3, at: now }),
+    );
+    await send(user);
+
+    // On one line the comma joined the two figures: "block 4 611 010, 3
+    // confirmations" was read as a height ending in a 3.
+    const block = await screen.findByText("Mined in block 4 611 010");
+    expect(screen.getByText("3 confirmations as of just now")).toBeInTheDocument();
+    expect(screen.queryByText(/4 611 010, 3/)).not.toBeInTheDocument();
+    // Split, but still announced as one thing when it changes.
+    expect(block.parentElement).toHaveAttribute("aria-live", "polite");
+  });
+
+  it("counts a single confirmation in the singular", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const user = mount(
+      PREVIEW,
+      status({ confirmed: true, block_height: 4_611_010, confirmations: 1, at: now }),
+    );
+    await send(user);
+    expect(await screen.findByText("1 confirmation as of just now")).toBeInTheDocument();
+  });
+
+  it("asks before forgetting a past broadcast, and forgets only on yes", async () => {
+    useUi.setState({
+      recentBroadcasts: [
+        { txid: TXID, network: "signet", hex: HEX, backend: "mempool.space", at: 1_755_000_000 },
+      ],
+    });
+    const user = mount();
+    const past = () => within(screen.getByRole("region", { name: "Past broadcasts" }));
+    await user.click(past().getByRole("button", { name: "Forget this broadcast" }));
+
+    const dialog = within(await screen.findByRole("dialog", { name: "Forget this broadcast?" }));
+    // What is lost and what is not, in words rather than in a colour.
+    expect(dialog.getByText("This record cannot be brought back.")).toBeInTheDocument();
+    expect(dialog.getByText(/on the network and is untouched/)).toBeInTheDocument();
+
+    await user.click(dialog.getByRole("button", { name: "Cancel" }));
+    expect(useUi.getState().recentBroadcasts).toHaveLength(1);
+
+    await user.click(past().getByRole("button", { name: "Forget this broadcast" }));
+    const asked = within(await screen.findByRole("dialog", { name: "Forget this broadcast?" }));
+    await user.click(asked.getByRole("button", { name: "Forget" }));
+    expect(useUi.getState().recentBroadcasts).toHaveLength(0);
+    expect(screen.queryByRole("region", { name: "Past broadcasts" })).not.toBeInTheDocument();
+  });
+
+  it("prices a preview line in the chosen unit only, never in fiat", async () => {
+    // The preview and the transaction detail are one page with two
+    // entries: a row that carries euros here and only bitcoin there
+    // would be the same list drawn by two rules.
+    // The price query only runs because something on screen asks for a
+    // rate, so putting a fiat line back here would fetch one and make
+    // the euro figure appear: the absence below is what guards it.
+    useUi.setState({ fiatEnabled: true, fiatCurrency: "eur", fiatSource: "coingecko" });
+    const user = mount();
+    await preview(user);
+    const region = screen.getByRole("region", { name: "Outputs" });
+    const outputs = within(region);
+    expect(outputs.getByText("0.00150000 BTC")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(outputs.queryByText(formatFiat(150_000, RATE, "eur"))).not.toBeInTheDocument(),
+    );
+    expect(region.textContent ?? "").not.toMatch(/[€$£¥]/);
   });
 
   it("totals each side on the heading that counts it", async () => {

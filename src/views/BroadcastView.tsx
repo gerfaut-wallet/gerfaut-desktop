@@ -25,7 +25,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { AddressChip } from "../components/AddressChip";
-import { StackedAmount, useAmountText } from "../components/Amount";
+import { UnitAmount, useAmountText } from "../components/Amount";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { Notice } from "../components/Notice";
@@ -578,11 +578,7 @@ function IoList({
                 </span>
               </span>
               <span className="shrink-0 text-right">
-                {io.value_sats !== null ? (
-                  <StackedAmount sats={io.value_sats} />
-                ) : (
-                  <span className="font-ui text-[13px] text-muted">n/a</span>
-                )}
+                <UnitAmount sats={io.value_sats} />
               </span>
             </li>
           );
@@ -676,6 +672,7 @@ function StatusCard({
   const [watching, setWatching] = useState(live);
   const status = useTransactionStatus(entry.network, watching ? entry.hex : null);
   const [confirmExplorer, setConfirmExplorer] = useState(false);
+  const [confirmForget, setConfirmForget] = useState(false);
   const [skipNextTime, setSkipNextTime] = useState(false);
   const url = explorerTxUrl(entry.network, entry.txid);
 
@@ -747,17 +744,30 @@ function StatusCard({
         </div>
       </div>
 
-      <p className="mt-3 font-ui text-sm text-muted" aria-live="polite">
-        {!watching && "Not checked since this session opened."}
-        {watching && status.isPending && "Asking the backend…"}
-        {watching && status.isError && "The backend did not answer. Try again in a moment."}
+      <div className="mt-3 font-ui text-sm text-muted" aria-live="polite">
+        {!watching && <p>Not checked since this session opened.</p>}
+        {watching && status.isPending && <p>Asking the backend…</p>}
+        {watching && status.isError && (
+          <p>The backend did not answer. Try again in a moment.</p>
+        )}
         {standing &&
-          (standing.confirmed
-            ? `Mined in block ${groupThousands(String(standing.block_height ?? 0))}, ${standing.confirmations} confirmation${standing.confirmations === 1 ? "" : "s"} as of ${relativeTime(standing.at)}.`
-            : standing.found
-              ? "Waiting to be mined."
-              : `${standing.backend} does not have this transaction. It may not have been relayed, or it was dropped or replaced. Broadcasting it again does no harm.`)}
-      </p>
+          (standing.confirmed ? (
+            <>
+              {/* The height keeps a line to itself. Run into the count
+                  after a comma, the grouped number swallows it: "block
+                  4 611 010, 3 confirmations" reads as one figure whose
+                  last group happens to be a 3. */}
+              {standing.block_height !== null && (
+                <p>{`Mined in block ${groupThousands(String(standing.block_height))}`}</p>
+              )}
+              <p>{`${groupThousands(String(standing.confirmations))} confirmation${standing.confirmations === 1 ? "" : "s"} as of ${relativeTime(standing.at)}`}</p>
+            </>
+          ) : standing.found ? (
+            <p>Waiting to be mined.</p>
+          ) : (
+            <p>{`${standing.backend} does not have this transaction. It may not have been relayed, or it was dropped or replaced. Broadcasting it again does no harm.`}</p>
+          ))}
+      </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {url && (
@@ -771,7 +781,12 @@ function StatusCard({
           </Button>
         )}
         {!live && (
-          <Button variant="ghost" className="h-8" onClick={onForget} aria-label="Forget this broadcast">
+          <Button
+            variant="ghost"
+            className="h-8"
+            onClick={() => setConfirmForget(true)}
+            aria-label="Forget this broadcast"
+          >
             <Trash2 size={14} strokeWidth={1.5} aria-hidden />
             Forget
           </Button>
@@ -816,6 +831,43 @@ function StatusCard({
             }}
           >
             Open
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={confirmForget}
+        onClose={() => setConfirmForget(false)}
+        title="Forget this broadcast?"
+        centered
+      >
+        {/* Amber, not red: nothing on chain moves and no privacy is
+            spent — only a row in a local list goes. Red is kept for
+            lost funds and lost privacy, and it is explicitly not the
+            colour of a delete. The words carry the irreversibility. */}
+        <Notice tone="info">
+          <span className="font-medium">This record cannot be brought back.</span>
+          <span className="mt-0.5 block text-xs text-muted">
+            Gerfaut keeps no copy once it is forgotten.
+          </span>
+        </Notice>
+        <p className="mt-4 font-ui text-sm text-muted">
+          This only drops Gerfaut's local record of the broadcast. The transaction is on
+          the network and is untouched.
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setConfirmForget(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              setConfirmForget(false);
+              onForget();
+            }}
+          >
+            <Trash2 size={16} strokeWidth={1.5} aria-hidden />
+            Forget
           </Button>
         </div>
       </Modal>
