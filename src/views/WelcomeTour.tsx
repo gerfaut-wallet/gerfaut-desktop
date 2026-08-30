@@ -88,26 +88,28 @@ export function WelcomeTour({ open, onClose }: { open: boolean; onClose: () => v
           ))}
         </div>
 
-        <div className="flex w-full items-center justify-between pt-2">
+        <div className="flex w-full items-center pt-2">
           {/* A page one can only leave or step past is re-read by
-              starting over: Back takes the left from the second page
-              on, and Skip stays reachable beside it. */}
-          <div className="flex items-center gap-1">
-            {step > 0 && (
-              <Button variant="ghost" onClick={() => setStep(step - 1)}>
-                Back
-              </Button>
-            )}
+              starting over: Back takes the left from the second page on.
+              Skip is pushed to the far side of the row — of these two
+              ghost buttons one only steps back and the other retires
+              the tour for good, and four pixels is all a slip needs. */}
+          {step > 0 && (
+            <Button variant="ghost" onClick={() => setStep(step - 1)}>
+              Back
+            </Button>
+          )}
+          <div className="ml-auto flex items-center gap-3">
             <Button variant="ghost" onClick={done}>
               Skip
             </Button>
+            <Button
+              variant="primary"
+              onClick={() => (last ? done() : setStep(step + 1))}
+            >
+              {last ? "Get started" : "Next"}
+            </Button>
           </div>
-          <Button
-            variant="primary"
-            onClick={() => (last ? done() : setStep(step + 1))}
-          >
-            {last ? "Get started" : "Next"}
-          </Button>
         </div>
       </div>
     </Modal>

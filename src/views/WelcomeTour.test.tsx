@@ -31,6 +31,19 @@ describe("WelcomeTour", () => {
     expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
   });
 
+  it("keeps Skip away from Back: one of the two retires the tour", async () => {
+    const { user } = renderTour();
+    await user.click(screen.getByRole("button", { name: "Next" }));
+
+    const back = screen.getByRole("button", { name: "Back" });
+    const skip = screen.getByRole("button", { name: "Skip" });
+    // Two ghost buttons four pixels apart, and the wrong one dismisses
+    // onboarding for good: Skip belongs on the far side of the row.
+    expect(back.parentElement).not.toBe(skip.parentElement);
+    expect(skip.parentElement).toHaveClass("ml-auto");
+    expect(skip.parentElement).toContainElement(screen.getByRole("button", { name: "Next" }));
+  });
+
   it("keeps the arrow keys walking the pages", async () => {
     const { user } = renderTour();
     await user.click(screen.getByRole("button", { name: "Next" }));
