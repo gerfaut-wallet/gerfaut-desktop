@@ -10,6 +10,15 @@ import {
 import { useFiatRate } from "../state/queries";
 import { useUi } from "../state/store";
 
+/** An amount as plain text, for a heading or a fact where a component
+    would not fit: the chosen unit, masked when the display is, `n/a`
+    when nobody could tell us the value. */
+export function useAmountText(sats: number | null): string {
+  const { masked, unit } = useUi();
+  if (sats === null) return "n/a";
+  return masked ? MASKED : formatAmount(sats, unit);
+}
+
 /** Fiat value of an amount, when the display is enabled and a quote is
     available. Degrades to nothing, never to an error. */
 export function useFiatValue(sats: number): string | null {
