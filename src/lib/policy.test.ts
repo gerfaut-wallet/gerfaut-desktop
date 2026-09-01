@@ -400,6 +400,16 @@ describe("branchStatus", () => {
     expect(far.glyph).toBe("clock");
   });
 
+  it("turns amber under thirty days, not at them", () => {
+    const tone = (blocks: number) =>
+      branchStatus(
+        branch("b", "primary", "Primary", key("k0"), { kind: "locked", until: blocksLeft(blocks) }),
+      ).tone;
+    // 4 320 blocks are thirty days to the minute: still neutral.
+    expect(tone(4_320)).toBe("neutral");
+    expect(tone(4_319)).toBe("pending");
+  });
+
   it("counts coins, the next to open, and the ones still waiting", () => {
     const mixed = branchStatus(
       branch("b", "recovery", "Recovery", key("k1"), {

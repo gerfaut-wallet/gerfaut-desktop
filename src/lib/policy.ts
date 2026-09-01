@@ -23,7 +23,8 @@ import type {
 export const BLOCK_SECONDS = 600;
 
 /** Under this much left a lock reads as approaching: amber rather than
-    the neutral of a wait still far off. */
+    the neutral of a wait still far off. Thirty days exactly are not
+    yet under it. */
 export const APPROACHING_SECONDS = 30 * 86_400;
 
 // --- order ----------------------------------------------------------------
@@ -290,7 +291,7 @@ export interface BranchStatus {
 }
 
 function approaching(remaining: Remaining): boolean {
-  return remaining.remaining_seconds !== null && remaining.remaining_seconds <= APPROACHING_SECONDS;
+  return remaining.remaining_seconds !== null && remaining.remaining_seconds < APPROACHING_SECONDS;
 }
 
 /** "1 432 blocks ≈ 10 days" when the figure is in blocks, "10 days"
