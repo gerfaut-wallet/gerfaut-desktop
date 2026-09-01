@@ -978,8 +978,11 @@ describe("policy page", () => {
     expect(pill.querySelector("svg.lucide-clock")).not.toBe(null);
     // Far off: neutral, not amber.
     expect(pill).toHaveAttribute("data-tone", "neutral");
-    // The nearest coin has waited 10 080 of 52 560 blocks: a fifth of the way.
-    expect(within(recovery).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "19");
+    // The nearest coin has waited 10 080 of 52 560 blocks: a fifth of the
+    // way, said in words too rather than read out as a bare percentage.
+    const bar = within(recovery).getByRole("progressbar");
+    expect(bar).toHaveAttribute("aria-valuenow", "19");
+    expect(bar).toHaveAttribute("aria-valuetext", "19% of the wait");
     expect(within(recovery).getByText("Next coin").parentElement).toHaveTextContent(
       /42.480 blocks ≈ 295 days/,
     );
