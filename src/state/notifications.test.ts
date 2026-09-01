@@ -16,6 +16,7 @@ function report(txs: NewTx[], wallet_id = "w1"): SyncReport {
       confirmed: 0,
       trusted_pending: 0,
       untrusted_pending: 0,
+      pending_net_sats: null,
       immature: 0,
       total: 0,
     },

@@ -80,6 +80,10 @@ export interface BalanceSnapshot {
   untrusted_pending: number;
   immature: number;
   total: number;
+  /** Signed sum of the transactions not yet in a block: what of `total`
+      is still arriving, or has left without the chain having taken it
+      yet. Null once everything is settled. */
+  pending_net_sats: number | null;
 }
 
 export interface SyncStamp {

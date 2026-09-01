@@ -67,6 +67,7 @@ const WALLET: WalletMeta = {
       confirmed: 150_000,
       trusted_pending: 0,
       untrusted_pending: 0,
+      pending_net_sats: null,
       immature: 0,
       total: 150_000,
     },
@@ -393,6 +394,57 @@ describe("overview", () => {
     expect(await screen.findByText("Sync failed")).toBeInTheDocument();
     expect(screen.getByText("Sync failed: showing the last known balance.")).toBeInTheDocument();
     expect(screen.getByLabelText(/mempool\.space: connection timed out/)).toBeInTheDocument();
+  });
+
+  it("says nothing under a balance with nothing in flight", async () => {
+    renderApp();
+    expect(await screen.findByText("0.00150000")).toBeInTheDocument();
+    // The normal state does not announce itself: no note, no clock.
+    expect(screen.queryByText(/all funds confirmed/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("pending")).not.toBeInTheDocument();
+  });
+
+  it("shows what of the total is still out of a block, signed", async () => {
+    walletIpc({
+      wallet_snapshot: () => ({
+        ...SNAPSHOT,
+        balance: { ...SNAPSHOT.balance, total: 200_000, pending_net_sats: 50_000 },
+      }),
+    });
+    renderApp();
+    // The total already counts the arriving funds; the line under it
+    // says how much of it is still waiting, in the unit of the total.
+    expect(await screen.findByText("0.00200000")).toBeInTheDocument();
+    expect(screen.getByText("+0.00050000 BTC")).toBeInTheDocument();
+    expect(screen.getByText("pending")).toBeInTheDocument();
+    expect(screen.queryByText(/includes pending/i)).not.toBeInTheDocument();
+  });
+
+  it("signs a spend the chain has not taken yet as a minus", async () => {
+    walletIpc({
+      wallet_snapshot: () => ({
+        ...SNAPSHOT,
+        balance: { ...SNAPSHOT.balance, total: 69_000, pending_net_sats: -31_000 },
+      }),
+    });
+    renderApp();
+    expect(await screen.findByText("-0.00031000 BTC")).toBeInTheDocument();
+  });
+
+  it("lets a sync failure outrank the pending line", async () => {
+    useUi.setState({ syncErrors: { [WALLET.id]: "mempool.space: connection timed out" } });
+    walletIpc({
+      wallet_snapshot: () => ({
+        ...SNAPSHOT,
+        balance: { ...SNAPSHOT.balance, pending_net_sats: 50_000 },
+      }),
+    });
+    renderApp();
+    // A figure whose source is in doubt is not one to detail.
+    expect(
+      await screen.findByText("Sync failed: showing the last known balance."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("+0.00050000 BTC")).not.toBeInTheDocument();
   });
 
   it("never pretends a wallet that has not synced holds nothing", async () => {

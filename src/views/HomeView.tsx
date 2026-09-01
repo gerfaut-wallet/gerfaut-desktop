@@ -5,6 +5,7 @@ import {
   ArrowLeftRight,
   ArrowUpRight,
   ChevronRight,
+  Clock,
   Coins,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -13,6 +14,7 @@ import { BalanceChart } from "../components/BalanceChart";
 import {
   LOCALE,
   MASKED,
+  formatAmountSigned,
   formatTimestamp,
   groupThousands,
   relativeTime,
@@ -110,12 +112,31 @@ function Card({
 // --- left column --------------------------------------------------------
 
 /** The figure alone can lie: a wallet that never reached a backend shows
-    zero. The note says where the number comes from. */
-function balanceNote(meta: WalletMeta, pending: number, error: string | null): string {
+    zero. The note says where the number comes from, and only then: a
+    balance with nothing to explain explains nothing. "All funds
+    confirmed" was the normal state announcing itself. */
+function balanceNote(meta: WalletMeta, error: string | null): string | null {
   if (error && !meta.last_sync) return "Sync failed: nothing fetched yet.";
   if (error) return "Sync failed: showing the last known balance.";
   if (!meta.last_sync) return "Not synced yet.";
-  return pending > 0 ? "Includes pending funds not yet confirmed." : "All funds confirmed.";
+  return null;
+}
+
+/** What of the total is still moving: the signed sum of the
+    transactions not yet in a block, behind a clock. The total above
+    already counts it; this line says how much of it the chain has not
+    taken yet, and which way it is going. Amber is the colour of
+    waiting, and the sign and the glyph say it without the colour. */
+function PendingLine({ sats }: { sats: number }) {
+  const { masked, unit } = useUi();
+  const figure = masked ? MASKED : formatAmountSigned(sats, unit);
+  return (
+    <p className="mt-2 flex items-center gap-1.5 tabular text-[13px] font-medium text-pending">
+      <Clock size={13} strokeWidth={1.5} aria-hidden />
+      <span>{figure}</span>
+      <span className="sr-only">pending</span>
+    </p>
+  );
 }
 
 function BalanceCard({
@@ -130,12 +151,16 @@ function BalanceCard({
   const utxos = useUtxos(walletId, true);
   const { setView } = useUi();
   const { balance, meta } = snapshot;
-  const pending = balance.untrusted_pending + balance.trusted_pending;
+  const note = balanceNote(meta, error);
   return (
     <Card label="Total balance" className="flex-1">
       <div className="flex h-full flex-col">
         <Balance sats={balance.total} />
-        <p className="mt-2 font-ui text-xs text-muted">{balanceNote(meta, pending, error)}</p>
+        {note ? (
+          <p className="mt-2 font-ui text-xs text-muted">{note}</p>
+        ) : (
+          balance.pending_net_sats !== null && <PendingLine sats={balance.pending_net_sats} />
+        )}
         <div className="flex-1" />
         <div className="-mx-2 mt-3 border-t border-border/60 pt-2">
           <CountRow
