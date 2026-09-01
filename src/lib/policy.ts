@@ -515,11 +515,8 @@ export function policyDigest(snapshot: PolicySnapshot): PolicyDigest {
       return keysDigest(snapshot);
     case "miniscript": {
       const branches = orderBranches(snapshot);
-      const timed = branches.find(
-        (branch) =>
-          branch.role !== "primary" && conditionKeys(branch.condition, snapshot.keys).length > 0,
-      );
-      if (timed) return { figure: timed.label, label: stateWords(timed) };
+      // A primary path that waits is the wallet's only way to spend:
+      // where it stands comes before any later path's.
       const [primary] = branches;
       if (primary && !primary.spendable_now) {
         if (primary.state.kind === "per_coin") {
@@ -532,6 +529,11 @@ export function policyDigest(snapshot: PolicySnapshot): PolicyDigest {
         }
         return { figure: "Spendable", label: stateWords(primary) };
       }
+      const timed = branches.find(
+        (branch) =>
+          branch.role !== "primary" && conditionKeys(branch.condition, snapshot.keys).length > 0,
+      );
+      if (timed) return { figure: timed.label, label: stateWords(timed) };
       return keysDigest(snapshot);
     }
   }

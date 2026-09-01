@@ -494,4 +494,30 @@ describe("policyDigest", () => {
     expect(digestText(policyDigest(wallet))).toBe("Spendable in 10 days");
     expect(policyDigest(wallet)).toEqual({ figure: "Spendable", label: "in 10 days" });
   });
+
+  it("leads with the primary path when it is the one that waits", () => {
+    // Every path waits: the core makes the nearest one primary. The row
+    // says where that one stands, not where the path behind it does.
+    const counting = (blocks: number, state: BranchState): PolicyBranch =>
+      branch(
+        `b${blocks}`,
+        blocks === 4_320 ? "primary" : "recovery",
+        blocks === 4_320 ? "Primary" : "Recovery",
+        and(key(blocks === 4_320 ? "k0" : "k1"), older(blocks)),
+        state,
+        [relative(blocks, state.kind === "per_coin" ? state : { kind: "no_coins", blocks, seconds: null })],
+      );
+    const perCoin = snapshot({
+      coins: 2,
+      branches: [
+        counting(52_560, { kind: "per_coin", unlocked: 0, waiting: 0, locked: 2, next: blocksLeft(50_000) }),
+        counting(4_320, { kind: "per_coin", unlocked: 1, waiting: 0, locked: 1, next: blocksLeft(1_440) }),
+      ],
+    });
+    expect(digestText(policyDigest(perCoin))).toBe("1 of 2 coins unlocked");
+    const empty = snapshot({
+      branches: [counting(52_560, { kind: "no_coins" }), counting(4_320, { kind: "no_coins" })],
+    });
+    expect(digestText(policyDigest(empty))).toBe("Spendable after 30 days");
+  });
 });
