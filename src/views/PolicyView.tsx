@@ -154,9 +154,12 @@ function BranchCard({ branch, keys }: { branch: PolicyBranch; keys: PolicyKey[] 
     >
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <h2 className={LABEL}>{branch.label}</h2>
+        {/* A per-coin state can run long; at the narrowest window the
+            card is 320px wide, and the pill wraps rather than overflow. */}
         <Pill
           tone={status.tone}
           icon={<Glyph size={12} strokeWidth={2} aria-hidden className="shrink-0" />}
+          wrap
         >
           {status.text}
         </Pill>

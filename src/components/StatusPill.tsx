@@ -11,21 +11,26 @@ export type PillTone = "confirmed" | "pending" | "neutral" | "alert";
     dark text + 25% border (measured rule); dark theme: coloured text on
     the surface, no tint; neutral: the sunken ground inside a hairline.
     `data-tone` names the tone for a test, which should not read a
-    class. */
+    class. A pill keeps to one line unless asked to `wrap`: a table
+    cell has the room, a narrow card with a long state does not, and
+    there the glyph stays on the first line of the words. */
 export function Pill({
   tone,
   icon,
+  wrap = false,
   children,
 }: {
   tone: PillTone;
   icon?: ReactNode;
+  wrap?: boolean;
   children: ReactNode;
 }) {
   return (
     <span
       data-tone={tone}
       className={clsx(
-        "tabular inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border py-0.5 font-ui text-xs font-medium",
+        "tabular inline-flex gap-1.5 rounded-full border py-0.5 font-ui text-xs font-medium",
+        wrap ? "items-start" : "items-center whitespace-nowrap",
         icon ? "pl-2 pr-2.5" : "px-2.5",
         tone === "confirmed" && "border-confirmed/25 bg-confirmed-surface text-confirmed",
         tone === "pending" && "border-pending/25 bg-pending-surface text-pending",
@@ -33,7 +38,7 @@ export function Pill({
         tone === "alert" && "border-alert/25 bg-alert-surface text-alert",
       )}
     >
-      {icon}
+      {icon && wrap ? <span className="flex h-4 shrink-0 items-center">{icon}</span> : icon}
       {children}
     </span>
   );
