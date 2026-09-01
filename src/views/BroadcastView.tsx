@@ -28,6 +28,7 @@ import { AddressChip } from "../components/AddressChip";
 import { UnitAmount, useAmountText } from "../components/Amount";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
+import { Pill } from "../components/StatusPill";
 import { Notice } from "../components/Notice";
 import { ScanQrModal } from "../components/ScanQrModal";
 import { TxDiagram } from "../components/TxDiagram";
@@ -596,31 +597,6 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
       </dt>
       <dd className="tabular mt-0.5 truncate font-ui text-sm text-text">{children}</dd>
     </div>
-  );
-}
-
-function Pill({
-  tone,
-  icon,
-  children,
-}: {
-  tone: "neutral" | "confirmed" | "pending" | "alert";
-  icon?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <span
-      className={clsx(
-        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 font-ui text-xs font-medium",
-        tone === "neutral" && "border-border bg-sunken text-muted",
-        tone === "confirmed" && "border-confirmed/25 bg-confirmed-surface text-confirmed",
-        tone === "pending" && "border-pending/25 bg-pending-surface text-pending",
-        tone === "alert" && "border-alert/25 bg-alert-surface text-alert",
-      )}
-    >
-      {icon}
-      {children}
-    </span>
   );
 }
 

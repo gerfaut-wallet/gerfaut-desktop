@@ -5,10 +5,11 @@ import type { ReactNode } from "react";
 import { AddressChip } from "../components/AddressChip";
 import { IconButton } from "../components/Button";
 import { Notice } from "../components/Notice";
+import { Pill } from "../components/StatusPill";
 import { formatTimestamp, groupThousands } from "../lib/format";
 import type { PolicyBranch, PolicyKey, PolicySnapshot } from "../lib/ipc";
 import { isCommandError } from "../lib/ipc";
-import type { BranchStatus, Countdown as CountdownFigures } from "../lib/policy";
+import type { Countdown as CountdownFigures } from "../lib/policy";
 import {
   branchStatus,
   conditionKeys,
@@ -129,10 +130,16 @@ function Body({ snapshot }: { snapshot: PolicySnapshot }) {
 
 // --- branches -------------------------------------------------------------
 
+/** The glyph of each state: shapes that differ, so the state reads
+    without its colour. */
+const GLYPH = { check: Check, clock: Clock, coins: Coins, lock: Lock };
+
 function BranchCard({ branch, keys }: { branch: PolicyBranch; keys: PolicyKey[] }) {
   const outline = conditionOutline(branch.condition, keys);
   const named = conditionKeys(branch.condition, keys);
   const timer = countdown(branch);
+  const status = branchStatus(branch);
+  const Glyph = GLYPH[status.glyph];
   return (
     <section
       aria-label={`${branch.label} path`}
@@ -140,7 +147,12 @@ function BranchCard({ branch, keys }: { branch: PolicyBranch; keys: PolicyKey[] 
     >
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <h2 className={LABEL}>{branch.label}</h2>
-        <StatePill status={branchStatus(branch)} />
+        <Pill
+          tone={status.tone}
+          icon={<Glyph size={12} strokeWidth={2} aria-hidden className="shrink-0" />}
+        >
+          {status.text}
+        </Pill>
       </div>
 
       <div>
@@ -187,29 +199,6 @@ function BranchCard({ branch, keys }: { branch: PolicyBranch; keys: PolicyKey[] 
 
       {timer && <CountdownBlock timer={timer} />}
     </section>
-  );
-}
-
-const GLYPH = { check: Check, clock: Clock, coins: Coins, lock: Lock };
-
-/** The state of a path, in the shape of the transaction pill: a glyph
-    and the words, the colour only at the thresholds. Light theme: tint
-    plus dark text plus the 25 % border; dark theme: coloured text alone;
-    neutral: the page ground inside a hairline. */
-function StatePill({ status }: { status: BranchStatus }) {
-  const Glyph = GLYPH[status.glyph];
-  return (
-    <span
-      className={clsx(
-        "tabular inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border py-0.5 pl-2 pr-2.5 font-ui text-xs font-medium",
-        status.tone === "confirmed" && "border-confirmed/25 bg-confirmed-surface text-confirmed",
-        status.tone === "pending" && "border-pending/25 bg-pending-surface text-pending",
-        status.tone === "neutral" && "border-border bg-background text-muted",
-      )}
-    >
-      <Glyph size={12} strokeWidth={2} aria-hidden className="shrink-0" />
-      {status.text}
-    </span>
   );
 }
 

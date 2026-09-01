@@ -929,7 +929,7 @@ describe("policy page", () => {
     const pill = within(recovery).getByText("1 of 3 coins unlocked · next in 295 days");
     expect(pill.querySelector("svg.lucide-clock")).not.toBe(null);
     // Far off: neutral, not amber.
-    expect(pill).not.toHaveClass("text-pending");
+    expect(pill).toHaveAttribute("data-tone", "neutral");
     // The nearest coin has waited 10 080 of 52 560 blocks: a fifth of the way.
     expect(within(recovery).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "19");
     expect(within(recovery).getByText("Next coin").parentElement).toHaveTextContent(
@@ -948,7 +948,7 @@ describe("policy page", () => {
       await screen.findByText(/^Key A signs after block 201.432, about 10 days from now\.$/),
     ).toBeInTheDocument();
     const soon = screen.getByText(/^In 1.432 blocks ≈ 10 days$/);
-    expect(soon).toHaveClass("text-pending");
+    expect(soon).toHaveAttribute("data-tone", "pending");
     expect(soon.querySelector("svg.lucide-clock")).not.toBe(null);
     expect(screen.getByText(/^Block 201.432 ≈ in 10 days$/)).toBeInTheDocument();
     // An absolute lock has no start to measure from: no bar.
@@ -961,8 +961,7 @@ describe("policy page", () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: /Spendable in 1 year/ }));
     const far = await screen.findByText(/^In 52.560 blocks ≈ 1 year$/);
-    expect(far).not.toHaveClass("text-pending");
-    expect(far).toHaveClass("text-muted");
+    expect(far).toHaveAttribute("data-tone", "neutral");
     expect(far.querySelector("svg.lucide-clock")).not.toBe(null);
   });
 
@@ -988,7 +987,7 @@ describe("policy page", () => {
     expect(await screen.findByText("2 of 3 keys sign.")).toBeInTheDocument();
     expect(screen.getByText("Any 2 of Key A, Key B, Key C")).toBeInTheDocument();
     const pill = screen.getByText("Spendable now");
-    expect(pill).toHaveClass("text-confirmed");
+    expect(pill).toHaveAttribute("data-tone", "confirmed");
     expect(pill.querySelector("svg.lucide-check")).not.toBe(null);
     expect(screen.getByText("thresh(2,pk(Key A),pk(Key B),pk(Key C))")).toBeInTheDocument();
   });
