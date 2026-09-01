@@ -96,6 +96,20 @@ function snapshot(partial: Partial<PolicySnapshot>): PolicySnapshot {
 
 const OPEN: BranchState = { kind: "spendable_now" };
 
+/** `sortedmulti(1, A, B)` as the core hands it over: a multisig split
+    into one open branch per key. */
+function anyOfTwo(): PolicySnapshot {
+  return snapshot({
+    kind: "multisig",
+    has_timelocks: false,
+    keys: KEYS.slice(0, 2),
+    branches: [
+      branch("b0", "primary", "Primary", key("k0"), OPEN),
+      branch("b1", "primary", "Primary B", key("k1"), OPEN),
+    ],
+  });
+}
+
 /** Key A any time, Key B after a year-long wait, three coins counted. */
 function liana(state: BranchState): PolicySnapshot {
   return snapshot({
@@ -133,6 +147,26 @@ describe("describePolicy", () => {
         }),
       ),
     ).toBe("Keys A, B and C sign.");
+  });
+
+  it("counts a one of n multisig across the branches the core split it into", () => {
+    // `sortedmulti(1, A, B)` is one threshold to the core's kind and two
+    // branches to its list, one key each: read together, not as the first.
+    expect(describePolicy(anyOfTwo())).toBe("Any of 2 keys signs.");
+    expect(digestText(policyDigest(anyOfTwo()))).toBe("1 of 2 keys");
+    const locked = snapshot({
+      branches: [
+        branch(
+          "b0",
+          "primary",
+          "Primary",
+          and(thresh(1, key("k0"), key("k1")), older(144)),
+          { kind: "no_coins" },
+          [relative(144, { kind: "no_coins", blocks: 144, seconds: null })],
+        ),
+      ],
+    });
+    expect(describePolicy(locked)).toBe("Any of 2 keys signs once a coin has waited about 1 day.");
   });
 
   it("reads a recovery path in plain words", () => {

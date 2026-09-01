@@ -244,6 +244,37 @@ const MULTISIG_POLICY: PolicySnapshot = {
   has_timelocks: false,
 };
 
+/** `sortedmulti(1, A, B)`: one threshold to the core's kind, and one
+    branch per key in its list, each a primary path of its own. */
+const ANY_KEY_POLICY: PolicySnapshot = {
+  ...MULTISIG_POLICY,
+  descriptor: "wsh(sortedmulti(1,xpubA.../0/*,xpubB.../0/*))#eeeeeeee",
+  policy: "or(pk(Key A),pk(Key B))",
+  keys: [KEY_A, KEY_B],
+  branches: [
+    {
+      id: "b0",
+      role: "primary",
+      label: "Primary",
+      summary: "Key A",
+      condition: { kind: "key", key_id: "k0" },
+      timelocks: [],
+      state: { kind: "spendable_now" },
+      spendable_now: true,
+    },
+    {
+      id: "b1",
+      role: "primary",
+      label: "Primary B",
+      summary: "Key B",
+      condition: { kind: "key", key_id: "k1" },
+      timelocks: [],
+      state: { kind: "spendable_now" },
+      spendable_now: true,
+    },
+  ],
+};
+
 const ADDRESS_POLICY: PolicySnapshot = {
   kind: "address",
   script: "segwit",
@@ -905,6 +936,20 @@ describe("policy page", () => {
     expect(pill).toHaveClass("text-confirmed");
     expect(pill.querySelector("svg.lucide-check")).not.toBe(null);
     expect(screen.getByText("thresh(2,pk(Key A),pk(Key B),pk(Key C))")).toBeInTheDocument();
+  });
+
+  it("reads a one of two multisig as any key, across both of its paths", async () => {
+    walletIpc({ wallet_policy: () => ANY_KEY_POLICY });
+    renderApp();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^1 of 2 keys, policy$/ }));
+    expect(await screen.findByText("Any of 2 keys signs.")).toBeInTheDocument();
+    const cards = screen.getAllByRole("region", { name: /path$/ });
+    expect(cards.map((card) => card.getAttribute("aria-label"))).toEqual([
+      "Primary path",
+      "Primary B path",
+    ]);
+    expect(screen.getAllByText("Spendable now")).toHaveLength(2);
   });
 
   it("keeps an address wallet to a sentence and its address", async () => {

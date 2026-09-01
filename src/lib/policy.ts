@@ -135,14 +135,37 @@ function keyThreshold(condition: Condition): { k: number; n: number } | null {
 }
 
 /** The keys of a branch as a subject: "Key A", "Keys A and B", "2 of 3
-    keys". Null when no short phrase says it right. */
+    keys", "Any of 2 keys". Null when no short phrase says it right. */
 function keySubject(condition: Condition, keys: PolicyKey[]): string | null {
   const threshold = keyThreshold(condition);
   if (threshold === null) return null;
   const named = conditionKeys(condition, keys);
   if (threshold.n === 1) return named[0]?.label ?? null;
+  if (threshold.k === 1) return `Any of ${threshold.n} keys`;
   if (threshold.k < threshold.n) return `${threshold.k} of ${threshold.n} keys`;
   return `Keys ${joinWords(named.map((key) => letterOf(key.label)), "and")}`;
+}
+
+/** "signs" when one key does, "sign" when several must. */
+function keyVerb(condition: Condition): string {
+  const threshold = keyThreshold(condition);
+  return threshold === null || threshold.k === 1 ? "signs" : "sign";
+}
+
+/** The one threshold a multisig comes down to. The core splits a 1-of-n
+    into one branch per key, as it does every "or": here the branches
+    are one threshold again, so the sentence and the digest count them
+    all rather than reading the first alone. */
+function multisigCondition(snapshot: PolicySnapshot): Condition | null {
+  const [first, ...rest] = snapshot.branches;
+  if (!first) return null;
+  if (rest.length === 0) return first.condition;
+  return {
+    kind: "thresh",
+    k: 1,
+    n: snapshot.branches.length,
+    items: snapshot.branches.map((branch) => branch.condition),
+  };
 }
 
 // --- conditions -----------------------------------------------------------
@@ -366,9 +389,9 @@ export function describePolicy(snapshot: PolicySnapshot): string {
     case "single_key":
       return "One key signs. Any coin is spendable now.";
     case "multisig": {
-      const [branch] = snapshot.branches;
-      const subject = branch ? keySubject(branch.condition, snapshot.keys) : null;
-      return subject ? `${subject} sign.` : "";
+      const condition = multisigCondition(snapshot);
+      const subject = condition ? keySubject(condition, snapshot.keys) : null;
+      return condition && subject ? `${subject} ${keyVerb(condition)}.` : "";
     }
     case "miniscript":
       return orderBranches(snapshot)
@@ -392,8 +415,7 @@ function branchSentence(branch: PolicyBranch, snapshot: PolicySnapshot): string 
   if (branch.role === "primary") {
     const subject = keySubject(branch.condition, snapshot.keys);
     if (subject === null) return `${capitalize(branch.summary)} can spend${tail}.`;
-    const verb = keyThreshold(branch.condition)?.n === 1 ? "signs" : "sign";
-    return `${subject} ${verb}${tail}.`;
+    return `${subject} ${keyVerb(branch.condition)}${tail}.`;
   }
   return `${timedSubject(branch, snapshot.keys)} can spend${tail}.`;
 }
@@ -483,8 +505,8 @@ export function policyDigest(snapshot: PolicySnapshot): PolicyDigest {
 }
 
 function keysDigest(snapshot: PolicySnapshot): PolicyDigest {
-  const [branch] = snapshot.branches;
-  const threshold = branch ? keyThreshold(branch.condition) : null;
+  const condition = multisigCondition(snapshot);
+  const threshold = condition ? keyThreshold(condition) : null;
   if (threshold && threshold.n > 1) {
     return { figure: `${threshold.k} of ${threshold.n}`, label: "keys" };
   }
