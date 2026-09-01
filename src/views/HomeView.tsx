@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Clock,
   Coins,
+  Route,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Balance, ListAmount } from "../components/Amount";
@@ -22,8 +23,15 @@ import {
 } from "../lib/format";
 import { SUPPORTED_RANGES } from "../lib/ipc";
 import type { Network, PriceRange, TxSummary, WalletMeta, WalletSnapshot } from "../lib/ipc";
+import { policyDigest } from "../lib/policy";
 import { balanceSeries } from "../lib/series";
-import { useFees, usePriceHistory, useSnapshot, useUtxos } from "../state/queries";
+import {
+  useFees,
+  usePriceHistory,
+  useSnapshot,
+  useUtxos,
+  useWalletPolicy,
+} from "../state/queries";
 import { useUi } from "../state/store";
 
 const RANGE_LABEL: Record<PriceRange, string> = {
@@ -149,9 +157,13 @@ function BalanceCard({
   error: string | null;
 }) {
   const utxos = useUtxos(walletId, true);
+  const policy = useWalletPolicy(walletId);
   const { setView } = useUi();
   const { balance, meta } = snapshot;
   const note = balanceNote(meta, error);
+  // The policy in the grammar of the counts: "1 key", "2 of 3 keys",
+  // "Recovery in 142 days". Until it is in, the row is only its name.
+  const digest = policy.data ? policyDigest(policy.data) : { figure: "Policy", label: "" };
   return (
     <Card label="Total balance" className="flex-1">
       <div className="flex h-full flex-col">
@@ -163,17 +175,24 @@ function BalanceCard({
         )}
         <div className="flex-1" />
         <div className="-mx-2 mt-3 border-t border-border/60 pt-2">
-          <CountRow
+          <LinkRow
             icon={<Coins size={15} strokeWidth={1.5} aria-hidden />}
-            count={utxos.data?.length ?? null}
+            figure={utxos.data ? groupThousands(String(utxos.data.length)) : "…"}
             label={`UTXO${(utxos.data?.length ?? 0) === 1 ? "" : "s"}`}
             onClick={() => setView("utxos")}
           />
-          <CountRow
+          <LinkRow
             icon={<ArrowLeftRight size={15} strokeWidth={1.5} aria-hidden />}
-            count={meta.cached.tx_count}
+            figure={groupThousands(String(meta.cached.tx_count))}
             label={`transaction${meta.cached.tx_count === 1 ? "" : "s"}`}
             onClick={() => setView("transactions")}
+          />
+          <LinkRow
+            icon={<Route size={15} strokeWidth={1.5} aria-hidden />}
+            figure={digest.figure}
+            label={digest.label}
+            hint={policy.data ? "policy" : undefined}
+            onClick={() => setView("policy")}
           />
         </div>
       </div>
@@ -181,17 +200,21 @@ function BalanceCard({
   );
 }
 
-/** One glanceable count that leads to its page. Counts are structure,
-    not amounts: they stay visible in masked mode. */
-function CountRow({
+/** One glanceable line that leads to its page: a lead figure, a muted
+    tail, a chevron. Counts and the policy digest share it — both are
+    structure, not amounts, and stay visible in masked mode. */
+function LinkRow({
   icon,
-  count,
+  figure,
   label,
+  hint,
   onClick,
 }: {
   icon: ReactNode;
-  count: number | null;
+  figure: string;
   label: string;
+  /** Where the row leads, for a reader who cannot see the icon. */
+  hint?: string;
   onClick: () => void;
 }) {
   return (
@@ -202,10 +225,14 @@ function CountRow({
     >
       <span className="text-muted">{icon}</span>
       <span className="font-ui text-[13px] text-text">
-        <span className="tabular font-medium">
-          {count === null ? "…" : groupThousands(String(count))}
-        </span>{" "}
-        <span className="text-muted">{label}</span>
+        <span className="tabular font-medium">{figure}</span>
+        {label && (
+          <>
+            {" "}
+            <span className="text-muted">{label}</span>
+          </>
+        )}
+        {hint && <span className="sr-only">, {hint}</span>}
       </span>
       <ChevronRight
         size={14}

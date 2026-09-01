@@ -15,6 +15,7 @@ import {
   QrCode,
   Radio,
   RefreshCw,
+  Route,
   Settings,
   Wallet as WalletIcon,
 } from "lucide-react";
@@ -35,6 +36,7 @@ const PAGES: { view: CanvasView; label: string; icon: ReactNode }[] = [
     icon: <ArrowLeftRight size={18} strokeWidth={1.5} aria-hidden />,
   },
   { view: "utxos", label: "UTXOs", icon: <Coins size={18} strokeWidth={1.5} aria-hidden /> },
+  { view: "policy", label: "Policy", icon: <Route size={18} strokeWidth={1.5} aria-hidden /> },
   { view: "receive", label: "Receive", icon: <QrCode size={18} strokeWidth={1.5} aria-hidden /> },
   {
     view: "broadcast",

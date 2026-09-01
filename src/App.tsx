@@ -12,6 +12,7 @@ import { AddWalletModal } from "./views/AddWalletModal";
 import { BroadcastView } from "./views/BroadcastView";
 import { ExportView } from "./views/ExportView";
 import { HomeView } from "./views/HomeView";
+import { PolicyView } from "./views/PolicyView";
 import { ReceiveView } from "./views/ReceiveView";
 import { SettingsView } from "./views/SettingsView";
 import { TransactionsView } from "./views/TransactionsView";
@@ -180,6 +181,7 @@ export default function App() {
                     <TransactionsView walletId={activeWallet.id} />
                   )}
                   {view === "utxos" && <UtxosView walletId={activeWallet.id} />}
+                  {view === "policy" && <PolicyView walletId={activeWallet.id} />}
                   {view === "receive" && <ReceiveView walletId={activeWallet.id} />}
                   {view === "broadcast" && (
                     <BroadcastView network={settings.data.active_network} />

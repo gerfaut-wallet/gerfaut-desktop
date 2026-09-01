@@ -14,6 +14,7 @@ export type CanvasView =
   | "home"
   | "transactions"
   | "utxos"
+  | "policy"
   | "receive"
   | "broadcast"
   | "export"
