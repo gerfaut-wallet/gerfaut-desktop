@@ -400,37 +400,70 @@ export function describePolicy(snapshot: PolicySnapshot): string {
   }
 }
 
-const ROLE_WORD: Record<BranchRole, string> = {
-  primary: "",
-  recovery: "recovery",
-  emergency: "emergency",
-  other: "later",
-};
+/** The roles a sentence names. The primary path is the default and
+    needs no word; an "other" path — one behind a secret, a fourth
+    timelocked one — has no word that says it right. Both are named
+    by their keys instead. */
+type NamedRole = Extract<BranchRole, "recovery" | "emergency">;
+
+function isNamedRole(role: BranchRole): role is NamedRole {
+  return role === "recovery" || role === "emergency";
+}
 
 /** One branch as a sentence: who can spend, then under what lock. */
 function branchSentence(branch: PolicyBranch, snapshot: PolicySnapshot): string {
   const clauses = branch.timelocks.filter((timelock) => timelock.required).map(lockClause);
-  if (branch.state.kind === "needs_preimage") clauses.push(...preimageClauses(branch.condition));
+  const secret = branch.state.kind === "needs_preimage";
+  if (secret) clauses.push(...preimageClauses(branch.condition));
   const tail = clauses.length > 0 ? ` ${joinWords(clauses, "and")}` : "";
-  if (branch.role === "primary") {
-    const subject = keySubject(branch.condition, snapshot.keys);
-    if (subject === null) return `${capitalize(branch.summary)} can spend${tail}.`;
-    return `${subject} ${keyVerb(branch.condition)}${tail}.`;
+  if (isNamedRole(branch.role)) {
+    return `${roleSubject(branch.condition, branch.role, snapshot.keys)} can spend${tail}.`;
   }
-  return `${timedSubject(branch, snapshot.keys)} can spend${tail}.`;
+  const subject = keySubject(branch.condition, snapshot.keys);
+  if (subject === null) return `${plainSubject(branch.condition, snapshot.keys)} can spend${tail}.`;
+  return `${subject} ${secret ? "can spend" : keyVerb(branch.condition)}${tail}.`;
 }
 
-/** "A recovery key", "An emergency key", "Any 2 of 3 recovery keys",
-    "Both emergency keys", "Anyone" for a path with no key at all. */
-function timedSubject(branch: PolicyBranch, keys: PolicyKey[]): string {
-  const role = ROLE_WORD[branch.role];
-  const count = conditionKeys(branch.condition, keys).length;
-  if (count === 0) return "Anyone";
-  const threshold = keyThreshold(branch.condition);
-  if (threshold === null) return `${capitalize(role)} keys`;
+/** "A recovery key", "An emergency key", "Any of 2 recovery keys",
+    "Any 2 of 3 recovery keys", "Both emergency keys"; the keys spelled
+    out when no count says them right. */
+function roleSubject(condition: Condition, role: NamedRole, keys: PolicyKey[]): string {
+  const threshold = keyThreshold(condition);
+  if (threshold === null) return plainSubject(condition, keys);
   if (threshold.n === 1) return `${role === "emergency" ? "An" : "A"} ${role} key`;
+  if (threshold.k === 1) return `Any of ${threshold.n} ${role} keys`;
   if (threshold.k < threshold.n) return `Any ${threshold.k} of ${threshold.n} ${role} keys`;
   return threshold.n === 2 ? `Both ${role} keys` : `All ${threshold.n} ${role} keys`;
+}
+
+/** The condition spelled out, less the locks and secrets the tail of
+    the sentence states: "Key A and any 2 of Key B, Key C, Key D".
+    "Anyone" when nothing is left, for a path with no key at all. */
+function plainSubject(condition: Condition, keys: PolicyKey[]): string {
+  const rest = withoutRequired(condition);
+  return rest === null ? "Anyone" : capitalize(phrase(rest, keys));
+}
+
+/** The condition without what the branch cannot be spent without: the
+    locks and secrets along its "and"s, which the sentence states after
+    the subject. A lock under a threshold that can be met without it
+    stays, as the outline keeps it. Null when nothing is left. */
+function withoutRequired(condition: Condition): Condition | null {
+  switch (condition.kind) {
+    case "key":
+      return condition;
+    case "after":
+    case "older":
+    case "preimage":
+      return null;
+    case "thresh": {
+      if (condition.k !== condition.n) return condition;
+      const items = condition.items.map(withoutRequired).filter((item) => item !== null);
+      if (items.length === 0) return null;
+      if (items.length === 1) return items[0];
+      return { kind: "thresh", k: items.length, n: items.length, items };
+    }
+  }
 }
 
 function lockClause(timelock: Timelock): string {
@@ -454,12 +487,12 @@ function lockClause(timelock: Timelock): string {
   }
 }
 
+/** The secrets a branch cannot be spent without: those along its
+    "and"s, like the locks the tail states. */
 function preimageClauses(condition: Condition): string[] {
-  const clauses: string[] = [];
-  visit(condition, (node) => {
-    if (node.kind === "preimage") clauses.push(`with the secret behind a ${node.hash} hash`);
-  });
-  return clauses;
+  if (condition.kind === "preimage") return [`with the secret behind a ${condition.hash} hash`];
+  if (condition.kind !== "thresh" || condition.k !== condition.n) return [];
+  return condition.items.flatMap(preimageClauses);
 }
 
 // --- digest ---------------------------------------------------------------

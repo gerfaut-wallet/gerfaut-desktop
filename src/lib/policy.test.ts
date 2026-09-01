@@ -242,7 +242,62 @@ describe("describePolicy", () => {
       ],
     });
     expect(describePolicy(wallet)).toBe(
-      "Key A signs. A later key can spend with the secret behind a sha256 hash.",
+      "Key A signs. Key B can spend with the secret behind a sha256 hash.",
+    );
+  });
+
+  it("names a mixed threshold by its members and states a lock once", () => {
+    // The optional lock inside the threshold belongs to the subject; a
+    // required one outside it is the tail, and it is said only there.
+    const mixed = thresh(2, key("k0"), key("k1"), older(100));
+    const open = snapshot({
+      branches: [
+        branch("b0", "primary", "Primary", mixed, OPEN, [
+          relative(100, { kind: "no_coins", blocks: 100, seconds: null }, false),
+        ]),
+      ],
+    });
+    expect(describePolicy(open)).toBe("Any 2 of Key A, Key B, a wait of 100 blocks can spend.");
+    const height = TIP + 1_432;
+    const gated = snapshot({
+      branches: [
+        branch(
+          "b0",
+          "primary",
+          "Primary",
+          and(mixed, { kind: "after", lock: { kind: "height", height } }),
+          { kind: "locked", until: blocksLeft(1_432) },
+          [
+            relative(100, { kind: "no_coins", blocks: 100, seconds: null }, false),
+            {
+              lock: { kind: "absolute", lock: { kind: "height", height } },
+              required: true,
+              state: { kind: "locked", ...blocksLeft(1_432) },
+            },
+          ],
+        ),
+      ],
+    });
+    expect(describePolicy(gated)).toBe(
+      "Any 2 of Key A, Key B, a wait of 100 blocks can spend after block 201 432, about 10 days from now.",
+    );
+  });
+
+  it("spells out a recovery path no count says right", () => {
+    const recovery = (condition: Condition) =>
+      snapshot({
+        branches: [
+          branch("b0", "primary", "Primary", key("k0"), OPEN),
+          branch("b1", "recovery", "Recovery", and(condition, older(4_320)), { kind: "no_coins" }, [
+            relative(4_320, { kind: "no_coins", blocks: 4_320, seconds: null }),
+          ]),
+        ],
+      });
+    expect(describePolicy(recovery(and(key("k0"), thresh(1, key("k1"), key("k2")))))).toBe(
+      "Key A signs. Key A and (Key B or Key C) can spend once a coin has waited about 30 days.",
+    );
+    expect(describePolicy(recovery(thresh(1, key("k1"), key("k2"))))).toBe(
+      "Key A signs. Any of 2 recovery keys can spend once a coin has waited about 30 days.",
     );
   });
 });
