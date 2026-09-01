@@ -18,6 +18,7 @@ use gerfaut_core::manager::SyncAllReport;
 use gerfaut_core::network::Network;
 use gerfaut_core::store::{Settings, VaultKey};
 use gerfaut_core::wallet::meta::WalletMeta;
+use gerfaut_core::wallet::policy::PolicySnapshot;
 use gerfaut_core::wallet::snapshot::{
     AddressEntry, AddressList, SyncReport, TxDetail, UtxoInfo, WalletSnapshot,
 };
@@ -209,6 +210,14 @@ async fn tx_detail(
 #[tauri::command]
 async fn utxos(state: tauri::State<'_, AppState>, id: String) -> CommandResult<Vec<UtxoInfo>> {
     Ok(state.manager.utxos(&id).await?)
+}
+
+#[tauri::command]
+async fn wallet_policy(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> CommandResult<PolicySnapshot> {
+    Ok(state.manager.policy(&id).await?)
 }
 
 #[tauri::command]
@@ -637,6 +646,7 @@ pub fn run() {
             wallet_snapshot,
             tx_detail,
             utxos,
+            wallet_policy,
             receive_addresses,
             address_list,
             export_transactions_csv,

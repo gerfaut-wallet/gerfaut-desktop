@@ -50,6 +50,7 @@ export const keys = {
   wallets: (network?: Network) => ["wallets", network ?? "all"] as const,
   snapshot: (id: string) => ["snapshot", id] as const,
   utxos: (id: string) => ["utxos", id] as const,
+  policy: (id: string) => ["policy", id] as const,
   txDetail: (id: string, txid: string) => ["tx", id, txid] as const,
   receive: (id: string) => ["receive", id] as const,
 };
@@ -91,6 +92,16 @@ export function useUtxos(id: string | null, enabled: boolean) {
   });
 }
 
+/** The wallet's policy read against the tip and its coins. Its lock
+    states move with the chain, so it is invalidated with the snapshot. */
+export function useWalletPolicy(id: string | null) {
+  return useQuery({
+    queryKey: keys.policy(id ?? "none"),
+    queryFn: () => ipc.walletPolicy(id!),
+    enabled: id !== null,
+  });
+}
+
 export function useTxDetail(id: string | null, txid: string | null) {
   return useQuery({
     queryKey: keys.txDetail(id ?? "none", txid ?? "none"),
@@ -119,6 +130,8 @@ export function useInvalidateWallet() {
     if (id) {
       void client.invalidateQueries({ queryKey: keys.snapshot(id) });
       void client.invalidateQueries({ queryKey: keys.utxos(id) });
+      // Timelocks are read against the tip and the coins: both moved.
+      void client.invalidateQueries({ queryKey: keys.policy(id) });
       void client.invalidateQueries({ queryKey: ["tx", id] });
       // A sync can mark the shown receive address as used.
       void client.invalidateQueries({ queryKey: keys.receive(id) });
@@ -126,6 +139,7 @@ export function useInvalidateWallet() {
     } else {
       void client.invalidateQueries({ queryKey: ["snapshot"] });
       void client.invalidateQueries({ queryKey: ["utxos"] });
+      void client.invalidateQueries({ queryKey: ["policy"] });
       void client.invalidateQueries({ queryKey: ["tx"] });
       void client.invalidateQueries({ queryKey: ["receive"] });
       void client.invalidateQueries({ queryKey: ["addresses"] });

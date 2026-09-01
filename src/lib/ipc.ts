@@ -250,6 +250,127 @@ export interface WalletSnapshot {
   truncated: boolean;
 }
 
+// --- policy ---------------------------------------------------------------
+
+/** The shape of a wallet's policy, at a glance. */
+export type PolicyKind = "single_key" | "multisig" | "miniscript" | "address";
+
+/** What a spending branch is for, guessed from its timelocks. */
+export type BranchRole = "primary" | "recovery" | "emergency" | "other";
+
+/** One key of the policy; the same extended key on two paths is one key. */
+export interface PolicyKey {
+  /** Stable within the snapshot: `k0`, `k1`... */
+  id: string;
+  /** `Key A`, `Key B`... */
+  label: string;
+  /** Eight lowercase hex digits; null when nothing identifies the key. */
+  fingerprint: string | null;
+  /** `m/48'/1'/0'/2'` when the key carries an origin. */
+  origin_path: string | null;
+  /** The key as written, shortened around an ellipsis. */
+  key_short: string;
+}
+
+/** `after(n)`: a height below 500,000,000, a unix time at or above it. */
+export type AbsoluteLock = { kind: "height"; height: number } | { kind: "time"; unix: number };
+
+/** `older(n)`, counted from each coin's confirmation; `seconds` is
+    already multiplied out of its 512-second units. */
+export type RelativeLock =
+  | { kind: "blocks"; blocks: number }
+  | { kind: "seconds"; seconds: number };
+
+/** A spending condition as the policy states it. A threshold with
+    `k === n` is an "and", one with `k === 1` an "or". */
+export type Condition =
+  | { kind: "key"; key_id: string }
+  | { kind: "thresh"; k: number; n: number; items: Condition[] }
+  | { kind: "after"; lock: AbsoluteLock }
+  | { kind: "older"; lock: RelativeLock }
+  | { kind: "preimage"; hash: string };
+
+export type TimelockRef =
+  | { kind: "absolute"; lock: AbsoluteLock }
+  | { kind: "relative"; lock: RelativeLock };
+
+/** What still separates a lock from opening. Block figures come with
+    their ten-minute estimate; a time figure has no block count. */
+export interface Remaining {
+  remaining_blocks: number | null;
+  remaining_seconds: number | null;
+  unlocks_at_unix: number | null;
+}
+
+/** Coins sorted against a relative lock: `waiting` ones are not
+    confirmed yet, `next` is the locked coin that opens first. */
+export interface PerCoin {
+  unlocked: number;
+  waiting: number;
+  locked: number;
+  next: Remaining | null;
+}
+
+/** Where one lock stands against the chain and the coins. */
+export type LockState =
+  | { kind: "unlocked" }
+  | ({ kind: "locked" } & Remaining)
+  | ({ kind: "per_coin" } & PerCoin)
+  | { kind: "no_coins"; blocks: number | null; seconds: number | null };
+
+export interface Timelock {
+  lock: TimelockRef;
+  /** False under a threshold that can be met without it: the lock is
+      listed, but never holds the branch back. */
+  required: boolean;
+  state: LockState;
+}
+
+/** Whether a branch can be spent from right now. */
+export type BranchState =
+  | { kind: "spendable_now" }
+  | { kind: "locked"; until: Remaining }
+  | ({ kind: "per_coin" } & PerCoin)
+  | { kind: "no_coins" }
+  | { kind: "needs_preimage" };
+
+/** One way to spend: a top-level alternative of the policy. */
+export interface PolicyBranch {
+  /** Stable within the snapshot: `b0`, `b1`... */
+  id: string;
+  role: BranchRole;
+  /** `Primary`, `Recovery`, `Emergency`, `Primary B`, `Recovery 3`... */
+  label: string;
+  /** One sentence from the core: "Key B, once a coin has waited 52,560 blocks". */
+  summary: string;
+  condition: Condition;
+  /** Every lock of the branch, optional ones included, in policy order. */
+  timelocks: Timelock[];
+  state: BranchState;
+  spendable_now: boolean;
+}
+
+/** A wallet's policy read against the chain. A watched address has no
+    keys and no branches; its descriptor field holds the address. */
+export interface PolicySnapshot {
+  kind: PolicyKind;
+  script: ScriptKind;
+  descriptor: string;
+  /** The normalized policy with key labels: `or(pk(Key A),and(pk(Key B),older(52560)))`. */
+  policy: string;
+  keys: PolicyKey[];
+  branches: PolicyBranch[];
+  tip_height: number;
+  /** When the snapshot was computed, unix seconds. */
+  computed_at: number;
+  /** Time locks are judged against the device clock, which the chain's
+      median time trails by up to a couple of hours. */
+  time_basis: "wall_clock";
+  /** Number of coins the relative locks were counted over. */
+  coins: number;
+  has_timelocks: boolean;
+}
+
 /** A transaction a sync brought in for the first time. */
 export interface NewTx {
   txid: string;
@@ -648,6 +769,7 @@ export const ipc = {
   walletSnapshot: (id: string) => invoke<WalletSnapshot>("wallet_snapshot", { id }),
   txDetail: (id: string, txid: string) => invoke<TxDetail>("tx_detail", { id, txid }),
   utxos: (id: string) => invoke<UtxoInfo[]>("utxos", { id }),
+  walletPolicy: (id: string) => invoke<PolicySnapshot>("wallet_policy", { id }),
   receiveAddresses: (id: string, lookahead: number) =>
     invoke<AddressEntry[]>("receive_addresses", { id, lookahead }),
   addressList: (id: string) => invoke<AddressList>("address_list", { id }),
