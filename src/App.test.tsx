@@ -1336,12 +1336,13 @@ describe("broadcast page", () => {
 
 describe("export page", () => {
   it("previews the selection and writes the file", async () => {
-    const { save } = await import("@tauri-apps/plugin-dialog");
-    const exported = vi.fn((_args: Record<string, unknown>) => 1);
+    const exported = vi.fn((_args: Record<string, unknown>) => undefined);
     walletIpc({
+      // The save dialog is Rust's: the command answers with where the
+      // file went and how many rows it holds.
       export_transactions_csv: (args) => {
         exported(args);
-        return 1;
+        return { path: "C:/exports/wallet.csv", rows: 1 };
       },
     });
     renderApp();
@@ -1364,11 +1365,27 @@ describe("export page", () => {
     await user.click(screen.getByRole("radio", { name: "All" }));
     await user.click(screen.getByRole("button", { name: /export csv/i }));
     await waitFor(() => expect(exported).toHaveBeenCalledTimes(1));
-    expect(save).toHaveBeenCalled();
     const args = exported.mock.calls[0][0];
-    expect(args.path).toBe("C:/exports/wallet.csv");
+    // A name is suggested; no path ever leaves the page.
+    expect(args.suggestedName).toBe("cold-storage-transactions.csv");
+    expect(Object.keys(args)).not.toContain("path");
     expect((args.options as Record<string, unknown>).include_pending).toBe(true);
     expect(await screen.findByText("1 transaction exported")).toBeInTheDocument();
+  });
+
+  it("says nothing when the save dialog is closed on nothing", async () => {
+    walletIpc({ export_transactions_csv: () => null });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Export" }));
+    await screen.findByText(/1 of 1 transaction selected/);
+
+    await user.click(screen.getByRole("button", { name: /export csv/i }));
+
+    // No file, no count: the button simply comes back.
+    expect(await screen.findByRole("button", { name: "Export CSV…" })).toBeEnabled();
+    expect(screen.queryByText(/transactions? exported/)).not.toBeInTheDocument();
   });
 });
 
@@ -1614,10 +1631,6 @@ describe("private material", () => {
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn(),
-}));
-
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  save: vi.fn(() => Promise.resolve("C:/exports/wallet.csv")),
 }));
 
 describe("the app lock", () => {

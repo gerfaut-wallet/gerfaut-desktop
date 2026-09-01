@@ -1,4 +1,3 @@
-import { save } from "@tauri-apps/plugin-dialog";
 import { FileDown, Gem } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -63,18 +62,18 @@ export function ExportView({ walletId }: { walletId: string }) {
   };
   const selected = txs.filter((tx) => matchesExport(tx, options)).length;
 
-  const run = async () => {
+  // The save dialog opens on the Rust side: the page suggests a name
+  // and hears back how many rows were written, never where.
+  const run = () => {
     const slug = meta.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    const path = await save({
-      defaultPath: `${slug || "wallet"}-transactions.csv`,
-      filters: [{ name: "CSV", extensions: ["csv"] }],
-    });
-    if (!path) return;
     exportCsv.mutate(
-      { id: walletId, options, path },
+      { id: walletId, options, suggestedName: `${slug || "wallet"}-transactions.csv` },
       {
-        onSuccess: (rows) =>
-          showToast(rows === 1 ? "1 transaction exported" : `${rows} transactions exported`),
+        onSuccess: (written) => {
+          if (written === null) return;
+          const { rows } = written;
+          showToast(rows === 1 ? "1 transaction exported" : `${rows} transactions exported`);
+        },
         onError: (error) =>
           showToast(isCommandError(error) ? error.message : "The export failed"),
       },
@@ -202,7 +201,7 @@ export function ExportView({ walletId }: { walletId: string }) {
           </div>
           <Button
             variant="primary"
-            onClick={() => void run()}
+            onClick={run}
             disabled={exportCsv.isPending || selected === 0}
           >
             <FileDown size={16} strokeWidth={1.5} aria-hidden />

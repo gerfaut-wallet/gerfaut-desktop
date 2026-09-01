@@ -263,8 +263,8 @@ export function useFees(network: Network | undefined, enabled: boolean) {
 
 export function useExportCsv() {
   return useMutation({
-    mutationFn: (args: { id: string; options: ExportOptions; path: string }) =>
-      ipc.exportTransactionsCsv(args.id, args.options, args.path),
+    mutationFn: (args: { id: string; options: ExportOptions; suggestedName: string }) =>
+      ipc.exportTransactionsCsv(args.id, args.options, args.suggestedName),
   });
 }
 

@@ -225,6 +225,12 @@ export interface ExportOptions {
   include_pending: boolean;
 }
 
+/** A CSV written where the person chose in the native save dialog. */
+export interface CsvExport {
+  path: string;
+  rows: number;
+}
+
 /** Recommended fee rates in sat/vB (mempool.space). */
 export interface FeeEstimates {
   fastest: number;
@@ -364,6 +370,14 @@ export interface BackupBundle {
   frames: string[];
   wallet_count: number;
   size_bytes: number;
+}
+
+/** A backup file picked in the native open dialog: its name for the
+    screen, its bytes as the base64 the core opens. The path stays on
+    the Rust side. */
+export interface PickedBackup {
+  name: string;
+  data: string;
 }
 
 export interface BackupWalletPreview {
@@ -637,8 +651,9 @@ export const ipc = {
   receiveAddresses: (id: string, lookahead: number) =>
     invoke<AddressEntry[]>("receive_addresses", { id, lookahead }),
   addressList: (id: string) => invoke<AddressList>("address_list", { id }),
-  exportTransactionsCsv: (id: string, options: ExportOptions, path: string) =>
-    invoke<number>("export_transactions_csv", { id, options, path }),
+  /** Opens the save dialog itself; null when it was closed. */
+  exportTransactionsCsv: (id: string, options: ExportOptions, suggestedName: string) =>
+    invoke<CsvExport | null>("export_transactions_csv", { id, options, suggestedName }),
   fetchFees: (network: Network) => invoke<FeeEstimates>("fetch_fees", { network }),
   syncWallet: (id: string) => invoke<SyncReport>("sync_wallet", { id }),
   rescanWallet: (id: string) => invoke<SyncReport>("rescan_wallet", { id }),
@@ -677,9 +692,12 @@ export const ipc = {
   verifyAppLock: (secret: string) => invoke<LockVerdict>("verify_app_lock", { secret }),
   exportBackup: (options: BackupOptions, password: string) =>
     invoke<BackupBundle>("export_backup", { options, password }),
-  saveBackupFile: (path: string, data: string) =>
-    invoke<void>("save_backup_file", { path, data }),
-  readBackupFile: (path: string) => invoke<string>("read_backup_file", { path }),
+  /** Opens the save dialog itself; the path written, or null when it
+      was closed. */
+  saveBackupFile: (data: string, suggestedName: string) =>
+    invoke<string | null>("save_backup_file", { data, suggestedName }),
+  /** Opens the file dialog itself; null when it was closed. */
+  pickBackupFile: () => invoke<PickedBackup | null>("pick_backup_file"),
   previewBackup: (source: string, password: string) =>
     invoke<BackupPreview>("preview_backup", { source, password }),
   importBackup: (source: string, password: string, choices: ImportChoices) =>

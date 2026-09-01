@@ -22,7 +22,9 @@ use gerfaut_core::wallet::snapshot::{
     AddressEntry, AddressList, SyncReport, TxDetail, UtxoInfo, WalletSnapshot,
 };
 use serde::Serialize;
+use std::path::PathBuf;
 use tauri::Manager;
+use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
 
 /// Error shape every command returns; the frontend matches on `kind`.
 #[derive(Debug, Clone, Serialize)]
@@ -57,8 +59,88 @@ impl From<CoreError> for CommandError {
 
 type CommandResult<T> = Result<T, CommandError>;
 
+fn internal(message: String) -> CommandError {
+    CommandError {
+        kind: "internal",
+        message,
+    }
+}
+
 struct AppState {
     manager: WalletManager,
+}
+
+// --- file dialogs ------------------------------------------------------
+
+/// The renderer never sees a path. It asks for a file to be read or
+/// written, the native dialog opens here, and what goes back is what
+/// the file held or the fact that it was written. A name it suggests
+/// is only a name.
+fn file_dialog(app: &tauri::AppHandle) -> FileDialogBuilder<tauri::Wry> {
+    let dialog = app.dialog().file();
+    match app.get_webview_window("main") {
+        Some(window) => dialog.set_parent(&window),
+        None => dialog,
+    }
+}
+
+enum DialogKind {
+    Open,
+    Save,
+}
+
+/// Shows the dialog off the async runtime and returns the path the
+/// person settled on; `None` when they closed it instead.
+async fn show_dialog(
+    dialog: FileDialogBuilder<tauri::Wry>,
+    kind: DialogKind,
+) -> CommandResult<Option<PathBuf>> {
+    let picked = tauri::async_runtime::spawn_blocking(move || match kind {
+        DialogKind::Open => dialog.blocking_pick_file(),
+        DialogKind::Save => dialog.blocking_save_file(),
+    })
+    .await
+    .map_err(|e| internal(format!("the file dialog did not answer: {e}")))?;
+    picked
+        .map(|file| {
+            file.into_path()
+                .map_err(|e| internal(format!("the file dialog gave no usable path: {e}")))
+        })
+        .transpose()
+}
+
+/// Reduces a suggested file name to a bare name: anything before a
+/// separator goes, so do the characters no file system accepts, and an
+/// empty result falls back rather than naming a file after nothing.
+fn bare_file_name(suggested: &str, fallback: &str) -> String {
+    let name: String = suggested
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or_default()
+        .chars()
+        .filter(|c| !c.is_control() && !matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*'))
+        .collect();
+    let name = name.trim().trim_end_matches(['.', ' ']);
+    if name.is_empty() {
+        fallback.to_owned()
+    } else {
+        name.to_owned()
+    }
+}
+
+/// A backup file the person picked: its name for the screen, its bytes
+/// as the base64 the core opens.
+#[derive(Debug, Clone, Serialize)]
+pub struct PickedBackup {
+    pub name: String,
+    pub data: String,
+}
+
+/// A CSV written where the person chose.
+#[derive(Debug, Clone, Serialize)]
+pub struct CsvExport {
+    pub path: String,
+    pub rows: u32,
 }
 
 // --- commands ----------------------------------------------------------
@@ -244,21 +326,29 @@ async fn address_list(state: tauri::State<'_, AppState>, id: String) -> CommandR
     Ok(state.manager.address_list(&id).await?)
 }
 
-/// Builds the filtered CSV and writes it where the user chose. Returns
-/// the number of exported rows.
+/// Asks where the CSV should go, then builds the filtered file and
+/// writes it there. Null when the dialog was closed instead.
 #[tauri::command]
 async fn export_transactions_csv(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     id: String,
     options: gerfaut_core::export::ExportOptions,
-    path: String,
-) -> CommandResult<u32> {
+    suggested_name: String,
+) -> CommandResult<Option<CsvExport>> {
+    let dialog = file_dialog(&app)
+        .add_filter("CSV", &["csv"])
+        .set_file_name(bare_file_name(&suggested_name, "transactions.csv"));
+    let Some(path) = show_dialog(dialog, DialogKind::Save).await? else {
+        return Ok(None);
+    };
     let result = state.manager.export_transactions(&id, &options).await?;
-    std::fs::write(&path, result.csv.as_bytes()).map_err(|e| CommandError {
-        kind: "internal",
-        message: format!("could not write {path}: {e}"),
-    })?;
-    Ok(result.rows)
+    std::fs::write(&path, result.csv.as_bytes())
+        .map_err(|e| internal(format!("could not write {}: {e}", path.display())))?;
+    Ok(Some(CsvExport {
+        path: path.display().to_string(),
+        rows: result.rows,
+    }))
 }
 
 /// Fee estimates come from the backend configured for the network: the
@@ -405,40 +495,57 @@ async fn export_backup(
     Ok(state.manager.export_backup(&options, &password).await?)
 }
 
-/// Writes a sealed backup (base64 from `export_backup`) where the user
-/// chose. The bytes are already encrypted: this is plain I/O.
+/// Asks where a sealed backup (base64 from `export_backup`) should go
+/// and writes it there. The bytes are already encrypted: this is plain
+/// I/O. Null when the dialog was closed instead.
 #[tauri::command]
-async fn save_backup_file(path: String, data: String) -> CommandResult<()> {
+async fn save_backup_file(
+    app: tauri::AppHandle,
+    data: String,
+    suggested_name: String,
+) -> CommandResult<Option<String>> {
     let bytes = gerfaut_core::backup::decode_source(&data)?;
-    std::fs::write(&path, bytes).map_err(|e| CommandError {
-        kind: "internal",
-        message: format!("could not write {path}: {e}"),
-    })
+    let dialog = file_dialog(&app)
+        .add_filter("Gerfaut backup", &["gerfaut"])
+        .set_file_name(bare_file_name(&suggested_name, "gerfaut-backup.gerfaut"));
+    let Some(path) = show_dialog(dialog, DialogKind::Save).await? else {
+        return Ok(None);
+    };
+    std::fs::write(&path, bytes)
+        .map_err(|e| internal(format!("could not write {}: {e}", path.display())))?;
+    Ok(Some(path.display().to_string()))
 }
 
-/// Reads a backup file into the base64 form the core opens. Any file
-/// is read; the core says whether it is a backup. The size is checked
-/// first, so picking a disc image by mistake costs nothing.
+/// Asks for a backup file and reads it into the base64 form the core
+/// opens. Any file is read; the core says whether it is a backup. The
+/// size is checked first, so picking a disc image by mistake costs
+/// nothing. Null when the dialog was closed instead.
 #[tauri::command]
-async fn read_backup_file(path: String) -> CommandResult<String> {
-    let too_large = || CommandError {
-        kind: "invalid_input",
-        message: "this file is far too large to be a Gerfaut backup".to_owned(),
+async fn pick_backup_file(app: tauri::AppHandle) -> CommandResult<Option<PickedBackup>> {
+    let dialog = file_dialog(&app)
+        .add_filter("Gerfaut backup", &["gerfaut"])
+        .add_filter("All files", &["*"]);
+    let Some(path) = show_dialog(dialog, DialogKind::Open).await? else {
+        return Ok(None);
     };
-    let size = std::fs::metadata(&path)
-        .map_err(|e| CommandError {
-            kind: "internal",
-            message: format!("could not read {path}: {e}"),
-        })?
-        .len();
+    let unreadable =
+        |e: std::io::Error| internal(format!("could not read {}: {e}", path.display()));
+    let size = std::fs::metadata(&path).map_err(unreadable)?.len();
     if size > gerfaut_core::backup::MAX_BACKUP_TEXT as u64 {
-        return Err(too_large());
+        return Err(CommandError {
+            kind: "invalid_input",
+            message: "this file is far too large to be a Gerfaut backup".to_owned(),
+        });
     }
-    let bytes = std::fs::read(&path).map_err(|e| CommandError {
-        kind: "internal",
-        message: format!("could not read {path}: {e}"),
-    })?;
-    Ok(data_encoding::BASE64.encode(&bytes))
+    let bytes = std::fs::read(&path).map_err(unreadable)?;
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string());
+    Ok(Some(PickedBackup {
+        name,
+        data: data_encoding::BASE64.encode(&bytes),
+    }))
 }
 
 /// Opens a backup and lists what it holds, before anything is added.
@@ -561,7 +668,7 @@ pub fn run() {
             verify_app_lock,
             export_backup,
             save_backup_file,
-            read_backup_file,
+            pick_backup_file,
             preview_backup,
             import_backup,
             tor_status,
@@ -570,4 +677,29 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bare_file_name;
+
+    #[test]
+    fn a_suggested_name_keeps_only_its_last_component() {
+        assert_eq!(bare_file_name("wallet-transactions.csv", "x"), "wallet-transactions.csv");
+        assert_eq!(bare_file_name("../../etc/passwd", "x"), "passwd");
+        assert_eq!(bare_file_name("C:\\Users\\me\\a.gerfaut", "x"), "a.gerfaut");
+    }
+
+    #[test]
+    fn characters_no_file_system_takes_are_dropped() {
+        assert_eq!(bare_file_name("a:b*c?d\"e<f>g|h.csv", "x"), "abcdefgh.csv");
+        assert_eq!(bare_file_name("trailing dots... ", "x"), "trailing dots");
+    }
+
+    #[test]
+    fn nothing_left_falls_back() {
+        assert_eq!(bare_file_name("", "backup.gerfaut"), "backup.gerfaut");
+        assert_eq!(bare_file_name("///", "backup.gerfaut"), "backup.gerfaut");
+        assert_eq!(bare_file_name("...", "backup.gerfaut"), "backup.gerfaut");
+    }
 }

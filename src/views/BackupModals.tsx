@@ -1,4 +1,3 @@
-import { open, save } from "@tauri-apps/plugin-dialog";
 import { clsx } from "clsx";
 import { Eye, EyeOff } from "lucide-react";
 import type { Ref } from "react";
@@ -164,14 +163,16 @@ export function BackupExportModal({
     }
   };
 
+  // The save dialog opens on the Rust side: the screen suggests a name
+  // and learns whether the file was written, never where.
   const saveFile = async (made: BackupBundle) => {
-    const path = await save({
-      defaultPath: backupFilename(),
-      filters: [{ name: "Gerfaut backup", extensions: ["gerfaut"] }],
-    });
-    if (!path) return;
-    await ipc.saveBackupFile(path, made.data);
-    showToast("Backup saved");
+    try {
+      const written = await ipc.saveBackupFile(made.data, backupFilename());
+      if (written === null) return;
+      showToast("Backup saved");
+    } catch (error) {
+      showToast(isCommandError(error) ? error.message : String(error));
+    }
   };
 
   return (
@@ -353,18 +354,14 @@ export function BackupRestoreModal({
     onClose();
   };
 
+  // The file dialog opens on the Rust side, which reads what was picked
+  // and hands back its name and contents: no path crosses the bridge.
   const openFile = async () => {
     try {
-      const path = await open({
-        multiple: false,
-        filters: [
-          { name: "Gerfaut backup", extensions: ["gerfaut"] },
-          { name: "All files", extensions: ["*"] },
-        ],
-      });
-      if (typeof path !== "string") return;
-      setSource(await ipc.readBackupFile(path));
-      setFrom({ kind: "file", name: path.split(/[\\/]/).pop() ?? path });
+      const picked = await ipc.pickBackupFile();
+      if (picked === null) return;
+      setSource(picked.data);
+      setFrom({ kind: "file", name: picked.name });
       setProblem(null);
     } catch (error) {
       // A file too large, gone, or unreadable: say so rather than

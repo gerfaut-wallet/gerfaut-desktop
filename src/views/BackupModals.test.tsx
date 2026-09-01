@@ -4,12 +4,12 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BackupPreview, WalletMeta } from "../lib/ipc";
+import { useUi } from "../state/store";
 import { BackupExportModal, BackupRestoreModal } from "./BackupModals";
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  save: vi.fn(async () => "C:/tmp/gerfaut-backup.gerfaut"),
-  open: vi.fn(async () => null),
-}));
+// The file dialogs open on the Rust side: a test answers the command
+// with what was picked, or with null for a dialog closed on nothing.
+const PICKED = { name: "backup.gerfaut", data: "R0ZCQUNLVVA=" };
 
 // What the camera "sees", one entry per animation tick, for the tests
 // that drive a real scan all the way to the restore screen.
@@ -163,6 +163,8 @@ afterEach(() => {
   vi.clearAllMocks();
   cameraFrames.length = 0;
   cameraCursor = 0;
+  // The store outlives a test, and a toast lives three seconds.
+  useUi.setState({ toast: null });
 });
 
 describe("exporting a backup", () => {
@@ -271,6 +273,80 @@ describe("exporting a backup", () => {
     expect((sent as { options: { wallet_ids: string[] } }).options.wallet_ids).toEqual(["w1"]);
   });
 
+  it("saving the file hands Rust the bytes and a name, and says when it is written", async () => {
+    let saved: unknown = null;
+    mockIPC((cmd, args) => {
+      switch (cmd) {
+        case "export_backup":
+          return { data: "R0ZCQUNLVVA=", frames: ["ur:bytes/aaa"], wallet_count: 2, size_bytes: 512 };
+        case "save_backup_file":
+          saved = args;
+          return "C:/Users/me/Documents/gerfaut-backup.gerfaut";
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderModal(
+      <BackupExportModal
+        open
+        onClose={() => {}}
+        wallets={WALLETS}
+        activeNetwork="signet"
+      />,
+    );
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText("Password"), "correct horse");
+    await user.type(screen.getByLabelText("Confirm password"), "correct horse");
+    await user.click(screen.getByRole("button", { name: /create backup/i }));
+    await user.click(await screen.findByRole("button", { name: /save file/i }));
+
+    // The dialog is Rust's: the screen sends the sealed bytes and the
+    // name it would give the file, never a path.
+    await waitFor(() => expect(saved).not.toBeNull());
+    const args = saved as { data: string; suggestedName: string };
+    expect(args.data).toBe("R0ZCQUNLVVA=");
+    expect(args.suggestedName).toMatch(/^gerfaut-backup-\d{4}-\d{2}-\d{2}\.gerfaut$/);
+    expect(Object.keys(args)).not.toContain("path");
+    await waitFor(() => expect(useUi.getState().toast).toBe("Backup saved"));
+  });
+
+  it("a save dialog closed on nothing leaves the screen where it was", async () => {
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "export_backup":
+          return { data: "R0ZCQUNLVVA=", frames: ["ur:bytes/aaa"], wallet_count: 2, size_bytes: 512 };
+        case "save_backup_file":
+          return null;
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderModal(
+      <BackupExportModal
+        open
+        onClose={() => {}}
+        wallets={WALLETS}
+        activeNetwork="signet"
+      />,
+    );
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText("Password"), "correct horse");
+    await user.type(screen.getByLabelText("Confirm password"), "correct horse");
+    await user.click(screen.getByRole("button", { name: /create backup/i }));
+    await user.click(await screen.findByRole("button", { name: /save file/i }));
+
+    // Nothing was written, so nothing is claimed; the file can still be
+    // saved or shown as a code.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(useUi.getState().toast).toBeNull();
+    expect(screen.getByRole("button", { name: /save file/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /show qr code/i })).toBeInTheDocument();
+  });
+
   it("shows the frames as a code, one after the other", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     mockIPC((cmd) => {
@@ -321,17 +397,14 @@ describe("restoring a backup", () => {
   it("a wrong password says so in plain words", async () => {
     mockIPC((cmd) => {
       switch (cmd) {
-        case "read_backup_file":
-          return "R0ZCQUNLVVA=";
+        case "pick_backup_file":
+          return PICKED;
         case "preview_backup":
           return Promise.reject({ kind: "vault", message: "vault decryption failed" });
         default:
           throw new Error(`unexpected command ${cmd}`);
       }
     });
-    const dialog = await import("@tauri-apps/plugin-dialog");
-    vi.mocked(dialog.open).mockResolvedValue("C:/tmp/backup.gerfaut");
-
     renderModal(<BackupRestoreModal open onClose={() => {}} activeNetwork="signet" />);
     const user = userEvent.setup();
 
@@ -353,8 +426,8 @@ describe("restoring a backup", () => {
     let sent: unknown = null;
     mockIPC((cmd, args) => {
       switch (cmd) {
-        case "read_backup_file":
-          return "R0ZCQUNLVVA=";
+        case "pick_backup_file":
+          return PICKED;
         case "preview_backup":
           return PREVIEW;
         case "import_backup":
@@ -367,11 +440,7 @@ describe("restoring a backup", () => {
       }
     });
 
-    // Drive the preview step through the file path, which the dialog
-    // mock answers with a path.
-    const dialog = await import("@tauri-apps/plugin-dialog");
-    vi.mocked(dialog.open).mockResolvedValue("C:/tmp/backup.gerfaut");
-
+    // Drive the preview step through the file path.
     renderModal(<BackupRestoreModal open onClose={() => {}} activeNetwork="signet" />);
     const user = userEvent.setup();
 
@@ -411,17 +480,14 @@ describe("restoring a backup", () => {
   it("a wallet already watched stays on the list, greyed and out of reach", async () => {
     mockIPC((cmd) => {
       switch (cmd) {
-        case "read_backup_file":
-          return "R0ZCQUNLVVA=";
+        case "pick_backup_file":
+          return PICKED;
         case "preview_backup":
           return PREVIEW;
         default:
           throw new Error(`unexpected command ${cmd}`);
       }
     });
-    const dialog = await import("@tauri-apps/plugin-dialog");
-    vi.mocked(dialog.open).mockResolvedValue("C:/tmp/backup.gerfaut");
-
     renderModal(<BackupRestoreModal open onClose={() => {}} activeNetwork="signet" />);
     const user = userEvent.setup();
 
@@ -448,14 +514,28 @@ describe("restoring a backup", () => {
     expect(screen.getByRole("button", { name: /restore 1 wallet/i })).toBeInTheDocument();
   });
 
-  it("a file lands in plain words and hands the caret to the password", async () => {
+  it("a file dialog closed on nothing changes nothing", async () => {
     mockIPC((cmd) => {
-      if (cmd === "read_backup_file") return "R0ZCQUNLVVA=";
+      if (cmd === "pick_backup_file") return null;
       throw new Error(`unexpected command ${cmd}`);
     });
-    const dialog = await import("@tauri-apps/plugin-dialog");
-    vi.mocked(dialog.open).mockResolvedValue("C:/tmp/backup.gerfaut");
+    renderModal(<BackupRestoreModal open onClose={() => {}} activeNetwork="signet" />);
+    const user = userEvent.setup();
 
+    await user.click(screen.getByRole("button", { name: /open a file/i }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByText(/Backup read from/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open backup/i })).toBeDisabled();
+  });
+
+  it("a file lands in plain words and hands the caret to the password", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "pick_backup_file") return PICKED;
+      throw new Error(`unexpected command ${cmd}`);
+    });
     renderModal(<BackupRestoreModal open onClose={() => {}} activeNetwork="signet" />);
     const user = userEvent.setup();
 
