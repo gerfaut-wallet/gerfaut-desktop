@@ -98,6 +98,65 @@ export function formatTimestamp(unixSeconds: number): string {
   return `${MONTHS[local.getMonth()]} ${day}, ${local.getFullYear()}, ${hour}:${minute}`;
 }
 
+/** A day alone, local time, in the same voice as `formatTimestamp`:
+    "Mar 17, 2030". For a lock that names a date rather than a moment. */
+export function formatDate(unixSeconds: number): string {
+  const local = new Date(unixSeconds * 1000);
+  const day = String(local.getDate()).padStart(2, "0");
+  return `${MONTHS[local.getMonth()]} ${day}, ${local.getFullYear()}`;
+}
+
+const MINUTE = 60;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+const MONTH = 30 * DAY;
+const YEAR = 365 * DAY;
+
+/** `3` + `"block"` -> "3 blocks", `1` -> "1 block". */
+function counted(count: number, unit: string): string {
+  return `${groupThousands(String(count))} ${unit}${count === 1 ? "" : "s"}`;
+}
+
+/** A duration in plain words, never finer than the reader needs: days
+    up to a year, then years and months, two units at most. Days and
+    hours round, minutes floor, and under a minute it says so. Every
+    figure here rests on ten minutes a block or on a clock the chain
+    trails, so `formatDuration` puts the "about" in front; the bare
+    words serve where a "≈" or an "in" already carries the doubt. */
+export function durationWords(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  if (total < MINUTE) return "under a minute";
+  if (total < HOUR) return counted(Math.floor(total / MINUTE), "minute");
+  if (total < DAY) {
+    const hours = Math.round(total / HOUR);
+    return hours === 24 ? "1 day" : counted(hours, "hour");
+  }
+  if (total < YEAR) {
+    const days = Math.round(total / DAY);
+    return days === 365 ? "1 year" : counted(days, "day");
+  }
+  let years = Math.floor(total / YEAR);
+  let months = Math.round((total - years * YEAR) / MONTH);
+  if (months === 12) {
+    years += 1;
+    months = 0;
+  }
+  const head = counted(years, "year");
+  return months === 0 ? head : `${head} ${counted(months, "month")}`;
+}
+
+/** "about 10 days", "about 1 year 2 months": an estimate, said as one.
+    "Under a minute" already is one. */
+export function formatDuration(seconds: number): string {
+  const words = durationWords(seconds);
+  return words.startsWith("under") ? words : `about ${words}`;
+}
+
+/** A count of blocks: "1 432 blocks", "1 block". */
+export function formatBlocks(blocks: number): string {
+  return counted(blocks, "block");
+}
+
 /** The total one side of a transaction carries. A single value nobody
     knows poisons the sum: better no figure than a wrong one. */
 export function sumSats(values: (number | null)[]): number | null {

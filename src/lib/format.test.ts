@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  durationWords,
+  formatBlocks,
   formatBtc,
   formatBtcSigned,
+  formatDate,
+  formatDuration,
   formatLocktime,
   formatSats,
   formatTimestamp,
@@ -11,6 +15,56 @@ import {
   sumSats,
   truncateMiddle,
 } from "./format";
+
+describe("formatDate", () => {
+  it("names the day in the voice of the timestamps, without a time", () => {
+    const at = Date.UTC(2030, 2, 17, 12, 0) / 1000;
+    const local = new Date(at * 1000);
+    const dd = String(local.getDate()).padStart(2, "0");
+    expect(formatDate(at)).toBe(`Mar ${dd}, 2030`);
+    expect(formatDate(at)).not.toMatch(/\d{2}:\d{2}/);
+  });
+});
+
+describe("formatDuration", () => {
+  const DAY = 86_400;
+
+  it("rounds to the unit a person would say", () => {
+    expect(formatDuration(1_432 * 600)).toBe("about 10 days");
+    expect(formatDuration(3 * 3_600)).toBe("about 3 hours");
+    expect(formatDuration(52_560 * 600)).toBe("about 1 year");
+    expect(formatDuration(425 * DAY)).toBe("about 1 year 2 months");
+  });
+
+  it("floors minutes and says so under a minute", () => {
+    expect(formatDuration(5 * 60 + 59)).toBe("about 5 minutes");
+    expect(formatDuration(59)).toBe("under a minute");
+    expect(durationWords(59)).toBe("under a minute");
+  });
+
+  it("never shows a third unit or a rounded-up twelfth month", () => {
+    expect(durationWords(2 * 365 * DAY + 3 * 30 * DAY + 5 * 3_600)).toBe("2 years 3 months");
+    expect(durationWords(365 * DAY + 360 * DAY)).toBe("2 years");
+    expect(durationWords(23.6 * 3_600)).toBe("1 day");
+    expect(durationWords(364.6 * DAY)).toBe("1 year");
+  });
+
+  it("keeps the singular", () => {
+    expect(durationWords(60)).toBe("1 minute");
+    expect(durationWords(3_600)).toBe("1 hour");
+    expect(durationWords(DAY)).toBe("1 day");
+    expect(durationWords(142 * DAY)).toBe("142 days");
+  });
+});
+
+describe("formatBlocks", () => {
+  it("counts blocks with the app's own thousands separator", () => {
+    expect(formatBlocks(1)).toBe("1 block");
+    expect(formatBlocks(144)).toBe("144 blocks");
+    expect(formatBlocks(1_432)).toBe(`${groupThousands("1432")} blocks`);
+    expect(formatBlocks(52_560)).toMatch(/^52.560 blocks$/);
+  });
+});
 
 describe("formatTimestamp", () => {
   it("prints one language, whatever the host speaks", () => {
