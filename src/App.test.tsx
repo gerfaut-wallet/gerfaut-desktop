@@ -8,6 +8,8 @@ import type {
   AddressEntry,
   LockVerdict,
   ParsedInput,
+  PolicyKey,
+  PolicySnapshot,
   Settings,
   WalletMeta,
   WalletSnapshot,
@@ -90,6 +92,216 @@ const SNAPSHOT: WalletSnapshot = {
   tip_height: 200_000,
   truncated: false,
 };
+
+const POLICY_AT = 1_755_000_100;
+
+/** The core's reading of the fixture wallet: one key, nothing else. */
+const SINGLE_KEY_POLICY: PolicySnapshot = {
+  kind: "single_key",
+  script: "segwit",
+  descriptor: "wpkh([9a6a2580/84'/1'/0']tpub.../<0;1>/*)#aaaaaaaa",
+  policy: "pk(Key A)",
+  keys: [
+    {
+      id: "k0",
+      label: "Key A",
+      fingerprint: "9a6a2580",
+      origin_path: "m/84'/1'/0'",
+      key_short: "tpubDDnG…so9Kks",
+    },
+  ],
+  branches: [
+    {
+      id: "b0",
+      role: "primary",
+      label: "Primary",
+      summary: "Key A",
+      condition: { kind: "key", key_id: "k0" },
+      timelocks: [],
+      state: { kind: "spendable_now" },
+      spendable_now: true,
+    },
+  ],
+  tip_height: 200_000,
+  computed_at: POLICY_AT,
+  time_basis: "wall_clock",
+  coins: 1,
+  has_timelocks: false,
+};
+
+const KEY_A: PolicyKey = {
+  id: "k0",
+  label: "Key A",
+  fingerprint: "3442193e",
+  origin_path: null,
+  key_short: "xpubA…aaaaaa",
+};
+const KEY_B: PolicyKey = {
+  id: "k1",
+  label: "Key B",
+  fingerprint: "5c1bd648",
+  origin_path: "m/48'/1'/0'/2'",
+  key_short: "xpubB…bbbbbb",
+};
+const KEY_C: PolicyKey = {
+  id: "k2",
+  label: "Key C",
+  fingerprint: "bd16bee5",
+  origin_path: null,
+  key_short: "xpubC…cccccc",
+};
+
+/** 42 480 blocks to go on the nearest coin: 295 days at ten minutes a block. */
+const NEXT_COIN = {
+  remaining_blocks: 42_480,
+  remaining_seconds: 42_480 * 600,
+  unlocks_at_unix: POLICY_AT + 42_480 * 600,
+};
+
+/** A Liana-style wallet: Key A any time, Key B after a year-long wait.
+    The core lists branches as the policy wrote them; here the recovery
+    path comes first on purpose, so the page has to put them in order. */
+const LIANA_POLICY: PolicySnapshot = {
+  kind: "miniscript",
+  script: "witness_script",
+  descriptor: "wsh(or_d(pk(xpubA.../0/*),and_v(v:pkh(xpubB.../0/*),older(52560))))#cccccccc",
+  policy: "or(pk(Key A),and(pk(Key B),older(52560)))",
+  keys: [KEY_A, KEY_B],
+  branches: [
+    {
+      id: "b1",
+      role: "recovery",
+      label: "Recovery",
+      summary: "Key B, once a coin has waited 52,560 blocks",
+      condition: {
+        kind: "thresh",
+        k: 2,
+        n: 2,
+        items: [
+          { kind: "key", key_id: "k1" },
+          { kind: "older", lock: { kind: "blocks", blocks: 52_560 } },
+        ],
+      },
+      timelocks: [
+        {
+          lock: { kind: "relative", lock: { kind: "blocks", blocks: 52_560 } },
+          required: true,
+          state: { kind: "per_coin", unlocked: 1, waiting: 0, locked: 2, next: NEXT_COIN },
+        },
+      ],
+      state: { kind: "per_coin", unlocked: 1, waiting: 0, locked: 2, next: NEXT_COIN },
+      spendable_now: false,
+    },
+    {
+      id: "b0",
+      role: "primary",
+      label: "Primary",
+      summary: "Key A",
+      condition: { kind: "key", key_id: "k0" },
+      timelocks: [],
+      state: { kind: "spendable_now" },
+      spendable_now: true,
+    },
+  ],
+  tip_height: 200_000,
+  computed_at: POLICY_AT,
+  time_basis: "wall_clock",
+  coins: 3,
+  has_timelocks: true,
+};
+
+const MULTISIG_POLICY: PolicySnapshot = {
+  kind: "multisig",
+  script: "witness_script",
+  descriptor: "wsh(sortedmulti(2,xpubA.../0/*,xpubB.../0/*,xpubC.../0/*))#dddddddd",
+  policy: "thresh(2,pk(Key A),pk(Key B),pk(Key C))",
+  keys: [KEY_A, KEY_B, KEY_C],
+  branches: [
+    {
+      id: "b0",
+      role: "primary",
+      label: "Primary",
+      summary: "Any 2 of 3 keys",
+      condition: {
+        kind: "thresh",
+        k: 2,
+        n: 3,
+        items: [
+          { kind: "key", key_id: "k0" },
+          { kind: "key", key_id: "k1" },
+          { kind: "key", key_id: "k2" },
+        ],
+      },
+      timelocks: [],
+      state: { kind: "spendable_now" },
+      spendable_now: true,
+    },
+  ],
+  tip_height: 200_000,
+  computed_at: POLICY_AT,
+  time_basis: "wall_clock",
+  coins: 0,
+  has_timelocks: false,
+};
+
+const ADDRESS_POLICY: PolicySnapshot = {
+  kind: "address",
+  script: "segwit",
+  descriptor: "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
+  policy: "address",
+  keys: [],
+  branches: [],
+  tip_height: 200_000,
+  computed_at: POLICY_AT,
+  time_basis: "wall_clock",
+  coins: 1,
+  has_timelocks: false,
+};
+
+/** Key A behind an absolute height lock still `blocks` ahead of the tip:
+    the only path, and it waits. */
+function heightLocked(blocks: number): PolicySnapshot {
+  const height = 200_000 + blocks;
+  const remaining = {
+    remaining_blocks: blocks,
+    remaining_seconds: blocks * 600,
+    unlocks_at_unix: POLICY_AT + blocks * 600,
+  };
+  return {
+    ...SINGLE_KEY_POLICY,
+    kind: "miniscript",
+    script: "witness_script",
+    policy: `and(pk(Key A),after(${height}))`,
+    coins: 0,
+    has_timelocks: true,
+    branches: [
+      {
+        id: "b0",
+        role: "primary",
+        label: "Primary",
+        summary: `Key A after block ${height}`,
+        condition: {
+          kind: "thresh",
+          k: 2,
+          n: 2,
+          items: [
+            { kind: "key", key_id: "k0" },
+            { kind: "after", lock: { kind: "height", height } },
+          ],
+        },
+        timelocks: [
+          {
+            lock: { kind: "absolute", lock: { kind: "height", height } },
+            required: true,
+            state: { kind: "locked", ...remaining },
+          },
+        ],
+        state: { kind: "locked", until: remaining },
+        spendable_now: false,
+      },
+    ],
+  };
+}
 
 const PARSED_TPUB: ParsedInput = {
   kind: "extended_key",
@@ -201,6 +413,8 @@ function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => 
         ];
       case "receive_addresses":
         return receiveEntries(Number(payload.lookahead ?? 0));
+      case "wallet_policy":
+        return SINGLE_KEY_POLICY;
       case "sync_all":
         return { reports: [], failures: [] };
       case "set_app_pref":
@@ -566,6 +780,190 @@ describe("navigation", () => {
     expect(screen.queryByText(/ctrl k/i)).not.toBeInTheDocument();
     await user.keyboard("{Control>}k{/Control}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("policy page", () => {
+  beforeEach(() => walletIpc());
+
+  it("sums the policy up in the balance row and leads to the page", async () => {
+    renderApp();
+    const user = userEvent.setup();
+    // The row reads like the counts above it, and says where it goes.
+    const row = await screen.findByRole("button", { name: /^1 key, policy$/ });
+    await user.click(row);
+    const heading = await screen.findByRole("heading", { name: "Policy" });
+    expect(screen.getByText("One key signs. Any coin is spendable now.")).toBeInTheDocument();
+    expect(heading.parentElement).toHaveTextContent(/Cold storage · read at block 200.000/);
+  });
+
+  it("opens from the sidebar", async () => {
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Policy" }));
+    expect(await screen.findByRole("heading", { name: "Policy" })).toBeInTheDocument();
+    expect(sidebar().getByRole("button", { name: "Policy" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  it("keeps a single key to the sentence, the key and the descriptor", async () => {
+    renderApp();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /1 key/ }));
+    await screen.findByText("One key signs. Any coin is spendable now.");
+    // One key needs no card: the sentence already says it all.
+    expect(screen.queryByRole("region", { name: /path$/ })).not.toBeInTheDocument();
+    const keys = screen.getByRole("region", { name: "Keys" });
+    expect(within(keys).getByText("Key A")).toBeInTheDocument();
+    expect(within(keys).getByText("9a6a2580")).toBeInTheDocument();
+    expect(within(keys).getByText("m/84'/1'/0'")).toBeInTheDocument();
+    expect(within(keys).getByText("tpubDDnG…so9Kks")).toBeInTheDocument();
+    // The descriptor is on the page but folded, its normalized policy under it.
+    const details = screen.getByText("Descriptor").closest("details") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(screen.getByText(SINGLE_KEY_POLICY.descriptor)).toBeInTheDocument();
+    expect(screen.getByText("pk(Key A)")).toBeInTheDocument();
+    expect(screen.queryByText(/device's clock/)).not.toBeInTheDocument();
+  });
+
+  it("reads a Liana-style wallet as two paths, the primary first", async () => {
+    walletIpc({ wallet_policy: () => LIANA_POLICY });
+    renderApp();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /Recovery in 295 days/ }));
+    expect(
+      await screen.findByText(
+        "Key A signs. A recovery key can spend once a coin has waited about 1 year.",
+      ),
+    ).toBeInTheDocument();
+    const cards = screen.getAllByRole("region", { name: /path$/ });
+    expect(cards.map((card) => card.getAttribute("aria-label"))).toEqual([
+      "Primary path",
+      "Recovery path",
+    ]);
+    const [primary, recovery] = cards;
+    expect(within(primary).getByText("Spendable now")).toBeInTheDocument();
+    expect(within(primary).getByText("3442193e")).toBeInTheDocument();
+    // The recovery card: the condition in words, the key chip with its
+    // fingerprint, the lock in blocks and time, the count of coins.
+    expect(within(recovery).getByText(/^Key B and a wait of 52.560 blocks$/)).toBeInTheDocument();
+    expect(within(recovery).getByText("5c1bd648")).toBeInTheDocument();
+    expect(
+      within(recovery).getByText(/^52.560 blocks after the coin arrives ≈ 1 year$/),
+    ).toBeInTheDocument();
+    const pill = within(recovery).getByText("1 of 3 coins unlocked · next in 295 days");
+    expect(pill.querySelector("svg.lucide-clock")).not.toBe(null);
+    // Far off: neutral, not amber.
+    expect(pill).not.toHaveClass("text-pending");
+    // The nearest coin has waited 10 080 of 52 560 blocks: a fifth of the way.
+    expect(within(recovery).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "19");
+    expect(within(recovery).getByText("Next coin").parentElement).toHaveTextContent(
+      /42.480 blocks ≈ 295 days/,
+    );
+    // Block locks need no clock caveat.
+    expect(screen.queryByText(/device's clock/)).not.toBeInTheDocument();
+  });
+
+  it("turns amber only when a lock is within thirty days", async () => {
+    walletIpc({ wallet_policy: () => heightLocked(1_432) });
+    renderApp();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /Spendable in 10 days/ }));
+    expect(
+      await screen.findByText(/^Key A signs after block 201.432, about 10 days from now\.$/),
+    ).toBeInTheDocument();
+    const soon = screen.getByText(/^In 1.432 blocks ≈ 10 days$/);
+    expect(soon).toHaveClass("text-pending");
+    expect(soon.querySelector("svg.lucide-clock")).not.toBe(null);
+    expect(screen.getByText(/^Block 201.432 ≈ in 10 days$/)).toBeInTheDocument();
+    // An absolute lock has no start to measure from: no bar.
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
+  it("keeps a far lock neutral, in the same words", async () => {
+    walletIpc({ wallet_policy: () => heightLocked(52_560) });
+    renderApp();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /Spendable in 1 year/ }));
+    const far = await screen.findByText(/^In 52.560 blocks ≈ 1 year$/);
+    expect(far).not.toHaveClass("text-pending");
+    expect(far).toHaveClass("text-muted");
+    expect(far.querySelector("svg.lucide-clock")).not.toBe(null);
+  });
+
+  it("shows a multisig as one open path", async () => {
+    walletIpc({ wallet_policy: () => MULTISIG_POLICY });
+    renderApp();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /2 of 3 keys/ }));
+    expect(await screen.findByText("2 of 3 keys sign.")).toBeInTheDocument();
+    expect(screen.getByText("Any 2 of Key A, Key B, Key C")).toBeInTheDocument();
+    const pill = screen.getByText("Spendable now");
+    expect(pill).toHaveClass("text-confirmed");
+    expect(pill.querySelector("svg.lucide-check")).not.toBe(null);
+    expect(screen.getByText("thresh(2,pk(Key A),pk(Key B),pk(Key C))")).toBeInTheDocument();
+  });
+
+  it("keeps an address wallet to a sentence and its address", async () => {
+    walletIpc({ wallet_policy: () => ADDRESS_POLICY });
+    renderApp();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /1 address/ }));
+    expect(
+      await screen.findByText("An address has no policy Gerfaut can read."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy address" })).toHaveAttribute(
+      "title",
+      ADDRESS_POLICY.descriptor,
+    );
+    expect(screen.queryByRole("region", { name: "Keys" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Descriptor")).not.toBeInTheDocument();
+  });
+
+  it("shows a quiet placeholder while the policy loads", async () => {
+    walletIpc({ wallet_policy: () => new Promise(() => {}) });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    // Without a digest the row is only its name.
+    await user.click(within(screen.getByRole("main")).getByRole("button", { name: /^Policy$/ }));
+    expect(await screen.findByRole("status", { name: "Loading policy" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Policy" })).toBeInTheDocument();
+  });
+
+  it("states the core's message when the policy cannot be read", async () => {
+    walletIpc({
+      wallet_policy: () => {
+        throw { kind: "descriptor", message: "the policy cannot be read: unknown fragment" };
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Policy" }));
+    expect(
+      await screen.findByText(/the policy cannot be read: unknown fragment/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("The policy could not be read.")).toBeInTheDocument();
+    // The balance row keeps its plain name rather than a wrong digest.
+    await user.click(sidebar().getByRole("button", { name: "Overview" }));
+    const main = within(screen.getByRole("main"));
+    expect(await main.findByRole("button", { name: /^Policy$/ })).toBeInTheDocument();
+  });
+
+  it("copies the descriptor from its folded section", async () => {
+    walletIpc({ wallet_policy: () => LIANA_POLICY });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Policy" }));
+    await screen.findByText(/A recovery key can spend/);
+    await user.click(screen.getByText("Descriptor"));
+    await user.click(screen.getByRole("button", { name: "Copy descriptor" }));
+    expect(await navigator.clipboard.readText()).toBe(LIANA_POLICY.descriptor);
   });
 });
 
