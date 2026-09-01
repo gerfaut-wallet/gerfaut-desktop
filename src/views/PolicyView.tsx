@@ -166,7 +166,7 @@ function BranchCard({ branch, keys }: { branch: PolicyBranch; keys: PolicyKey[] 
       </div>
 
       <div>
-        <p className="font-ui text-[15px] leading-snug text-text">{outline.text}</p>
+        <p className="font-ui text-sm leading-snug text-text">{outline.text}</p>
         {outline.items.length > 0 && (
           <ul className="mt-2 flex flex-col gap-1 border-l border-border pl-3">
             {outline.items.map((item) => (
@@ -187,7 +187,7 @@ function BranchCard({ branch, keys }: { branch: PolicyBranch; keys: PolicyKey[] 
             >
               <span className="font-ui text-xs font-medium text-text">{key.label}</span>
               {key.fingerprint && (
-                <span className="font-data text-[11px] text-muted">{key.fingerprint}</span>
+                <span className="font-data text-xs text-muted">{key.fingerprint}</span>
               )}
             </li>
           ))}
