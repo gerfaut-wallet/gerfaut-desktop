@@ -331,15 +331,11 @@ function formatRate(rate: number): string {
 
 function StatusCard({ snapshot, error }: { snapshot: WalletSnapshot; error: string | null }) {
   const { meta, tip_height } = snapshot;
-  const rows: { label: string; value: ReactNode }[] = [
+  const rows: { label: string; value: ReactNode; detail?: string }[] = [
     {
       label: "Last sync",
       value: error ? (
-        <span
-          className="inline-flex items-center gap-1 text-pending"
-          title={error}
-          aria-label={`Sync failed: ${error}`}
-        >
+        <span className="inline-flex items-center gap-1 text-pending">
           <AlertTriangle size={13} strokeWidth={1.5} aria-hidden />
           Sync failed
         </span>
@@ -348,6 +344,9 @@ function StatusCard({ snapshot, error }: { snapshot: WalletSnapshot; error: stri
       ) : (
         "never"
       ),
+      // Why, under the row rather than behind a hover: the core states
+      // it in a sentence, and a sentence is read where it lands.
+      detail: error ?? undefined,
     },
     {
       label: "Backend",
@@ -371,11 +370,22 @@ function StatusCard({ snapshot, error }: { snapshot: WalletSnapshot; error: stri
     <Card label="Watch status">
       <dl className="flex flex-col gap-2.5">
         {rows.map((row) => (
-          <div key={row.label} className="flex items-baseline justify-between gap-3">
+          <div
+            key={row.label}
+            className={clsx(
+              "flex items-baseline justify-between",
+              row.detail ? "flex-wrap gap-x-3 gap-y-1" : "gap-3",
+            )}
+          >
             <dt className="font-ui text-xs text-muted">{row.label}</dt>
             <dd className="min-w-0 truncate text-right font-ui text-[13px] text-text">
               {row.value}
             </dd>
+            {row.detail && (
+              <dd className="line-clamp-2 basis-full font-ui text-xs text-muted" title={row.detail}>
+                {row.detail}
+              </dd>
+            )}
           </div>
         ))}
       </dl>

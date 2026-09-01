@@ -393,7 +393,22 @@ describe("overview", () => {
     renderApp();
     expect(await screen.findByText("Sync failed")).toBeInTheDocument();
     expect(screen.getByText("Sync failed: showing the last known balance.")).toBeInTheDocument();
-    expect(screen.getByLabelText(/mempool\.space: connection timed out/)).toBeInTheDocument();
+    expect(screen.getByText("mempool.space: connection timed out")).toBeInTheDocument();
+  });
+
+  it("shows why a sync failed under the status", async () => {
+    const why = "sync failed via blockstream.info: timed out after 60 s";
+    useUi.setState({ syncErrors: { [WALLET.id]: why } });
+    renderApp();
+    expect(await screen.findByText("Sync failed")).toBeInTheDocument();
+    // The reason sits on the card, not behind a hover. It is clamped to
+    // two lines, with the whole sentence kept in the tooltip.
+    const detail = screen.getByText(why);
+    expect(detail).toBeVisible();
+    expect(detail).toHaveClass("line-clamp-2");
+    expect(detail).toHaveAttribute("title", why);
+    // Said once: the pill no longer carries the sentence as a label too.
+    expect(screen.queryByLabelText(/^Sync failed:/)).not.toBeInTheDocument();
   });
 
   it("says nothing under a balance with nothing in flight", async () => {
