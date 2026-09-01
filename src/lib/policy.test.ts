@@ -365,6 +365,18 @@ describe("timelockText", () => {
     );
   });
 
+  it("dates a time lock and says what is left, like a height lock", () => {
+    const unix = NOW + 10 * 86_400;
+    const lock = { kind: "absolute", lock: { kind: "time", unix } } as const;
+    const left = { remaining_blocks: null, remaining_seconds: 10 * 86_400, unlocks_at_unix: unix };
+    expect(timelockText({ lock, required: true, state: { kind: "locked", ...left } })).toMatch(
+      /^After \w{3} \d{2}, \d{4} ≈ in 10 days$/,
+    );
+    expect(timelockText({ lock, required: true, state: { kind: "unlocked" } })).toMatch(
+      /^After \w{3} \d{2}, \d{4} · reached$/,
+    );
+  });
+
   it("knows which locks the clock decides", () => {
     const timed: Timelock = {
       lock: { kind: "relative", lock: { kind: "seconds", seconds: 51_200 } },

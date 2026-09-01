@@ -289,6 +289,47 @@ const ADDRESS_POLICY: PolicySnapshot = {
   has_timelocks: false,
 };
 
+/** Key A behind an absolute time lock `seconds` ahead of the clock: a
+    lock the chain judges by a median time that trails the clock. */
+function timeLocked(seconds: number): PolicySnapshot {
+  const unix = POLICY_AT + seconds;
+  const remaining = { remaining_blocks: null, remaining_seconds: seconds, unlocks_at_unix: unix };
+  return {
+    ...SINGLE_KEY_POLICY,
+    kind: "miniscript",
+    script: "witness_script",
+    policy: `and(pk(Key A),after(${unix}))`,
+    coins: 0,
+    has_timelocks: true,
+    branches: [
+      {
+        id: "b0",
+        role: "primary",
+        label: "Primary",
+        summary: "Key A after 2025-08-22",
+        condition: {
+          kind: "thresh",
+          k: 2,
+          n: 2,
+          items: [
+            { kind: "key", key_id: "k0" },
+            { kind: "after", lock: { kind: "time", unix } },
+          ],
+        },
+        timelocks: [
+          {
+            lock: { kind: "absolute", lock: { kind: "time", unix } },
+            required: true,
+            state: { kind: "locked", ...remaining },
+          },
+        ],
+        state: { kind: "locked", until: remaining },
+        spendable_now: false,
+      },
+    ],
+  };
+}
+
 /** Key A behind an absolute height lock still `blocks` ahead of the tip:
     the only path, and it waits. */
 function heightLocked(blocks: number): PolicySnapshot {
@@ -923,6 +964,20 @@ describe("policy page", () => {
     expect(far).not.toHaveClass("text-pending");
     expect(far).toHaveClass("text-muted");
     expect(far.querySelector("svg.lucide-clock")).not.toBe(null);
+  });
+
+  it("says the clock decides a time lock, and what it has left", async () => {
+    walletIpc({ wallet_policy: () => timeLocked(10 * 86_400) });
+    renderApp();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /Spendable in 10 days/ }));
+    expect(
+      await screen.findByText(/^Key A signs after \w{3} \d{2}, \d{4}, about 10 days from now\.$/),
+    ).toBeInTheDocument();
+    // The lock line dates the lock and says what is left, as a height lock does.
+    expect(screen.getByText(/^After \w{3} \d{2}, \d{4} ≈ in 10 days$/)).toBeInTheDocument();
+    // A lock the clock decides gets the caveat, once.
+    expect(screen.getAllByText(/device's clock/)).toHaveLength(1);
   });
 
   it("shows a multisig as one open path", async () => {

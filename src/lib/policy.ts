@@ -273,7 +273,11 @@ export function timelockText(timelock: Timelock): string {
       break;
     case "time":
       text = `After ${formatDate(inner.unix)}`;
-      if (state.kind === "unlocked") text += " · reached";
+      if (state.kind === "locked" && state.remaining_seconds !== null) {
+        text += ` ≈ in ${durationWords(state.remaining_seconds)}`;
+      } else if (state.kind === "unlocked") {
+        text += " · reached";
+      }
       break;
   }
   return timelock.required ? text : `${text} (optional)`;
