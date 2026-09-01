@@ -12,6 +12,7 @@ import {
 import type {
   BranchRole,
   Condition,
+  LockState,
   PolicyBranch,
   PolicyKey,
   PolicySnapshot,
@@ -46,7 +47,8 @@ function lockSeconds(timelock: Timelock, snapshot: PolicySnapshot): number {
     case "seconds":
       return inner.seconds;
     case "height":
-      return Math.max(0, inner.height - snapshot.tip_height) * BLOCK_SECONDS;
+      // Never synced, no tip: the lock is as far as its height.
+      return Math.max(0, inner.height - (snapshot.tip_height ?? 0)) * BLOCK_SECONDS;
     case "time":
       return Math.max(0, inner.unix - snapshot.computed_at);
   }
@@ -245,6 +247,30 @@ export function hasTimeBasedLocks(snapshot: PolicySnapshot): boolean {
   return snapshot.branches.some((branch) => branch.timelocks.some(isTimeBased));
 }
 
+/** What an absolute lock still ahead has left, whichever way the core
+    spelled it: nested under `until`, or inline as an older core did.
+    Null for any other state. */
+export function lockedUntil(state: LockState): Remaining | null {
+  if (state.kind !== "locked") return null;
+  return (
+    state.until ?? {
+      remaining_blocks: state.remaining_blocks ?? null,
+      remaining_seconds: state.remaining_seconds ?? null,
+      unlocks_at_unix: state.unlocks_at_unix ?? null,
+    }
+  );
+}
+
+/** Whether any figure is known. A wallet that never synced has no tip
+    to measure an absolute lock from, and every figure is null. */
+export function known(remaining: Remaining): boolean {
+  return (
+    remaining.remaining_blocks !== null ||
+    remaining.remaining_seconds !== null ||
+    remaining.unlocks_at_unix !== null
+  );
+}
+
 /** One lock as a line: what it counts, and what that comes to. An
     optional lock says so: the policy names it, but the branch can be
     spent without it. */
@@ -264,21 +290,19 @@ export function timelockText(timelock: Timelock): string {
       )}`;
       break;
     case "height":
-      text = `Block ${groupThousands(String(inner.height))}`;
-      if (state.kind === "locked" && state.remaining_seconds !== null) {
-        text += ` ≈ in ${durationWords(state.remaining_seconds)}`;
+    case "time": {
+      text =
+        inner.kind === "height"
+          ? `Block ${groupThousands(String(inner.height))}`
+          : `After ${formatDate(inner.unix)}`;
+      const left = lockedUntil(state)?.remaining_seconds ?? null;
+      if (left !== null) {
+        text += ` ≈ in ${durationWords(left)}`;
       } else if (state.kind === "unlocked") {
         text += " · reached";
       }
       break;
-    case "time":
-      text = `After ${formatDate(inner.unix)}`;
-      if (state.kind === "locked" && state.remaining_seconds !== null) {
-        text += ` ≈ in ${durationWords(state.remaining_seconds)}`;
-      } else if (state.kind === "unlocked") {
-        text += " · reached";
-      }
-      break;
+    }
   }
   return timelock.required ? text : `${text} (optional)`;
 }
@@ -332,6 +356,8 @@ export function branchStatus(branch: PolicyBranch): BranchStatus {
     case "spendable_now":
       return { tone: "confirmed", glyph: "check", text: "Spendable now" };
     case "locked":
+      // No tip to measure from: the lock may even be behind the chain.
+      if (!known(state.until)) return { tone: "neutral", glyph: "clock", text: "Not synced yet" };
       return {
         tone: approaching(state.until) ? "pending" : "neutral",
         glyph: "clock",
@@ -374,7 +400,9 @@ export interface Countdown {
 
 export function countdown(branch: PolicyBranch): Countdown | null {
   const { state } = branch;
-  if (state.kind === "locked") return { remaining: state.until, progress: null, perCoin: false };
+  if (state.kind === "locked") {
+    return known(state.until) ? { remaining: state.until, progress: null, perCoin: false } : null;
+  }
   if (state.kind !== "per_coin" || state.next === null) return null;
   const total = relativeWait(branch);
   const progress =
@@ -485,9 +513,9 @@ function lockClause(timelock: Timelock): string {
         inner.kind === "height"
           ? `block ${groupThousands(String(inner.height))}`
           : formatDate(inner.unix);
-      return state.kind === "locked" && state.remaining_seconds !== null
-        ? `after ${at}, ${formatDuration(state.remaining_seconds)} from now`
-        : `now that ${at} has passed`;
+      if (state.kind === "unlocked") return `now that ${at} has passed`;
+      const left = lockedUntil(state)?.remaining_seconds ?? null;
+      return left === null ? `after ${at}` : `after ${at}, ${formatDuration(left)} from now`;
     }
   }
 }
@@ -521,9 +549,11 @@ export function policyDigest(snapshot: PolicySnapshot): PolicyDigest {
     case "miniscript": {
       const branches = orderBranches(snapshot);
       // A primary path that waits is the wallet's only way to spend:
-      // where it stands comes before any later path's.
+      // where it stands comes before any later path's. Unless nothing
+      // is known of its lock yet: then the keys are all the row can say.
       const [primary] = branches;
-      if (primary && !primary.spendable_now) {
+      const unsynced = primary?.state.kind === "locked" && !known(primary.state.until);
+      if (primary && !primary.spendable_now && !unsynced) {
         if (primary.state.kind === "per_coin") {
           const { unlocked, waiting, locked } = primary.state;
           const total = unlocked + waiting + locked;
@@ -538,17 +568,19 @@ export function policyDigest(snapshot: PolicySnapshot): PolicyDigest {
         (branch) =>
           branch.role !== "primary" && conditionKeys(branch.condition, snapshot.keys).length > 0,
       );
-      if (timed) return { figure: timed.label, label: stateWords(timed) };
+      if (timed && !unsynced) return { figure: timed.label, label: stateWords(timed) };
       return keysDigest(snapshot);
     }
   }
 }
 
+/** "1 key", "2 of 3 keys", "Any of 3 keys": the keys alone. */
 function keysDigest(snapshot: PolicySnapshot): PolicyDigest {
   const condition = multisigCondition(snapshot);
   const threshold = condition ? keyThreshold(condition) : null;
   if (threshold && threshold.n > 1) {
-    return { figure: `${threshold.k} of ${threshold.n}`, label: "keys" };
+    const figure = threshold.k === 1 ? `Any of ${threshold.n}` : `${threshold.k} of ${threshold.n}`;
+    return { figure, label: "keys" };
   }
   const count = snapshot.keys.length;
   return { figure: groupThousands(String(count)), label: count === 1 ? "key" : "keys" };
@@ -562,7 +594,7 @@ function stateWords(branch: PolicyBranch): string {
     case "spendable_now":
       return "unlocked";
     case "locked":
-      return `in ${remainingTime(state.until)}`;
+      return known(state.until) ? `in ${remainingTime(state.until)}` : "locked";
     case "per_coin":
       if (state.next) return `in ${remainingTime(state.next)}`;
       return state.locked === 0 && state.waiting === 0 ? "unlocked" : "waiting for a block";

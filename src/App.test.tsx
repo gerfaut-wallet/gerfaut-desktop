@@ -275,6 +275,35 @@ const ANY_KEY_POLICY: PolicySnapshot = {
   ],
 };
 
+/** `sortedmulti(1, A, B, C)` as the core sends it now: one branch whose
+    threshold is any one of three keys. */
+const ANY_OF_THREE_POLICY: PolicySnapshot = {
+  ...MULTISIG_POLICY,
+  descriptor: "wsh(sortedmulti(1,xpubA.../0/*,xpubB.../0/*,xpubC.../0/*))#ffffffff",
+  policy: "or(pk(Key A),pk(Key B),pk(Key C))",
+  branches: [
+    {
+      id: "b0",
+      role: "primary",
+      label: "Primary",
+      summary: "any of 3 keys",
+      condition: {
+        kind: "thresh",
+        k: 1,
+        n: 3,
+        items: [
+          { kind: "key", key_id: "k0" },
+          { kind: "key", key_id: "k1" },
+          { kind: "key", key_id: "k2" },
+        ],
+      },
+      timelocks: [],
+      state: { kind: "spendable_now" },
+      spendable_now: true,
+    },
+  ],
+};
+
 const ADDRESS_POLICY: PolicySnapshot = {
   kind: "address",
   script: "segwit",
@@ -288,6 +317,25 @@ const ADDRESS_POLICY: PolicySnapshot = {
   coins: 1,
   has_timelocks: false,
 };
+
+/** The height-locked wallet before its first sync: no tip, so the core
+    reports the lock ahead with nothing left to say about it. */
+function unsynced(): PolicySnapshot {
+  const base = heightLocked(1_432);
+  const unknown = { remaining_blocks: null, remaining_seconds: null, unlocks_at_unix: null };
+  return {
+    ...base,
+    tip_height: null,
+    branches: base.branches.map((branch) => ({
+      ...branch,
+      state: { kind: "locked", until: unknown },
+      timelocks: branch.timelocks.map((timelock) => ({
+        ...timelock,
+        state: { kind: "locked", until: unknown },
+      })),
+    })),
+  };
+}
 
 /** Key A behind an absolute time lock `seconds` ahead of the clock: a
     lock the chain judges by a median time that trails the clock. */
@@ -320,7 +368,7 @@ function timeLocked(seconds: number): PolicySnapshot {
           {
             lock: { kind: "absolute", lock: { kind: "time", unix } },
             required: true,
-            state: { kind: "locked", ...remaining },
+            state: { kind: "locked", until: remaining },
           },
         ],
         state: { kind: "locked", until: remaining },
@@ -365,7 +413,7 @@ function heightLocked(blocks: number): PolicySnapshot {
           {
             lock: { kind: "absolute", lock: { kind: "height", height } },
             required: true,
-            state: { kind: "locked", ...remaining },
+            state: { kind: "locked", until: remaining },
           },
         ],
         state: { kind: "locked", until: remaining },
@@ -979,6 +1027,36 @@ describe("policy page", () => {
     expect(screen.getAllByText(/device's clock/)).toHaveLength(1);
   });
 
+  it("says the wallet never synced rather than counting from block zero", async () => {
+    walletIpc({ wallet_policy: () => unsynced() });
+    renderApp();
+    const user = userEvent.setup();
+    // Nothing is known of the wait: the row keeps to the keys.
+    await user.click(await screen.findByRole("button", { name: /^1 key, policy$/ }));
+    const heading = await screen.findByRole("heading", { name: "Policy" });
+    expect(heading.parentElement).toHaveTextContent(/Cold storage · not synced yet/);
+    expect(heading.parentElement).not.toHaveTextContent(/read at block/);
+    expect(screen.getByText(/^Key A signs after block 201.432\.$/)).toBeInTheDocument();
+    const pill = screen.getByText("Not synced yet");
+    expect(pill).toHaveAttribute("data-tone", "neutral");
+    expect(pill.querySelector("svg.lucide-clock")).not.toBe(null);
+    // The lock line names the block and nothing more; no countdown either.
+    expect(screen.getByText(/^Block 201.432$/)).toBeInTheDocument();
+    expect(screen.queryByText(/≈/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
+  it("reads a one of three multisig the core keeps as one path", async () => {
+    walletIpc({ wallet_policy: () => ANY_OF_THREE_POLICY });
+    renderApp();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^Any of 3 keys, policy$/ }));
+    expect(await screen.findByText("Any of 3 keys signs.")).toBeInTheDocument();
+    expect(screen.getAllByRole("region", { name: /path$/ })).toHaveLength(1);
+    expect(screen.getByText("Key A, Key B or Key C")).toBeInTheDocument();
+    expect(screen.getByText("Spendable now")).toHaveAttribute("data-tone", "confirmed");
+  });
+
   it("shows a multisig as one open path", async () => {
     walletIpc({ wallet_policy: () => MULTISIG_POLICY });
     renderApp();
@@ -996,7 +1074,7 @@ describe("policy page", () => {
     walletIpc({ wallet_policy: () => ANY_KEY_POLICY });
     renderApp();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: /^1 of 2 keys, policy$/ }));
+    await user.click(await screen.findByRole("button", { name: /^Any of 2 keys, policy$/ }));
     expect(await screen.findByText("Any of 2 keys signs.")).toBeInTheDocument();
     const cards = screen.getAllByRole("region", { name: /path$/ });
     expect(cards.map((card) => card.getAttribute("aria-label"))).toEqual([

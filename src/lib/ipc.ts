@@ -305,10 +305,17 @@ export interface PerCoin {
   next: Remaining | null;
 }
 
+/** An absolute lock still ahead. What is left sits under `until`, as it
+    does in the branch state; a core from before that change spelled
+    the three figures inline, and `lockedUntil` reads either. Every
+    figure is null when the wallet has never synced: there is no tip to
+    measure from. */
+export type LockedLock = { kind: "locked"; until?: Remaining } & Partial<Remaining>;
+
 /** Where one lock stands against the chain and the coins. */
 export type LockState =
   | { kind: "unlocked" }
-  | ({ kind: "locked" } & Remaining)
+  | LockedLock
   | ({ kind: "per_coin" } & PerCoin)
   | { kind: "no_coins"; blocks: number | null; seconds: number | null };
 
@@ -354,7 +361,10 @@ export interface PolicySnapshot {
   policy: string;
   keys: PolicyKey[];
   branches: PolicyBranch[];
-  tip_height: number;
+  /** Chain tip at the last sync; null when the wallet never synced, in
+      which case every absolute lock is locked with nothing left to
+      say. */
+  tip_height: number | null;
   /** When the snapshot was computed, unix seconds. */
   computed_at: number;
   /** Time locks are judged against the device clock, which the chain's

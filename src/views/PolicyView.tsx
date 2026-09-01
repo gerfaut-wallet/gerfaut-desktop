@@ -46,12 +46,7 @@ export function PolicyView({ walletId }: { walletId: string }) {
         {name && (
           <p className="mt-1 font-ui text-sm text-muted">
             {name}
-            {policy.data && policy.data.tip_height > 0 && (
-              <>
-                {" · read at block "}
-                <span className="tabular">{groupThousands(String(policy.data.tip_height))}</span>
-              </>
-            )}
+            {policy.data && <ReadAt tip={policy.data.tip_height} />}
           </p>
         )}
       </header>
@@ -67,6 +62,18 @@ export function PolicyView({ walletId }: { walletId: string }) {
         <Body snapshot={policy.data} />
       )}
     </div>
+  );
+}
+
+/** The tip the locks were read against, or the fact that there is none
+    yet: a wallet that never synced has no block to measure from. */
+function ReadAt({ tip }: { tip: number | null }) {
+  if (tip === null || tip === 0) return <>{" · not synced yet"}</>;
+  return (
+    <>
+      {" · read at block "}
+      <span className="tabular">{groupThousands(String(tip))}</span>
+    </>
   );
 }
 

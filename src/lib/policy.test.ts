@@ -153,7 +153,15 @@ describe("describePolicy", () => {
     // `sortedmulti(1, A, B)` is one threshold to the core's kind and two
     // branches to its list, one key each: read together, not as the first.
     expect(describePolicy(anyOfTwo())).toBe("Any of 2 keys signs.");
-    expect(digestText(policyDigest(anyOfTwo()))).toBe("1 of 2 keys");
+    expect(digestText(policyDigest(anyOfTwo()))).toBe("Any of 2 keys");
+    // The core now keeps it as one branch: the same words either way.
+    const asOne = snapshot({
+      kind: "multisig",
+      has_timelocks: false,
+      branches: [branch("b0", "primary", "Primary", thresh(1, key("k0"), key("k1"), key("k2")), OPEN)],
+    });
+    expect(describePolicy(asOne)).toBe("Any of 3 keys signs.");
+    expect(digestText(policyDigest(asOne))).toBe("Any of 3 keys");
     const locked = snapshot({
       branches: [
         branch(
@@ -206,7 +214,7 @@ describe("describePolicy", () => {
           {
             lock: { kind: "absolute", lock: { kind: "height", height } },
             required: true,
-            state: { kind: "locked", ...blocksLeft(1_432) },
+            state: { kind: "locked", until: blocksLeft(1_432) },
           },
         ]),
       ],
@@ -274,7 +282,7 @@ describe("describePolicy", () => {
             {
               lock: { kind: "absolute", lock: { kind: "height", height } },
               required: true,
-              state: { kind: "locked", ...blocksLeft(1_432) },
+              state: { kind: "locked", until: blocksLeft(1_432) },
             },
           ],
         ),
@@ -360,6 +368,10 @@ describe("timelockText", () => {
     const height = TIP + 1_432;
     const lock = { kind: "absolute", lock: { kind: "height", height } } as const;
     expect(
+      timelockText({ lock, required: true, state: { kind: "locked", until: blocksLeft(1_432) } }),
+    ).toMatch(/^Block 201.432 ≈ in 10 days$/);
+    // A core from before the nested shape spelled the figures inline.
+    expect(
       timelockText({ lock, required: true, state: { kind: "locked", ...blocksLeft(1_432) } }),
     ).toMatch(/^Block 201.432 ≈ in 10 days$/);
     expect(timelockText({ lock, required: true, state: { kind: "unlocked" } })).toMatch(
@@ -371,7 +383,7 @@ describe("timelockText", () => {
     const unix = NOW + 10 * 86_400;
     const lock = { kind: "absolute", lock: { kind: "time", unix } } as const;
     const left = { remaining_blocks: null, remaining_seconds: 10 * 86_400, unlocks_at_unix: unix };
-    expect(timelockText({ lock, required: true, state: { kind: "locked", ...left } })).toMatch(
+    expect(timelockText({ lock, required: true, state: { kind: "locked", until: left } })).toMatch(
       /^After \w{3} \d{2}, \d{4} ≈ in 10 days$/,
     );
     expect(timelockText({ lock, required: true, state: { kind: "unlocked" } })).toMatch(
@@ -543,5 +555,39 @@ describe("policyDigest", () => {
       branches: [counting(52_560, { kind: "no_coins" }), counting(4_320, { kind: "no_coins" })],
     });
     expect(digestText(policyDigest(empty))).toBe("Spendable after 30 days");
+  });
+});
+
+describe("a wallet that never synced", () => {
+  const height = TIP + 1_432;
+  const unknown: Remaining = { remaining_blocks: null, remaining_seconds: null, unlocks_at_unix: null };
+  const after: Condition = { kind: "after", lock: { kind: "height", height } };
+  const lock: Timelock = {
+    lock: { kind: "absolute", lock: { kind: "height", height } },
+    required: true,
+    state: { kind: "locked", until: unknown },
+  };
+  const primary = branch("b0", "primary", "Primary", and(key("k0"), after), { kind: "locked", until: unknown }, [lock]);
+
+  it("has no tip to measure an absolute lock from, and says so", () => {
+    const wallet = snapshot({ tip_height: null, keys: KEYS.slice(0, 1), branches: [primary] });
+    expect(branchStatus(primary)).toEqual({ tone: "neutral", glyph: "clock", text: "Not synced yet" });
+    expect(countdown(primary)).toBeNull();
+    expect(timelockText(lock)).toMatch(/^Block 201.432$/);
+    expect(describePolicy(wallet)).toMatch(/^Key A signs after block 201.432\.$/);
+    // Nothing is known of the wait: the row keeps to the keys.
+    expect(digestText(policyDigest(wallet))).toBe("1 key");
+  });
+
+  it("calls a later path locked rather than dating it", () => {
+    const wallet = snapshot({
+      tip_height: null,
+      branches: [
+        branch("b0", "primary", "Primary", key("k0"), OPEN),
+        branch("b1", "recovery", "Recovery", and(key("k1"), after), { kind: "locked", until: unknown }, [lock]),
+      ],
+    });
+    expect(digestText(policyDigest(wallet))).toBe("Recovery locked");
+    expect(describePolicy(wallet)).toMatch(/^Key A signs\. A recovery key can spend after block 201.432\.$/);
   });
 });
