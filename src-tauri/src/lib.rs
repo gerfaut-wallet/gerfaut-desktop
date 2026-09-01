@@ -520,10 +520,14 @@ async fn save_backup_file(
 
 /// Asks for a backup file and reads it into the base64 form the core
 /// opens. Any file is read; the core says whether it is a backup. The
-/// size is checked first, so picking a disc image by mistake costs
-/// nothing. Null when the dialog was closed instead.
+/// read stops one byte past the largest backup the core accepts, so
+/// picking a disc image by mistake costs nothing, and the file is
+/// judged by what was read rather than by a size it may have outgrown
+/// since. Null when the dialog was closed instead.
 #[tauri::command]
 async fn pick_backup_file(app: tauri::AppHandle) -> CommandResult<Option<PickedBackup>> {
+    use std::io::Read;
+
     let dialog = file_dialog(&app)
         .add_filter("Gerfaut backup", &["gerfaut"])
         .add_filter("All files", &["*"]);
@@ -532,14 +536,19 @@ async fn pick_backup_file(app: tauri::AppHandle) -> CommandResult<Option<PickedB
     };
     let unreadable =
         |e: std::io::Error| internal(format!("could not read {}: {e}", path.display()));
-    let size = std::fs::metadata(&path).map_err(unreadable)?.len();
-    if size > gerfaut_core::backup::MAX_BACKUP_TEXT as u64 {
+    let limit = gerfaut_core::backup::MAX_BACKUP_TEXT;
+    let mut bytes = Vec::new();
+    std::fs::File::open(&path)
+        .map_err(unreadable)?
+        .take(limit as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(unreadable)?;
+    if bytes.len() > limit {
         return Err(CommandError {
             kind: "invalid_input",
             message: "this file is far too large to be a Gerfaut backup".to_owned(),
         });
     }
-    let bytes = std::fs::read(&path).map_err(unreadable)?;
     let name = path
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
