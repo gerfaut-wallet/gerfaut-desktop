@@ -281,7 +281,7 @@ describe("exporting a backup", () => {
           return { data: "R0ZCQUNLVVA=", frames: ["ur:bytes/aaa"], wallet_count: 2, size_bytes: 512 };
         case "save_backup_file":
           saved = args;
-          return "C:/Users/me/Documents/gerfaut-backup.gerfaut";
+          return true;
         default:
           throw new Error(`unexpected command ${cmd}`);
       }
@@ -317,7 +317,7 @@ describe("exporting a backup", () => {
         case "export_backup":
           return { data: "R0ZCQUNLVVA=", frames: ["ur:bytes/aaa"], wallet_count: 2, size_bytes: 512 };
         case "save_backup_file":
-          return null;
+          return false;
         default:
           throw new Error(`unexpected command ${cmd}`);
       }

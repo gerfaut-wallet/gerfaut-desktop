@@ -137,13 +137,6 @@ pub struct PickedBackup {
     pub data: String,
 }
 
-/// A CSV written where the person chose.
-#[derive(Debug, Clone, Serialize)]
-pub struct CsvExport {
-    pub path: String,
-    pub rows: u32,
-}
-
 // --- commands ----------------------------------------------------------
 
 /// Classifies pasted or scanned material. `script` and `derivation`
@@ -336,7 +329,8 @@ async fn address_list(state: tauri::State<'_, AppState>, id: String) -> CommandR
 }
 
 /// Asks where the CSV should go, then builds the filtered file and
-/// writes it there. Null when the dialog was closed instead.
+/// writes it there. Answers with the number of rows written; null when
+/// the dialog was closed instead.
 #[tauri::command]
 async fn export_transactions_csv(
     app: tauri::AppHandle,
@@ -344,7 +338,7 @@ async fn export_transactions_csv(
     id: String,
     options: gerfaut_core::export::ExportOptions,
     suggested_name: String,
-) -> CommandResult<Option<CsvExport>> {
+) -> CommandResult<Option<u32>> {
     let dialog = file_dialog(&app)
         .add_filter("CSV", &["csv"])
         .set_file_name(bare_file_name(&suggested_name, "transactions.csv"));
@@ -354,10 +348,7 @@ async fn export_transactions_csv(
     let result = state.manager.export_transactions(&id, &options).await?;
     std::fs::write(&path, result.csv.as_bytes())
         .map_err(|e| internal(format!("could not write {}: {e}", path.display())))?;
-    Ok(Some(CsvExport {
-        path: path.display().to_string(),
-        rows: result.rows,
-    }))
+    Ok(Some(result.rows))
 }
 
 /// Fee estimates come from the backend configured for the network: the
@@ -506,23 +497,24 @@ async fn export_backup(
 
 /// Asks where a sealed backup (base64 from `export_backup`) should go
 /// and writes it there. The bytes are already encrypted: this is plain
-/// I/O. Null when the dialog was closed instead.
+/// I/O. True once the file is written, false when the dialog was
+/// closed instead.
 #[tauri::command]
 async fn save_backup_file(
     app: tauri::AppHandle,
     data: String,
     suggested_name: String,
-) -> CommandResult<Option<String>> {
+) -> CommandResult<bool> {
     let bytes = gerfaut_core::backup::decode_source(&data)?;
     let dialog = file_dialog(&app)
         .add_filter("Gerfaut backup", &["gerfaut"])
         .set_file_name(bare_file_name(&suggested_name, "gerfaut-backup.gerfaut"));
     let Some(path) = show_dialog(dialog, DialogKind::Save).await? else {
-        return Ok(None);
+        return Ok(false);
     };
     std::fs::write(&path, bytes)
         .map_err(|e| internal(format!("could not write {}: {e}", path.display())))?;
-    Ok(Some(path.display().to_string()))
+    Ok(true)
 }
 
 /// Asks for a backup file and reads it into the base64 form the core

@@ -69,9 +69,8 @@ export function ExportView({ walletId }: { walletId: string }) {
     exportCsv.mutate(
       { id: walletId, options, suggestedName: `${slug || "wallet"}-transactions.csv` },
       {
-        onSuccess: (written) => {
-          if (written === null) return;
-          const { rows } = written;
+        onSuccess: (rows) => {
+          if (rows === null) return;
           showToast(rows === 1 ? "1 transaction exported" : `${rows} transactions exported`);
         },
         onError: (error) =>

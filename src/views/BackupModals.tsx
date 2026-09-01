@@ -168,7 +168,7 @@ export function BackupExportModal({
   const saveFile = async (made: BackupBundle) => {
     try {
       const written = await ipc.saveBackupFile(made.data, backupFilename());
-      if (written === null) return;
+      if (!written) return;
       showToast("Backup saved");
     } catch (error) {
       showToast(isCommandError(error) ? error.message : String(error));

@@ -1796,11 +1796,11 @@ describe("export page", () => {
   it("previews the selection and writes the file", async () => {
     const exported = vi.fn((_args: Record<string, unknown>) => undefined);
     walletIpc({
-      // The save dialog is Rust's: the command answers with where the
-      // file went and how many rows it holds.
+      // The save dialog is Rust's: the command answers with how many
+      // rows the file holds, never where it went.
       export_transactions_csv: (args) => {
         exported(args);
-        return { path: "C:/exports/wallet.csv", rows: 1 };
+        return 1;
       },
     });
     renderApp();
