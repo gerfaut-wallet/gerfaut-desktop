@@ -46,13 +46,16 @@ const SETTINGS: Settings = {
   tor: { mode: "auto", socks_proxy: null },
 };
 
-function renderBackend(onSave: (config: BackendConfig) => void = () => {}) {
+function renderBackend(
+  onSave: (config: BackendConfig) => void = () => {},
+  settings: Settings = SETTINGS,
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
       <BackendSection
         network="mainnet"
-        settings={SETTINGS}
+        settings={settings}
         onSave={onSave}
         saving={false}
       />
@@ -179,5 +182,49 @@ describe("scanning a server address", () => {
     // Typing drops the refusal: it no longer describes the field.
     await user.type(field("Host"), "x");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("says when the address scanned is a Tor hidden service", async () => {
+    mockBackendIpc({
+      kind: "electrum",
+      url: "tcp://gerfautexample123.onion:50001",
+      host: "gerfautexample123.onion",
+      port: 50001,
+      tls: false,
+      onion: true,
+    });
+    renderBackend(() => {}, { ...SETTINGS, tor: { mode: "system", socks_proxy: null } });
+    const user = userEvent.setup();
+    expect(screen.queryByText(/A Tor hidden service/)).not.toBeInTheDocument();
+
+    await scanCode(user, "gerfautexample123.onion:50001:t");
+
+    // The core read it as an onion; the form says what that means, in
+    // the Tor mode the settings hold.
+    expect(
+      screen.getByText("A Tor hidden service: reached through Tor only (mode: System Tor)."),
+    ).toBeInTheDocument();
+
+    // A fact about the address scanned, not about whatever is typed next.
+    await user.type(field("Host"), "x");
+    expect(screen.queryByText(/A Tor hidden service/)).not.toBeInTheDocument();
+  });
+
+  it("says nothing of Tor for a clearnet host", async () => {
+    mockBackendIpc({
+      kind: "electrum",
+      url: "ssl://electrum.example.org:50002",
+      host: "electrum.example.org",
+      port: 50002,
+      tls: true,
+      onion: false,
+    });
+    renderBackend();
+    const user = userEvent.setup();
+
+    await scanCode(user, "electrum.example.org:50002:s");
+
+    expect(field("Host")).toHaveValue("electrum.example.org");
+    expect(screen.queryByText(/A Tor hidden service/)).not.toBeInTheDocument();
   });
 });

@@ -2,6 +2,7 @@ import {
   Check,
   Coins,
   Compass,
+  EyeOff,
   Globe,
   Info,
   Monitor,
@@ -26,7 +27,7 @@ import { Button, IconButton } from "../components/Button";
 import { BackupSection } from "./settings/BackupSection";
 import { NotificationsSection } from "./settings/NotificationsSection";
 import { SecuritySection } from "./settings/SecuritySection";
-import { TorSection } from "./settings/TorSection";
+import { TOR_MODES, TorSection } from "./settings/TorSection";
 import { WelcomeTour } from "./WelcomeTour";
 import { Modal } from "../components/Modal";
 import { Notice } from "../components/Notice";
@@ -47,6 +48,7 @@ import type {
   Network,
   PriceSource,
   Settings,
+  TorMode,
   UpdateCheck,
   WalletMeta,
 } from "../lib/ipc";
@@ -629,6 +631,9 @@ export function BackendSection({
   const [scanOpen, setScanOpen] = useState(false);
   // Why the core refused the last code read, in its own words.
   const [scanError, setScanError] = useState<string | null>(null);
+  // The last code read was a Tor hidden service: a fact about the
+  // address the fields now hold, gone the moment one of them is edited.
+  const [onion, setOnion] = useState(false);
   // The certificate the user has to settle before this backend is saved.
   const [pending, setPending] = useState<{
     url: string;
@@ -649,6 +654,7 @@ export function BackendSection({
     setHost(electrum.host);
     setPort(electrum.port);
     setTls(electrum.tls);
+    setOnion(false);
   }, [network, settings.backends]);
 
   const valid =
@@ -686,6 +692,7 @@ export function BackendSection({
     try {
       const backend = await ipc.parseBackend(text);
       setScanError(null);
+      setOnion(backend.onion);
       if (backend.kind === "esplora") {
         setKind("custom_esplora");
         setEsploraUrl(backend.url);
@@ -783,6 +790,7 @@ export function BackendSection({
               onChange={(event) => {
                 setEsploraUrl(event.target.value);
                 setScanError(null);
+                setOnion(false);
               }}
               spellCheck={false}
               placeholder="https://node.example.org:3002/api"
@@ -792,6 +800,7 @@ export function BackendSection({
           <ScanButton onClick={() => setScanOpen(true)} />
         </div>
         <ScanRefusal reason={scanError} />
+        {onion && <OnionNote mode={settings.tor.mode} />}
       </>
     ),
     custom_electrum: (
@@ -805,6 +814,7 @@ export function BackendSection({
               onChange={(event) => {
                 setHost(event.target.value);
                 setScanError(null);
+                setOnion(false);
               }}
               spellCheck={false}
               placeholder="node.example.org or xxxxxxxx.onion"
@@ -819,6 +829,7 @@ export function BackendSection({
               onChange={(event) => {
                 setPort(event.target.value.replace(/\D/g, ""));
                 setScanError(null);
+                setOnion(false);
               }}
               inputMode="numeric"
               placeholder="50002"
@@ -832,6 +843,7 @@ export function BackendSection({
           <ScanButton onClick={() => setScanOpen(true)} />
         </div>
         <ScanRefusal reason={scanError} />
+        {onion && <OnionNote mode={settings.tor.mode} />}
       </>
     ),
   };
@@ -874,6 +886,7 @@ export function BackendSection({
                 onChange={() => {
                   setKind(option.value);
                   setScanError(null);
+                  setOnion(false);
                 }}
                 className="mt-1 accent-(--color-primary)"
               />
@@ -942,6 +955,19 @@ function ScanButton({ onClick }: { onClick: () => void }) {
       <ScanLine size={16} strokeWidth={1.5} aria-hidden />
       Scan
     </Button>
+  );
+}
+
+/** The one fact a scan tells that the fields cannot show: the address
+    is a Tor hidden service, so it is reached through Tor alone, in the
+    mode the Tor card is set to. */
+function OnionNote({ mode }: { mode: TorMode }) {
+  const label = TOR_MODES.find((option) => option.value === mode)?.label ?? mode;
+  return (
+    <p className="mt-2 flex items-center gap-1.5 font-ui text-xs text-muted">
+      <EyeOff size={13} strokeWidth={1.5} aria-hidden />
+      {`A Tor hidden service: reached through Tor only (mode: ${label}).`}
+    </p>
   );
 }
 

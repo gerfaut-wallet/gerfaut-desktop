@@ -7,7 +7,9 @@ import { ipc, isCommandError } from "../../lib/ipc";
 import { keys } from "../../state/queries";
 import { FieldLabel, SectionCard, Segmented } from "./primitives";
 
-const MODES: { value: TorMode; label: string }[] = [
+/** The Tor modes as the settings name them; the backend form borrows
+    the label when a scanned address turns out to be an onion. */
+export const TOR_MODES: { value: TorMode; label: string }[] = [
   { value: "auto", label: "Automatic" },
   { value: "system", label: "System Tor" },
   { value: "embedded", label: "Built-in" },
@@ -78,7 +80,7 @@ export function TorSection({ tor }: { tor: TorSettings }) {
             label="Tor"
             value={tor.mode}
             onChange={(value) => apply({ mode: value as TorMode })}
-            options={MODES.map((mode) => ({
+            options={TOR_MODES.map((mode) => ({
               ...mode,
               // Nothing built in means nothing to choose.
               disabled: !embedded && mode.value === "embedded",
