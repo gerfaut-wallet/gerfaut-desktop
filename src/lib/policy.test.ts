@@ -177,13 +177,15 @@ describe("describePolicy", () => {
   });
 
   it("names a group of recovery keys by its threshold", () => {
+    // The one timelocked path of a wallet is its recovery path: the core
+    // hands out "emergency" only to the second.
     const wallet = snapshot({
       branches: [
         branch("b0", "primary", "Primary", thresh(2, key("k0"), key("k1"), key("k2")), OPEN),
         branch(
           "b1",
-          "emergency",
-          "Emergency",
+          "recovery",
+          "Recovery",
           and(thresh(2, key("k0"), key("k1"), key("k2")), older(4_320)),
           { kind: "no_coins" },
           [relative(4_320, { kind: "no_coins", blocks: 4_320, seconds: null })],
@@ -191,7 +193,7 @@ describe("describePolicy", () => {
       ],
     });
     expect(describePolicy(wallet)).toBe(
-      "2 of 3 keys sign. Any 2 of 3 emergency keys can spend once a coin has waited about 30 days.",
+      "2 of 3 keys sign. Any 2 of 3 recovery keys can spend once a coin has waited about 30 days.",
     );
   });
 
