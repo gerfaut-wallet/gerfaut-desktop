@@ -110,9 +110,17 @@ async fn show_dialog(
         .transpose()
 }
 
+/// Longest stem a suggested name keeps. File systems stop a name at 255
+/// bytes; this leaves room for the extension and for characters that
+/// take more than one byte.
+const MAX_STEM_CHARS: usize = 200;
+/// Longest tail after the last dot that still counts as an extension.
+const MAX_EXTENSION_CHARS: usize = 16;
+
 /// Reduces a suggested file name to a bare name: anything before a
-/// separator goes, so do the characters no file system accepts, and an
-/// empty result falls back rather than naming a file after nothing.
+/// separator goes, so do the characters no file system accepts, an
+/// overlong stem is cut, and what is left falls back when it is empty
+/// or when Windows would read it as a device rather than a file.
 fn bare_file_name(suggested: &str, fallback: &str) -> String {
     let name: String = suggested
         .rsplit(['/', '\\'])
@@ -121,12 +129,44 @@ fn bare_file_name(suggested: &str, fallback: &str) -> String {
         .chars()
         .filter(|c| !c.is_control() && !matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*'))
         .collect();
-    let name = name.trim().trim_end_matches(['.', ' ']);
-    if name.is_empty() {
+    let name = capped(name.trim().trim_end_matches(['.', ' ']));
+    if name.is_empty() || is_device_name(&name) {
         fallback.to_owned()
     } else {
-        name.to_owned()
+        name
     }
+}
+
+/// The name with its stem cut to `MAX_STEM_CHARS`, its extension kept.
+fn capped(name: &str) -> String {
+    let (stem, extension) = match name.rfind('.') {
+        Some(dot) if dot > 0 && name[dot..].chars().count() <= MAX_EXTENSION_CHARS => {
+            name.split_at(dot)
+        }
+        _ => (name, ""),
+    };
+    let stem: String = stem.chars().take(MAX_STEM_CHARS).collect();
+    format!("{stem}{extension}")
+}
+
+/// Whether Windows reads the name as a device: `CON`, `PRN`, `AUX`,
+/// `NUL`, `COM0` to `COM9` and `LPT0` to `LPT9`, in any case and with
+/// any extension after them. Such a file cannot be created, and on
+/// older systems the write would go to the device instead.
+fn is_device_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name).trim_end();
+    let upper = stem.to_ascii_uppercase();
+    if matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL") {
+        return true;
+    }
+    let mut chars = upper.chars();
+    let port: String = chars.by_ref().take(3).collect();
+    matches!(port.as_str(), "COM" | "LPT")
+        && matches!(
+            chars.next(),
+            Some('0'..='9' | '\u{b9}' | '\u{b2}' | '\u{b3}')
+        )
+        && chars.next().is_none()
 }
 
 /// A backup file the person picked: its name for the screen, its bytes
@@ -713,5 +753,60 @@ mod tests {
         assert_eq!(bare_file_name("", "backup.gerfaut"), "backup.gerfaut");
         assert_eq!(bare_file_name("///", "backup.gerfaut"), "backup.gerfaut");
         assert_eq!(bare_file_name("...", "backup.gerfaut"), "backup.gerfaut");
+    }
+
+    #[test]
+    fn a_name_windows_reads_as_a_device_falls_back() {
+        for name in [
+            "CON",
+            "con",
+            "Con.csv",
+            "PRN.gerfaut",
+            "AUX",
+            "NUL.tar.gz",
+            "nul .csv",
+            "COM1",
+            "com9.csv",
+            "LPT1.csv",
+            "LPT9",
+            "COM\u{b9}.csv",
+        ] {
+            assert_eq!(bare_file_name(name, "x.csv"), "x.csv", "{name}");
+        }
+        // Lookalikes are ordinary names.
+        for name in [
+            "console.csv",
+            "COM10.csv",
+            "COMA.csv",
+            "LPT.csv",
+            "nulls.csv",
+            "config.gerfaut",
+        ] {
+            assert_eq!(bare_file_name(name, "x.csv"), name, "{name}");
+        }
+    }
+
+    #[test]
+    fn an_overlong_stem_is_cut_and_keeps_its_extension() {
+        let long = format!("{}.csv", "a".repeat(300));
+        assert_eq!(
+            bare_file_name(&long, "x"),
+            format!("{}.csv", "a".repeat(200))
+        );
+        // Characters, not bytes: an accent is one character cut or kept.
+        let accents = format!("{}.gerfaut", "\u{e9}".repeat(250));
+        assert_eq!(
+            bare_file_name(&accents, "x"),
+            format!("{}.gerfaut", "\u{e9}".repeat(200))
+        );
+        assert_eq!(bare_file_name(&"b".repeat(400), "x"), "b".repeat(200));
+        // A tail too long to be an extension is part of the stem.
+        let odd = format!("a.{}", "x".repeat(300));
+        assert_eq!(bare_file_name(&odd, "x").chars().count(), 200);
+        // Short names pass untouched.
+        assert_eq!(
+            bare_file_name("wallet-transactions.csv", "x"),
+            "wallet-transactions.csv"
+        );
     }
 }
