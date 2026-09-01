@@ -328,9 +328,10 @@ async fn address_list(state: tauri::State<'_, AppState>, id: String) -> CommandR
     Ok(state.manager.address_list(&id).await?)
 }
 
-/// Asks where the CSV should go, then builds the filtered file and
-/// writes it there. Answers with the number of rows written; null when
-/// the dialog was closed instead.
+/// Builds the filtered CSV, then asks where it should go and writes it
+/// there. The file comes first: an export that fails should not have
+/// cost a trip through the dialog. Answers with the number of rows
+/// written; null when the dialog was closed instead.
 #[tauri::command]
 async fn export_transactions_csv(
     app: tauri::AppHandle,
@@ -339,13 +340,13 @@ async fn export_transactions_csv(
     options: gerfaut_core::export::ExportOptions,
     suggested_name: String,
 ) -> CommandResult<Option<u32>> {
+    let result = state.manager.export_transactions(&id, &options).await?;
     let dialog = file_dialog(&app)
         .add_filter("CSV", &["csv"])
         .set_file_name(bare_file_name(&suggested_name, "transactions.csv"));
     let Some(path) = show_dialog(dialog, DialogKind::Save).await? else {
         return Ok(None);
     };
-    let result = state.manager.export_transactions(&id, &options).await?;
     std::fs::write(&path, result.csv.as_bytes())
         .map_err(|e| internal(format!("could not write {}: {e}", path.display())))?;
     Ok(Some(result.rows))
