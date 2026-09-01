@@ -2,7 +2,6 @@ import {
   Check,
   Coins,
   Compass,
-  EyeOff,
   Globe,
   Info,
   Monitor,
@@ -16,6 +15,7 @@ import {
   Sun,
   SunMoon,
   Trash2,
+  VenetianMask,
   Wallet as WalletIcon,
   X,
 } from "lucide-react";
@@ -27,7 +27,7 @@ import { Button, IconButton } from "../components/Button";
 import { BackupSection } from "./settings/BackupSection";
 import { NotificationsSection } from "./settings/NotificationsSection";
 import { SecuritySection } from "./settings/SecuritySection";
-import { TOR_MODES, TorSection } from "./settings/TorSection";
+import { TorSection } from "./settings/TorSection";
 import { WelcomeTour } from "./WelcomeTour";
 import { Modal } from "../components/Modal";
 import { Notice } from "../components/Notice";
@@ -48,7 +48,6 @@ import type {
   Network,
   PriceSource,
   Settings,
-  TorMode,
   UpdateCheck,
   WalletMeta,
 } from "../lib/ipc";
@@ -800,7 +799,7 @@ export function BackendSection({
           <ScanButton onClick={() => setScanOpen(true)} />
         </div>
         <ScanRefusal reason={scanError} />
-        {onion && <OnionNote mode={settings.tor.mode} />}
+        {onion && <OnionNote />}
       </>
     ),
     custom_electrum: (
@@ -843,7 +842,7 @@ export function BackendSection({
           <ScanButton onClick={() => setScanOpen(true)} />
         </div>
         <ScanRefusal reason={scanError} />
-        {onion && <OnionNote mode={settings.tor.mode} />}
+        {onion && <OnionNote />}
       </>
     ),
   };
@@ -959,14 +958,13 @@ function ScanButton({ onClick }: { onClick: () => void }) {
 }
 
 /** The one fact a scan tells that the fields cannot show: the address
-    is a Tor hidden service, so it is reached through Tor alone, in the
-    mode the Tor card is set to. */
-function OnionNote({ mode }: { mode: TorMode }) {
-  const label = TOR_MODES.find((option) => option.value === mode)?.label ?? mode;
+    is a Tor hidden service, so it is reached through Tor alone. Which
+    Tor is the Tor card's to say, under its own mask, once. */
+function OnionNote() {
   return (
     <p className="mt-2 flex items-center gap-1.5 font-ui text-xs text-muted">
-      <EyeOff size={13} strokeWidth={1.5} aria-hidden />
-      {`A Tor hidden service: reached through Tor only (mode: ${label}).`}
+      <VenetianMask size={13} strokeWidth={1.5} aria-hidden />
+      A Tor hidden service: reached through Tor only.
     </p>
   );
 }

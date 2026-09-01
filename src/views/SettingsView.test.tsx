@@ -199,11 +199,12 @@ describe("scanning a server address", () => {
 
     await scanCode(user, "gerfautexample123.onion:50001:t");
 
-    // The core read it as an onion; the form says what that means, in
-    // the Tor mode the settings hold.
-    expect(
-      screen.getByText("A Tor hidden service: reached through Tor only (mode: System Tor)."),
-    ).toBeInTheDocument();
+    // The core read it as an onion; the form says what that means, under
+    // the mask the Tor card wears. Which Tor is that card's to say.
+    const note = screen.getByText("A Tor hidden service: reached through Tor only.");
+    expect(note).toBeInTheDocument();
+    expect(note.querySelector("svg.lucide-venetian-mask")).not.toBe(null);
+    expect(note.querySelector("svg.lucide-eye-off")).toBe(null);
 
     // A fact about the address scanned, not about whatever is typed next.
     await user.type(field("Host"), "x");
