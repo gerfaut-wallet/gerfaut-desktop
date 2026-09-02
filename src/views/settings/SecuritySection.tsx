@@ -33,7 +33,7 @@ function SecretField({
         autoFocus={autoFocus}
         autoComplete="off"
         onChange={(event) => onChange(event.target.value)}
-        className="h-11 w-full rounded-sm bg-sunken px-3 font-ui text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        className="field-focus h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-ui text-sm text-text"
       />
     </div>
   );

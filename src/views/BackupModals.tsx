@@ -67,7 +67,7 @@ function PasswordField({
           value={value}
           autoComplete="off"
           onChange={(event) => onChange(event.target.value)}
-          className="h-11 w-full rounded-sm bg-sunken px-3 pr-11 font-ui text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="field-focus h-11 w-full rounded-sm border border-transparent bg-sunken px-3 pr-11 font-ui text-sm text-text"
         />
         <span className="absolute right-1 top-1/2 -translate-y-1/2">
           <IconButton

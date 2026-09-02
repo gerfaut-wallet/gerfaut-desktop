@@ -82,7 +82,8 @@ export function LockScreen() {
                   a raised one. This one sits straight on the canvas, a
                   single step away in the ramp, so it takes the hairline
                   the system gives anything holding its own edge on the
-                  sheet. */}
+                  sheet. Focus turns that hairline Glacier and nothing
+                  more: one thin line, the weight of everything else here. */}
               <div className="relative mt-7 w-full">
                 <input
                   ref={field}
@@ -100,7 +101,7 @@ export function LockScreen() {
                     setSecret(pin ? next.replace(/\D/g, "") : next);
                     setMessage(null);
                   }}
-                  className="h-11 w-full rounded-sm border border-border bg-sunken px-3 pr-11 font-ui text-sm text-text outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-60"
+                  className="field-focus h-11 w-full rounded-sm border border-border bg-sunken px-3 pr-11 font-ui text-sm text-text placeholder:text-muted disabled:opacity-60"
                 />
                 {!pin && (
                   <span className="absolute right-1 top-1/2 -translate-y-1/2">

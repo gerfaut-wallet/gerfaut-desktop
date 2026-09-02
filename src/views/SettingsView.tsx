@@ -793,7 +793,7 @@ export function BackendSection({
               }}
               spellCheck={false}
               placeholder="https://node.example.org:3002/api"
-              className="selectable h-11 w-full rounded-sm bg-sunken px-3 font-data text-[13px] text-text outline-none placeholder:text-muted/60"
+              className="field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted/60"
             />
           </div>
           <ScanButton onClick={() => setScanOpen(true)} />
@@ -817,7 +817,7 @@ export function BackendSection({
               }}
               spellCheck={false}
               placeholder="node.example.org or xxxxxxxx.onion"
-              className="selectable h-11 w-full rounded-sm bg-sunken px-3 font-data text-[13px] text-text outline-none placeholder:text-muted/60"
+              className="field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted/60"
             />
           </div>
           <div className="w-24">
@@ -832,7 +832,7 @@ export function BackendSection({
               }}
               inputMode="numeric"
               placeholder="50002"
-              className="selectable h-11 w-full rounded-sm bg-sunken px-3 font-data text-[13px] text-text outline-none placeholder:text-muted/60"
+              className="field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted/60"
             />
           </div>
           <div className="flex h-11 items-center gap-2 pb-0.5">
@@ -1011,7 +1011,7 @@ function GapLimitField({ gapLimit }: { gapLimit: number }) {
       }}
       inputMode="numeric"
       aria-label="Gap limit"
-      className="selectable h-11 w-24 rounded-sm bg-sunken px-3 text-right font-data text-[13px] text-text outline-none"
+      className="field-focus selectable h-11 w-24 rounded-sm border border-transparent bg-sunken px-3 text-right font-data text-[13px] text-text"
     />
   );
 }
@@ -1076,7 +1076,7 @@ function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; gapLimit
                             if (event.key === "Enter") commitRename();
                             if (event.key === "Escape") setRenaming(null);
                           }}
-                          className="h-9 w-56 rounded-sm bg-sunken px-2 font-ui text-sm text-text outline-none"
+                          className="field-focus h-9 w-56 rounded-sm border border-transparent bg-sunken px-2 font-ui text-sm text-text"
                           aria-label="Wallet name"
                         />
                         <IconButton

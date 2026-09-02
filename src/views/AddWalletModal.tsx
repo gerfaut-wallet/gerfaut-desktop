@@ -199,7 +199,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
               spellCheck={false}
               aria-invalid={error !== null}
               placeholder="wpkh([fingerprint/84h/0h/0h]xpub.../0/*)"
-              className="selectable w-full resize-none rounded-sm bg-sunken p-3 font-data text-[13px] leading-relaxed text-text outline-none placeholder:text-muted/60"
+              className="field-focus selectable w-full resize-none rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text placeholder:text-muted/60"
             />
             {error && (
               <p role="alert" className="mt-2 font-ui text-sm text-muted">
@@ -397,7 +397,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
                   }
                 }}
                 placeholder="Cold storage"
-                className="h-11 w-full rounded-sm bg-sunken px-3 font-ui text-base text-text outline-none placeholder:text-muted/60"
+                className="field-focus h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-ui text-base text-text placeholder:text-muted/60"
               />
             </div>
             <div>
@@ -484,7 +484,7 @@ function PathField({
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
-        className="h-11 w-full rounded-sm bg-sunken px-3 font-data text-[13px] text-text outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-primary"
+        className="field-focus h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted"
       />
     </div>
   );

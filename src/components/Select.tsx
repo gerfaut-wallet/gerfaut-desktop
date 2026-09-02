@@ -200,8 +200,7 @@ export function Select<T extends string>({
         disabled={disabled}
         onClick={() => setOpen(!open)}
         className={clsx(
-          "flex w-full items-center gap-2.5 rounded-sm bg-sunken text-left transition-colors duration-150",
-          "focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--color-primary)]",
+          "field-focus flex w-full items-center gap-2.5 rounded-sm border border-transparent bg-sunken text-left",
           disabled ? "cursor-default opacity-60" : "cursor-pointer hover:bg-border/60",
           size === "md" ? "h-11 px-3" : "h-9 px-2.5",
         )}

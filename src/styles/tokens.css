@@ -173,11 +173,31 @@ input::-ms-clear {
   display: none;
 }
 
-/* Focus: 2px ring in the theme's action color, offset 2px. */
-:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-  border-radius: 2px;
+/* Focus: a 2px ring in the theme's action color, offset 2px, for every
+   control without an edge of its own. It lives in the base layer so a
+   utility can still take it off: unlayered, it beat `outline-none` and
+   stacked on top of the ring a field draws for itself. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
+/* A field holds its own edge. On focus that hairline turns Glacier and a
+   faint halo lifts it off the surface: one thin line, never a band. The
+   resting border is the field's to set: transparent on a card, Brume
+   when it sits straight on the canvas. Background rides along in the
+   transition for the one field that also hovers, the select. */
+@utility field-focus {
+  outline: none;
+  transition-property: border-color, box-shadow, background-color;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+  &:focus-visible {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+  }
 }
 
 ::selection {

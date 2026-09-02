@@ -250,7 +250,7 @@ function DateInput({
         type="date"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="selectable h-10 rounded-sm bg-sunken px-2.5 font-data text-[13px] text-text outline-none"
+        className="field-focus selectable h-10 rounded-sm border border-transparent bg-sunken px-2.5 font-data text-[13px] text-text"
       />
     </label>
   );

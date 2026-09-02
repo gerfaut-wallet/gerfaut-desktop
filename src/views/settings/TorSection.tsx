@@ -105,7 +105,7 @@ export function TorSection({ tor }: { tor: TorSettings }) {
                 if (next === (tor.socks_proxy ?? "")) return;
                 apply({ socks_proxy: next === "" ? null : next });
               }}
-              className="h-11 w-full max-w-xs rounded-sm bg-sunken px-3 font-data text-[13px] text-text outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-primary"
+              className="field-focus h-11 w-full max-w-xs rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted"
             />
             <p className="mt-1.5 font-ui text-xs text-muted">
               Empty means 127.0.0.1:9050. The Tor Browser listens on 9150.
