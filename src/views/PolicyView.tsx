@@ -301,11 +301,16 @@ function DescriptorSection({ snapshot }: { snapshot: PolicySnapshot }) {
         Descriptor
       </summary>
       <div className="mt-2 flex flex-col gap-3">
-        <div className="relative">
-          <Mono className="pr-12 text-text">{snapshot.descriptor}</Mono>
+        {/* The button is a row item, not an overlay: the block is never
+            shorter than the button it holds, a one-line descriptor
+            centres on it, a long one starts at the top beside it. */}
+        <div className="flex items-start gap-1 rounded-md bg-sunken py-1.5 pr-1.5 pl-3">
+          <p className="selectable flex min-h-10 min-w-0 flex-1 items-center break-all py-1.5 font-data text-[12px] leading-relaxed text-text">
+            {snapshot.descriptor}
+          </p>
           <IconButton
             label="Copy descriptor"
-            className="absolute right-2 top-2"
+            className="shrink-0"
             onClick={() => void copy()}
           >
             {copied ? (
