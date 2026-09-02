@@ -18,6 +18,7 @@ import {
   hasTimeBasedLocks,
   orderBranches,
   policyDigest,
+  remainingWords,
   timelockText,
 } from "./policy";
 
@@ -370,10 +371,6 @@ describe("timelockText", () => {
     expect(
       timelockText({ lock, required: true, state: { kind: "locked", until: blocksLeft(1_432) } }),
     ).toMatch(/^Block 201.432 ≈ in 10 days$/);
-    // A core from before the nested shape spelled the figures inline.
-    expect(
-      timelockText({ lock, required: true, state: { kind: "locked", ...blocksLeft(1_432) } }),
-    ).toMatch(/^Block 201.432 ≈ in 10 days$/);
     expect(timelockText({ lock, required: true, state: { kind: "unlocked" } })).toMatch(
       /^Block 201.432 · reached$/,
     );
@@ -571,8 +568,10 @@ describe("a wallet that never synced", () => {
 
   it("has no tip to measure an absolute lock from, and says so", () => {
     const wallet = snapshot({ tip_height: null, keys: KEYS.slice(0, 1), branches: [primary] });
-    expect(branchStatus(primary)).toEqual({ tone: "neutral", glyph: "clock", text: "Not synced yet" });
+    expect(branchStatus(primary)).toEqual({ tone: "neutral", glyph: "clock", text: "Locked" });
     expect(countdown(primary)).toBeNull();
+    // Unknown is said as unknown, never as a distance of zero.
+    expect(remainingWords(unknown)).toBe("an unknown time");
     expect(timelockText(lock)).toMatch(/^Block 201.432$/);
     expect(describePolicy(wallet)).toMatch(/^Key A signs after block 201.432\.$/);
     // Nothing is known of the wait: the row keeps to the keys.

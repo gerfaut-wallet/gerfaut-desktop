@@ -306,11 +306,10 @@ export interface PerCoin {
 }
 
 /** An absolute lock still ahead. What is left sits under `until`, as it
-    does in the branch state; a core from before that change spelled
-    the three figures inline, and `lockedUntil` reads either. Every
-    figure is null when the wallet has never synced: there is no tip to
-    measure from. */
-export type LockedLock = { kind: "locked"; until?: Remaining } & Partial<Remaining>;
+    does in the branch state. Every figure is null when the wallet has
+    never synced: there is no tip to measure from, and the lock holds
+    for an unknown time. */
+export type LockedLock = { kind: "locked"; until: Remaining };
 
 /** Where one lock stands against the chain and the coins. */
 export type LockState =

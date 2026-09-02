@@ -1040,12 +1040,14 @@ describe("policy page", () => {
     expect(heading.parentElement).toHaveTextContent(/Cold storage · not synced yet/);
     expect(heading.parentElement).not.toHaveTextContent(/read at block/);
     expect(screen.getByText(/^Key A signs after block 201.432\.$/)).toBeInTheDocument();
-    const pill = screen.getByText("Not synced yet");
+    const pill = screen.getByText("Locked");
     expect(pill).toHaveAttribute("data-tone", "neutral");
     expect(pill.querySelector("svg.lucide-clock")).not.toBe(null);
-    // The lock line names the block and nothing more; no countdown either.
+    // The lock line names the block and nothing more: no estimate, no
+    // countdown, and never a distance of zero blocks for an unknown one.
     expect(screen.getByText(/^Block 201.432$/)).toBeInTheDocument();
     expect(screen.queryByText(/≈/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/0 blocks/)).not.toBeInTheDocument();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
 

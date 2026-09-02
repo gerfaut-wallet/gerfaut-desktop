@@ -247,18 +247,9 @@ export function hasTimeBasedLocks(snapshot: PolicySnapshot): boolean {
   return snapshot.branches.some((branch) => branch.timelocks.some(isTimeBased));
 }
 
-/** What an absolute lock still ahead has left, whichever way the core
-    spelled it: nested under `until`, or inline as an older core did.
-    Null for any other state. */
+/** What an absolute lock still ahead has left; null for any other state. */
 export function lockedUntil(state: LockState): Remaining | null {
-  if (state.kind !== "locked") return null;
-  return (
-    state.until ?? {
-      remaining_blocks: state.remaining_blocks ?? null,
-      remaining_seconds: state.remaining_seconds ?? null,
-      unlocks_at_unix: state.unlocks_at_unix ?? null,
-    }
-  );
+  return state.kind === "locked" ? state.until : null;
 }
 
 /** Whether any figure is known. A wallet that never synced has no tip
@@ -331,14 +322,14 @@ export function remainingWords(remaining: Remaining): string {
     const blocks = formatBlocks(remaining.remaining_blocks);
     return time === null ? blocks : `${blocks} ≈ ${time}`;
   }
-  return time ?? "a while";
+  return time ?? "an unknown time";
 }
 
 /** The time alone, for a clause: "10 days". */
 function remainingTime(remaining: Remaining): string {
   if (remaining.remaining_seconds !== null) return durationWords(remaining.remaining_seconds);
   if (remaining.remaining_blocks !== null) return formatBlocks(remaining.remaining_blocks);
-  return "a while";
+  return "an unknown time";
 }
 
 function coinsPhrase(unlocked: number, total: number): string {
@@ -356,8 +347,8 @@ export function branchStatus(branch: PolicyBranch): BranchStatus {
     case "spendable_now":
       return { tone: "confirmed", glyph: "check", text: "Spendable now" };
     case "locked":
-      // No tip to measure from: the lock may even be behind the chain.
-      if (!known(state.until)) return { tone: "neutral", glyph: "clock", text: "Not synced yet" };
+      // No tip to measure from: locked, for an unknown time.
+      if (!known(state.until)) return { tone: "neutral", glyph: "clock", text: "Locked" };
       return {
         tone: approaching(state.until) ? "pending" : "neutral",
         glyph: "clock",
