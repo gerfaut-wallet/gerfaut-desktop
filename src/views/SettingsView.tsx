@@ -1223,7 +1223,7 @@ function AboutSection() {
             </Button>
           )}
           <Button
-            variant="secondary"
+            variant="ghost"
             disabled={check.isPending}
             onClick={() =>
               check.mutate(undefined, {

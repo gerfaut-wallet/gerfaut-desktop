@@ -148,7 +148,7 @@ export function ReceiveView({ walletId }: { walletId: string }) {
                     </Button>
                     {!singleAddress && (
                       <>
-                        <Button variant="secondary" onClick={() => setOffset(offset + 1)}>
+                        <Button variant="ghost" onClick={() => setOffset(offset + 1)}>
                           <SkipForward size={15} strokeWidth={1.5} aria-hidden />
                           Next address
                         </Button>

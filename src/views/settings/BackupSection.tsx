@@ -24,11 +24,11 @@ export function BackupSection({ activeNetwork }: { activeNetwork: Network }) {
         never a key.
       </p>
       <div className="mt-4 flex gap-2">
-        <Button variant="secondary" onClick={() => setExporting(true)}>
+        <Button variant="ghost" onClick={() => setExporting(true)}>
           <Upload size={14} strokeWidth={1.5} aria-hidden />
           Export…
         </Button>
-        <Button variant="secondary" onClick={() => setRestoring(true)}>
+        <Button variant="ghost" onClick={() => setRestoring(true)}>
           <Download size={14} strokeWidth={1.5} aria-hidden />
           Restore…
         </Button>

@@ -122,7 +122,7 @@ export function TorSection({ tor }: { tor: TorSettings }) {
 
         <div>
           <Button
-            variant="secondary"
+            variant="ghost"
             disabled={connect.isPending}
             onClick={() => connect.mutate()}
           >
