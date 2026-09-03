@@ -354,20 +354,28 @@ export function useRenameWallet() {
   });
 }
 
+/** An icon lives in the wallet list and in the wallet's own snapshot;
+    nothing on chain moved, so nothing else is read again. */
 export function useSetWalletIcon() {
-  const invalidate = useInvalidateWallet();
+  const client = useQueryClient();
   return useMutation({
     mutationFn: (args: { id: string; icon: WalletIconId }) =>
       ipc.setWalletIcon(args.id, args.icon),
-    onSuccess: () => invalidate(),
+    onSuccess: (_data, { id }) => {
+      void client.invalidateQueries({ queryKey: ["wallets"] });
+      void client.invalidateQueries({ queryKey: keys.snapshot(id) });
+    },
   });
 }
 
+/** The order is a fact of the list alone. Settled only once the list
+    has been read back, so a caller's own callbacks see the vault's
+    order in the cache. */
 export function useReorderWallets() {
-  const invalidate = useInvalidateWallet();
+  const client = useQueryClient();
   return useMutation({
     mutationFn: (ids: string[]) => ipc.reorderWallets(ids),
-    onSuccess: () => invalidate(),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["wallets"] }),
   });
 }
 
