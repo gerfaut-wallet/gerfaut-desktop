@@ -121,8 +121,9 @@ export function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; g
                 key={wallet.id}
                 {...drag.rowProps(index)}
                 className={clsx(
+                  // The grip's glyph then starts where a row without one starts.
                   "group rounded-md border border-border bg-surface py-3 pr-4",
-                  movable ? "pl-2" : "pl-4",
+                  movable ? "pl-1" : "pl-4",
                   dragging && "relative z-10 opacity-80",
                 )}
               >
@@ -134,8 +135,8 @@ export function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; g
                         title="Drag to reorder"
                         {...drag.handleProps(index)}
                         className={clsx(
-                          "inline-flex h-8 w-6 shrink-0 items-center justify-center rounded-sm text-muted/50",
-                          "transition-colors duration-150 hover:text-muted",
+                          "inline-flex size-10 shrink-0 items-center justify-center rounded-sm text-muted",
+                          "transition-colors duration-150 hover:text-text",
                           dragging ? "cursor-grabbing" : "cursor-grab",
                         )}
                       >
@@ -326,7 +327,7 @@ function MoveButton({
       aria-disabled={blocked || undefined}
       onClick={blocked ? undefined : onClick}
       className={clsx(
-        "inline-flex size-9 items-center justify-center rounded-md",
+        "inline-flex size-10 items-center justify-center rounded-md",
         "opacity-0 transition-[color,background-color,opacity] duration-150 ease-out",
         "focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100",
         blocked

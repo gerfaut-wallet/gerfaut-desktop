@@ -434,7 +434,7 @@ function WalletSwitcher({
                   className={clsx(
                     "flex w-full cursor-pointer items-center gap-2.5 rounded-md py-2 pl-2.5 text-left",
                     "transition-colors duration-150 group-hover:bg-sunken/70",
-                    movable ? "pr-9" : "pr-2.5",
+                    movable ? "pr-10" : "pr-2.5",
                     current ? "bg-sunken/50" : undefined,
                   )}
                 >
@@ -464,12 +464,13 @@ function WalletSwitcher({
                   )}
                 </button>
                 {movable && (
+                  // A 40px hand for a 14px glyph: the desktop minimum target.
                   <span
                     aria-hidden
                     title="Drag to reorder"
                     {...drag.handleProps(index)}
                     className={clsx(
-                      "absolute right-1 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-sm text-muted",
+                      "absolute right-0 top-1/2 inline-flex size-10 -translate-y-1/2 items-center justify-center rounded-sm text-muted",
                       "transition-opacity duration-150 group-hover:opacity-100",
                       dragging ? "cursor-grabbing opacity-100" : "cursor-grab opacity-0",
                     )}
