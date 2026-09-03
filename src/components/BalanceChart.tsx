@@ -8,17 +8,18 @@ import { dateTicks, formatCompact, niceLevels } from "../lib/ticks";
 
 /** Room above the top level, enough for the hover dot. */
 const PAD_TOP = 8;
-/** The x-axis band under the floor: tick marks, a gap, a 10px label. */
-const PAD_BOTTOM = 24;
+/** The x-axis band under the floor: tick marks, a gap, an 11px label. */
+const PAD_BOTTOM = 26;
 /** Length of a tick mark. */
 const TICK = 4;
-/** Axis type size, and the width of one of its tabular glyphs: near
-    enough to size the gutter and to keep a label inside the plot. */
-const FONT = 10;
-const GLYPH = 5.8;
+/** Axis type size — the smallest the system sets, one under `label` —
+    and the width of one of its tabular glyphs: near enough to size the
+    gutter and to keep a label inside the plot. */
+const FONT = 11;
+const GLYPH = 6.4;
 const MIN_GUTTER = 44;
 /** Room one date label needs; decides how many ticks a width carries. */
-const TICK_ROOM = 90;
+const TICK_ROOM = 100;
 /** Within this much of the right edge the tooltip opens to the left. */
 const TOOLTIP_ROOM = 180;
 
@@ -269,7 +270,7 @@ export function BalanceChart({ points, unit }: { points: BalancePoint[]; unit: U
             <p className="tabular text-xs font-medium text-text">
               {formatAmount(hovered.sats, unit)}
             </p>
-            <p className="tabular text-[10px] text-muted">{formatTimestamp(hovered.t)}</p>
+            <p className="tabular text-[11px] text-muted">{formatTimestamp(hovered.t)}</p>
           </>
         )}
       </div>
