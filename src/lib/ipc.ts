@@ -225,16 +225,6 @@ export interface ExportOptions {
   include_pending: boolean;
 }
 
-/** Recommended fee rates in sat/vB (mempool.space). */
-export interface FeeEstimates {
-  fastest: number;
-  half_hour: number;
-  hour: number;
-  economy: number;
-  minimum: number;
-  at: number;
-}
-
 export interface WalletSnapshot {
   meta: WalletMeta;
   balance: BalanceSnapshot;
@@ -780,7 +770,6 @@ export const ipc = {
       was closed. */
   exportTransactionsCsv: (id: string, options: ExportOptions, suggestedName: string) =>
     invoke<number | null>("export_transactions_csv", { id, options, suggestedName }),
-  fetchFees: (network: Network) => invoke<FeeEstimates>("fetch_fees", { network }),
   syncWallet: (id: string) => invoke<SyncReport>("sync_wallet", { id }),
   rescanWallet: (id: string) => invoke<SyncReport>("rescan_wallet", { id }),
   loadMoreHistory: (id: string) => invoke<number>("load_more_history", { id }),

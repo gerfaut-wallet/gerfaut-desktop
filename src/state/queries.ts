@@ -262,19 +262,6 @@ export function useAddressList(id: string | null) {
   });
 }
 
-/** Recommended network fees, refreshed every five minutes while shown.
-    Regtest has no fee market: callers hide the card there. */
-export function useFees(network: Network | undefined, enabled: boolean) {
-  return useQuery({
-    queryKey: ["fees", network ?? "none"],
-    queryFn: () => ipc.fetchFees(network!),
-    enabled: enabled && network !== undefined && network !== "regtest",
-    refetchInterval: 300_000,
-    staleTime: 270_000,
-    retry: 1,
-  });
-}
-
 export function useExportCsv() {
   return useMutation({
     mutationFn: (args: { id: string; options: ExportOptions; suggestedName: string }) =>

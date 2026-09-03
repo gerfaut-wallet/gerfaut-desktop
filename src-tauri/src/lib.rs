@@ -392,16 +392,6 @@ async fn export_transactions_csv(
     Ok(Some(result.rows))
 }
 
-/// Fee estimates come from the backend configured for the network: the
-/// host that already serves this wallet, or the public rotation.
-#[tauri::command]
-async fn fetch_fees(
-    state: tauri::State<'_, AppState>,
-    network: Network,
-) -> CommandResult<gerfaut_core::fees::FeeEstimates> {
-    Ok(state.manager.fetch_fees(network).await?)
-}
-
 /// Decodes a transaction (PSBT or raw, any text form) and shows what it
 /// does before anything leaves the machine.
 #[tauri::command]
@@ -692,7 +682,6 @@ pub fn run() {
             receive_addresses,
             address_list,
             export_transactions_csv,
-            fetch_fees,
             public_servers,
             preview_transaction,
             broadcast_transaction,

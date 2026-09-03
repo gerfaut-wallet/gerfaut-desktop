@@ -543,8 +543,6 @@ function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => 
         return { rate: 100_000, currency: "eur", source: "coingecko", at: 1_755_000_000 };
       case "fetch_price_history":
         return PRICE_HISTORY;
-      case "fetch_fees":
-        return { fastest: 12, half_hour: 8.5, hour: 4, economy: 2, minimum: 1, at: 1_755_000_000 };
       case "address_list":
         return {
           external: [
@@ -695,13 +693,8 @@ describe("overview", () => {
     expect(screen.queryByRole("button", { name: /customize/i })).not.toBeInTheDocument();
     // One unit only: no sats echo under the BTC figure.
     expect(screen.queryByText(/150 000 sats/)).not.toBeInTheDocument();
-    // Recommended fees, from mempool.space.
-    expect(await screen.findByText("Network fees")).toBeInTheDocument();
-    expect(screen.getByText("12")).toBeInTheDocument();
-    expect(screen.getByText("8.5")).toBeInTheDocument();
-    expect(screen.getByText("Next block")).toBeInTheDocument();
-    expect(screen.getByText("~3 blocks")).toBeInTheDocument();
-    expect(screen.queryByText(/via mempool\.space/)).not.toBeInTheDocument();
+    // The fee card is gone: fees were never a watch-only question.
+    expect(screen.queryByText("Network fees")).not.toBeInTheDocument();
   });
 
   it("shows the price with a signed change pill, no chart", async () => {

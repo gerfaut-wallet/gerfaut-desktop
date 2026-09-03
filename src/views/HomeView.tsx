@@ -22,16 +22,10 @@ import {
   truncateMiddle,
 } from "../lib/format";
 import { SUPPORTED_RANGES } from "../lib/ipc";
-import type { Network, PriceRange, TxSummary, WalletMeta, WalletSnapshot } from "../lib/ipc";
+import type { PriceRange, TxSummary, WalletMeta, WalletSnapshot } from "../lib/ipc";
 import { policyDigest } from "../lib/policy";
 import { balanceSeries } from "../lib/series";
-import {
-  useFees,
-  usePriceHistory,
-  useSnapshot,
-  useUtxos,
-  useWalletPolicy,
-} from "../state/queries";
+import { usePriceHistory, useSnapshot, useUtxos, useWalletPolicy } from "../state/queries";
 import { useUi } from "../state/store";
 
 const RANGE_LABEL: Record<PriceRange, string> = {
@@ -78,7 +72,6 @@ export function HomeView({ walletId }: { walletId: string }) {
             error={syncErrors[walletId] ?? null}
           />
           <PriceCard />
-          {meta.network !== "regtest" && <FeesCard network={meta.network} />}
           <StatusCard snapshot={snapshot.data} error={syncErrors[walletId] ?? null} />
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-4">
@@ -318,44 +311,6 @@ function PriceCard() {
 /** Recommended fee rates: when to hurry, when to consolidate. Three
     tiles, each a target in blocks, the unit the estimates are made in.
     Regtest has no fee market and hides the card entirely. */
-function FeesCard({ network }: { network: Network }) {
-  const fees = useFees(network, true);
-  const stats: { label: string; value: number | undefined }[] = [
-    { label: "Next block", value: fees.data?.fastest },
-    { label: "~3 blocks", value: fees.data?.half_hour },
-    { label: "~6 blocks", value: fees.data?.hour },
-  ];
-  return (
-    <Card label="Network fees">
-      {fees.data ? (
-        <div className="grid grid-cols-3 gap-2">
-          {stats.map((stat) => (
-            <div
-              key={stat.label}
-              className="flex flex-col items-center rounded-md bg-sunken/70 px-2 py-2.5 text-center"
-            >
-              <p className="tabular text-base font-semibold leading-tight text-text">
-                {formatRate(stat.value ?? 0)}
-                <span className="ml-1 font-ui text-[11px] font-normal text-muted">sat/vB</span>
-              </p>
-              <p className="mt-1 font-ui text-[11px] text-muted">{stat.label}</p>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="font-ui text-sm text-muted">
-          {fees.isPending ? "Loading…" : "The fee source did not answer."}
-        </p>
-      )}
-    </Card>
-  );
-}
-
-/** `2` -> "2", `8.5` -> "8.5": rates read clean, never "2.0". */
-function formatRate(rate: number): string {
-  return Number.isInteger(rate) ? String(rate) : rate.toFixed(1);
-}
-
 function StatusCard({ snapshot, error }: { snapshot: WalletSnapshot; error: string | null }) {
   const { meta, tip_height } = snapshot;
   const rows: { label: string; value: ReactNode; detail?: string }[] = [
