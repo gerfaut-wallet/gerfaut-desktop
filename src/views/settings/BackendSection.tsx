@@ -213,7 +213,7 @@ export function BackendSection({
         />
         <p className="mt-1.5 font-ui text-xs text-muted">
           {chosen
-            ? "Only this server is asked, for chain data and for fee estimates."
+            ? "Only this server is asked for chain data."
             : "Every public server is tried in turn until one answers."}
           {chosenProtocol === "electrum" &&
             " Electrum servers cannot serve a single-address wallet."}
