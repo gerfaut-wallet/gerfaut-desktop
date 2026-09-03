@@ -244,9 +244,11 @@ export function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; g
                         <Pencil size={14} strokeWidth={1.5} aria-hidden />
                         Rename
                       </Button>
+                      {/* A removal is a neutral action behind an explicit
+                          confirmation: Alerte is kept for coins moving. */}
                       <Button
                         variant="ghost"
-                        className="h-9 text-alert hover:text-alert"
+                        className="h-9"
                         disabled={rescanning !== null}
                         onClick={() => {
                           setRenaming(null);
@@ -270,7 +272,7 @@ export function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; g
                     className="mt-3"
                     action={<span className="flex items-center gap-2">
                       <Button
-                        variant="danger"
+                        variant="primary"
                         className="h-9"
                         onClick={() =>
                           void removeWallet.mutateAsync(wallet.id).then(() => {
@@ -290,8 +292,9 @@ export function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; g
                       </Button>
                     </span>}
                   >
-                    You are removing "{wallet.name}" from Gerfaut. This only
-                    stops watching. Nothing moves on chain.
+                    Removing "{wallet.name}" deletes its labels and cached
+                    history from Gerfaut, and cannot be undone. It only stops
+                    watching: nothing moves on chain.
                   </Notice>
                 )}
               </li>

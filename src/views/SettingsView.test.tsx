@@ -492,6 +492,35 @@ describe("settings sections", () => {
     expect(within(row).getByRole("button", { name: "Move down" })).toHaveFocus();
   });
 
+  it("removes a wallet behind a confirmation that says what goes, without red", async () => {
+    const calls = mockSettingsIpc({ remove_wallet: () => undefined });
+    act(() => useUi.getState().openSettings("wallets"));
+    renderSettings();
+    const user = userEvent.setup();
+    const row = screen.getByText("Cold storage").closest("li")!;
+    const remove = within(row).getByRole("button", { name: "Remove" });
+    // A removal is a neutral action: Alerte is kept for coins moving.
+    expect(remove.className).not.toMatch(/alert/);
+
+    await user.click(remove);
+    expect(calls.some((call) => call.cmd === "remove_wallet")).toBe(false);
+    expect(within(row).getByText(/cannot be undone/)).toBeInTheDocument();
+    const confirm = within(row).getByRole("button", { name: "Remove wallet" });
+    expect(confirm.className).not.toMatch(/alert/);
+
+    await user.click(within(row).getByRole("button", { name: "Cancel" }));
+    expect(within(row).queryByRole("button", { name: "Remove wallet" })).not.toBeInTheDocument();
+    expect(calls.some((call) => call.cmd === "remove_wallet")).toBe(false);
+
+    await user.click(within(row).getByRole("button", { name: "Remove" }));
+    await user.click(within(row).getByRole("button", { name: "Remove wallet" }));
+    await waitFor(() =>
+      expect(calls.filter((call) => call.cmd === "remove_wallet").map((call) => call.args)).toEqual([
+        { id: "w-1" },
+      ]),
+    );
+  });
+
   it("offers no reordering to a single wallet", () => {
     mockSettingsIpc();
     act(() => useUi.getState().openSettings("wallets"));
