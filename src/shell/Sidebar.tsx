@@ -7,6 +7,7 @@ import {
   Coins,
   Eye,
   EyeOff,
+  GripVertical,
   House,
   Lock,
   PanelLeftClose,
@@ -17,14 +18,16 @@ import {
   RefreshCw,
   Route,
   Settings,
-  Wallet as WalletIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { DropLine, useDragReorder } from "../components/DragReorder";
 import { MASKED, NETWORK_LABEL, formatAmount } from "../lib/format";
 import type { Network, WalletMeta } from "../lib/ipc";
+import { walletGlyph } from "../lib/walletIcons";
 import type { CanvasView } from "../state/store";
 import { useUi } from "../state/store";
+import { useWalletOrder } from "../state/walletOrder";
 import mark from "../assets/gerfaut-mark-accent-dark.svg";
 
 /** The wallet pages of the sidebar: one word, one icon, every wallet. */
@@ -262,9 +265,9 @@ function NavItem({
   );
 }
 
-/** The wallet selector at the top of the sidebar: one generic wallet
-    icon for every wallet, whatever its kind; the dropdown switches the
-    whole app to another wallet. */
+/** The wallet selector at the top of the sidebar: each wallet under
+    its own icon; the dropdown switches the whole app to another wallet,
+    and its rows can be dragged into the order the vault then keeps. */
 function WalletSwitcher({
   wallets,
   activeWalletId,
@@ -280,6 +283,11 @@ function WalletSwitcher({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const active = wallets.find((wallet) => wallet.id === activeWalletId) ?? null;
+  const ActiveGlyph = walletGlyph(active?.icon ?? "wallet");
+  // Moved from here or from the settings, the new order shows at once.
+  const { shown, reorder } = useWalletOrder(wallets);
+  const drag = useDragReorder(shown, reorder);
+  const movable = shown.length > 1;
 
   // Click outside and Escape both close; focus returns to the trigger.
   useEffect(() => {
@@ -362,7 +370,7 @@ function WalletSwitcher({
           aria-hidden
           className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-surface text-primary"
         >
-          <WalletIcon size={15} strokeWidth={1.5} />
+          <ActiveGlyph size={15} strokeWidth={1.5} />
         </span>
         {!collapsed && (
           <>
@@ -388,7 +396,10 @@ function WalletSwitcher({
 
       {open && (
         <div
-          ref={menuRef}
+          ref={(node) => {
+            menuRef.current = node;
+            drag.listRef(node);
+          }}
           role="menu"
           aria-label="Wallets"
           className={clsx(
@@ -396,50 +407,77 @@ function WalletSwitcher({
             collapsed ? "left-full top-0 ml-2 w-64" : "left-3 right-3 top-full mt-1.5",
           )}
         >
-          {wallets.map((wallet) => {
+          {shown.map((wallet, index) => {
             const current = wallet.id === activeWalletId;
+            const Glyph = walletGlyph(wallet.icon);
+            const dragging = drag.dragging === index;
             return (
-              <button
+              // The grip sits beside the item, not in it: a button holds
+              // no second control, and a drag must not switch wallets.
+              <div
                 key={wallet.id}
-                type="button"
-                role="menuitemradio"
-                aria-checked={current}
-                tabIndex={-1}
-                onClick={() => {
-                  setOpen(false);
-                  openWallet(wallet.id);
-                }}
+                {...drag.rowProps(index)}
                 className={clsx(
-                  "flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left",
-                  "transition-colors duration-150 hover:bg-sunken/70",
-                  current ? "bg-sunken/50" : undefined,
+                  "group relative",
+                  dragging && "z-10 rounded-md bg-surface opacity-80",
                 )}
               >
-                <WalletIcon
-                  size={15}
-                  strokeWidth={1.5}
-                  aria-hidden
-                  className="shrink-0 text-muted"
-                />
-                {/* Two lines: the name gets the full width, the balance
-                    reads below it — names are the thing being chosen. */}
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate font-ui text-sm font-medium text-text">
-                    {wallet.name}
-                  </span>
-                  <span className="tabular truncate text-[11px] text-muted">
-                    {masked ? MASKED : formatAmount(wallet.cached.balance.total, unit)}
-                  </span>
-                </span>
-                {current && (
-                  <Check
-                    size={14}
-                    strokeWidth={2}
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={current}
+                  tabIndex={-1}
+                  onClick={() => {
+                    setOpen(false);
+                    openWallet(wallet.id);
+                  }}
+                  className={clsx(
+                    "flex w-full cursor-pointer items-center gap-2.5 rounded-md py-2 pl-2.5 text-left",
+                    "transition-colors duration-150 group-hover:bg-sunken/70",
+                    movable ? "pr-9" : "pr-2.5",
+                    current ? "bg-sunken/50" : undefined,
+                  )}
+                >
+                  <Glyph
+                    size={15}
+                    strokeWidth={1.5}
                     aria-hidden
-                    className="shrink-0 text-primary"
+                    className="shrink-0 text-muted"
                   />
+                  {/* Two lines: the name gets the full width, the balance
+                      reads below it — names are the thing being chosen. */}
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate font-ui text-sm font-medium text-text">
+                      {wallet.name}
+                    </span>
+                    <span className="tabular truncate text-[11px] text-muted">
+                      {masked ? MASKED : formatAmount(wallet.cached.balance.total, unit)}
+                    </span>
+                  </span>
+                  {current && (
+                    <Check
+                      size={14}
+                      strokeWidth={2}
+                      aria-hidden
+                      className="shrink-0 text-primary"
+                    />
+                  )}
+                </button>
+                {movable && (
+                  <span
+                    aria-hidden
+                    title="Drag to reorder"
+                    {...drag.handleProps(index)}
+                    className={clsx(
+                      "absolute right-1 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-sm text-muted",
+                      "transition-opacity duration-150 group-hover:opacity-100",
+                      dragging ? "cursor-grabbing opacity-100" : "cursor-grab opacity-0",
+                    )}
+                  >
+                    <GripVertical size={14} strokeWidth={1.5} />
+                  </span>
                 )}
-              </button>
+              </div>
             );
           })}
           <div aria-hidden className="mx-1 my-1 h-px bg-border/60" />
@@ -456,6 +494,7 @@ function WalletSwitcher({
             <Plus size={15} strokeWidth={1.5} aria-hidden className="shrink-0" />
             Add a wallet
           </button>
+          <DropLine y={drag.lineY} />
         </div>
       )}
     </div>

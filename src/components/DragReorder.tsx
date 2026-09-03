@@ -68,10 +68,12 @@ export function useDragReorder<T>(items: T[], onReorder: (next: T[]) => void): D
     setDrag(next);
   };
 
+  // Spans are taken in the list's content coordinates, so a list that
+  // scrolls (the switcher menu) still places the line beside its rows.
   const measure = (): Span[] => {
     const node = list.current;
     if (!node) return [];
-    const origin = node.getBoundingClientRect().top;
+    const origin = node.getBoundingClientRect().top - node.scrollTop;
     return [...node.querySelectorAll<HTMLElement>("[data-reorder-row]")].map((row) => {
       const rect = row.getBoundingClientRect();
       return { top: rect.top - origin, bottom: rect.bottom - origin };

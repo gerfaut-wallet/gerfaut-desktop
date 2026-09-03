@@ -9,24 +9,24 @@ import {
   Wallet as WalletIcon,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { Button, IconButton } from "../../components/Button";
 import { DropLine, useDragReorder } from "../../components/DragReorder";
 import { Notice } from "../../components/Notice";
 import type { WalletMeta } from "../../lib/ipc";
-import { moveItem, sortByIds } from "../../lib/reorder";
+import { moveItem } from "../../lib/reorder";
 import { walletGlyph } from "../../lib/walletIcons";
 import {
   useRemoveWallet,
   useRenameWallet,
-  useReorderWallets,
   useRescanWallet,
   useSetGapLimit,
   useSetWalletIcon,
 } from "../../state/queries";
 import { useUi } from "../../state/store";
+import { useWalletOrder } from "../../state/walletOrder";
 import { SectionCard, SettingRow } from "./primitives";
 import { WalletIconPicker } from "./WalletIconPicker";
 
@@ -64,28 +64,6 @@ function GapLimitField({ gapLimit }: { gapLimit: number }) {
       className="field-focus selectable h-11 w-24 rounded-sm border border-transparent bg-sunken px-3 text-right font-data text-[13px] text-text"
     />
   );
-}
-
-/** The wallets of the shown network in the order they are listed,
-    kept here from the moment one is moved until the vault lists them
-    that way too. */
-function useWalletOrder(wallets: WalletMeta[]) {
-  const reorderWallets = useReorderWallets();
-  const [order, setOrder] = useState<string[] | null>(null);
-  const shown = useMemo(() => (order ? sortByIds(wallets, order) : wallets), [wallets, order]);
-
-  // Once the vault lists them in the order asked for, the copy goes.
-  useEffect(() => {
-    if (order && wallets.map((wallet) => wallet.id).join() === order.join()) setOrder(null);
-  }, [wallets, order]);
-
-  const reorder = (next: WalletMeta[]) => {
-    const ids = next.map((wallet) => wallet.id);
-    setOrder(ids);
-    reorderWallets.mutate(ids, { onError: () => setOrder(null) });
-  };
-
-  return { shown, reorder };
 }
 
 /** The shared gap limit, then every wallet of the shown network in the

@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -1015,6 +1015,82 @@ describe("navigation", () => {
     expect(await screen.findByRole("heading", { name: /transactions/i })).toBeInTheDocument();
     expect(await screen.findByText("No transactions yet")).toBeInTheDocument();
     expect(useUi.getState().activeWalletId).toBe("w-2");
+  });
+
+  it("shows each wallet's own icon in the switcher", async () => {
+    const second: WalletMeta = {
+      ...WALLET,
+      id: "w-2",
+      name: "Lightning float",
+      icon: "snowflake",
+    };
+    walletIpc({ list_wallets: () => [WALLET, second] });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+
+    const trigger = sidebar().getByRole("button", { name: /wallet: cold storage/i });
+    expect(trigger.querySelector("svg.lucide-wallet")).not.toBeNull();
+    await user.click(trigger);
+    expect(
+      screen.getByRole("menuitemradio", { name: /cold storage/i }).querySelector("svg.lucide-wallet"),
+    ).not.toBeNull();
+    expect(
+      screen
+        .getByRole("menuitemradio", { name: /lightning float/i })
+        .querySelector("svg.lucide-snowflake"),
+    ).not.toBeNull();
+
+    await user.click(screen.getByRole("menuitemradio", { name: /lightning float/i }));
+    const next = sidebar().getByRole("button", { name: /wallet: lightning float/i });
+    expect(next.querySelector("svg.lucide-snowflake")).not.toBeNull();
+    expect(next.querySelector("svg.lucide-wallet")).toBeNull();
+  });
+
+  it("reorders wallets by dragging them in the switcher", async () => {
+    const second: WalletMeta = { ...WALLET, id: "w-2", name: "Lightning float", icon: "key" };
+    const reordered: unknown[] = [];
+    walletIpc({
+      list_wallets: () => [WALLET, second],
+      reorder_wallets: (args) => {
+        reordered.push(args.ids);
+        return undefined;
+      },
+    });
+    // jsdom lays nothing out: rows are declared 40px tall, 48px apart.
+    const geometry = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        const rows = [...document.querySelectorAll("[data-reorder-row]")];
+        const index = rows.indexOf(this);
+        const top = index === -1 ? 0 : index * 48;
+        const bottom = index === -1 ? 0 : top + 40;
+        return { top, bottom, height: bottom - top, left: 0, right: 0, width: 0, x: 0, y: top } as DOMRect;
+      });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: /wallet: cold storage/i }));
+    const menu = screen.getByRole("menu", { name: "Wallets" });
+    const names = () =>
+      within(menu)
+        .getAllByRole("menuitemradio")
+        .map((item) => within(item).getByText(/storage|float/).textContent);
+    expect(names()).toEqual(["Cold storage", "Lightning float"]);
+
+    // The grip is the pointer's handle only; the settings rows carry the
+    // keyboard's.
+    const grips = menu.querySelectorAll("[title='Drag to reorder']");
+    expect(grips).toHaveLength(2);
+    fireEvent.pointerDown(grips[0], { button: 0, clientY: 20 });
+    fireEvent.pointerMove(grips[0], { clientY: 80 });
+    fireEvent.pointerUp(grips[0]);
+    // The menu shows the new order at once and stays open; the vault is
+    // told the whole order.
+    expect(names()).toEqual(["Lightning float", "Cold storage"]);
+    expect(screen.getByRole("menu", { name: "Wallets" })).toBeInTheDocument();
+    await waitFor(() => expect(reordered).toEqual([["w-2", "w-1"]]));
+    geometry.mockRestore();
   });
 
   it("has no search field and no command palette", async () => {
