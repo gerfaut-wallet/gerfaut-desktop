@@ -472,6 +472,7 @@ function ShortcutsCard() {
     and how far the chain had got. The action leads to the node
     settings, where the backend is chosen. */
 function StatusCard({ snapshot, error }: { snapshot: WalletSnapshot; error: string | null }) {
+  const { openSettings } = useUi();
   const { meta, tip_height } = snapshot;
   const rows: { label: string; value: ReactNode; detail?: string }[] = [
     {
@@ -509,7 +510,18 @@ function StatusCard({ snapshot, error }: { snapshot: WalletSnapshot; error: stri
     },
   ];
   return (
-    <Card label="Watch status">
+    <Card
+      label="Watch status"
+      action={
+        <button
+          type="button"
+          onClick={() => openSettings("network")}
+          className="cursor-pointer rounded-md px-2 py-1 font-ui text-xs font-medium text-primary transition-colors duration-150 hover:bg-sunken"
+        >
+          Node settings →
+        </button>
+      }
+    >
       <dl className="flex flex-col gap-2.5">
         {rows.map((row) => (
           <div
