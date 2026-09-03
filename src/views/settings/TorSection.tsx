@@ -63,7 +63,7 @@ export function TorSection({ tor }: { tor: TorSettings }) {
     connect.isPending && status.data?.running === true && !status.data.bootstrapped;
   // Read out in steps of ten: the line is a live region, and one fed
   // every second would have a screen reader say every step of the way.
-  const bootstrapped = Math.floor((status.data?.bootstrap_percent ?? 0) / 10) * 10;
+  const progress = Math.floor((status.data?.bootstrap_percent ?? 0) / 10) * 10;
 
   const apply = (next: Partial<TorSettings>) => {
     setRoute(null);
@@ -135,7 +135,7 @@ export function TorSection({ tor }: { tor: TorSettings }) {
         <p role="status" className={clsx("font-ui text-xs text-muted", !starting && "sr-only")}>
           {starting && (
             <>
-              Starting the built-in Tor… <span className="tabular">{bootstrapped}%</span>
+              Starting the built-in Tor… <span className="tabular">{progress}%</span>
             </>
           )}
         </p>
