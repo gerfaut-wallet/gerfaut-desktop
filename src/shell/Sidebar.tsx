@@ -413,9 +413,11 @@ function WalletSwitcher({
             const dragging = drag.dragging === index;
             return (
               // The grip sits beside the item, not in it: a button holds
-              // no second control, and a drag must not switch wallets.
+              // no second control, and a drag must not switch wallets. The
+              // wrapper is nothing to the menu: its items are the buttons.
               <div
                 key={wallet.id}
+                role="none"
                 {...drag.rowProps(index)}
                 className={clsx(
                   "group relative",
