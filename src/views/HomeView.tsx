@@ -8,9 +8,11 @@ import {
   ChevronRight,
   Clock,
   Coins,
+  Pencil,
   Route,
   Wallet,
 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Balance, ListAmount } from "../components/Amount";
 import { BalanceChart } from "../components/BalanceChart";
@@ -23,11 +25,17 @@ import {
   relativeTime,
   truncateMiddle,
 } from "../lib/format";
-import { SUPPORTED_RANGES } from "../lib/ipc";
+import { SUPPORTED_RANGES, isCommandError } from "../lib/ipc";
 import type { PriceRange, TxSummary, WalletMeta, WalletSnapshot } from "../lib/ipc";
 import { policyDigest } from "../lib/policy";
 import { balanceSeries } from "../lib/series";
-import { usePriceHistory, useSnapshot, useUtxos, useWalletPolicy } from "../state/queries";
+import {
+  usePriceHistory,
+  useRenameWallet,
+  useSnapshot,
+  useUtxos,
+  useWalletPolicy,
+} from "../state/queries";
 import { useUi } from "../state/store";
 
 const RANGE_LABEL: Record<PriceRange, string> = {
@@ -61,9 +69,7 @@ export function HomeView({ walletId }: { walletId: string }) {
     <div className="flex h-full min-h-[560px] flex-col pb-2">
       {/* No freshness line here: Watch status carries it below. */}
       <header className="px-1 pb-4 pt-2">
-        <h1 className="font-display text-2xl font-semibold tracking-[-0.01em] text-text">
-          {meta.name}
-        </h1>
+        <WalletTitle meta={meta} />
       </header>
 
       <div className="flex min-h-0 flex-1 gap-4 max-lg:flex-col">
@@ -110,6 +116,133 @@ function Card({
       </div>
       <div className="min-h-0 flex-1">{children}</div>
     </section>
+  );
+}
+
+/** The title, in one look and one style whether it is read or edited:
+    the display face at 24px, the same box either way. */
+const TITLE_TEXT = "font-display text-2xl font-semibold tracking-[-0.01em] text-text";
+const TITLE_BOX = "-mx-2 rounded-md border border-transparent px-2 py-0.5";
+
+/** The wallet's name, and the place to correct it: the title is a
+    button, the button becomes a field. Enter or leaving the field
+    saves a changed, non-empty name; Escape keeps the old one. What the
+    core refuses is said under the title in the muted voice — a name
+    is not a chain event, so never in red. */
+function WalletTitle({ meta }: { meta: WalletMeta }) {
+  const rename = useRenameWallet();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(meta.name);
+  const [error, setError] = useState<string | null>(null);
+  // The name the core accepted, kept on screen until the snapshot
+  // repeats it: the refetch trails the write by a frame, and the old
+  // name must not flash back in between.
+  const [accepted, setAccepted] = useState<string | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Enter, Escape and blur can all fire for one edit: the first counts.
+  const settled = useRef(false);
+  // Focus goes back to the title when the keyboard ended the edit, and
+  // stays where the pointer went when a click did.
+  const returnFocus = useRef(false);
+
+  const name = accepted !== null && accepted !== meta.name ? accepted : meta.name;
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    } else if (returnFocus.current) {
+      returnFocus.current = false;
+      buttonRef.current?.focus();
+    }
+  }, [editing]);
+
+  const begin = () => {
+    setDraft(name);
+    setError(null);
+    settled.current = false;
+    setEditing(true);
+  };
+
+  const close = () => {
+    returnFocus.current = document.activeElement === inputRef.current;
+    setEditing(false);
+  };
+
+  const finish = (save: boolean) => {
+    if (settled.current) return;
+    settled.current = true;
+    const next = draft.trim();
+    if (!save || next.length === 0 || next === name) {
+      close();
+      return;
+    }
+    rename.mutate(
+      { id: meta.id, name: next },
+      {
+        onSuccess: () => {
+          setAccepted(next);
+          close();
+        },
+        onError: (failure) => {
+          setError(isCommandError(failure) ? failure.message : String(failure));
+          close();
+        },
+      },
+    );
+  };
+
+  return (
+    <div>
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") finish(true);
+            else if (event.key === "Escape") finish(false);
+          }}
+          onBlur={() => finish(true)}
+          readOnly={rename.isPending}
+          aria-busy={rename.isPending || undefined}
+          aria-label="Wallet name"
+          className={clsx(
+            "field-focus selectable block w-full max-w-md bg-sunken",
+            TITLE_TEXT,
+            TITLE_BOX,
+          )}
+        />
+      ) : (
+        <h1 aria-label={name} className={TITLE_TEXT}>
+          <button
+            ref={buttonRef}
+            type="button"
+            onClick={begin}
+            aria-label="Rename this wallet"
+            className={clsx(
+              "group inline-flex max-w-full cursor-pointer items-center gap-2 text-left transition-colors duration-150",
+              "hover:bg-sunken/60 focus-visible:bg-sunken/60",
+              TITLE_BOX,
+            )}
+          >
+            <span className="truncate">{name}</span>
+            <Pencil
+              size={16}
+              strokeWidth={1.5}
+              aria-hidden
+              className="shrink-0 text-muted opacity-0 transition-opacity duration-150 group-hover:opacity-60 group-focus-visible:opacity-60"
+            />
+          </button>
+        </h1>
+      )}
+      {error && (
+        <p role="status" className="mt-1 font-ui text-xs text-muted">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
 
