@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BackendConfig, ScannedBackend, Settings, WalletMeta } from "../lib/ipc";
+import { useWallets } from "../state/queries";
 import { useUi } from "../state/store";
 import { BackendSection, SettingsView } from "./SettingsView";
 
@@ -285,6 +286,22 @@ function renderSettings(wallets: WalletMeta[] = [WALLET], settings: Settings = S
   );
 }
 
+/** The view fed from the vault, as the app feeds it: what the wallets
+    section shows after a write is what the list then says. */
+function LiveSettings() {
+  const wallets = useWallets();
+  return <SettingsView settings={SETTINGS} wallets={wallets.data ?? []} />;
+}
+
+function renderLiveSettings() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <LiveSettings />
+    </QueryClientProvider>,
+  );
+}
+
 /** Answers what the sections ask on their own, and records every call. */
 function mockSettingsIpc(
   overrides: Record<string, (args: Record<string, unknown>) => unknown> = {},
@@ -432,30 +449,42 @@ describe("settings sections", () => {
 
   it("moves a wallet down the list from the keyboard and keeps that order", async () => {
     const second: WalletMeta = { ...WALLET, id: "w-2", name: "Lightning float", icon: "key" };
+    // The vault lists the wallets in the order it was last given.
+    let listed = [WALLET, second];
     const calls = mockSettingsIpc({
-      reorder_wallets: () => undefined,
-      list_wallets: () => [WALLET, second],
+      reorder_wallets: (args) => {
+        const ids = args.ids as string[];
+        listed = ids.map((id) => listed.find((wallet) => wallet.id === id)!);
+        return undefined;
+      },
+      list_wallets: () => listed,
     });
     act(() => useUi.getState().openSettings("wallets"));
-    renderSettings([WALLET, second]);
+    renderLiveSettings();
     const user = userEvent.setup();
-    const card = screen.getByRole("heading", { name: "Wallets" }).closest("section")!;
+    const card = (await screen.findByRole("heading", { name: "Wallets" })).closest("section")!;
     const names = () =>
       within(card)
         .getAllByRole("listitem")
         .map((row) => within(row).getByText(/storage|float/).textContent);
-    expect(names()).toEqual(["Cold storage", "Lightning float"]);
+    await waitFor(() => expect(names()).toEqual(["Cold storage", "Lightning float"]));
 
     const row = screen.getByText("Cold storage").closest("li")!;
     // Nowhere up to go from the top; down, then, and the order is sent whole.
     expect(within(row).getByRole("button", { name: "Move up" })).toHaveAttribute("aria-disabled", "true");
     await user.click(within(row).getByRole("button", { name: "Move up" }));
     expect(calls.some((call) => call.cmd === "reorder_wallets")).toBe(false);
-    await user.click(within(row).getByRole("button", { name: "Move down" }));
-    expect(calls.filter((call) => call.cmd === "reorder_wallets").map((call) => call.args)).toEqual([
-      { ids: ["w-2", "w-1"] },
-    ]);
-    // Shown in the new order at once, before the vault is read again.
+    // The move shows before the vault answers, and stays once it has.
+    const down = within(row).getByRole("button", { name: "Move down" });
+    down.focus();
+    fireEvent.click(down);
+    expect(names()).toEqual(["Lightning float", "Cold storage"]);
+    await waitFor(() =>
+      expect(calls.filter((call) => call.cmd === "reorder_wallets").map((call) => call.args)).toEqual([
+        { ids: ["w-2", "w-1"] },
+      ]),
+    );
+    await waitFor(() => expect(calls.filter((call) => call.cmd === "list_wallets")).toHaveLength(2));
     expect(names()).toEqual(["Lightning float", "Cold storage"]);
     expect(within(row).getByRole("button", { name: "Move down" })).toHaveAttribute("aria-disabled", "true");
     // The row that moved keeps the focus, on the control still usable.
