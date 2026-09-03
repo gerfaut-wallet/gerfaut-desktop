@@ -694,8 +694,10 @@ describe("overview", () => {
     expect(screen.queryByRole("button", { name: /customize/i })).not.toBeInTheDocument();
     // One unit only: no sats echo under the BTC figure.
     expect(screen.queryByText(/150 000 sats/)).not.toBeInTheDocument();
-    // The fee card is gone: fees were never a watch-only question.
+    // The fee card is gone: fees were never a watch-only question. Two
+    // shortcuts into the settings hold its place.
     expect(screen.queryByText("Network fees")).not.toBeInTheDocument();
+    expect(screen.getByText("Shortcuts")).toBeInTheDocument();
   });
 
   it("shows the price with a signed change pill, no chart", async () => {
@@ -805,6 +807,127 @@ describe("overview", () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: /1 UTXO/ }));
     expect(await screen.findByRole("heading", { name: /utxos/i })).toBeInTheDocument();
+  });
+
+  it("opens the settings on the section a shortcut names", async () => {
+    renderApp();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /backup & sync/i }));
+    expect(await screen.findByRole("heading", { name: /settings/i })).toBeInTheDocument();
+    expect(useUi.getState().settingsSection).toBe("backup");
+
+    await user.click(sidebar().getByRole("button", { name: "Overview" }));
+    // The row says where it leads, for a reader who cannot see the icon.
+    await user.click(
+      await screen.findByRole("button", { name: /manage wallets, rename, reorder, remove/i }),
+    );
+    expect(useUi.getState().view).toBe("settings");
+    expect(useUi.getState().settingsSection).toBe("wallets");
+  });
+
+  it("leads from the watch status to the node settings", async () => {
+    renderApp();
+    const user = userEvent.setup();
+    const status = within(await screen.findByRole("region", { name: "Watch status" }));
+    await user.click(status.getByRole("button", { name: "Node settings →" }));
+    expect(useUi.getState().view).toBe("settings");
+    expect(useUi.getState().settingsSection).toBe("network");
+  });
+
+  it("renames the wallet from its title", async () => {
+    const renames: Record<string, unknown>[] = [];
+    walletIpc({
+      rename_wallet: (args) => {
+        renames.push(args);
+        return undefined;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    expect(await screen.findByRole("heading", { name: "Cold storage" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Rename this wallet" }));
+    // The title becomes the field, prefilled and ready to overtype.
+    const field = screen.getByRole("textbox", { name: "Wallet name" });
+    expect(field).toHaveFocus();
+    expect(field).toHaveValue("Cold storage");
+    await user.clear(field);
+    await user.type(field, "  Vault {Enter}");
+    await waitFor(() => expect(renames).toEqual([{ id: "w-1", name: "Vault" }]));
+    // The accepted name shows at once, and the keyboard lands back on
+    // the title it left.
+    expect(await screen.findByRole("heading", { name: "Vault" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Rename this wallet" })).toHaveFocus();
+  });
+
+  it("writes nothing for an escaped, unchanged or empty name", async () => {
+    const renames: Record<string, unknown>[] = [];
+    walletIpc({
+      rename_wallet: (args) => {
+        renames.push(args);
+        return undefined;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Rename this wallet" }));
+    await user.clear(screen.getByRole("textbox", { name: "Wallet name" }));
+    await user.keyboard("Nope{Escape}");
+    expect(screen.getByRole("heading", { name: "Cold storage" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Wallet name" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Rename this wallet" }));
+    expect(screen.getByRole("textbox", { name: "Wallet name" })).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("heading", { name: "Cold storage" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Rename this wallet" }));
+    await user.clear(screen.getByRole("textbox", { name: "Wallet name" }));
+    await user.keyboard("   {Enter}");
+    expect(screen.getByRole("heading", { name: "Cold storage" })).toBeInTheDocument();
+    expect(renames).toEqual([]);
+  });
+
+  it("says under the title what the core refused, without red", async () => {
+    walletIpc({
+      rename_wallet: () => {
+        throw { kind: "storage", message: "a wallet name cannot exceed 64 characters" };
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Rename this wallet" }));
+    await user.clear(screen.getByRole("textbox", { name: "Wallet name" }));
+    await user.keyboard("Too long{Enter}");
+    const note = await screen.findByText("a wallet name cannot exceed 64 characters");
+    expect(note).toHaveClass("text-muted");
+    expect(note).not.toHaveClass("text-alert");
+    expect(screen.getByRole("heading", { name: "Cold storage" })).toBeInTheDocument();
+  });
+
+  it("rules the balance chart at round levels and calendar marks", async () => {
+    // A life a hundred days long, so the axis reads in months whatever
+    // the day the test runs on.
+    const now = Math.floor(Date.now() / 1000);
+    walletIpc({
+      wallet_snapshot: () => ({
+        ...SNAPSHOT,
+        txs: [
+          {
+            ...SNAPSHOT.txs[0],
+            status: { state: "confirmed", height: 199_990, timestamp: now - 100 * 86_400 },
+          },
+        ],
+      }),
+    });
+    renderApp();
+    expect(
+      await screen.findByRole("img", { name: /wallet balance over time/i }),
+    ).toBeInTheDocument();
+    // 150 000 sats: the floor, then steps of 50 000 up to the total.
+    expect(screen.getByText("0.0005 BTC")).toBeInTheDocument();
+    expect(screen.getByText("0.001 BTC")).toBeInTheDocument();
+    expect(screen.getByText("0.0015 BTC")).toBeInTheDocument();
+    expect(screen.getAllByText(/^[A-Z][a-z]{2} \d{4}$/).length).toBeGreaterThanOrEqual(3);
   });
 });
 
