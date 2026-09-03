@@ -28,10 +28,6 @@ export function TorSection({ tor }: { tor: TorSettings }) {
   const [problem, setProblem] = useState<string | null>(null);
   const [route, setRoute] = useState<TorRoute | null>(null);
 
-  // Read on demand: nothing is probed or started until asked.
-  const status = useQuery({ queryKey: ["tor-status"], queryFn: ipc.torStatus });
-  const embedded = status.data?.embedded_available ?? false;
-
   const save = useMutation({
     mutationFn: (next: TorSettings) => ipc.setTorSettings(next),
     onSuccess: () => {
@@ -52,6 +48,18 @@ export function TorSection({ tor }: { tor: TorSettings }) {
       setProblem(isCommandError(error) ? error.message : String(error));
     },
   });
+
+  // Read on demand: nothing is probed or started until asked. While a
+  // connection is being tried, the status is polled every second so a
+  // first start of the built-in client reads as progress, not as a hang.
+  const status = useQuery({
+    queryKey: ["tor-status"],
+    queryFn: ipc.torStatus,
+    refetchInterval: connect.isPending ? 1000 : false,
+  });
+  const embedded = status.data?.embedded_available ?? false;
+  const starting =
+    connect.isPending && status.data?.running === true && !status.data.bootstrapped;
 
   const apply = (next: Partial<TorSettings>) => {
     setRoute(null);
@@ -116,6 +124,12 @@ export function TorSection({ tor }: { tor: TorSettings }) {
         {route && (
           <p className="font-ui text-xs text-muted">
             Reached through the {route.via === "system" ? "system Tor" : "built-in Tor"}.
+          </p>
+        )}
+        {starting && (
+          <p role="status" className="font-ui text-xs text-muted">
+            Starting the built-in Tor…{" "}
+            <span className="tabular">{status.data?.bootstrap_percent ?? 0} %</span>
           </p>
         )}
         {problem && <p className="font-ui text-xs text-muted">{problem}</p>}
