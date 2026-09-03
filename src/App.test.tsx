@@ -1047,21 +1047,21 @@ describe("navigation", () => {
     await screen.findByText("Bitcoin price");
 
     const trigger = sidebar().getByRole("button", { name: /wallet: cold storage/i });
-    expect(trigger.querySelector("svg.lucide-wallet")).not.toBeNull();
+    expect(trigger.querySelector("[data-icon='wallet']")).not.toBeNull();
     await user.click(trigger);
     expect(
-      screen.getByRole("menuitemradio", { name: /cold storage/i }).querySelector("svg.lucide-wallet"),
+      screen.getByRole("menuitemradio", { name: /cold storage/i }).querySelector("[data-icon='wallet']"),
     ).not.toBeNull();
     expect(
       screen
         .getByRole("menuitemradio", { name: /lightning float/i })
-        .querySelector("svg.lucide-snowflake"),
+        .querySelector("[data-icon='snowflake']"),
     ).not.toBeNull();
 
     await user.click(screen.getByRole("menuitemradio", { name: /lightning float/i }));
     const next = sidebar().getByRole("button", { name: /wallet: lightning float/i });
-    expect(next.querySelector("svg.lucide-snowflake")).not.toBeNull();
-    expect(next.querySelector("svg.lucide-wallet")).toBeNull();
+    expect(next.querySelector("[data-icon='snowflake']")).not.toBeNull();
+    expect(next.querySelector("[data-icon='wallet']")).toBeNull();
   });
 
   it("reorders wallets by dragging them in the switcher", async () => {
@@ -1234,7 +1234,7 @@ describe("policy page", () => {
       within(recovery).getByText(/^52.560 blocks after the coin arrives ≈ 1 year$/),
     ).toBeInTheDocument();
     const pill = within(recovery).getByText("1 of 3 coins unlocked · next in 295 days");
-    expect(pill.querySelector("svg.lucide-clock")).not.toBe(null);
+    expect(pill.querySelector("[data-glyph='clock']")).not.toBe(null);
     // Far off: neutral, not amber.
     expect(pill).toHaveAttribute("data-tone", "neutral");
     // The nearest coin has waited 10 080 of 52 560 blocks: a fifth of the
@@ -1259,7 +1259,7 @@ describe("policy page", () => {
     ).toBeInTheDocument();
     const soon = screen.getByText(/^In 1.432 blocks ≈ 10 days$/);
     expect(soon).toHaveAttribute("data-tone", "pending");
-    expect(soon.querySelector("svg.lucide-clock")).not.toBe(null);
+    expect(soon.querySelector("[data-glyph='clock']")).not.toBe(null);
     expect(screen.getByText(/^Block 201.432 ≈ in 10 days$/)).toBeInTheDocument();
     // An absolute lock has no start to measure from: no bar.
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
@@ -1272,7 +1272,7 @@ describe("policy page", () => {
     await user.click(await screen.findByRole("button", { name: /Spendable in 1 year/ }));
     const far = await screen.findByText(/^In 52.560 blocks ≈ 1 year$/);
     expect(far).toHaveAttribute("data-tone", "neutral");
-    expect(far.querySelector("svg.lucide-clock")).not.toBe(null);
+    expect(far.querySelector("[data-glyph='clock']")).not.toBe(null);
   });
 
   it("says the clock decides a time lock, and what it has left", async () => {
@@ -1301,7 +1301,7 @@ describe("policy page", () => {
     expect(screen.getByText(/^Key A signs after block 201.432\.$/)).toBeInTheDocument();
     const pill = screen.getByText("Locked");
     expect(pill).toHaveAttribute("data-tone", "neutral");
-    expect(pill.querySelector("svg.lucide-clock")).not.toBe(null);
+    expect(pill.querySelector("[data-glyph='clock']")).not.toBe(null);
     // The lock line names the block and nothing more: no estimate, no
     // countdown, and never a distance of zero blocks for an unknown one.
     expect(screen.getByText(/^Block 201.432$/)).toBeInTheDocument();
@@ -1330,7 +1330,7 @@ describe("policy page", () => {
     expect(screen.getByText("Any 2 of Key A, Key B, Key C")).toBeInTheDocument();
     const pill = screen.getByText("Spendable now");
     expect(pill).toHaveAttribute("data-tone", "confirmed");
-    expect(pill.querySelector("svg.lucide-check")).not.toBe(null);
+    expect(pill.querySelector("[data-glyph='check']")).not.toBe(null);
     expect(screen.getByText("thresh(2,pk(Key A),pk(Key B),pk(Key C))")).toBeInTheDocument();
   });
 
@@ -1806,8 +1806,8 @@ describe("transaction status marker", () => {
     const confirmed = (await screen.findAllByText("Confirmed"))[0];
     const pending = screen.getAllByText("Pending")[0];
     // A check and a clock: readable on a monochrome screenshot too.
-    expect(confirmed.querySelector("svg.lucide-check")).not.toBe(null);
-    expect(pending.querySelector("svg.lucide-clock")).not.toBe(null);
+    expect(confirmed.querySelector("[data-glyph='check']")).not.toBe(null);
+    expect(pending.querySelector("[data-glyph='clock']")).not.toBe(null);
     // The old colour-only dot is gone from both.
     expect(confirmed.querySelector(".bg-current")).toBe(null);
     expect(pending.querySelector(".bg-current")).toBe(null);

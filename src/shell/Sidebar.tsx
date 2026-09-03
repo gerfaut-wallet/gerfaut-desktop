@@ -370,7 +370,9 @@ function WalletSwitcher({
           aria-hidden
           className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-surface text-primary"
         >
-          <ActiveGlyph size={15} strokeWidth={1.5} />
+          {/* `data-icon` names the glyph for a test, which should not read
+              a class. */}
+          <ActiveGlyph size={15} strokeWidth={1.5} data-icon={active?.icon ?? "wallet"} />
         </span>
         {!collapsed && (
           <>
@@ -444,6 +446,7 @@ function WalletSwitcher({
                     size={15}
                     strokeWidth={1.5}
                     aria-hidden
+                    data-icon={wallet.icon}
                     className="shrink-0 text-muted"
                   />
                   {/* Two lines: the name gets the full width, the balance

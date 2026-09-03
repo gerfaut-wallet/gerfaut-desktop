@@ -138,7 +138,8 @@ function Body({ snapshot }: { snapshot: PolicySnapshot }) {
 // --- branches -------------------------------------------------------------
 
 /** The glyph of each state: shapes that differ, so the state reads
-    without its colour. */
+    without its colour. `data-glyph` names it for a test, which should
+    not read a class. */
 const GLYPH = { check: Check, clock: Clock, coins: Coins, lock: Lock };
 
 function BranchCard({ branch, keys }: { branch: PolicyBranch; keys: PolicyKey[] }) {
@@ -158,7 +159,9 @@ function BranchCard({ branch, keys }: { branch: PolicyBranch; keys: PolicyKey[] 
             card is 320px wide, and the pill wraps rather than overflow. */}
         <Pill
           tone={status.tone}
-          icon={<Glyph size={12} strokeWidth={2} aria-hidden className="shrink-0" />}
+          icon={
+            <Glyph size={12} strokeWidth={2} aria-hidden data-glyph={status.glyph} className="shrink-0" />
+          }
           wrap
         >
           {status.text}

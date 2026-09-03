@@ -45,7 +45,9 @@ export function Pill({
 }
 
 /** A transaction's standing: the check once it is in a block, the
-    clock while it waits, and the count of confirmations under six. */
+    clock while it waits, and the count of confirmations under six.
+    `data-glyph` names the shape for a test, which should not read a
+    class. */
 export function StatusPill({ status, confirmations }: { status: TxStatus; confirmations?: number }) {
   const confirmed = status.state === "confirmed";
   const label = confirmed
@@ -58,9 +60,9 @@ export function StatusPill({ status, confirmations }: { status: TxStatus; confir
       tone={confirmed ? "confirmed" : "pending"}
       icon={
         confirmed ? (
-          <Check size={12} strokeWidth={2} aria-hidden className="shrink-0" />
+          <Check size={12} strokeWidth={2} aria-hidden data-glyph="check" className="shrink-0" />
         ) : (
-          <Clock size={12} strokeWidth={2} aria-hidden className="shrink-0" />
+          <Clock size={12} strokeWidth={2} aria-hidden data-glyph="clock" className="shrink-0" />
         )
       }
     >
