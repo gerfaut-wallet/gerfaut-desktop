@@ -104,6 +104,22 @@ describe("dragging a row", () => {
     expect(onReorder).not.toHaveBeenCalled();
   });
 
+  it("keeps Escape from whatever else listens for it while dragging", () => {
+    mockGeometry();
+    const beneath = vi.fn();
+    document.addEventListener("keydown", beneath, true);
+    render(<Harness onReorder={vi.fn()} />);
+    const grip = screen.getByTestId("grip-a");
+    fireEvent.pointerDown(grip, { button: 0, clientY: 20 });
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByTestId("row-a")).not.toHaveAttribute("data-dragging");
+    expect(beneath).not.toHaveBeenCalled();
+    // At rest, the key goes where it always went.
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(beneath).toHaveBeenCalledTimes(1);
+    document.removeEventListener("keydown", beneath, true);
+  });
+
   it("ignores any button but the main one", () => {
     mockGeometry();
     const onReorder = vi.fn();

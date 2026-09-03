@@ -101,18 +101,20 @@ export function useDragReorder<T>(items: T[], onReorder: (next: T[]) => void): D
     }
   };
 
-  // Escape lets go of the row where it was.
+  // Escape lets go of the row where it was. Heard on the window, ahead
+  // of everything else: a menu holding the list listens for Escape on
+  // the document, and while a drag is on, the key is the drag's alone.
   const active = drag !== null;
   useEffect(() => {
     if (!active) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        event.stopPropagation();
+        event.stopImmediatePropagation();
         finish(false);
       }
     };
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
     // `finish` reads refs only, so the one captured here stays right.
   }, [active]);
 

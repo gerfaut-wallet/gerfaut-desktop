@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import type {
   AddressEntry,
@@ -583,6 +583,20 @@ async function openSettings(user: ReturnType<typeof userEvent.setup>, section: s
   await user.click(within(nav).getByRole("button", { name: section }));
 }
 
+/** jsdom lays nothing out: reorderable rows are declared 40px tall and
+    48px apart, in the order they stand in the document. */
+function mockRowGeometry() {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    const rows = [...document.querySelectorAll("[data-reorder-row]")];
+    const index = rows.indexOf(this);
+    const top = index === -1 ? 0 : index * 48;
+    const bottom = index === -1 ? 0 : top + 40;
+    return { top, bottom, height: bottom - top, left: 0, right: 0, width: 0, x: 0, y: top } as DOMRect;
+  });
+}
+
 /** Picks a row of the shared Select by its visible label. */
 async function choose(user: ReturnType<typeof userEvent.setup>, name: string | RegExp, label: string) {
   await user.click(screen.getByRole("combobox", { name }));
@@ -942,6 +956,7 @@ describe("overview", () => {
 
 describe("navigation", () => {
   beforeEach(() => walletIpc());
+  afterEach(() => vi.restoreAllMocks());
 
   it("moves between pages from the sidebar", async () => {
     renderApp();
@@ -1057,16 +1072,7 @@ describe("navigation", () => {
         return undefined;
       },
     });
-    // jsdom lays nothing out: rows are declared 40px tall, 48px apart.
-    const geometry = vi
-      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
-      .mockImplementation(function (this: HTMLElement) {
-        const rows = [...document.querySelectorAll("[data-reorder-row]")];
-        const index = rows.indexOf(this);
-        const top = index === -1 ? 0 : index * 48;
-        const bottom = index === -1 ? 0 : top + 40;
-        return { top, bottom, height: bottom - top, left: 0, right: 0, width: 0, x: 0, y: top } as DOMRect;
-      });
+    mockRowGeometry();
     renderApp();
     const user = userEvent.setup();
     await screen.findByText("Bitcoin price");
@@ -1090,7 +1096,36 @@ describe("navigation", () => {
     expect(names()).toEqual(["Lightning float", "Cold storage"]);
     expect(screen.getByRole("menu", { name: "Wallets" })).toBeInTheDocument();
     await waitFor(() => expect(reordered).toEqual([["w-2", "w-1"]]));
-    geometry.mockRestore();
+  });
+
+  it("lets Escape put a dragged row back without closing the switcher", async () => {
+    const second: WalletMeta = { ...WALLET, id: "w-2", name: "Lightning float", icon: "key" };
+    const reordered: unknown[] = [];
+    walletIpc({
+      list_wallets: () => [WALLET, second],
+      reorder_wallets: (args) => {
+        reordered.push(args.ids);
+        return undefined;
+      },
+    });
+    mockRowGeometry();
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: /wallet: cold storage/i }));
+    const menu = screen.getByRole("menu", { name: "Wallets" });
+    const grips = menu.querySelectorAll("[title='Drag to reorder']");
+    fireEvent.pointerDown(grips[0], { button: 0, clientY: 20 });
+    fireEvent.pointerMove(grips[0], { clientY: 80 });
+    // The first Escape is the drag's: the row goes back, the menu stays.
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("menu", { name: "Wallets" })).toBeInTheDocument();
+    fireEvent.pointerUp(grips[0]);
+    expect(reordered).toEqual([]);
+    // The next one is the menu's.
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu", { name: "Wallets" })).not.toBeInTheDocument();
+    expect(sidebar().getByRole("button", { name: /wallet: cold storage/i })).toHaveFocus();
   });
 
   it("opens Settings on the section asked for, and comes back to the last one", async () => {
