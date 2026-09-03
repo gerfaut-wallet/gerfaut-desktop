@@ -109,199 +109,202 @@ export function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; g
       {shown.length === 0 ? (
         <p className="font-ui text-sm text-muted">No wallets on this network yet.</p>
       ) : (
-        <ul ref={drag.listRef} className="relative flex flex-col gap-2">
-          {shown.map((wallet, index) => {
-            const single = wallet.kind.type === "single_address";
-            const Glyph = walletGlyph(wallet.icon);
-            const dragging = drag.dragging === index;
-            const first = index === 0;
-            const last = index === shown.length - 1;
-            return (
-              <li
-                key={wallet.id}
-                {...drag.rowProps(index)}
-                className={clsx(
-                  // The grip's glyph then starts where a row without one starts.
-                  "group rounded-md border border-border bg-surface py-3 pr-4",
-                  movable ? "pl-1" : "pl-4",
-                  dragging && "relative z-10 opacity-80",
-                )}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="flex min-w-0 items-center gap-2.5">
-                    {movable && (
-                      <span
-                        aria-hidden
-                        title="Drag to reorder"
-                        {...drag.handleProps(index)}
-                        className={clsx(
-                          "inline-flex size-10 shrink-0 items-center justify-center rounded-sm text-muted",
-                          "transition-colors duration-150 hover:text-text",
-                          dragging ? "cursor-grabbing" : "cursor-grab",
-                        )}
-                      >
-                        <GripVertical size={16} strokeWidth={1.5} />
-                      </span>
-                    )}
-                    <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-sunken text-text">
-                      <Glyph size={16} strokeWidth={1.5} aria-hidden />
-                    </span>
-                    {renaming?.id === wallet.id ? (
-                      <span className="flex items-center gap-1.5">
-                        <input
-                          autoFocus
-                          value={renaming.name}
-                          onChange={(event) =>
-                            setRenaming({ id: wallet.id, name: event.target.value })
-                          }
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") commitRename();
-                            if (event.key === "Escape") setRenaming(null);
-                          }}
-                          className="field-focus h-9 w-56 rounded-sm border border-transparent bg-sunken px-2 font-ui text-sm text-text"
-                          aria-label="Wallet name"
-                        />
-                        <IconButton
-                          label="Save name"
-                          className="size-9 text-primary"
-                          onClick={commitRename}
-                        >
-                          <Check size={16} strokeWidth={2} aria-hidden />
-                        </IconButton>
-                        <IconButton
-                          label="Cancel renaming"
-                          className="size-9"
-                          onClick={() => setRenaming(null)}
-                        >
-                          <X size={16} strokeWidth={1.5} aria-hidden />
-                        </IconButton>
-                      </span>
-                    ) : (
-                      <span className="flex min-w-0 flex-col">
-                        <span className="truncate font-ui text-sm font-medium text-text">
-                          {wallet.name}
-                        </span>
-                        <span className="font-ui text-xs text-muted">
-                          {single ? "Single address" : "Descriptor wallet"}
-                        </span>
-                      </span>
-                    )}
-                  </span>
-                  {renaming?.id !== wallet.id && confirmRemove !== wallet.id && (
-                    <span className="flex items-center gap-1">
-                      {movable && (
-                        <>
-                          <MoveButton
-                            label="Move up"
-                            blocked={first}
-                            onClick={() => reorder(moveItem(shown, index, index - 1))}
-                          >
-                            <ChevronUp size={16} strokeWidth={1.5} aria-hidden />
-                          </MoveButton>
-                          <MoveButton
-                            label="Move down"
-                            blocked={last}
-                            onClick={() => reorder(moveItem(shown, index, index + 1))}
-                          >
-                            <ChevronDown size={16} strokeWidth={1.5} aria-hidden />
-                          </MoveButton>
-                        </>
-                      )}
-                      <WalletIconPicker
-                        name={wallet.name}
-                        value={wallet.icon}
-                        disabled={rescanning !== null}
-                        onChoose={(icon) =>
-                          void setIcon
-                            .mutateAsync({ id: wallet.id, icon })
-                            .then(() => showToast("Icon changed"))
-                        }
-                      />
-                      <Button
-                        variant="ghost"
-                        className="h-9"
-                        disabled={rescanning !== null}
-                        onClick={() => {
-                          setRescanning(wallet.id);
-                          void rescan
-                            .mutateAsync(wallet.id)
-                            .catch(() => undefined)
-                            .finally(() => setRescanning(null));
-                        }}
-                      >
-                        <ScanSearch size={14} strokeWidth={1.5} aria-hidden />
-                        {rescanning === wallet.id ? "Rescanning…" : "Rescan"}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="h-9"
-                        disabled={rescanning !== null}
-                        onClick={() => {
-                          setConfirmRemove(null);
-                          setRenaming({ id: wallet.id, name: wallet.name });
-                        }}
-                      >
-                        <Pencil size={14} strokeWidth={1.5} aria-hidden />
-                        Rename
-                      </Button>
-                      {/* A removal is a neutral action behind an explicit
-                          confirmation: Alerte is kept for coins moving. */}
-                      <Button
-                        variant="ghost"
-                        className="h-9"
-                        disabled={rescanning !== null}
-                        onClick={() => {
-                          setRenaming(null);
-                          setConfirmRemove(wallet.id);
-                        }}
-                      >
-                        <Trash2 size={14} strokeWidth={1.5} aria-hidden />
-                        Remove
-                      </Button>
-                    </span>
+        // The line lives beside the list, not in it: a list holds items only.
+        <div className="relative">
+          <ul ref={drag.listRef} className="flex flex-col gap-2">
+            {shown.map((wallet, index) => {
+              const single = wallet.kind.type === "single_address";
+              const Glyph = walletGlyph(wallet.icon);
+              const dragging = drag.dragging === index;
+              const first = index === 0;
+              const last = index === shown.length - 1;
+              return (
+                <li
+                  key={wallet.id}
+                  {...drag.rowProps(index)}
+                  className={clsx(
+                    // The grip's glyph then starts where a row without one starts.
+                    "group rounded-md border border-border bg-surface py-3 pr-4",
+                    movable ? "pl-1" : "pl-4",
+                    dragging && "relative z-10 opacity-80",
                   )}
-                </div>
-                {syncErrors[wallet.id] && (
-                  <p className="mt-2 font-ui text-xs text-muted">
-                    {syncErrors[wallet.id]}
-                  </p>
-                )}
-                {confirmRemove === wallet.id && (
-                  <Notice
-                    tone="info"
-                    className="mt-3"
-                    action={<span className="flex items-center gap-2">
-                      <Button
-                        variant="primary"
-                        className="h-9"
-                        onClick={() =>
-                          void removeWallet.mutateAsync(wallet.id).then(() => {
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      {movable && (
+                        <span
+                          aria-hidden
+                          title="Drag to reorder"
+                          {...drag.handleProps(index)}
+                          className={clsx(
+                            "inline-flex size-10 shrink-0 items-center justify-center rounded-sm text-muted",
+                            "transition-colors duration-150 hover:text-text",
+                            dragging ? "cursor-grabbing" : "cursor-grab",
+                          )}
+                        >
+                          <GripVertical size={16} strokeWidth={1.5} />
+                        </span>
+                      )}
+                      <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-sunken text-text">
+                        <Glyph size={16} strokeWidth={1.5} aria-hidden />
+                      </span>
+                      {renaming?.id === wallet.id ? (
+                        <span className="flex items-center gap-1.5">
+                          <input
+                            autoFocus
+                            value={renaming.name}
+                            onChange={(event) =>
+                              setRenaming({ id: wallet.id, name: event.target.value })
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") commitRename();
+                              if (event.key === "Escape") setRenaming(null);
+                            }}
+                            className="field-focus h-9 w-56 rounded-sm border border-transparent bg-sunken px-2 font-ui text-sm text-text"
+                            aria-label="Wallet name"
+                          />
+                          <IconButton
+                            label="Save name"
+                            className="size-9 text-primary"
+                            onClick={commitRename}
+                          >
+                            <Check size={16} strokeWidth={2} aria-hidden />
+                          </IconButton>
+                          <IconButton
+                            label="Cancel renaming"
+                            className="size-9"
+                            onClick={() => setRenaming(null)}
+                          >
+                            <X size={16} strokeWidth={1.5} aria-hidden />
+                          </IconButton>
+                        </span>
+                      ) : (
+                        <span className="flex min-w-0 flex-col">
+                          <span className="truncate font-ui text-sm font-medium text-text">
+                            {wallet.name}
+                          </span>
+                          <span className="font-ui text-xs text-muted">
+                            {single ? "Single address" : "Descriptor wallet"}
+                          </span>
+                        </span>
+                      )}
+                    </span>
+                    {renaming?.id !== wallet.id && confirmRemove !== wallet.id && (
+                      <span className="flex items-center gap-1">
+                        {movable && (
+                          <>
+                            <MoveButton
+                              label="Move up"
+                              blocked={first}
+                              onClick={() => reorder(moveItem(shown, index, index - 1))}
+                            >
+                              <ChevronUp size={16} strokeWidth={1.5} aria-hidden />
+                            </MoveButton>
+                            <MoveButton
+                              label="Move down"
+                              blocked={last}
+                              onClick={() => reorder(moveItem(shown, index, index + 1))}
+                            >
+                              <ChevronDown size={16} strokeWidth={1.5} aria-hidden />
+                            </MoveButton>
+                          </>
+                        )}
+                        <WalletIconPicker
+                          name={wallet.name}
+                          value={wallet.icon}
+                          disabled={rescanning !== null}
+                          onChoose={(icon) =>
+                            void setIcon
+                              .mutateAsync({ id: wallet.id, icon })
+                              .then(() => showToast("Icon changed"))
+                          }
+                        />
+                        <Button
+                          variant="ghost"
+                          className="h-9"
+                          disabled={rescanning !== null}
+                          onClick={() => {
+                            setRescanning(wallet.id);
+                            void rescan
+                              .mutateAsync(wallet.id)
+                              .catch(() => undefined)
+                              .finally(() => setRescanning(null));
+                          }}
+                        >
+                          <ScanSearch size={14} strokeWidth={1.5} aria-hidden />
+                          {rescanning === wallet.id ? "Rescanning…" : "Rescan"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="h-9"
+                          disabled={rescanning !== null}
+                          onClick={() => {
                             setConfirmRemove(null);
-                            showToast("Wallet removed");
-                          })
-                        }
-                      >
-                        Remove wallet
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="h-9 hover:bg-surface hover:shadow-[inset_0_0_0_1px_var(--color-border)] dark:hover:bg-sunken dark:hover:shadow-none"
-                        onClick={() => setConfirmRemove(null)}
-                      >
-                        Cancel
-                      </Button>
-                    </span>}
-                  >
-                    Removing "{wallet.name}" deletes its labels and cached
-                    history from Gerfaut, and cannot be undone. It only stops
-                    watching: nothing moves on chain.
-                  </Notice>
-                )}
-              </li>
-            );
-          })}
+                            setRenaming({ id: wallet.id, name: wallet.name });
+                          }}
+                        >
+                          <Pencil size={14} strokeWidth={1.5} aria-hidden />
+                          Rename
+                        </Button>
+                        {/* A removal is a neutral action behind an explicit
+                            confirmation: Alerte is kept for coins moving. */}
+                        <Button
+                          variant="ghost"
+                          className="h-9"
+                          disabled={rescanning !== null}
+                          onClick={() => {
+                            setRenaming(null);
+                            setConfirmRemove(wallet.id);
+                          }}
+                        >
+                          <Trash2 size={14} strokeWidth={1.5} aria-hidden />
+                          Remove
+                        </Button>
+                      </span>
+                    )}
+                  </div>
+                  {syncErrors[wallet.id] && (
+                    <p className="mt-2 font-ui text-xs text-muted">
+                      {syncErrors[wallet.id]}
+                    </p>
+                  )}
+                  {confirmRemove === wallet.id && (
+                    <Notice
+                      tone="info"
+                      className="mt-3"
+                      action={<span className="flex items-center gap-2">
+                        <Button
+                          variant="primary"
+                          className="h-9"
+                          onClick={() =>
+                            void removeWallet.mutateAsync(wallet.id).then(() => {
+                              setConfirmRemove(null);
+                              showToast("Wallet removed");
+                            })
+                          }
+                        >
+                          Remove wallet
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="h-9 hover:bg-surface hover:shadow-[inset_0_0_0_1px_var(--color-border)] dark:hover:bg-sunken dark:hover:shadow-none"
+                          onClick={() => setConfirmRemove(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </span>}
+                    >
+                      Removing "{wallet.name}" deletes its labels and cached
+                      history from Gerfaut, and cannot be undone. It only stops
+                      watching: nothing moves on chain.
+                    </Notice>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
           <DropLine y={drag.lineY} />
-        </ul>
+        </div>
       )}
     </SectionCard>
   );
