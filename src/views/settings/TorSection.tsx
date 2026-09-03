@@ -1,3 +1,4 @@
+import { clsx } from "clsx";
 import { VenetianMask } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -60,6 +61,9 @@ export function TorSection({ tor }: { tor: TorSettings }) {
   const embedded = status.data?.embedded_available ?? false;
   const starting =
     connect.isPending && status.data?.running === true && !status.data.bootstrapped;
+  // Read out in steps of ten: the line is a live region, and one fed
+  // every second would have a screen reader say every step of the way.
+  const bootstrapped = Math.floor((status.data?.bootstrap_percent ?? 0) / 10) * 10;
 
   const apply = (next: Partial<TorSettings>) => {
     setRoute(null);
@@ -126,12 +130,15 @@ export function TorSection({ tor }: { tor: TorSettings }) {
             Reached through the {route.via === "system" ? "system Tor" : "built-in Tor"}.
           </p>
         )}
-        {starting && (
-          <p role="status" className="font-ui text-xs text-muted">
-            Starting the built-in Tor…{" "}
-            <span className="tabular">{status.data?.bootstrap_percent ?? 0} %</span>
-          </p>
-        )}
+        {/* Always in the tree, out of sight while it has nothing to say:
+            a live region born together with its text is often missed. */}
+        <p role="status" className={clsx("font-ui text-xs text-muted", !starting && "sr-only")}>
+          {starting && (
+            <>
+              Starting the built-in Tor… <span className="tabular">{bootstrapped}%</span>
+            </>
+          )}
+        </p>
         {problem && <p className="font-ui text-xs text-muted">{problem}</p>}
 
         <div>

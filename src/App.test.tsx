@@ -2881,4 +2881,50 @@ describe("tor", () => {
     });
     expect((sent as { settings: { mode: string } }).settings.mode).toBe("embedded");
   });
+
+  it("reads the built-in Tor's start in steps of ten", async () => {
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "get_settings":
+          return SETTINGS;
+        case "list_wallets":
+          return [WALLET];
+        case "tor_status":
+          return {
+            ...TOR_STATUS,
+            embedded_available: true,
+            running: true,
+            bootstrap_percent: 35,
+          };
+        case "tor_connect":
+          // Still starting: the answer never comes within the test.
+          return new Promise(() => undefined);
+        case "wallet_snapshot":
+          return SNAPSHOT;
+        case "utxos":
+          return [];
+        case "receive_addresses":
+          return receiveEntries(0);
+        case "fetch_price_history":
+          return PRICE_HISTORY;
+        case "set_app_pref":
+          return undefined;
+        case "sync_all":
+          return { reports: [], failures: [] };
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByRole("navigation", { name: "Navigation" });
+    await openSettings(user, "Network");
+
+    await user.click(await screen.findByRole("button", { name: "Test the connection" }));
+    const line = await screen.findByText(/starting the built-in tor/i);
+    expect(line).toHaveAttribute("role", "status");
+    // Announced at a coarse step, English spacing, no per-second chatter.
+    expect(line).toHaveTextContent(/Starting the built-in Tor… 30%$/);
+    expect(line).not.toHaveTextContent("35");
+  });
 });
