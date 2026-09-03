@@ -33,8 +33,14 @@ export function BalanceChart({ points, unit }: { points: BalancePoint[]; unit: U
   const plotRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [cursor, setCursor] = useState<number | null>(null);
+  // Whether the keyboard put the cursor where it is. Only then is the
+  // reading announced: a pointer sweeping the curve would otherwise
+  // have a screen reader say every point it crossed.
+  const [byKeyboard, setByKeyboard] = useState(false);
   // An id that survives `url(#…)`: the generated one carries punctuation.
-  const fillId = `balance-fill-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const fillId = `balance-fill-${id}`;
+  const hintId = `balance-hint-${id}`;
 
   useEffect(() => {
     const node = plotRef.current;
@@ -97,10 +103,14 @@ export function BalanceChart({ points, unit }: { points: BalancePoint[]; unit: U
     for (let i = 0; i < points.length; i += 1) {
       if (points[i].t <= t) best = i;
     }
+    setByKeyboard(false);
     setCursor(best);
   };
 
-  const step = (index: number) => setCursor(Math.max(0, Math.min(points.length - 1, index)));
+  const step = (index: number) => {
+    setByKeyboard(true);
+    setCursor(Math.max(0, Math.min(points.length - 1, index)));
+  };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const current = cursor ?? points.length - 1;
@@ -133,14 +143,21 @@ export function BalanceChart({ points, unit }: { points: BalancePoint[]; unit: U
       ref={plotRef}
       role="group"
       aria-label="Balance history chart"
+      aria-describedby={hintId}
       tabIndex={0}
       className="relative h-full min-h-[140px] select-none rounded-md"
       onPointerMove={(event) => locate(event.clientX)}
       onPointerLeave={() => setCursor(null)}
       onKeyDown={onKeyDown}
-      onFocus={() => setCursor((current) => current ?? points.length - 1)}
+      onFocus={() => {
+        setByKeyboard(true);
+        setCursor((current) => current ?? points.length - 1);
+      }}
       onBlur={() => setCursor(null)}
     >
+      <p id={hintId} className="sr-only">
+        Use the arrow keys to read each point.
+      </p>
       {geometry && (
         <svg
           width={geometry.width}
@@ -229,9 +246,11 @@ export function BalanceChart({ points, unit }: { points: BalancePoint[]; unit: U
           )}
         </svg>
       )}
-      {/* Always mounted, so a reading arriving by keyboard is announced. */}
+      {/* Always mounted, so a reading arriving by keyboard is announced;
+          quiet while the pointer drives. */}
       <div
         role="status"
+        aria-live={byKeyboard ? "polite" : "off"}
         className={clsx(
           "pointer-events-none absolute top-0 rounded-md border border-border bg-surface px-2 py-1 shadow-overlay",
           !hovered && "invisible",
