@@ -430,6 +430,46 @@ describe("settings sections", () => {
     expect(calls.some((call) => call.cmd === "set_wallet_icon")).toBe(false);
   });
 
+  it("moves a wallet down the list from the keyboard and keeps that order", async () => {
+    const second: WalletMeta = { ...WALLET, id: "w-2", name: "Lightning float", icon: "key" };
+    const calls = mockSettingsIpc({
+      reorder_wallets: () => undefined,
+      list_wallets: () => [WALLET, second],
+    });
+    act(() => useUi.getState().openSettings("wallets"));
+    renderSettings([WALLET, second]);
+    const user = userEvent.setup();
+    const card = screen.getByRole("heading", { name: "Wallets" }).closest("section")!;
+    const names = () =>
+      within(card)
+        .getAllByRole("listitem")
+        .map((row) => within(row).getByText(/storage|float/).textContent);
+    expect(names()).toEqual(["Cold storage", "Lightning float"]);
+
+    const row = screen.getByText("Cold storage").closest("li")!;
+    // Nowhere up to go from the top; down, then, and the order is sent whole.
+    expect(within(row).getByRole("button", { name: "Move up" })).toHaveAttribute("aria-disabled", "true");
+    await user.click(within(row).getByRole("button", { name: "Move up" }));
+    expect(calls.some((call) => call.cmd === "reorder_wallets")).toBe(false);
+    await user.click(within(row).getByRole("button", { name: "Move down" }));
+    expect(calls.filter((call) => call.cmd === "reorder_wallets").map((call) => call.args)).toEqual([
+      { ids: ["w-2", "w-1"] },
+    ]);
+    // Shown in the new order at once, before the vault is read again.
+    expect(names()).toEqual(["Lightning float", "Cold storage"]);
+    expect(within(row).getByRole("button", { name: "Move down" })).toHaveAttribute("aria-disabled", "true");
+    // The row that moved keeps the focus, on the control still usable.
+    expect(within(row).getByRole("button", { name: "Move down" })).toHaveFocus();
+  });
+
+  it("offers no reordering to a single wallet", () => {
+    mockSettingsIpc();
+    act(() => useUi.getState().openSettings("wallets"));
+    renderSettings();
+    expect(screen.queryByRole("button", { name: /^Move/ })).not.toBeInTheDocument();
+    expect(screen.queryByTitle("Drag to reorder")).not.toBeInTheDocument();
+  });
+
   it("walks the sections with the arrow keys", async () => {
     mockSettingsIpc();
     renderSettings();

@@ -1,12 +1,27 @@
-import { Check, Pencil, ScanSearch, Trash2, Wallet as WalletIcon, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  GripVertical,
+  Pencil,
+  ScanSearch,
+  Trash2,
+  Wallet as WalletIcon,
+  X,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import { clsx } from "clsx";
 import { Button, IconButton } from "../../components/Button";
+import { DropLine, useDragReorder } from "../../components/DragReorder";
 import { Notice } from "../../components/Notice";
 import type { WalletMeta } from "../../lib/ipc";
+import { moveItem, sortByIds } from "../../lib/reorder";
 import { walletGlyph } from "../../lib/walletIcons";
 import {
   useRemoveWallet,
   useRenameWallet,
+  useReorderWallets,
   useRescanWallet,
   useSetGapLimit,
   useSetWalletIcon,
@@ -51,17 +66,44 @@ function GapLimitField({ gapLimit }: { gapLimit: number }) {
   );
 }
 
-/** The shared gap limit, then every wallet of the shown network with
-    what can be done to it: change its icon, rescan, rename, remove. */
+/** The wallets of the shown network in the order they are listed,
+    kept here from the moment one is moved until the vault lists them
+    that way too. */
+function useWalletOrder(wallets: WalletMeta[]) {
+  const reorderWallets = useReorderWallets();
+  const [order, setOrder] = useState<string[] | null>(null);
+  const shown = useMemo(() => (order ? sortByIds(wallets, order) : wallets), [wallets, order]);
+
+  // Once the vault lists them in the order asked for, the copy goes.
+  useEffect(() => {
+    if (order && wallets.map((wallet) => wallet.id).join() === order.join()) setOrder(null);
+  }, [wallets, order]);
+
+  const reorder = (next: WalletMeta[]) => {
+    const ids = next.map((wallet) => wallet.id);
+    setOrder(ids);
+    reorderWallets.mutate(ids, { onError: () => setOrder(null) });
+  };
+
+  return { shown, reorder };
+}
+
+/** The shared gap limit, then every wallet of the shown network in the
+    order it is listed everywhere, with what can be done to it: move,
+    change its icon, rescan, rename, remove. */
 export function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; gapLimit: number }) {
   const { showToast, syncErrors } = useUi();
   const removeWallet = useRemoveWallet();
   const renameWallet = useRenameWallet();
   const setIcon = useSetWalletIcon();
   const rescan = useRescanWallet();
+  const { shown, reorder } = useWalletOrder(wallets);
+  const drag = useDragReorder(shown, reorder);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [rescanning, setRescanning] = useState<string | null>(null);
+  // One wallet has no order to speak of.
+  const movable = shown.length > 1;
 
   const commitRename = () => {
     if (!renaming || renaming.name.trim().length === 0) return;
@@ -86,20 +128,42 @@ export function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; g
           <GapLimitField gapLimit={gapLimit} />
         </SettingRow>
       </div>
-      {wallets.length === 0 ? (
+      {shown.length === 0 ? (
         <p className="font-ui text-sm text-muted">No wallets on this network yet.</p>
       ) : (
-        <ul className="flex flex-col gap-2">
-          {wallets.map((wallet) => {
+        <ul ref={drag.listRef} className="relative flex flex-col gap-2">
+          {shown.map((wallet, index) => {
             const single = wallet.kind.type === "single_address";
             const Glyph = walletGlyph(wallet.icon);
+            const dragging = drag.dragging === index;
+            const first = index === 0;
+            const last = index === shown.length - 1;
             return (
               <li
                 key={wallet.id}
-                className="rounded-md border border-border px-4 py-3"
+                {...drag.rowProps(index)}
+                className={clsx(
+                  "group rounded-md border border-border bg-surface py-3 pr-4",
+                  movable ? "pl-2" : "pl-4",
+                  dragging && "relative z-10 opacity-80",
+                )}
               >
                 <div className="flex items-center justify-between gap-3">
                   <span className="flex min-w-0 items-center gap-2.5">
+                    {movable && (
+                      <span
+                        aria-hidden
+                        title="Drag to reorder"
+                        {...drag.handleProps(index)}
+                        className={clsx(
+                          "inline-flex h-8 w-6 shrink-0 items-center justify-center rounded-sm text-muted/50",
+                          "transition-colors duration-150 hover:text-muted",
+                          dragging ? "cursor-grabbing" : "cursor-grab",
+                        )}
+                      >
+                        <GripVertical size={16} strokeWidth={1.5} />
+                      </span>
+                    )}
                     <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-sunken text-text">
                       <Glyph size={16} strokeWidth={1.5} aria-hidden />
                     </span>
@@ -146,6 +210,24 @@ export function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; g
                   </span>
                   {renaming?.id !== wallet.id && confirmRemove !== wallet.id && (
                     <span className="flex items-center gap-1">
+                      {movable && (
+                        <>
+                          <MoveButton
+                            label="Move up"
+                            blocked={first}
+                            onClick={() => reorder(moveItem(shown, index, index - 1))}
+                          >
+                            <ChevronUp size={16} strokeWidth={1.5} aria-hidden />
+                          </MoveButton>
+                          <MoveButton
+                            label="Move down"
+                            blocked={last}
+                            onClick={() => reorder(moveItem(shown, index, index + 1))}
+                          >
+                            <ChevronDown size={16} strokeWidth={1.5} aria-hidden />
+                          </MoveButton>
+                        </>
+                      )}
                       <WalletIconPicker
                         name={wallet.name}
                         value={wallet.icon}
@@ -236,8 +318,40 @@ export function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; g
               </li>
             );
           })}
+          <DropLine y={drag.lineY} />
         </ul>
       )}
     </SectionCard>
+  );
+}
+
+/** The keyboard's way of moving a row: shown when the row is hovered
+    or holds the focus, dimmed at the end it cannot pass. It stays
+    focusable there, so the focus is not dropped on the floor when a
+    row reaches the top or the bottom. */
+function MoveButton({
+  label,
+  blocked,
+  onClick,
+  children,
+}: {
+  label: string;
+  blocked: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <IconButton
+      label={label}
+      aria-disabled={blocked || undefined}
+      onClick={blocked ? undefined : onClick}
+      className={clsx(
+        "size-9 opacity-0 transition-opacity duration-150",
+        "focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100",
+        blocked && "cursor-default text-muted/40 hover:bg-transparent hover:text-muted/40 active:scale-100",
+      )}
+    >
+      {children}
+    </IconButton>
   );
 }
