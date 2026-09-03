@@ -6,9 +6,10 @@ import { useUi } from "../../state/store";
 import { BackendSection, NETWORKS } from "./BackendSection";
 import { CertificatesSection } from "./CertificatesSection";
 import { SectionCard } from "./primitives";
+import { TorSection } from "./TorSection";
 
-/** The chain the workspace watches, where its data comes from, and the
-    certificates accepted along the way. */
+/** The chain the workspace watches, where its data comes from, how
+    Tor is reached, and the certificates accepted along the way. */
 export function NetworkSection({ settings }: { settings: Settings }) {
   const { showToast } = useUi();
   const setActiveNetwork = useSetActiveNetwork();
@@ -75,6 +76,8 @@ export function NetworkSection({ settings }: { settings: Settings }) {
         }
         saving={setBackend.isPending}
       />
+
+      <TorSection tor={settings.tor} />
 
       <CertificatesSection certs={settings.electrum_certs ?? {}} />
     </>

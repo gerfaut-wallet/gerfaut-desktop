@@ -49,8 +49,18 @@ const PRICE_SOURCES: { value: PriceSource; label: string }[] = [
   { value: "mempool_space", label: "mempool.space" },
 ];
 
+/** How the app reads: amounts and theme. */
+export function GeneralSection() {
+  return (
+    <>
+      <DisplayCard />
+      <AppearanceCard />
+    </>
+  );
+}
+
 /** Unit, fiat value, currency and price source: how amounts read. */
-export function DisplayCard() {
+function DisplayCard() {
   const {
     unit,
     setUnit,
@@ -143,7 +153,7 @@ export function DisplayCard() {
 }
 
 /** The theme: light by default, dark, or the system's. */
-export function AppearanceCard() {
+function AppearanceCard() {
   const { theme, setTheme } = useUi();
 
   return (

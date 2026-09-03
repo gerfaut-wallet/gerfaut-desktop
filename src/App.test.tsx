@@ -576,6 +576,13 @@ function sidebar() {
   return within(screen.getByRole("navigation", { name: "Navigation" }));
 }
 
+/** Opens Settings from the sidebar, then one of its sections. */
+async function openSettings(user: ReturnType<typeof userEvent.setup>, section: string) {
+  await user.click(sidebar().getByRole("button", { name: "Settings" }));
+  const nav = await screen.findByRole("navigation", { name: "Settings sections" });
+  await user.click(within(nav).getByRole("button", { name: section }));
+}
+
 /** Picks a row of the shared Select by its visible label. */
 async function choose(user: ReturnType<typeof userEvent.setup>, name: string | RegExp, label: string) {
   await user.click(screen.getByRole("combobox", { name }));
@@ -629,6 +636,7 @@ const PREVIEW = {
 beforeEach(() => {
   useUi.setState({
     view: "home",
+    settingsSection: "general",
     activeWalletId: null,
     selectedTxid: null,
     addWalletOpen: false,
@@ -1313,15 +1321,17 @@ describe("display settings", () => {
     await user.click(sidebar().getByRole("button", { name: "Settings" }));
     expect(await screen.findByText("Shows the fiat value next to every amount.")).toBeInTheDocument();
     expect(screen.getByText("Serves the fiat value and the overview price.")).toBeInTheDocument();
-    expect(
-      screen.getByText(/How many unused addresses Gerfaut scans past the last used one\./),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/20 is the norm/)).not.toBeInTheDocument();
     expect(screen.queryByText(/expose this app's IP/)).not.toBeInTheDocument();
     for (const name of ["Light", "Dark", "System"]) {
       expect(screen.getByRole("radio", { name }).querySelector("svg")).not.toBeNull();
     }
+    await openSettings(user, "Wallets");
+    expect(
+      screen.getByText(/How many unused addresses Gerfaut scans past the last used one\./),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/20 is the norm/)).not.toBeInTheDocument();
     // The backend form has one primary action, like every other form.
+    await openSettings(user, "Network");
     expect(screen.getByRole("button", { name: "Save backend" })).toHaveClass("bg-primary");
   });
 
@@ -1336,7 +1346,7 @@ describe("display settings", () => {
     renderApp();
     const user = userEvent.setup();
     await screen.findByText("Bitcoin price");
-    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+    await openSettings(user, "Network");
 
     const select = await screen.findByRole("combobox", { name: "Public server" });
     expect(select).toHaveTextContent("Automatic");
@@ -1432,7 +1442,7 @@ describe("display settings", () => {
     renderApp();
     const user = userEvent.setup();
     await screen.findByText("Bitcoin price");
-    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+    await openSettings(user, "Wallets");
     const field = await screen.findByRole("textbox", { name: /gap limit/i });
     expect(field).toHaveValue("20");
     await user.clear(field);
@@ -1738,7 +1748,7 @@ describe("electrum certificates", () => {
   /** Reaching the Electrum form and filling in one host. */
   async function fillElectrumForm(user: ReturnType<typeof userEvent.setup>) {
     await screen.findByText("Bitcoin price");
-    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+    await openSettings(user, "Network");
     await user.click(
       await screen.findByRole("radio", { name: /My own Electrum server/ }),
     );
@@ -1872,7 +1882,7 @@ describe("electrum certificates", () => {
     renderApp();
     const user = userEvent.setup();
     await screen.findByText("Bitcoin price");
-    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+    await openSettings(user, "Network");
     await user.click(await screen.findByRole("combobox", { name: "Public server" }));
     const list = await screen.findByRole("listbox", { name: "Public server" });
     expect(
@@ -1898,7 +1908,7 @@ describe("electrum certificates", () => {
     renderApp();
     const user = userEvent.setup();
     await screen.findByText("Bitcoin price");
-    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+    await openSettings(user, "Network");
 
     expect(await screen.findByText("Trusted certificates")).toBeInTheDocument();
     expect(screen.getByText("node.example.org:50002")).toBeInTheDocument();
@@ -2685,7 +2695,7 @@ describe("tor", () => {
     const user = userEvent.setup();
     // The sidebar only exists once the vault and its wallets are in.
     await screen.findByRole("navigation", { name: "Navigation" });
-    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+    await openSettings(user, "Network");
 
     // No built-in client here: the option is shown, not offered, and
     // the copy says why rather than failing later.
@@ -2729,7 +2739,7 @@ describe("tor", () => {
     renderApp();
     const user = userEvent.setup();
     await screen.findByRole("navigation", { name: "Navigation" });
-    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+    await openSettings(user, "Network");
 
     await user.click(await screen.findByRole("radio", { name: "Built-in" }));
     await waitFor(() => {
