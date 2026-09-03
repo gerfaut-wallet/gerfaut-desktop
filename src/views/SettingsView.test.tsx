@@ -448,6 +448,20 @@ describe("settings sections", () => {
     expect(calls.some((call) => call.cmd === "set_wallet_icon")).toBe(false);
   });
 
+  it("closes the icon picker on Tab and hands the focus back to the action", async () => {
+    const calls = mockSettingsIpc();
+    act(() => useUi.getState().openSettings("wallets"));
+    renderSettings();
+    const user = userEvent.setup();
+    const trigger = screen.getByRole("button", { name: "Icon" });
+    await user.click(trigger);
+    expect(screen.getByRole("radiogroup")).toBeInTheDocument();
+    await user.tab();
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(calls.some((call) => call.cmd === "set_wallet_icon")).toBe(false);
+  });
+
   it("moves a wallet down the list from the keyboard and keeps that order", async () => {
     const second: WalletMeta = { ...WALLET, id: "w-2", name: "Lightning float", icon: "key" };
     // The vault lists the wallets in the order it was last given.

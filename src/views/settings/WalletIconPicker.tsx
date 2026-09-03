@@ -72,7 +72,10 @@ export function WalletIconPicker({
         close(true);
         break;
       case "Tab":
-        setOpen(false);
+        // Leaving closes, and the focus goes back to the action rather
+        // than being dropped with the group it was standing in.
+        event.preventDefault();
+        close(true);
         break;
     }
   };
