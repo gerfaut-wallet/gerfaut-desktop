@@ -69,7 +69,7 @@ export function HomeView({ walletId }: { walletId: string }) {
     <div className="flex h-full min-h-[560px] flex-col pb-2">
       {/* No freshness line here: Watch status carries it below. */}
       <header className="px-1 pb-4 pt-2">
-        <WalletTitle meta={meta} />
+        <WalletTitle key={meta.id} meta={meta} />
       </header>
 
       <div className="flex min-h-0 flex-1 gap-4 max-lg:flex-col">
@@ -134,10 +134,10 @@ function WalletTitle({ meta }: { meta: WalletMeta }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(meta.name);
   const [error, setError] = useState<string | null>(null);
-  // The name the core accepted, kept on screen until the snapshot
-  // repeats it: the refetch trails the write by a frame, and the old
-  // name must not flash back in between.
-  const [accepted, setAccepted] = useState<string | null>(null);
+  // The name the core accepted, shown over the one it replaced until
+  // the snapshot moves: the refetch trails the write by a frame, and
+  // the old name must not flash back in between.
+  const [accepted, setAccepted] = useState<{ name: string; over: string } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   // Enter, Escape and blur can all fire for one edit: the first counts.
@@ -146,7 +146,7 @@ function WalletTitle({ meta }: { meta: WalletMeta }) {
   // stays where the pointer went when a click did.
   const returnFocus = useRef(false);
 
-  const name = accepted !== null && accepted !== meta.name ? accepted : meta.name;
+  const name = accepted !== null && accepted.over === meta.name ? accepted.name : meta.name;
 
   useEffect(() => {
     if (editing) {
@@ -182,7 +182,7 @@ function WalletTitle({ meta }: { meta: WalletMeta }) {
       { id: meta.id, name: next },
       {
         onSuccess: () => {
-          setAccepted(next);
+          setAccepted({ name: next, over: meta.name });
           close();
         },
         onError: (failure) => {
@@ -201,8 +201,11 @@ function WalletTitle({ meta }: { meta: WalletMeta }) {
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter") finish(true);
-            else if (event.key === "Escape") finish(false);
+            if (event.key !== "Enter" && event.key !== "Escape") return;
+            // Closing hands focus to the title button, and the same
+            // key's press would then activate it and reopen the field.
+            event.preventDefault();
+            finish(event.key === "Enter");
           }}
           onBlur={() => finish(true)}
           readOnly={rename.isPending}
