@@ -382,6 +382,54 @@ describe("settings sections", () => {
     expect(nav().getByRole("button", { name: "Wallets" })).toHaveAttribute("aria-current", "page");
   });
 
+  it("changes a wallet's icon from the picker", async () => {
+    const calls = mockSettingsIpc({ set_wallet_icon: () => undefined });
+    act(() => useUi.getState().openSettings("wallets"));
+    renderSettings();
+    const user = userEvent.setup();
+    const row = screen.getByText("Cold storage").closest("li")!;
+    // The row wears the icon the core stores.
+    expect(row.querySelector("svg.lucide-wallet")).not.toBeNull();
+
+    await user.click(within(row).getByRole("button", { name: "Icon" }));
+    const group = screen.getByRole("radiogroup", { name: "Icon of Cold storage" });
+    expect(within(group).getAllByRole("radio")).toHaveLength(7);
+    const wallet = within(group).getByRole("radio", { name: "Wallet" });
+    expect(wallet).toHaveAttribute("aria-checked", "true");
+    expect(wallet).toHaveFocus();
+
+    // Arrows move without choosing; Enter chooses.
+    await user.keyboard("{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}");
+    expect(within(group).getByRole("radio", { name: "Snowflake" })).toHaveFocus();
+    expect(calls.filter((call) => call.cmd === "set_wallet_icon")).toHaveLength(0);
+    await user.keyboard("{Enter}");
+    expect(calls.filter((call) => call.cmd === "set_wallet_icon").map((call) => call.args)).toEqual([
+      { id: "w-1", icon: "snowflake" },
+    ]);
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "Icon" })).toHaveFocus();
+  });
+
+  it("closes the icon picker on Escape or a click outside, choosing nothing", async () => {
+    const calls = mockSettingsIpc();
+    act(() => useUi.getState().openSettings("wallets"));
+    renderSettings();
+    const user = userEvent.setup();
+    const trigger = screen.getByRole("button", { name: "Icon" });
+    await user.click(trigger);
+    expect(screen.getByRole("radiogroup")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+
+    await user.click(trigger);
+    await user.keyboard("{ArrowLeft}");
+    expect(screen.getByRole("radio", { name: "Piggy bank" })).toHaveFocus();
+    await user.click(screen.getByRole("heading", { name: "Wallets" }));
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+    expect(calls.some((call) => call.cmd === "set_wallet_icon")).toBe(false);
+  });
+
   it("walks the sections with the arrow keys", async () => {
     mockSettingsIpc();
     renderSettings();

@@ -3,14 +3,17 @@ import { useEffect, useState } from "react";
 import { Button, IconButton } from "../../components/Button";
 import { Notice } from "../../components/Notice";
 import type { WalletMeta } from "../../lib/ipc";
+import { walletGlyph } from "../../lib/walletIcons";
 import {
   useRemoveWallet,
   useRenameWallet,
   useRescanWallet,
   useSetGapLimit,
+  useSetWalletIcon,
 } from "../../state/queries";
 import { useUi } from "../../state/store";
 import { SectionCard, SettingRow } from "./primitives";
+import { WalletIconPicker } from "./WalletIconPicker";
 
 /** Numeric gap-limit field: commits on blur or Enter, clamped to what
     the backend accepts, shared by every wallet. */
@@ -49,11 +52,12 @@ function GapLimitField({ gapLimit }: { gapLimit: number }) {
 }
 
 /** The shared gap limit, then every wallet of the shown network with
-    what can be done to it: rescan, rename, remove. */
+    what can be done to it: change its icon, rescan, rename, remove. */
 export function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; gapLimit: number }) {
   const { showToast, syncErrors } = useUi();
   const removeWallet = useRemoveWallet();
   const renameWallet = useRenameWallet();
+  const setIcon = useSetWalletIcon();
   const rescan = useRescanWallet();
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
@@ -88,6 +92,7 @@ export function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; g
         <ul className="flex flex-col gap-2">
           {wallets.map((wallet) => {
             const single = wallet.kind.type === "single_address";
+            const Glyph = walletGlyph(wallet.icon);
             return (
               <li
                 key={wallet.id}
@@ -95,8 +100,8 @@ export function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; g
               >
                 <div className="flex items-center justify-between gap-3">
                   <span className="flex min-w-0 items-center gap-2.5">
-                    <span className="text-muted">
-                      <WalletIcon size={16} strokeWidth={1.5} aria-hidden />
+                    <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-sunken text-text">
+                      <Glyph size={16} strokeWidth={1.5} aria-hidden />
                     </span>
                     {renaming?.id === wallet.id ? (
                       <span className="flex items-center gap-1.5">
@@ -141,6 +146,16 @@ export function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; g
                   </span>
                   {renaming?.id !== wallet.id && confirmRemove !== wallet.id && (
                     <span className="flex items-center gap-1">
+                      <WalletIconPicker
+                        name={wallet.name}
+                        value={wallet.icon}
+                        disabled={rescanning !== null}
+                        onChoose={(icon) =>
+                          void setIcon
+                            .mutateAsync({ id: wallet.id, icon })
+                            .then(() => showToast("Icon changed"))
+                        }
+                      />
                       <Button
                         variant="ghost"
                         className="h-9"
