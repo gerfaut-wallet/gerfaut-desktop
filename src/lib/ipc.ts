@@ -104,7 +104,7 @@ export type WalletIconId =
   | "piggy_bank";
 
 /** Every icon, in the order the picker shows them. */
-export const WALLET_ICONS: WalletIconId[] = [
+export const WALLET_ICONS = [
   "wallet",
   "key",
   "shield",
@@ -112,7 +112,7 @@ export const WALLET_ICONS: WalletIconId[] = [
   "snowflake",
   "landmark",
   "piggy_bank",
-];
+] as const satisfies readonly WalletIconId[];
 
 export interface WalletMeta {
   id: string;
