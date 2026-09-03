@@ -105,7 +105,7 @@ export function WalletIconPicker({
           role="radiogroup"
           aria-label={`Icon of ${name}`}
           onKeyDown={onKeyDown}
-          className="absolute right-0 top-full z-30 mt-1.5 flex gap-1 rounded-lg border border-border bg-surface p-1.5 shadow-overlay"
+          className="absolute right-0 top-full z-30 mt-1.5 flex gap-1 rounded-md border border-border bg-surface p-1.5 shadow-overlay"
         >
           {WALLET_ICONS.map((icon) => {
             const Glyph = WALLET_ICON[icon];

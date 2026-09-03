@@ -403,7 +403,7 @@ function WalletSwitcher({
           role="menu"
           aria-label="Wallets"
           className={clsx(
-            "absolute z-40 max-h-[60vh] overflow-y-auto rounded-lg bg-surface p-1.5 shadow-overlay",
+            "absolute z-40 max-h-[60vh] overflow-y-auto rounded-md bg-surface p-1.5 shadow-overlay",
             collapsed ? "left-full top-0 ml-2 w-64" : "left-3 right-3 top-full mt-1.5",
           )}
         >
