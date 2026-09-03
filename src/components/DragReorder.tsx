@@ -114,7 +114,12 @@ export function useDragReorder<T>(items: T[], onReorder: (next: T[]) => void): D
       }
     };
     window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      // A list unmounted mid-drag (the menu closing) must not leave the
+      // grabbing hand on the whole page.
+      document.body.style.cursor = "";
+    };
     // `finish` reads refs only, so the one captured here stays right.
   }, [active]);
 

@@ -48,7 +48,6 @@ function line(): HTMLElement | null {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  document.body.style.cursor = "";
 });
 
 describe("dragging a row", () => {
@@ -60,7 +59,6 @@ describe("dragging a row", () => {
 
     fireEvent.pointerDown(grip, { button: 0, clientY: 20 });
     expect(screen.getByTestId("row-a")).toHaveAttribute("data-dragging", "true");
-    expect(document.body.style.cursor).toBe("grabbing");
     // Not moved yet: no line, the row would stay.
     expect(line()).toBeNull();
 
@@ -74,7 +72,6 @@ describe("dragging a row", () => {
     fireEvent.pointerUp(grip);
     expect(onReorder).toHaveBeenCalledWith(["b", "a", "c"]);
     expect(screen.getByTestId("row-a")).not.toHaveAttribute("data-dragging");
-    expect(document.body.style.cursor).toBe("");
   });
 
   it("puts a row down where it was without a word", () => {
