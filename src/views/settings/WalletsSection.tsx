@@ -319,17 +319,22 @@ function MoveButton({
   children: ReactNode;
 }) {
   return (
-    <IconButton
-      label={label}
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
       aria-disabled={blocked || undefined}
       onClick={blocked ? undefined : onClick}
       className={clsx(
-        "size-9 opacity-0 transition-opacity duration-150",
+        "inline-flex size-9 items-center justify-center rounded-md",
+        "opacity-0 transition-[color,background-color,opacity] duration-150 ease-out",
         "focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100",
-        blocked && "cursor-default text-muted/40 hover:bg-transparent hover:text-muted/40 active:scale-100",
+        blocked
+          ? "cursor-default text-muted/40"
+          : "cursor-pointer text-muted hover:bg-sunken hover:text-text active:scale-[0.96]",
       )}
     >
       {children}
-    </IconButton>
+    </button>
   );
 }

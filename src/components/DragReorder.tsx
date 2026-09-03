@@ -114,7 +114,6 @@ export function useDragReorder<T>(items: T[], onReorder: (next: T[]) => void): D
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
     // `finish` reads refs only, so the one captured here stays right.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
   const lineY = (() => {
