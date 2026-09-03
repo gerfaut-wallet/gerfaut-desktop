@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BackendConfig, ScannedBackend, Settings, WalletMeta } from "../lib/ipc";
 import { useWallets } from "../state/queries";
 import { useUi } from "../state/store";
-import { BackendSection, SettingsView } from "./SettingsView";
+import { BackendSection } from "./settings/BackendSection";
+import { SettingsView } from "./SettingsView";
 
 // The camera is a button that hands one code over, the way the scanner
 // does once its frames assemble. What it takes to decode them is the

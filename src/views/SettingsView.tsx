@@ -12,13 +12,6 @@ import { SecuritySection } from "./settings/SecuritySection";
 import { SettingsNav } from "./settings/SettingsNav";
 import { WalletsSection } from "./settings/WalletsSection";
 
-export { BackendSection, buildElectrumUrl, parseElectrumUrl } from "./settings/BackendSection";
-export {
-  CertificateDialog,
-  CertificatesSection,
-  Fingerprint,
-} from "./settings/CertificatesSection";
-
 /** Settings, one section at a time. The sub-navigation picks it and
     the store remembers it: the sidebar's Settings entry comes back to
     where one left off, and any view can open a section directly. */
