@@ -1,7 +1,7 @@
 // Axes for the balance chart: the levels a y-axis is ruled at, the
 // calendar ticks of an x-axis, and the short figures that fit a gutter.
 
-import { LOCALE, groupThousands } from "./format";
+import { MONTHS, groupThousands } from "./format";
 import type { Unit } from "./format";
 
 /** The steps a decade is cut in: 1, 2, 5, then the next decade. */
@@ -153,7 +153,7 @@ function pad(value: number): string {
 /** A tick in the words of its unit: "14:00", "12 Mar", "Mar 2026", "2026". */
 function tickLabel(t: number, unit: DateUnit): string {
   const date = new Date(t * 1000);
-  const month = date.toLocaleDateString(LOCALE, { month: "short" });
+  const month = MONTHS[date.getMonth()];
   switch (unit) {
     case "hour":
       return `${pad(date.getHours())}:${pad(date.getMinutes())}`;

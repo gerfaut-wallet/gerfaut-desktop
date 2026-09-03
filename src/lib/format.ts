@@ -71,8 +71,8 @@ export const LOCALE = "en-US";
 
 /** Month names spelled out rather than asked of the platform: the
     mobile app carries the same table, and a block's date has to read
-    the same on both. */
-const MONTHS = [
+    the same on both. The chart axis borrows it for the same reason. */
+export const MONTHS = [
   "Jan",
   "Feb",
   "Mar",
