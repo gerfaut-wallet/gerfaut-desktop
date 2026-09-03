@@ -1,6 +1,7 @@
 import { clsx } from "clsx";
 import {
   AlertTriangle,
+  Archive,
   ArrowDownLeft,
   ArrowLeftRight,
   ArrowUpRight,
@@ -8,6 +9,7 @@ import {
   Clock,
   Coins,
   Route,
+  Wallet,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Balance, ListAmount } from "../components/Amount";
@@ -72,6 +74,7 @@ export function HomeView({ walletId }: { walletId: string }) {
             error={syncErrors[walletId] ?? null}
           />
           <PriceCard />
+          <ShortcutsCard />
           <StatusCard snapshot={snapshot.data} error={syncErrors[walletId] ?? null} />
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-4">
@@ -205,7 +208,7 @@ function LinkRow({
 }: {
   icon: ReactNode;
   figure: string;
-  label: string;
+  label?: string;
   /** Where the row leads, for a reader who cannot see the icon. */
   hint?: string;
   onClick: () => void;
@@ -308,9 +311,33 @@ function PriceCard() {
   );
 }
 
-/** Recommended fee rates: when to hurry, when to consolidate. Three
-    tiles, each a target in blocks, the unit the estimates are made in.
-    Regtest has no fee market and hides the card entirely. */
+/** The two settings a watcher reaches for from the overview, as rows
+    that lead there: the backup, and the wallet list. Structure, not
+    amounts — visible in masked mode like the count rows above. */
+function ShortcutsCard() {
+  const { openSettings } = useUi();
+  return (
+    <Card label="Shortcuts">
+      <div className="-mx-2 -my-1">
+        <LinkRow
+          icon={<Archive size={15} strokeWidth={1.5} aria-hidden />}
+          figure="Backup & sync"
+          onClick={() => openSettings("backup")}
+        />
+        <LinkRow
+          icon={<Wallet size={15} strokeWidth={1.5} aria-hidden />}
+          figure="Manage wallets"
+          hint="rename, reorder, remove"
+          onClick={() => openSettings("wallets")}
+        />
+      </div>
+    </Card>
+  );
+}
+
+/** Where the watch stands: when it last reached a backend, which one,
+    and how far the chain had got. The action leads to the node
+    settings, where the backend is chosen. */
 function StatusCard({ snapshot, error }: { snapshot: WalletSnapshot; error: string | null }) {
   const { meta, tip_height } = snapshot;
   const rows: { label: string; value: ReactNode; detail?: string }[] = [
