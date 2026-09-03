@@ -134,10 +134,11 @@ function WalletTitle({ meta }: { meta: WalletMeta }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(meta.name);
   const [error, setError] = useState<string | null>(null);
-  // The name the core accepted, shown over the one it replaced until
-  // the snapshot moves: the refetch trails the write by a frame, and
-  // the old name must not flash back in between.
-  const [accepted, setAccepted] = useState<{ name: string; over: string } | null>(null);
+  // The name the core accepted, shown until the snapshot says it too:
+  // the refetch trails the write by a frame, and neither the old name
+  // nor, when two renames follow each other, the one in between must
+  // flash back meanwhile.
+  const [accepted, setAccepted] = useState<string | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   // Enter, Escape and blur can all fire for one edit: the first counts.
@@ -146,7 +147,11 @@ function WalletTitle({ meta }: { meta: WalletMeta }) {
   // stays where the pointer went when a click did.
   const returnFocus = useRef(false);
 
-  const name = accepted !== null && accepted.over === meta.name ? accepted.name : meta.name;
+  const name = accepted ?? meta.name;
+
+  useEffect(() => {
+    if (accepted !== null && meta.name === accepted) setAccepted(null);
+  }, [meta.name, accepted]);
 
   useEffect(() => {
     if (editing) {
@@ -182,7 +187,7 @@ function WalletTitle({ meta }: { meta: WalletMeta }) {
       { id: meta.id, name: next },
       {
         onSuccess: () => {
-          setAccepted({ name: next, over: meta.name });
+          setAccepted(next);
           close();
         },
         onError: (failure) => {
@@ -195,35 +200,37 @@ function WalletTitle({ meta }: { meta: WalletMeta }) {
 
   return (
     <div>
-      {editing ? (
-        <input
-          ref={inputRef}
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter" && event.key !== "Escape") return;
-            // Closing hands focus to the title button, and the same
-            // key's press would then activate it and reopen the field.
-            event.preventDefault();
-            finish(event.key === "Enter");
-          }}
-          onBlur={() => finish(true)}
-          readOnly={rename.isPending}
-          aria-busy={rename.isPending || undefined}
-          aria-label="Wallet name"
-          className={clsx(
-            "field-focus selectable block w-full max-w-md bg-sunken",
-            TITLE_TEXT,
-            TITLE_BOX,
-          )}
-        />
-      ) : (
-        <h1 aria-label={name} className={TITLE_TEXT}>
+      {/* The heading stays whether it is read or edited: the page keeps
+          its title in the outline while the field is open. */}
+      <h1 aria-label={name} className={TITLE_TEXT}>
+        {editing ? (
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== "Escape") return;
+              // Closing hands focus to the title button, and the same
+              // key's press would then activate it and reopen the field.
+              event.preventDefault();
+              finish(event.key === "Enter");
+            }}
+            onBlur={() => finish(true)}
+            readOnly={rename.isPending}
+            aria-busy={rename.isPending || undefined}
+            aria-label="Wallet name"
+            className={clsx(
+              "field-focus selectable block w-full max-w-md bg-sunken",
+              TITLE_TEXT,
+              TITLE_BOX,
+            )}
+          />
+        ) : (
           <button
             ref={buttonRef}
             type="button"
             onClick={begin}
-            aria-label="Rename this wallet"
+            aria-label={`Rename ${name}`}
             className={clsx(
               "group inline-flex max-w-full cursor-pointer items-center gap-2 text-left transition-colors duration-150",
               "hover:bg-sunken/60 focus-visible:bg-sunken/60",
@@ -238,8 +245,8 @@ function WalletTitle({ meta }: { meta: WalletMeta }) {
               className="shrink-0 text-muted opacity-0 transition-opacity duration-150 group-hover:opacity-60 group-focus-visible:opacity-60"
             />
           </button>
-        </h1>
-      )}
+        )}
+      </h1>
       {error && (
         <p role="status" className="mt-1 font-ui text-xs text-muted">
           {error}

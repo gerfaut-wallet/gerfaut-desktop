@@ -867,18 +867,20 @@ describe("overview", () => {
     renderApp();
     const user = userEvent.setup();
     expect(await screen.findByRole("heading", { name: "Cold storage" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Rename this wallet" }));
-    // The title becomes the field, prefilled and ready to overtype.
+    await user.click(screen.getByRole("button", { name: "Rename Cold storage" }));
+    // The title becomes the field, prefilled and ready to overtype; the
+    // page keeps its heading meanwhile.
     const field = screen.getByRole("textbox", { name: "Wallet name" });
     expect(field).toHaveFocus();
     expect(field).toHaveValue("Cold storage");
+    expect(screen.getByRole("heading", { name: "Cold storage" })).toContainElement(field);
     await user.clear(field);
     await user.type(field, "  Vault {Enter}");
     await waitFor(() => expect(renames).toEqual([{ id: "w-1", name: "Vault" }]));
     // The accepted name shows at once, and the keyboard lands back on
     // the title it left.
     expect(await screen.findByRole("heading", { name: "Vault" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Rename this wallet" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Rename Vault" })).toHaveFocus();
   });
 
   it("writes nothing for an escaped, unchanged or empty name", async () => {
@@ -891,18 +893,18 @@ describe("overview", () => {
     });
     renderApp();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "Rename this wallet" }));
+    await user.click(await screen.findByRole("button", { name: "Rename Cold storage" }));
     await user.clear(screen.getByRole("textbox", { name: "Wallet name" }));
     await user.keyboard("Nope{Escape}");
     expect(screen.getByRole("heading", { name: "Cold storage" })).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "Wallet name" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Rename this wallet" }));
+    await user.click(screen.getByRole("button", { name: "Rename Cold storage" }));
     expect(screen.getByRole("textbox", { name: "Wallet name" })).toHaveFocus();
     await user.keyboard("{Enter}");
     expect(screen.getByRole("heading", { name: "Cold storage" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Rename this wallet" }));
+    await user.click(screen.getByRole("button", { name: "Rename Cold storage" }));
     await user.clear(screen.getByRole("textbox", { name: "Wallet name" }));
     await user.keyboard("   {Enter}");
     expect(screen.getByRole("heading", { name: "Cold storage" })).toBeInTheDocument();
@@ -917,7 +919,7 @@ describe("overview", () => {
     });
     renderApp();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "Rename this wallet" }));
+    await user.click(await screen.findByRole("button", { name: "Rename Cold storage" }));
     await user.clear(screen.getByRole("textbox", { name: "Wallet name" }));
     await user.keyboard("Too long{Enter}");
     const note = await screen.findByText("a wallet name cannot exceed 64 characters");
