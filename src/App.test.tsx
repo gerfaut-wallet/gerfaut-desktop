@@ -1093,6 +1093,27 @@ describe("navigation", () => {
     geometry.mockRestore();
   });
 
+  it("opens Settings on the section asked for, and comes back to the last one", async () => {
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+
+    act(() => useUi.getState().openSettings("wallets"));
+    expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    const nav = () => within(screen.getByRole("navigation", { name: "Settings sections" }));
+    expect(nav().getByRole("button", { name: "Wallets" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("textbox", { name: /gap limit/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Display" })).not.toBeInTheDocument();
+
+    // Leaving and coming back through the sidebar lands where one left off.
+    await user.click(nav().getByRole("button", { name: "Network" }));
+    await user.click(sidebar().getByRole("button", { name: "Overview" }));
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Network" })).toBeInTheDocument();
+    expect(nav().getByRole("button", { name: "Network" })).toHaveAttribute("aria-current", "page");
+  });
+
   it("has no search field and no command palette", async () => {
     renderApp();
     const user = userEvent.setup();
