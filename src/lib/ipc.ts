@@ -92,9 +92,32 @@ export interface SyncStamp {
   backend: string;
 }
 
+/** The glyph a wallet shows next to its name: Lucide names, one fixed
+    set shared with the mobile app. */
+export type WalletIconId =
+  | "wallet"
+  | "key"
+  | "shield"
+  | "map_pin"
+  | "snowflake"
+  | "landmark"
+  | "piggy_bank";
+
+/** Every icon, in the order the picker shows them. */
+export const WALLET_ICONS: WalletIconId[] = [
+  "wallet",
+  "key",
+  "shield",
+  "map_pin",
+  "snowflake",
+  "landmark",
+  "piggy_bank",
+];
+
 export interface WalletMeta {
   id: string;
   name: string;
+  icon: WalletIconId;
   network: Network;
   kind: WalletKind;
   recognized_as: RecognizedKind;
@@ -777,6 +800,10 @@ export const ipc = {
     invoke<SyncAllReport>("sync_all", { network: network ?? null }),
   renameWallet: (id: string, name: string) => invoke<void>("rename_wallet", { id, name }),
   removeWallet: (id: string) => invoke<void>("remove_wallet", { id }),
+  setWalletIcon: (id: string, icon: WalletIconId) =>
+    invoke<void>("set_wallet_icon", { id, icon }),
+  /** The listed wallets take that order; unlisted ones keep their slots. */
+  reorderWallets: (ids: string[]) => invoke<void>("reorder_wallets", { ids }),
   getSettings: () => invoke<Settings>("get_settings"),
   publicServers: (network: Network) =>
     invoke<PublicServer[]>("public_servers", { network }),

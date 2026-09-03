@@ -51,6 +51,7 @@ const OTHER_FINGERPRINT =
 const WALLET: WalletMeta = {
   id: "w-1",
   name: "Cold storage",
+  icon: "wallet",
   network: "signet",
   kind: {
     type: "descriptors",

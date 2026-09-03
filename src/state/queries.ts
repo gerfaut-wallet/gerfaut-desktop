@@ -15,6 +15,7 @@ import type {
   PriceRange,
   SyncReport,
   WalletMeta,
+  WalletIconId,
 } from "../lib/ipc";
 import { ipc, isCommandError } from "../lib/ipc";
 import { announce } from "./notifications";
@@ -349,6 +350,23 @@ export function useRenameWallet() {
   const invalidate = useInvalidateWallet();
   return useMutation({
     mutationFn: (args: { id: string; name: string }) => ipc.renameWallet(args.id, args.name),
+    onSuccess: () => invalidate(),
+  });
+}
+
+export function useSetWalletIcon() {
+  const invalidate = useInvalidateWallet();
+  return useMutation({
+    mutationFn: (args: { id: string; icon: WalletIconId }) =>
+      ipc.setWalletIcon(args.id, args.icon),
+    onSuccess: () => invalidate(),
+  });
+}
+
+export function useReorderWallets() {
+  const invalidate = useInvalidateWallet();
+  return useMutation({
+    mutationFn: (ids: string[]) => ipc.reorderWallets(ids),
     onSuccess: () => invalidate(),
   });
 }

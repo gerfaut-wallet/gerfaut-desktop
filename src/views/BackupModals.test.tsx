@@ -83,6 +83,7 @@ const WALLETS: WalletMeta[] = [
   {
     id: "w1",
     name: "Cold storage",
+    icon: "wallet",
     network: "signet",
     kind: { type: "descriptors", external: "wpkh(...)", internal: null, script: "segwit" },
     recognized_as: "descriptor",
@@ -106,6 +107,7 @@ const WALLETS: WalletMeta[] = [
   {
     id: "w2",
     name: "Mainnet cold",
+    icon: "wallet",
     network: "mainnet",
     kind: { type: "single_address", address: "bc1qexample" },
     recognized_as: "address",

@@ -17,7 +17,7 @@ use gerfaut_core::lock::{AppLock, LockKind, LockVerdict};
 use gerfaut_core::manager::SyncAllReport;
 use gerfaut_core::network::Network;
 use gerfaut_core::store::{Settings, VaultKey};
-use gerfaut_core::wallet::meta::WalletMeta;
+use gerfaut_core::wallet::meta::{WalletIcon, WalletMeta};
 use gerfaut_core::wallet::policy::PolicySnapshot;
 use gerfaut_core::wallet::snapshot::{
     AddressEntry, AddressList, SyncReport, TxDetail, UtxoInfo, WalletSnapshot,
@@ -301,6 +301,22 @@ async fn rename_wallet(
 #[tauri::command]
 async fn remove_wallet(state: tauri::State<'_, AppState>, id: String) -> CommandResult<()> {
     Ok(state.manager.remove_wallet(&id).await?)
+}
+
+#[tauri::command]
+async fn set_wallet_icon(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    icon: WalletIcon,
+) -> CommandResult<()> {
+    Ok(state.manager.set_wallet_icon(&id, icon).await?)
+}
+
+/// Puts the listed wallets in that order; wallets not listed keep
+/// their slots, so one network's list reorders without the others.
+#[tauri::command]
+async fn reorder_wallets(state: tauri::State<'_, AppState>, ids: Vec<String>) -> CommandResult<()> {
+    Ok(state.manager.reorder_wallets(&ids).await?)
 }
 
 #[tauri::command]
@@ -692,6 +708,8 @@ pub fn run() {
             sync_all,
             rename_wallet,
             remove_wallet,
+            set_wallet_icon,
+            reorder_wallets,
             get_settings,
             set_active_network,
             set_backend,
