@@ -2,7 +2,7 @@
 name = "gerfaut-desktop"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.90"
+rust-version = "1.91"
 description = "Gerfaut for Windows, macOS, and Linux, a Bitcoin watch-only wallet"
 repository = "https://github.com/gerfaut-wallet/gerfaut-desktop"
 license = "AGPL-3.0-only"

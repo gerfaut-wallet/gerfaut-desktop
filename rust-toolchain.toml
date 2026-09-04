@@ -1,0 +1,10 @@
+# src-tauri is a workspace of its own and inherits nothing from
+# gerfaut-core, so the same compiler is pinned again here.
+#
+# At the root rather than beside the crate, because rustup reads this
+# file from the current directory upwards: `npm run tauri build` runs
+# from here, and the Tauri CLI asks the compiler for the host triple
+# before it ever enters src-tauri.
+[toolchain]
+channel = "1.97.0"
+components = ["rustfmt", "clippy"]
