@@ -40,7 +40,7 @@ gerfaut/
 You need Node 24 and rustup. Which compiler builds this is written in `rust-toolchain.toml`, and rustup installs it when you first run cargo here. On Linux, the webview and what surrounds it come from the distribution:
 
 ```
-sudo apt-get install build-essential pkg-config curl wget file libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libdbus-1-dev
+sudo apt-get install build-essential pkg-config curl wget file libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libdbus-1-dev xdg-utils
 ```
 
 Then, from `gerfaut-desktop`:
