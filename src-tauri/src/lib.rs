@@ -6,7 +6,9 @@
 //! credential store).
 
 use gerfaut_core::WalletManager;
-use gerfaut_core::backup::{BackupBundle, BackupOptions, BackupPreview, ImportChoices, ImportReport};
+use gerfaut_core::backup::{
+    BackupBundle, BackupOptions, BackupPreview, ImportChoices, ImportReport,
+};
 use gerfaut_core::chain::BackendConfig;
 use gerfaut_core::chain::connect::ScannedBackend;
 use gerfaut_core::chain::tor::{TorRoute, TorSettings, TorStatus};
@@ -188,7 +190,9 @@ fn parse_input(
     derivation: Option<DerivationChoice>,
 ) -> CommandResult<ParsedInput> {
     let options = ImportOptions { script, derivation };
-    Ok(gerfaut_core::input::parse_input_with_options(&input, &options)?)
+    Ok(gerfaut_core::input::parse_input_with_options(
+        &input, &options,
+    )?)
 }
 
 /// Reads a server address scanned or pasted into the backend settings:
@@ -744,7 +748,10 @@ mod tests {
 
     #[test]
     fn a_suggested_name_keeps_only_its_last_component() {
-        assert_eq!(bare_file_name("wallet-transactions.csv", "x"), "wallet-transactions.csv");
+        assert_eq!(
+            bare_file_name("wallet-transactions.csv", "x"),
+            "wallet-transactions.csv"
+        );
         assert_eq!(bare_file_name("../../etc/passwd", "x"), "passwd");
         assert_eq!(bare_file_name("C:\\Users\\me\\a.gerfaut", "x"), "a.gerfaut");
     }
