@@ -63,6 +63,12 @@ jobs:
           workspaces: gerfaut-desktop/src-tauri
           key: clippy
 
+      # Cheap and first, as in gerfaut-core: an unformatted file that
+      # reaches main turns the next real diff into a wall of whitespace.
+      - name: Check formatting
+        working-directory: gerfaut-desktop/src-tauri
+        run: cargo fmt --check
+
       # The frontend bundle is not needed to compile: what this checks is
       # the Rust half, including the built-in Tor, which the desktop crate
       # asks gerfaut-core for and which nothing else in CI compiles.
