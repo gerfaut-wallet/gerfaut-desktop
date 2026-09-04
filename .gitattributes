@@ -1,0 +1,3 @@
+# Read as a git revision by a workflow, and a trailing carriage return
+# is not one.
+*.rev text eol=lf

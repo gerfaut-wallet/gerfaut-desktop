@@ -42,10 +42,19 @@ jobs:
         with:
           path: gerfaut-desktop
 
-      # The Tauri crate depends on the sibling gerfaut-core checkout.
+      # The Tauri crate depends on the sibling gerfaut-core checkout, and
+      # a path dependency records no revision: without this pin, a tag
+      # would build against whatever `main` happened to be that minute,
+      # and re-running it a week later would ship different code under
+      # the same version. Bump the file before tagging.
+      - name: Read the pinned gerfaut-core revision
+        id: core
+        run: echo "rev=$(cat gerfaut-desktop/.github/gerfaut-core.rev)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
         with:
           repository: gerfaut-wallet/gerfaut-core
+          ref: ${{ steps.core.outputs.rev }}
           ssh-key: ${{ secrets.CORE_DEPLOY_KEY }}
           path: gerfaut-core
 
