@@ -1,8 +1,10 @@
 name: CI
 
-# Frontend checks only for now: the Rust crate depends on the sibling
-# gerfaut-core checkout, which a private cross-repo token would require.
-# Full Rust CI lands when the repositories go public.
+# The frontend job runs on every event. The Rust job needs the sibling
+# gerfaut-core checkout, so it borrows the deploy key release.yml uses,
+# and it only runs on a push: once this repository is public, a pull
+# request from a fork carries no secret and the job would fail for a
+# reason that has nothing to do with the code in it.
 on:
   push:
     branches: [main]
@@ -24,3 +26,50 @@ jobs:
         run: npx vitest run
       - name: Build
         run: npx vite build
+
+  rust:
+    if: github.event_name == 'push'
+    # The image the release builds on, so a failure here is a failure the
+    # release would have hit too.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: gerfaut-desktop
+
+      - uses: actions/checkout@v4
+        with:
+          repository: gerfaut-wallet/gerfaut-core
+          ssh-key: ${{ secrets.CORE_DEPLOY_KEY }}
+          path: gerfaut-core
+
+      # The list release.yml installs, for the same reason.
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config curl wget file libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libdbus-1-dev
+
+      - name: Install the pinned Rust toolchain
+        working-directory: gerfaut-desktop
+        run: |
+          rustup toolchain install
+          rustc --version
+
+      # Its own cache key: this job builds the tree unoptimised and the
+      # release job builds it optimised, and one cache for both would be
+      # evicted and refilled on every run.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gerfaut-desktop/src-tauri
+          key: clippy
+
+      # The frontend bundle is not needed to compile: what this checks is
+      # the Rust half, including the built-in Tor, which the desktop crate
+      # asks gerfaut-core for and which nothing else in CI compiles.
+      - name: Lint
+        working-directory: gerfaut-desktop/src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        working-directory: gerfaut-desktop/src-tauri
+        run: cargo test
