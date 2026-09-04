@@ -1,9 +1,10 @@
-import { ScanLine, Server, VenetianMask } from "lucide-react";
+import { ScanLine, Server } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Button } from "../../components/Button";
 import { ScanQrModal } from "../../components/ScanQrModal";
 import { Select } from "../../components/Select";
+import { OnionIcon } from "../../components/icons/OnionIcon";
 import { ipc, isCommandError } from "../../lib/ipc";
 import type { BackendConfig, CertificateReport, Network, Settings } from "../../lib/ipc";
 import {
@@ -401,11 +402,11 @@ function ScanButton({ onClick }: { onClick: () => void }) {
 
 /** The one fact a scan tells that the fields cannot show: the address
     is a Tor hidden service, so it is reached through Tor alone. Which
-    Tor is the Tor card's to say, under its own mask, once. */
+    Tor is the Tor card's to say, under the same onion, once. */
 function OnionNote() {
   return (
     <p className="mt-2 flex items-center gap-1.5 font-ui text-xs text-muted">
-      <VenetianMask size={13} strokeWidth={1.5} aria-hidden />
+      <OnionIcon size={13} />
       A Tor hidden service: reached through Tor only.
     </p>
   );

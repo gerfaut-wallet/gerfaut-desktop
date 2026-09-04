@@ -1,8 +1,8 @@
 import { clsx } from "clsx";
-import { VenetianMask } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../../components/Button";
+import { OnionIcon } from "../../components/icons/OnionIcon";
 import type { TorMode, TorRoute, TorSettings } from "../../lib/ipc";
 import { ipc, isCommandError } from "../../lib/ipc";
 import { keys } from "../../state/queries";
@@ -78,7 +78,7 @@ export function TorSection({ tor }: { tor: TorSettings }) {
   };
 
   return (
-    <SectionCard icon={<VenetianMask size={18} strokeWidth={1.5} />} title="Tor">
+    <SectionCard icon={<OnionIcon size={18} />} title="Tor">
       <p className="font-ui text-sm text-muted">
         {embedded
           ? "An address ending in .onion goes through Tor. Gerfaut uses the Tor already running on this machine when there is one, and starts its own otherwise."
