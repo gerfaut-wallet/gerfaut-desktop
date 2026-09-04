@@ -1,6 +1,6 @@
 # Contributing to Gerfaut
 
-Thank you for your interest in Gerfaut. The project is in early development and moving fast; expect significant changes until the first release.
+Thank you for your interest in Gerfaut. The project is in early development and moving fast; expect significant changes from one release to the next.
 
 ## Before you start
 
@@ -28,5 +28,5 @@ Gerfaut is watch-only. The codebase contains no code that generates keys, handle
 
 - Keep them small and focused, one concern per pull request.
 - Write commit messages in English, imperative mood, with a short subject line.
-- Make sure formatting and lints pass before pushing (tooling is documented per repository once code lands).
+- Make sure formatting and lints pass before pushing. Building this repository is described in [README.md](README.md).
 - Brand assets (name, logo, visual identity) are out of contribution scope. See [TRADEMARK.md](TRADEMARK.md).
