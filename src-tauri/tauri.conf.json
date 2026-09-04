@@ -26,6 +26,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "category": "Finance",
+    "copyright": "Copyright (C) 2026 Loïc Morel",
+    "homepage": "https://github.com/gerfaut-wallet/gerfaut-desktop",
+    "shortDescription": "Bitcoin watch-only wallet",
+    "longDescription": "Gerfaut watches Bitcoin descriptors and shows their balances, transactions and UTXOs. It holds no private keys, handles no seed, and signs nothing.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
