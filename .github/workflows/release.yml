@@ -100,8 +100,15 @@ jobs:
           releaseBody: |
             ### Downloads
             - **Windows**: `*-setup.exe` (installer) or `.msi`
-            - **macOS**: `.dmg` (unsigned build: on first launch, right-click the app then choose Open)
+            - **macOS**: `.dmg`
             - **Linux**: `.AppImage` (portable, `chmod +x` then run), `.deb` or `.rpm`
+
+            These builds carry no code-signing certificate, so both systems
+            hold them at arm's length on a first launch. Windows shows a
+            SmartScreen notice: "More info", then "Run anyway". macOS refuses
+            outright, and you allow it once in System Settings, under Privacy
+            & Security, with the "Open Anyway" button that appears there after
+            the refusal. Check the hashes below before you do either.
 
             ### Verify your download (optional)
             `SHA256SUMS` lists the hash of every file above and is signed with the author's [minisign](https://jedisct1.github.io/minisign/) key:
