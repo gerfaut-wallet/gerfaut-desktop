@@ -32,4 +32,14 @@ describe("bundled icons", () => {
       expect(icon).not.toMatch(/android|ios/);
     }
   });
+
+  /** The same rule the `.ico` follows, one file over: on Linux and macOS
+      tauri-codegen takes the first PNG of this list as the window icon,
+      the one the dock and the window switcher enlarge. Behind a 32px
+      first entry, both showed a blurred mark. */
+  it("leads its PNGs with a large one, for the window icon", () => {
+    const bundle: { bundle: { icon: string[] } } = JSON.parse(Object.values(config)[0]);
+    const first = bundle.bundle.icon.find((icon) => icon.endsWith(".png"));
+    expect(first).toBe("icons/128x128@2x.png");
+  });
 });
