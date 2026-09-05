@@ -109,6 +109,31 @@ jobs:
         working-directory: gerfaut-desktop
         run: npm ci
 
+      # The AppImage bundler fetches five helper tools from references
+      # that move (release assets that can be re-uploaded, a `master`
+      # branch, a `continuous` release), verifies none of them, runs three
+      # of them here and ships AppRun and the gtk hook inside the AppImage
+      # itself. It does skip a download when the file already sits in its
+      # cache, so the files are fetched here first and checked against the
+      # hashes committed in .github/linuxdeploy.sha256 before the bundler
+      # sees them. The check has to come before the build: the bundler
+      # overwrites three bytes of linuxdeploy once it has it.
+      - name: Stage the linuxdeploy tools and check their hashes
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          tools="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
+          mkdir -p "$tools"
+          cd "$tools"
+          fetch() { curl --fail --silent --show-error --location --retry 3 --output "$1" "$2"; }
+          fetch AppRun-x86_64 https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-x86_64
+          fetch linuxdeploy-x86_64.AppImage https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-x86_64.AppImage
+          fetch linuxdeploy-plugin-gtk.sh https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
+          fetch linuxdeploy-plugin-gstreamer.sh https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gstreamer/master/linuxdeploy-plugin-gstreamer.sh
+          fetch linuxdeploy-plugin-appimage.AppImage https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
+          sha256sum --check --strict "$GITHUB_WORKSPACE/gerfaut-desktop/.github/linuxdeploy.sha256"
+          # The bundler only marks executable what it downloads itself.
+          chmod +x AppRun-x86_64 linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh linuxdeploy-plugin-gstreamer.sh linuxdeploy-plugin-appimage.AppImage
+
       # Build only: with no tag name the action leaves the tag space and
       # the releases page alone, and it is given no token to touch them
       # with.

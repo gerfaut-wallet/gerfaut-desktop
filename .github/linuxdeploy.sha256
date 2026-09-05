@@ -1,0 +1,35 @@
+# The five tools the AppImage bundler of tauri-bundler 2.9.4 (the one
+# inside @tauri-apps/cli 2.11.4, see package-lock.json) downloads into
+# ~/.cache/tauri when it builds the AppImage, as they were on 2026-09-05.
+#
+# The bundler fetches them from references that move (release assets that
+# can be re-uploaded, a `master` branch, a `continuous` release), verifies
+# nothing, runs three of them on the build machine and ships AppRun and
+# the gtk hook inside the AppImage itself. Tauri once vendored the scripts
+# (PR #14390) and went back to downloading them (PR #14841). The bundler
+# skips a download when the file already sits in its cache, so
+# workflows/release.yml downloads the five files itself, checks them
+# against this list and only then starts the build. The check must come
+# first: once the bundler has linuxdeploy it overwrites three bytes at
+# offset 8, to hide the file from AppImage integration tools.
+#
+# Sources, in the order the bundler names them
+# (crates/tauri-bundler/src/bundle/linux/appimage/linuxdeploy.rs, tag
+# tauri-cli-v2.11.4 of tauri-apps/tauri):
+#   AppRun-x86_64                         https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-x86_64
+#   linuxdeploy-x86_64.AppImage           https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-x86_64.AppImage
+#   linuxdeploy-plugin-gtk.sh             https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
+#   linuxdeploy-plugin-gstreamer.sh       https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gstreamer/master/linuxdeploy-plugin-gstreamer.sh
+#   linuxdeploy-plugin-appimage.AppImage  https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
+#
+# When @tauri-apps/cli moves, read that file again at the matching tag:
+# if a URL or a file name changed, update release.yml and this list. To
+# refresh a hash on purpose, download the file, compare it with the
+# previous one (a script diff is readable; a new binary should come with
+# a reason), then run `sha256sum` on the five files in the cache
+# directory and paste its output below.
+f30140a43a0a59e46db21bdefdf749b9e9f2c6946e92afabbacf98b8ae73fb4f  AppRun-x86_64
+e762bea85c8eb0d4b3508d46e5c1f037f717d0f9303ae3b4aafc8b04991fa1ef  linuxdeploy-x86_64.AppImage
+cb379f9b0733e9ad9f8bd78f8c2fa038aef2478523bb7d4c8e64ff6a1ea3501a  linuxdeploy-plugin-gtk.sh
+c107b49d84edbffc6ab226ed1007e0626a4f7aa2c3a36b7782bef62351d49e94  linuxdeploy-plugin-gstreamer.sh
+0441769ab38009504d2678c38cd7e526955388dd30a215b4a20afaa5471652f2  linuxdeploy-plugin-appimage.AppImage
