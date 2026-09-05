@@ -322,6 +322,8 @@ function mockSettingsIpc(
         return [WALLET];
       case "set_app_pref":
         return undefined;
+      case "premium_status":
+        return { key: null, licence: null, consented: [], acknowledged_offline_until: null };
       default:
         throw new Error(`unexpected command ${cmd}`);
     }
@@ -371,9 +373,16 @@ describe("settings sections", () => {
       expect(heading("Display")).not.toBeInTheDocument();
     }
     expect(screen.getByRole("button", { name: "Check for updates" })).toBeInTheDocument();
+
+    // Premium last: the licence card, and without a key nothing else.
+    await user.click(nav().getByRole("button", { name: "Premium" }));
+    expect(await screen.findByRole("heading", { name: "Licence" })).toBeInTheDocument();
+    expect(heading("About")).not.toBeInTheDocument();
+    expect(heading("Watched wallets")).not.toBeInTheDocument();
+    expect(nav().getByRole("button", { name: "Premium" })).toHaveAttribute("aria-current", "page");
   });
 
-  it("lists the seven sections in order, each with an icon", () => {
+  it("lists the eight sections in order, each with an icon, the gem in the premium colour", () => {
     mockSettingsIpc();
     renderSettings();
     const items = nav().getAllByRole("button");
@@ -385,8 +394,10 @@ describe("settings sections", () => {
       "Notifications",
       "Backup & sync",
       "About",
+      "Premium",
     ]);
     for (const item of items) expect(item.querySelector("svg")).not.toBeNull();
+    expect(items[7].querySelector("svg.lucide-gem")).toHaveClass("text-premium");
   });
 
   it("opens straight on the section asked for", () => {
@@ -552,12 +563,12 @@ describe("settings sections", () => {
     await user.keyboard("{ArrowDown}");
     expect(nav().getByRole("button", { name: "Network" })).toHaveFocus();
     await user.keyboard("{End}");
-    expect(nav().getByRole("button", { name: "About" })).toHaveFocus();
+    expect(nav().getByRole("button", { name: "Premium" })).toHaveFocus();
     await user.keyboard("{ArrowRight}");
     expect(nav().getByRole("button", { name: "General" })).toHaveFocus();
     // Moving the focus is not choosing: Enter does that.
     expect(heading("Display")).toBeInTheDocument();
-    await user.keyboard("{ArrowUp}{Enter}");
+    await user.keyboard("{ArrowUp}{ArrowUp}{Enter}");
     expect(heading("About")).toBeInTheDocument();
   });
 });
