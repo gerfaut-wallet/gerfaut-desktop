@@ -489,6 +489,122 @@ export interface Settings {
   app_lock: AppLock | null;
   /** How `.onion` backends reach Tor. */
   tor: TorSettings;
+  /** The premium account as the vault keeps it. */
+  premium: PremiumState;
+}
+
+// --- premium --------------------------------------------------------------
+
+/** A wallet the user agreed to have watched by the server. */
+export interface WatchedWallet {
+  wallet_id: string;
+  /** Unix seconds: when the user said yes. */
+  consented_at: number;
+}
+
+/** The premium account as the vault keeps it, mirroring `PremiumState`
+    in gerfaut-core. Empty by default. */
+export interface PremiumState {
+  key: string | null;
+  certificate: string | null;
+  watched: WatchedWallet[];
+  acknowledged_offline_until: number | null;
+}
+
+/** What a certificate says at a given time, read by the core. */
+export type LicenceState =
+  | { status: "active"; until: number }
+  | { status: "expired"; since: number };
+
+/** What the vault says about the account, readable without a network:
+    the key as shown, the licence the stored certificate proves, the
+    wallets already agreed to. */
+export interface PremiumStatus {
+  key: string | null;
+  licence: LicenceState | null;
+  consented: string[];
+  acknowledged_offline_until: number | null;
+}
+
+/** `GET /v1/account`, as the server sees the key. */
+export interface PremiumAccount {
+  active: boolean;
+  paid_until: number | null;
+  wallets: number;
+  channels: number;
+  /** The network the server watches, as it names it (`bitcoin`). */
+  network: string;
+}
+
+export interface PremiumAccountReport {
+  account: PremiumAccount;
+  status: PremiumStatus;
+}
+
+/** One wallet the server watches for this account. */
+export interface WalletWatch {
+  /** The app's own wallet id. */
+  id: string;
+  name: string;
+  script_kind: string;
+  watched_since: number;
+  /** Unix seconds when the first scan finished; null while it runs. */
+  baseline_at: number | null;
+  baseline_height: number | null;
+  coins: number;
+  value_sats: number;
+}
+
+export type ChannelKind = "ntfy" | "telegram" | "email" | "webhook";
+
+/** One channel as the server describes it, plus the bot link the core
+    builds for a Telegram channel not linked yet. */
+export interface Channel {
+  id: string;
+  kind: ChannelKind;
+  /** Masked except for webhooks. */
+  target: string;
+  linked: boolean;
+  link_code: string | null;
+  link_url: string | null;
+  enabled: boolean;
+  created_at: number;
+  telegram_url: string | null;
+}
+
+/** A channel just created, with the ntfy URL shown once. */
+export interface NewChannel {
+  channel: Channel;
+  subscribe_url: string | null;
+}
+
+export type EventKind =
+  | "spend_detected"
+  | "spend_confirmed"
+  | "coins_gone"
+  | "receive_detected"
+  | "receive_confirmed"
+  | "timelock_due"
+  | "wallet_registered"
+  | "other";
+
+/** One entry of the account's event log. */
+export interface PremiumEvent {
+  id: number;
+  kind: EventKind;
+  /** The app's own wallet id. */
+  wallet: string;
+  wallet_name: string;
+  at: number;
+  data: unknown;
+}
+
+/** `GET /v1/heartbeat`, verified by the core. */
+export interface HeartbeatReport {
+  heartbeat: { now: number; tip_height: number | null };
+  payload: string;
+  signature: string;
+  public_key: string;
 }
 
 // --- backup ---------------------------------------------------------------
@@ -753,6 +869,12 @@ export interface CommandError {
     | "backend_unavailable"
     | "descriptor"
     | "tor"
+    | "premium_no_key"
+    | "premium_unknown_key"
+    | "premium_no_paid_time"
+    | "premium_rejected"
+    | "premium_unreachable"
+    | "premium_invalid"
     | "internal";
   message: string;
 }
@@ -847,4 +969,25 @@ export const ipc = {
   torStatus: () => invoke<TorStatus>("tor_status"),
   setTorSettings: (settings: TorSettings) => invoke<void>("set_tor_settings", { settings }),
   torConnect: () => invoke<TorRoute>("tor_connect"),
+  // Premium: every request leaves from Rust, every signature is checked
+  // there. The webview only shows what came back verified.
+  premiumStatus: () => invoke<PremiumStatus>("premium_status"),
+  premiumActivate: (key: string) => invoke<PremiumStatus>("premium_activate", { key }),
+  premiumForget: () => invoke<PremiumStatus>("premium_forget"),
+  premiumAccount: () => invoke<PremiumAccountReport>("premium_account"),
+  premiumWallets: () => invoke<WalletWatch[]>("premium_wallets"),
+  premiumWatchWallet: (id: string) => invoke<void>("premium_watch_wallet", { id }),
+  premiumUnwatchWallet: (id: string) => invoke<void>("premium_unwatch_wallet", { id }),
+  premiumChannels: () => invoke<Channel[]>("premium_channels"),
+  premiumAddChannel: (kind: ChannelKind, target?: string, secret?: string) =>
+    invoke<NewChannel>("premium_add_channel", {
+      kind,
+      target: target ?? null,
+      secret: secret ?? null,
+    }),
+  premiumDeleteChannel: (id: string) => invoke<void>("premium_delete_channel", { id }),
+  premiumTestChannel: (id: string) => invoke<void>("premium_test_channel", { id }),
+  premiumEvents: () => invoke<PremiumEvent[]>("premium_events"),
+  premiumHeartbeat: () => invoke<HeartbeatReport>("premium_heartbeat"),
+  premiumAcknowledgeOffline: () => invoke<PremiumStatus>("premium_acknowledge_offline"),
 };

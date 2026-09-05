@@ -40,6 +40,7 @@ const SETTINGS: Settings = {
   electrum_certs: {},
   app_lock: null,
   tor: { mode: "auto", socks_proxy: null },
+  premium: { key: null, certificate: null, watched: [], acknowledged_offline_until: null },
 };
 
 /** A SHA-256 fingerprint in the shape openssl prints, as the core sends it. */

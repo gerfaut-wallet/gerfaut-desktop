@@ -12,7 +12,7 @@ use gerfaut_core::backup::{
 use gerfaut_core::chain::BackendConfig;
 use gerfaut_core::chain::connect::ScannedBackend;
 use gerfaut_core::chain::tor::{TorRoute, TorSettings, TorStatus};
-use gerfaut_core::error::CoreError;
+use gerfaut_core::error::{CoreError, PremiumError};
 use gerfaut_core::input::qr::QrProgress;
 use gerfaut_core::input::{DerivationChoice, ImportOptions, ParsedInput, ScriptKind};
 use gerfaut_core::lock::{AppLock, LockKind, LockVerdict};
@@ -29,6 +29,8 @@ use std::path::PathBuf;
 use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
 
+mod premium;
+
 /// Error shape every command returns; the frontend matches on `kind`.
 #[derive(Debug, Clone, Serialize)]
 pub struct CommandError {
@@ -36,8 +38,32 @@ pub struct CommandError {
     pub message: String,
 }
 
+/// What the screen does about a premium failure: back to the key field,
+/// to the renewal page, a note in the server's words, or the "watch is
+/// offline" banner.
+fn premium_kind(error: &PremiumError) -> &'static str {
+    match error {
+        PremiumError::NoKey => "premium_no_key",
+        PremiumError::UnknownKey => "premium_unknown_key",
+        PremiumError::NoPaidTime => "premium_no_paid_time",
+        PremiumError::Rejected(_) => "premium_rejected",
+        PremiumError::Unreachable(_) | PremiumError::UnexpectedResponse(_) => "premium_unreachable",
+        PremiumError::InvalidCertificate(_)
+        | PremiumError::InvalidHeartbeat(_)
+        | PremiumError::StaleHeartbeat { .. } => "premium_invalid",
+    }
+}
+
 impl From<CoreError> for CommandError {
     fn from(error: CoreError) -> Self {
+        // A refusal is shown in the server's own sentence, without the
+        // prefix the error type wraps it in.
+        if let CoreError::Premium(PremiumError::Rejected(words)) = &error {
+            return CommandError {
+                kind: "premium_rejected",
+                message: words.clone(),
+            };
+        }
         let kind = match &error {
             CoreError::UnrecognizedInput(_) => "unrecognized_input",
             CoreError::PrivateMaterialRejected => "private_material",
@@ -51,6 +77,7 @@ impl From<CoreError> for CommandError {
             CoreError::BackendUnavailable(_) => "backend_unavailable",
             CoreError::Descriptor(_) => "descriptor",
             CoreError::Tor(_) => "tor",
+            CoreError::Premium(error) => premium_kind(error),
             CoreError::Internal(_) => "internal",
         };
         CommandError {
@@ -60,7 +87,7 @@ impl From<CoreError> for CommandError {
     }
 }
 
-type CommandResult<T> = Result<T, CommandError>;
+pub(crate) type CommandResult<T> = Result<T, CommandError>;
 
 fn internal(message: String) -> CommandError {
     CommandError {
@@ -69,8 +96,8 @@ fn internal(message: String) -> CommandError {
     }
 }
 
-struct AppState {
-    manager: WalletManager,
+pub(crate) struct AppState {
+    pub(crate) manager: WalletManager,
 }
 
 // --- file dialogs ------------------------------------------------------
@@ -736,7 +763,21 @@ pub fn run() {
             import_backup,
             tor_status,
             set_tor_settings,
-            tor_connect
+            tor_connect,
+            premium::premium_status,
+            premium::premium_activate,
+            premium::premium_forget,
+            premium::premium_account,
+            premium::premium_wallets,
+            premium::premium_watch_wallet,
+            premium::premium_unwatch_wallet,
+            premium::premium_channels,
+            premium::premium_add_channel,
+            premium::premium_delete_channel,
+            premium::premium_test_channel,
+            premium::premium_events,
+            premium::premium_heartbeat,
+            premium::premium_acknowledge_offline
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -744,7 +785,45 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::bare_file_name;
+    use super::{CommandError, bare_file_name};
+    use gerfaut_core::error::{CoreError, PremiumError};
+
+    #[test]
+    fn premium_failures_are_named_for_the_screen() {
+        let kind = |error: PremiumError| CommandError::from(CoreError::Premium(error)).kind;
+        assert_eq!(kind(PremiumError::UnknownKey), "premium_unknown_key");
+        assert_eq!(kind(PremiumError::NoPaidTime), "premium_no_paid_time");
+        assert_eq!(kind(PremiumError::NoKey), "premium_no_key");
+        assert_eq!(
+            kind(PremiumError::Unreachable("timed out".to_owned())),
+            "premium_unreachable"
+        );
+        assert_eq!(
+            kind(PremiumError::UnexpectedResponse("html".to_owned())),
+            "premium_unreachable"
+        );
+        assert_eq!(
+            kind(PremiumError::StaleHeartbeat { skew: 900 }),
+            "premium_invalid"
+        );
+        assert_eq!(
+            kind(PremiumError::InvalidCertificate("no".to_owned())),
+            "premium_invalid"
+        );
+    }
+
+    /// The server's sentence reaches the screen as it was written.
+    #[test]
+    fn a_refusal_keeps_the_servers_own_words() {
+        let error = CommandError::from(CoreError::Premium(PremiumError::Rejected(
+            "a single address cannot be watched yet; send a descriptor".to_owned(),
+        )));
+        assert_eq!(error.kind, "premium_rejected");
+        assert_eq!(
+            error.message,
+            "a single address cannot be watched yet; send a descriptor"
+        );
+    }
 
     #[test]
     fn a_suggested_name_keeps_only_its_last_component() {

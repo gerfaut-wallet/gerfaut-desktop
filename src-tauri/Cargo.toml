@@ -31,6 +31,11 @@ rand = "0.9"
 hex = "0.4"
 data-encoding = "2"
 
+[dev-dependencies]
+# The tests sign the licences they then read back; the app itself never
+# signs anything.
+ed25519-dalek = "2"
+
 # Cargo only honours [patch] in the root manifest: the same pin as in
 # gerfaut-core, see the note there.
 [patch.crates-io]
