@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Balance, ListAmount } from "../components/Amount";
 import { BalanceChart } from "../components/BalanceChart";
+import { WatchOfflineBanner } from "../components/WatchOfflineBanner";
 import {
   LOCALE,
   MASKED,
@@ -67,6 +68,8 @@ export function HomeView({ walletId }: { walletId: string }) {
 
   return (
     <div className="flex h-full min-h-[560px] flex-col pb-2">
+      {/* The server's watch gone quiet is said before anything else. */}
+      <WatchOfflineBanner className="mb-4 mt-2" />
       {/* No freshness line here: Watch status carries it below. */}
       <header className="px-1 pb-4 pt-2">
         <WalletTitle key={meta.id} meta={meta} />

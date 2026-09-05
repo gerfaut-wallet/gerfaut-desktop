@@ -4,8 +4,10 @@ import { EmptyState } from "./components/EmptyState";
 import { Toast } from "./components/Toast";
 import { Sidebar } from "./shell/Sidebar";
 import { useLock, useLockShortcut } from "./state/lock";
+import { usePremiumWatch } from "./state/premium";
 import { LockScreen } from "./views/LockScreen";
 import { WelcomeTour } from "./views/WelcomeTour";
+import type { Settings } from "./lib/ipc";
 import { useSettings, useSyncAll, useSyncing, useWallets } from "./state/queries";
 import { useUi } from "./state/store";
 import { AddWalletModal } from "./views/AddWalletModal";
@@ -18,6 +20,16 @@ import { SettingsView } from "./views/SettingsView";
 import { TransactionsView } from "./views/TransactionsView";
 import { TxDetailModal } from "./views/TxDetailModal";
 import { UtxosView } from "./views/UtxosView";
+
+/** Keeps the server's heartbeat coming while there is something to
+    watch: a key is set and at least one wallet was agreed to. Its own
+    component, so it can sit behind the lock check without a hook
+    running conditionally. */
+function PremiumWatch({ settings }: { settings: Settings }) {
+  const { premium } = settings;
+  usePremiumWatch(premium.key !== null && premium.watched.length > 0);
+  return null;
+}
 
 export default function App() {
   const settings = useSettings();
@@ -194,6 +206,7 @@ export default function App() {
         </div>
       </main>
 
+      <PremiumWatch settings={settings.data} />
       {view !== "settings" && activeWallet && (
         <TxDetailModal walletId={activeWallet.id} network={activeWallet.network} />
       )}
