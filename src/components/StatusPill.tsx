@@ -3,7 +3,7 @@ import { Check, Clock } from "lucide-react";
 import type { ReactNode } from "react";
 import type { TxStatus } from "../lib/ipc";
 
-export type PillTone = "confirmed" | "pending" | "neutral" | "alert";
+export type PillTone = "confirmed" | "pending" | "neutral" | "alert" | "premium";
 
 /** A state as a pill: a leading glyph plus the words, never colour
     alone. The glyphs differ in shape, so the state survives colour
@@ -36,6 +36,8 @@ export function Pill({
         tone === "pending" && "border-pending/25 bg-pending-surface text-pending",
         tone === "neutral" && "border-border bg-sunken text-muted",
         tone === "alert" && "border-alert/25 bg-alert-surface text-alert",
+        // Bruyere: premium mentions only, never a chain state.
+        tone === "premium" && "border-premium/25 bg-premium-surface text-premium",
       )}
     >
       {icon && wrap ? <span className="flex h-4 shrink-0 items-center">{icon}</span> : icon}

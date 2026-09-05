@@ -116,10 +116,17 @@ export function Toggle({
   checked,
   onChange,
   label,
+  disabled = false,
+  busy = false,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label: string;
+  /** Greyed and inert, but still there: a switch that cannot be used
+      says more than a switch that is gone. */
+  disabled?: boolean;
+  /** Waiting on an answer: inert meanwhile, and said so. */
+  busy?: boolean;
 }) {
   return (
     <button
@@ -127,10 +134,13 @@ export function Toggle({
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      aria-busy={busy || undefined}
+      disabled={disabled || busy}
       onClick={() => onChange(!checked)}
       className={clsx(
-        "relative h-6 w-11 cursor-pointer rounded-full transition-colors duration-150",
+        "relative h-6 w-11 rounded-full transition-colors duration-150",
         checked ? "bg-primary" : "bg-border",
+        disabled ? "cursor-not-allowed opacity-45" : busy ? "cursor-wait" : "cursor-pointer",
       )}
     >
       {/* Anchored left-0.5: without an explicit inset the knob's resting

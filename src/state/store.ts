@@ -28,7 +28,8 @@ export type SettingsSection =
   | "security"
   | "notifications"
   | "backup"
-  | "about";
+  | "about"
+  | "premium";
 
 /** A transaction handed to the network from this app, kept so the
     broadcast page can show where it stands after a restart. */
