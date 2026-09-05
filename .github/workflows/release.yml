@@ -1,8 +1,14 @@
-# Builds native installers for Windows, macOS and Linux on every `v*` tag,
+# Builds native installers for Windows, macOS and Linux on every `v*` tag
 # and attaches them to a draft GitHub Release (review, sign with
 # scripts/sign-release.ps1, then click Publish).
 # Manual runs build the same installers and upload them as workflow
 # artifacts only.
+#
+# Two jobs, on purpose. The build runs code this repository does not
+# control (the Tauri CLI, npm packages, the linuxdeploy tools the AppImage
+# bundler fetches) and holds nothing but a read-only token while it does.
+# The token that can write to the repository exists only in the last job,
+# which runs `gh` on the files the build handed over and nothing else.
 #
 #   git tag v0.1.0 && git push origin v0.1.0
 
@@ -14,10 +20,12 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -38,9 +46,13 @@ jobs:
     runs-on: ${{ matrix.platform }}
 
     steps:
-      - uses: actions/checkout@v4
+      # No credentials left in .git/config: nothing after a checkout talks
+      # to GitHub, and a token cached on disk would outlive the step that
+      # needed it.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           path: gerfaut-desktop
+          persist-credentials: false
 
       # The Tauri crate depends on the sibling gerfaut-core checkout, and
       # a path dependency records no revision: without this pin, a tag
@@ -51,12 +63,13 @@ jobs:
         id: core
         run: echo "rev=$(cat gerfaut-desktop/.github/gerfaut-core.rev)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: gerfaut-wallet/gerfaut-core
           ref: ${{ steps.core.outputs.rev }}
           ssh-key: ${{ secrets.CORE_DEPLOY_KEY }}
           path: gerfaut-core
+          persist-credentials: false
 
       # The same list README.md gives, so a contributor on a bare system
       # installs what CI installs. webkit2gtk is the webview and pulls GTK
@@ -84,11 +97,11 @@ jobs:
         working-directory: gerfaut-desktop
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: gerfaut-desktop/src-tauri
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24.19.0
 
@@ -96,17 +109,64 @@ jobs:
         working-directory: gerfaut-desktop
         run: npm ci
 
-      # A tag names a release and the action creates it. A manual run
-      # leaves those inputs empty, and the action then builds and stops:
-      # the tag space and the releases page stay untouched.
-      - uses: tauri-apps/tauri-action@action-v0.6.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Build only: with no tag name the action leaves the tag space and
+      # the releases page alone, and it is given no token to touch them
+      # with.
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # action-v0.6.2
         with:
           projectPath: gerfaut-desktop
-          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('Gerfaut {0}', github.ref_name) || '' }}
-          releaseBody: |
+          args: ${{ matrix.args }}
+
+      # The installers leave the runner as a workflow artifact: what a
+      # manual run is for, and what the draft job below picks up on a
+      # tag. `error` on no match is the point, since these paths are the
+      # only thing tying this step to where Tauri writes. The
+      # `.app.tar.gz` Tauri also writes on macOS is the updater's archive,
+      # and Gerfaut has no updater, so it stays behind.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gerfaut-${{ matrix.platform }}
+          if-no-files-found: error
+          path: |
+            gerfaut-desktop/src-tauri/target/release/bundle/**/*.AppImage
+            gerfaut-desktop/src-tauri/target/release/bundle/**/*.deb
+            gerfaut-desktop/src-tauri/target/release/bundle/**/*.rpm
+            gerfaut-desktop/src-tauri/target/release/bundle/**/*.exe
+            gerfaut-desktop/src-tauri/target/release/bundle/**/*.msi
+            gerfaut-desktop/src-tauri/target/universal-apple-darwin/release/bundle/**/*.dmg
+
+  # The only job that can write to the repository, and it runs nothing
+  # but `gh` on the files the build produced: no checkout, no build tool,
+  # no third-party code.
+  draft:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: installers
+          merge-multiple: true
+
+      # One installer of each kind, or nothing: a draft missing a platform
+      # would be signed and published as if it were complete.
+      - name: Check the set of installers
+        run: |
+          find installers -type f | sort
+          for ext in exe msi dmg AppImage deb rpm; do
+            n=$(find installers -type f -name "*.$ext" | wc -l)
+            [ "$n" -eq 1 ] || { echo "expected one .$ext, found $n" >&2; exit 1; }
+          done
+
+      # `--verify-tag` refuses to invent a tag. A draft that already exists
+      # (a re-run) gets its assets replaced; a published release is never
+      # touched, `gh release create` fails on it.
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTES: |
             ### Downloads
             - **Windows**: `*-setup.exe` (installer) or `.msi`
             - **macOS**: `.dmg`
@@ -134,22 +194,14 @@ jobs:
                - Linux: `sha256sum --check SHA256SUMS --ignore-missing`
                - macOS: `shasum -a 256 --check SHA256SUMS --ignore-missing`
                - Windows: `(Get-FileHash .\<file>).Hash` must match the file's line in `SHA256SUMS`
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
-
-      # What a manual run is for: an installer to hand someone, attached
-      # to the run itself. `error` on no match is the point, since these
-      # paths are the only thing tying this step to where Tauri writes.
-      - uses: actions/upload-artifact@v4
-        if: github.event_name == 'workflow_dispatch'
-        with:
-          name: gerfaut-${{ matrix.platform }}
-          if-no-files-found: error
-          path: |
-            gerfaut-desktop/src-tauri/target/release/bundle/**/*.AppImage
-            gerfaut-desktop/src-tauri/target/release/bundle/**/*.deb
-            gerfaut-desktop/src-tauri/target/release/bundle/**/*.rpm
-            gerfaut-desktop/src-tauri/target/release/bundle/**/*.exe
-            gerfaut-desktop/src-tauri/target/release/bundle/**/*.msi
-            gerfaut-desktop/src-tauri/target/universal-apple-darwin/release/bundle/**/*.dmg
+        run: |
+          mapfile -t files < <(find installers -type f | sort)
+          if [ "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)" = true ]; then
+            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+          else
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --draft --verify-tag \
+              --title "Gerfaut $GITHUB_REF_NAME" \
+              --notes "$NOTES" \
+              "${files[@]}"
+          fi
