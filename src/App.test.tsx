@@ -508,6 +508,19 @@ function receiveEntries(lookahead: number): AddressEntry[] {
 }
 
 /** The IPC surface shared by most suites; tests override per case. */
+/** The same vault with fiat display turned on, which is what the
+    overview price follows. The preference lives in the vault, so
+    setting the store alone is undone by the hydration on open. */
+function withFiat(overrides: Record<string, (args: Record<string, unknown>) => unknown> = {}) {
+  return walletIpc({
+    get_settings: () => ({
+      ...SETTINGS,
+      app_prefs: { ...SETTINGS.app_prefs, "display.fiat": "1" },
+    }),
+    ...overrides,
+  });
+}
+
 function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => unknown> = {}) {
   mockIPC((cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
@@ -723,7 +736,30 @@ describe("overview", () => {
     expect(screen.getByText("Shortcuts")).toBeInTheDocument();
   });
 
+  it("says nothing and asks nobody while fiat display is off", async () => {
+    // A price request is a request to a third party, in the clear, at
+    // the moment this machine opened a bitcoin wallet. Fiat is off by
+    // default, and the card used to ask anyway.
+    const seen: string[] = [];
+    walletIpc({
+      fetch_price_history: () => {
+        seen.push("fetch_price_history");
+        return PRICE_HISTORY;
+      },
+    });
+    renderApp();
+
+    expect(
+      await screen.findByText("Turn on fiat value in Settings to see the price."),
+    ).toBeInTheDocument();
+    // No range to pick over a price nobody fetched.
+    expect(screen.queryByRole("radio", { name: "1D" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Total balance")).toBeInTheDocument());
+    expect(seen).toEqual([]);
+  });
+
   it("shows the price with a signed change pill, no chart", async () => {
+    withFiat();
     renderApp();
     // 90k -> 100k over the mocked series.
     expect(await screen.findByText("+11.1%")).toBeInTheDocument();
@@ -1434,6 +1470,7 @@ describe("display settings", () => {
   });
 
   it("masks every amount from the sidebar eye toggle", async () => {
+    withFiat();
     renderApp();
     const user = userEvent.setup();
     await screen.findByText("0.00150000");

@@ -387,18 +387,33 @@ function LinkRow({
 }
 
 function PriceCard() {
-  const { fiatSource, fiatCurrency, priceRange, setPriceRange } = useUi();
+  const { fiatEnabled, fiatSource, fiatCurrency, priceRange, setPriceRange } = useUi();
   // The compact widget offers no "max": a lifetime of price says
   // nothing at a glance.
   const ranges: PriceRange[] = SUPPORTED_RANGES[fiatSource].filter(
     (range) => range !== "max",
   );
   const range = ranges.includes(priceRange) ? priceRange : (ranges[0] ?? "month");
-  const history = usePriceHistory(range, true);
+  // Fiat off means silent: the card used to ask CoinGecko for a year of
+  // price at every launch whatever the setting said, which tells a
+  // third party this machine opened a bitcoin wallet just now.
+  const history = usePriceHistory(range, fiatEnabled);
   const points = history.data?.points ?? [];
   const first = points[0];
   const last = points[points.length - 1];
   const change = first && last ? ((last.rate - first.rate) / first.rate) * 100 : null;
+
+  if (!fiatEnabled) {
+    // No range to pick over a price nobody fetched: an empty card says
+    // what it would hold and what turns it on, and asks for nothing.
+    return (
+      <Card label="Bitcoin price">
+        <p className="font-ui text-sm text-muted">
+          Turn on fiat value in Settings to see the price.
+        </p>
+      </Card>
+    );
+  }
 
   return (
     <Card

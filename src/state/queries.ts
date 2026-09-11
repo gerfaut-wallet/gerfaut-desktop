@@ -287,9 +287,15 @@ export function useFiatRate() {
   });
 }
 
-/** Price series for the overview chart. Follows the configured source
-    and currency even while fiat display is off: the chart is its own
-    opt-in (remove the widget to stop the requests). */
+/** Price series for the overview chart, from the configured source in
+    the configured currency.
+ *
+ *  `enabled` is the fiat setting and nothing else. A price request is a
+ *  request to a third party, in the clear, from this machine at the
+ *  moment Gerfaut opened — and with a `.onion` backend it goes out
+ *  beside the Tor circuit rather than through it. Fiat display is off
+ *  by default because of exactly that, so the chart asks for nothing
+ *  until the setting says yes. */
 export function usePriceHistory(range: PriceRange, enabled: boolean) {
   const { fiatSource, fiatCurrency } = useUi();
   return useQuery({
