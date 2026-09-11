@@ -887,6 +887,9 @@ export interface CommandError {
     | "backend_unavailable"
     | "descriptor"
     | "tor"
+    /** The app is locked: the vault answers nothing until a secret
+        goes through. */
+    | "locked"
     | "premium_no_key"
     | "premium_unknown_key"
     | "premium_no_paid_time"
@@ -972,6 +975,7 @@ export const ipc = {
     invoke<void>("set_app_lock", { kind, secret, current: current ?? null }),
   clearAppLock: (current: string) => invoke<void>("clear_app_lock", { current }),
   verifyAppLock: (secret: string) => invoke<LockVerdict>("verify_app_lock", { secret }),
+  lockApp: () => invoke<void>("lock_app"),
   exportBackup: (options: BackupOptions, password: string) =>
     invoke<BackupBundle>("export_backup", { options, password }),
   /** Opens the save dialog itself; true once the file is written, false

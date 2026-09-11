@@ -1,14 +1,15 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "./components/Button";
 import { EmptyState } from "./components/EmptyState";
 import { Toast } from "./components/Toast";
 import { Sidebar } from "./shell/Sidebar";
-import { useLock, useLockShortcut } from "./state/lock";
+import { isLockedError, lockedSettings, useLock, useLockShortcut } from "./state/lock";
 import { usePremiumWatch } from "./state/premium";
 import { LockScreen } from "./views/LockScreen";
 import { WelcomeTour } from "./views/WelcomeTour";
 import type { Settings } from "./lib/ipc";
-import { useSettings, useSyncAll, useSyncing, useWallets } from "./state/queries";
+import { keys, useSettings, useSyncAll, useSyncing, useWallets } from "./state/queries";
 import { useUi } from "./state/store";
 import { AddWalletModal } from "./views/AddWalletModal";
 import { BroadcastView } from "./views/BroadcastView";
@@ -33,8 +34,13 @@ function PremiumWatch({ settings }: { settings: Settings }) {
 
 export default function App() {
   const settings = useSettings();
+  const locked = useLock((state) => state.locked);
+  const lockSeen = useLock((state) => state.seen);
   const network = settings.data?.active_network;
-  const wallets = useWallets(network);
+  // Nothing of a wallet is asked for before the vault has said whether
+  // it is locked, and nothing while it is: the lock screen used to be
+  // a curtain over a cache full of descriptors and balances.
+  const wallets = useWallets(network, lockSeen && !locked);
   const syncAll = useSyncAll();
   // Any sync in flight, not only this hook's: the one a fresh wallet
   // starts, or a single wallet's refresh, must turn the sidebar icon.
@@ -49,8 +55,8 @@ export default function App() {
   } = useUi();
   const hydrated = useRef(false);
   const autosynced = useRef(false);
-  const locked = useLock((state) => state.locked);
-  const lockSeen = useLock((state) => state.seen);
+  const wasLocked = useRef(false);
+  const client = useQueryClient();
   const syncLock = useLock((state) => state.syncFromSettings);
   const [tourOpen, setTourOpen] = useState(false);
   useLockShortcut();
@@ -63,18 +69,37 @@ export default function App() {
   // names once before the lock screen took their place, which is the
   // one thing a lock exists to prevent. The render below waits on
   // `lockSeen` so the shell is never even built in that frame.
-  useLayoutEffect(() => {
-    if (settings.data && !hydrated.current) {
-      hydrated.current = true;
-      hydratePrefs(settings.data.app_prefs);
-    }
-  }, [settings.data, hydratePrefs]);
-
-  // The vault says whether a lock exists; the first read with one in it
-  // is what puts the lock screen up.
+  //
+  // The lock goes first, and the order matters: behind it the vault
+  // answers the theme and nothing else, so the preferences below are
+  // taken as the whole set only once it has said the app is open.
   useLayoutEffect(() => {
     if (settings.data) syncLock(settings.data.app_lock);
   }, [settings.data, syncLock]);
+
+  useLayoutEffect(() => {
+    if (!settings.data || hydrated.current) return;
+    hydratePrefs(settings.data.app_prefs);
+    hydrated.current = !useLock.getState().locked;
+  }, [settings.data, hydratePrefs]);
+
+  // What the cache is allowed to hold is decided by the lock, in one
+  // place. The curtain falling empties it of everything the vault
+  // answered — descriptors, balances, addresses, the account key —
+  // and cuts the settings entry down to the theme rather than dropping
+  // it, which would lose the ramp the lock screen is painted in.
+  useEffect(() => {
+    if (locked) {
+      wasLocked.current = true;
+      client.removeQueries({ predicate: (query) => query.queryKey[0] !== "settings" });
+      client.setQueryData<Settings>(keys.settings, (cached) =>
+        cached === undefined ? cached : lockedSettings(cached),
+      );
+    } else if (wasLocked.current) {
+      wasLocked.current = false;
+      void client.invalidateQueries({ queryKey: keys.settings });
+    }
+  }, [locked, client]);
 
   // One background refresh at startup; data stays visibly stamped. It
   // waits for the lock, like the rhythm below: a sync that lands behind
@@ -121,7 +146,11 @@ export default function App() {
     if (settings.data && emptyVault && !tourSeen && !locked) setTourOpen(true);
   }, [settings.data, emptyVault, tourSeen, locked]);
 
-  if (settings.isError || wallets.isError) {
+  // A command refused because the curtain came down is the lock doing
+  // its work, not a vault that failed to open: the screen behind it is
+  // the lock screen, and it is already on its way.
+  const shut = isLockedError(settings.error) || isLockedError(wallets.error);
+  if (!shut && (settings.isError || wallets.isError)) {
     return (
       <div className="shell-rail flex h-full items-center justify-center bg-shell">
         <p className="max-w-sm text-center font-ui text-sm text-muted">
@@ -136,7 +165,7 @@ export default function App() {
   // self-contained dark island: the theme lives in the vault too, so
   // there is nothing to follow yet and a light sheet here would flash
   // white on the way to a dark one.
-  if (settings.isPending || wallets.isPending || !settings.data || !lockSeen) {
+  if (settings.isPending || !settings.data || !lockSeen) {
     return (
       <div className="shell-rail flex h-full items-center justify-center bg-shell">
         <p className="font-ui text-sm text-muted">Opening vault…</p>
@@ -145,8 +174,17 @@ export default function App() {
   }
 
   // Nothing of a wallet is in the tree behind the lock: it replaces
-  // the shell rather than covering it.
+  // the shell rather than covering it. It comes before the wallet list
+  // is waited on, which behind the lock is never asked for at all.
   if (locked) return <LockScreen />;
+
+  if (wallets.isPending) {
+    return (
+      <div className="shell-rail flex h-full items-center justify-center bg-shell">
+        <p className="font-ui text-sm text-muted">Opening vault…</p>
+      </div>
+    );
+  }
 
   const walletList = wallets.data ?? [];
   // Selection is derived, never reset by effects: a stale list between

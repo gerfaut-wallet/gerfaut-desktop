@@ -26,6 +26,7 @@ use gerfaut_core::wallet::snapshot::{
 };
 use serde::Serialize;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
 
@@ -98,6 +99,32 @@ fn internal(message: String) -> CommandError {
 
 pub(crate) struct AppState {
     pub(crate) manager: WalletManager,
+    /// Whether the lock screen stands in front of the vault.
+    ///
+    /// The curtain used to be drawn in the webview alone: every command
+    /// still answered behind it, so anything that reached the bridge —
+    /// a renderer gone wrong, a page left open on a screen nobody
+    /// watches — read descriptors, balances and the account key out of
+    /// a locked app. Set here at startup from the lock the vault holds,
+    /// raised again by [`lock_app`], and taken down by one thing only:
+    /// a secret the core verified.
+    pub(crate) locked: AtomicBool,
+}
+
+impl AppState {
+    /// The line every command that reads or writes the vault begins
+    /// with. Four pass: the two that read the lock itself, the one that
+    /// draws it, and the settings, redacted to what the lock screen is
+    /// painted with.
+    pub(crate) fn unlocked(&self) -> CommandResult<()> {
+        if self.locked.load(Ordering::SeqCst) {
+            return Err(CommandError {
+                kind: "locked",
+                message: "Gerfaut is locked.".to_owned(),
+            });
+        }
+        Ok(())
+    }
 }
 
 // --- file dialogs ------------------------------------------------------
@@ -243,6 +270,7 @@ async fn add_wallet(
     parsed: ParsedInput,
     network: Network,
 ) -> CommandResult<WalletMeta> {
+    state.unlocked()?;
     Ok(state.manager.add_wallet(&name, &parsed, network).await?)
 }
 
@@ -251,6 +279,7 @@ async fn list_wallets(
     state: tauri::State<'_, AppState>,
     network: Option<Network>,
 ) -> CommandResult<Vec<WalletMeta>> {
+    state.unlocked()?;
     Ok(state.manager.list_wallets(network).await)
 }
 
@@ -259,6 +288,7 @@ async fn wallet_snapshot(
     state: tauri::State<'_, AppState>,
     id: String,
 ) -> CommandResult<WalletSnapshot> {
+    state.unlocked()?;
     Ok(state.manager.wallet_snapshot(&id).await?)
 }
 
@@ -268,11 +298,13 @@ async fn tx_detail(
     id: String,
     txid: String,
 ) -> CommandResult<TxDetail> {
+    state.unlocked()?;
     Ok(state.manager.tx_detail(&id, &txid).await?)
 }
 
 #[tauri::command]
 async fn utxos(state: tauri::State<'_, AppState>, id: String) -> CommandResult<Vec<UtxoInfo>> {
+    state.unlocked()?;
     Ok(state.manager.utxos(&id).await?)
 }
 
@@ -281,6 +313,7 @@ async fn wallet_policy(
     state: tauri::State<'_, AppState>,
     id: String,
 ) -> CommandResult<PolicySnapshot> {
+    state.unlocked()?;
     Ok(state.manager.policy(&id).await?)
 }
 
@@ -290,11 +323,13 @@ async fn receive_addresses(
     id: String,
     lookahead: u32,
 ) -> CommandResult<Vec<AddressEntry>> {
+    state.unlocked()?;
     Ok(state.manager.receive_addresses(&id, lookahead).await?)
 }
 
 #[tauri::command]
 async fn sync_wallet(state: tauri::State<'_, AppState>, id: String) -> CommandResult<SyncReport> {
+    state.unlocked()?;
     Ok(state.manager.sync_wallet(&id).await?)
 }
 
@@ -302,6 +337,7 @@ async fn sync_wallet(state: tauri::State<'_, AppState>, id: String) -> CommandRe
 /// limit, for funds an incremental sync can no longer see.
 #[tauri::command]
 async fn rescan_wallet(state: tauri::State<'_, AppState>, id: String) -> CommandResult<SyncReport> {
+    state.unlocked()?;
     Ok(state.manager.rescan_wallet(&id).await?)
 }
 
@@ -309,6 +345,7 @@ async fn rescan_wallet(state: tauri::State<'_, AppState>, id: String) -> Command
 /// many transactions were added; zero means nothing older remains.
 #[tauri::command]
 async fn load_more_history(state: tauri::State<'_, AppState>, id: String) -> CommandResult<u32> {
+    state.unlocked()?;
     Ok(state.manager.load_more_history(&id).await?)
 }
 
@@ -317,6 +354,7 @@ async fn sync_all(
     state: tauri::State<'_, AppState>,
     network: Option<Network>,
 ) -> CommandResult<SyncAllReport> {
+    state.unlocked()?;
     Ok(state.manager.sync_all(network).await)
 }
 
@@ -326,11 +364,13 @@ async fn rename_wallet(
     id: String,
     name: String,
 ) -> CommandResult<()> {
+    state.unlocked()?;
     Ok(state.manager.rename_wallet(&id, &name).await?)
 }
 
 #[tauri::command]
 async fn remove_wallet(state: tauri::State<'_, AppState>, id: String) -> CommandResult<()> {
+    state.unlocked()?;
     Ok(state.manager.remove_wallet(&id).await?)
 }
 
@@ -340,6 +380,7 @@ async fn set_wallet_icon(
     id: String,
     icon: WalletIcon,
 ) -> CommandResult<()> {
+    state.unlocked()?;
     Ok(state.manager.set_wallet_icon(&id, icon).await?)
 }
 
@@ -347,12 +388,43 @@ async fn set_wallet_icon(
 /// their slots, so one network's list reorders without the others.
 #[tauri::command]
 async fn reorder_wallets(state: tauri::State<'_, AppState>, ids: Vec<String>) -> CommandResult<()> {
+    state.unlocked()?;
     Ok(state.manager.reorder_wallets(&ids).await?)
 }
 
+/// The settings, and behind the lock a copy cut down to what the lock
+/// screen needs to draw itself: the theme it is painted in and the kind
+/// of secret it must ask for. No backend, no accepted certificate, no
+/// account key — none of it is read until someone comes back, and a
+/// copy sitting in the webview's cache is a copy that can be read.
 #[tauri::command]
 async fn get_settings(state: tauri::State<'_, AppState>) -> CommandResult<Settings> {
-    Ok(state.manager.settings().await)
+    Ok(settings_of(&state).await)
+}
+
+async fn settings_of(state: &AppState) -> Settings {
+    let settings = state.manager.settings().await;
+    if state.locked.load(Ordering::SeqCst) {
+        return locked_settings(settings);
+    }
+    settings
+}
+
+/// The one preference the lock screen is drawn from. The rest of them
+/// say what the shell remembers — the unit, the masked amounts, the
+/// transactions last broadcast — and wait for the unlock.
+const THEME_PREF: &str = "desktop.theme";
+
+fn locked_settings(settings: Settings) -> Settings {
+    let theme = settings
+        .app_prefs
+        .get(THEME_PREF)
+        .map(|theme| (THEME_PREF.to_owned(), theme.clone()));
+    Settings {
+        app_prefs: theme.into_iter().collect(),
+        app_lock: settings.app_lock,
+        ..Settings::default()
+    }
 }
 
 #[tauri::command]
@@ -360,6 +432,7 @@ async fn set_active_network(
     state: tauri::State<'_, AppState>,
     network: Network,
 ) -> CommandResult<()> {
+    state.unlocked()?;
     Ok(state.manager.set_active_network(network).await?)
 }
 
@@ -369,11 +442,13 @@ async fn set_backend(
     network: Network,
     config: BackendConfig,
 ) -> CommandResult<()> {
+    state.unlocked()?;
     Ok(state.manager.set_backend(network, config).await?)
 }
 
 #[tauri::command]
 async fn set_gap_limit(state: tauri::State<'_, AppState>, gap_limit: u32) -> CommandResult<()> {
+    state.unlocked()?;
     Ok(state.manager.set_gap_limit(gap_limit).await?)
 }
 
@@ -384,6 +459,7 @@ async fn inspect_certificate(
     state: tauri::State<'_, AppState>,
     url: String,
 ) -> CommandResult<gerfaut_core::chain::CertificateReport> {
+    state.unlocked()?;
     Ok(state.manager.inspect_certificate(&url).await?)
 }
 
@@ -393,11 +469,13 @@ async fn trust_certificate(
     url: String,
     fingerprint: String,
 ) -> CommandResult<()> {
+    state.unlocked()?;
     Ok(state.manager.trust_certificate(&url, &fingerprint).await?)
 }
 
 #[tauri::command]
 async fn forget_certificate(state: tauri::State<'_, AppState>, host: String) -> CommandResult<()> {
+    state.unlocked()?;
     Ok(state.manager.forget_certificate(&host).await?)
 }
 
@@ -407,11 +485,13 @@ async fn set_app_pref(
     key: String,
     value: String,
 ) -> CommandResult<()> {
+    state.unlocked()?;
     Ok(state.manager.set_app_pref(key, value).await?)
 }
 
 #[tauri::command]
 async fn address_list(state: tauri::State<'_, AppState>, id: String) -> CommandResult<AddressList> {
+    state.unlocked()?;
     Ok(state.manager.address_list(&id).await?)
 }
 
@@ -427,6 +507,7 @@ async fn export_transactions_csv(
     options: gerfaut_core::export::ExportOptions,
     suggested_name: String,
 ) -> CommandResult<Option<u32>> {
+    state.unlocked()?;
     let result = state.manager.export_transactions(&id, &options).await?;
     let dialog = file_dialog(&app)
         .add_filter("CSV", &["csv"])
@@ -447,6 +528,7 @@ async fn preview_transaction(
     input: String,
     network: Network,
 ) -> CommandResult<gerfaut_core::broadcast::TxPreview> {
+    state.unlocked()?;
     Ok(state.manager.preview_transaction(&input, network).await?)
 }
 
@@ -457,6 +539,7 @@ async fn broadcast_transaction(
     network: Network,
     hex: String,
 ) -> CommandResult<gerfaut_core::broadcast::BroadcastReport> {
+    state.unlocked()?;
     Ok(state.manager.broadcast_transaction(network, &hex).await?)
 }
 
@@ -467,6 +550,7 @@ async fn transaction_status(
     network: Network,
     hex: String,
 ) -> CommandResult<gerfaut_core::broadcast::BroadcastStatus> {
+    state.unlocked()?;
     Ok(state.manager.transaction_status(network, &hex).await?)
 }
 
@@ -505,6 +589,7 @@ async fn check_update(app: tauri::AppHandle) -> CommandResult<gerfaut_core::upda
 /// and how far the built-in client has bootstrapped.
 #[tauri::command]
 async fn tor_status(state: tauri::State<'_, AppState>) -> CommandResult<TorStatus> {
+    state.unlocked()?;
     Ok(state.manager.tor_status().await)
 }
 
@@ -513,6 +598,7 @@ async fn set_tor_settings(
     state: tauri::State<'_, AppState>,
     settings: TorSettings,
 ) -> CommandResult<()> {
+    state.unlocked()?;
     Ok(state.manager.set_tor_settings(settings).await?)
 }
 
@@ -521,6 +607,7 @@ async fn set_tor_settings(
 /// and a half on a first run.
 #[tauri::command]
 async fn tor_connect(state: tauri::State<'_, AppState>) -> CommandResult<TorRoute> {
+    state.unlocked()?;
     Ok(state.manager.tor_connect().await?)
 }
 
@@ -540,6 +627,7 @@ async fn set_app_lock(
     secret: String,
     current: Option<String>,
 ) -> CommandResult<()> {
+    state.unlocked()?;
     Ok(state
         .manager
         .set_app_lock(kind, &secret, current.as_deref())
@@ -548,16 +636,43 @@ async fn set_app_lock(
 
 #[tauri::command]
 async fn clear_app_lock(state: tauri::State<'_, AppState>, current: String) -> CommandResult<()> {
+    state.unlocked()?;
     Ok(state.manager.clear_app_lock(&current).await?)
 }
 
 /// Tries a secret; the verdict carries the delay after repeated failures.
+/// A secret the core accepted is the only way the vault opens again.
 #[tauri::command]
 async fn verify_app_lock(
     state: tauri::State<'_, AppState>,
     secret: String,
 ) -> CommandResult<LockVerdict> {
-    Ok(state.manager.verify_app_lock(&secret).await?)
+    verify_lock(&state, &secret).await
+}
+
+async fn verify_lock(state: &AppState, secret: &str) -> CommandResult<LockVerdict> {
+    let verdict = state.manager.verify_app_lock(secret).await?;
+    if verdict.unlocked {
+        state.locked.store(false, Ordering::SeqCst);
+    }
+    Ok(verdict)
+}
+
+/// Draws the curtain on this side too. The webview calls it when it
+/// locks, so the two never disagree about whether the app is open.
+///
+/// A vault with no lock is left alone: there would be no secret to come
+/// back with, and the app would stay shut until the window is closed.
+#[tauri::command]
+async fn lock_app(state: tauri::State<'_, AppState>) -> CommandResult<()> {
+    lock_vault(&state).await
+}
+
+async fn lock_vault(state: &AppState) -> CommandResult<()> {
+    if state.manager.app_lock().await.is_some() {
+        state.locked.store(true, Ordering::SeqCst);
+    }
+    Ok(())
 }
 
 // --- backup ------------------------------------------------------------
@@ -570,6 +685,7 @@ async fn export_backup(
     options: BackupOptions,
     password: String,
 ) -> CommandResult<BackupBundle> {
+    state.unlocked()?;
     Ok(state.manager.export_backup(&options, &password).await?)
 }
 
@@ -643,6 +759,7 @@ async fn preview_backup(
     source: String,
     password: String,
 ) -> CommandResult<BackupPreview> {
+    state.unlocked()?;
     Ok(state.manager.preview_backup(&source, &password).await?)
 }
 
@@ -653,6 +770,7 @@ async fn import_backup(
     password: String,
     choices: ImportChoices,
 ) -> CommandResult<ImportReport> {
+    state.unlocked()?;
     Ok(state
         .manager
         .import_backup(&source, &password, &choices)
@@ -713,7 +831,14 @@ pub fn run() {
             let key = vault_key().map_err(std::io::Error::other)?;
             let manager = WalletManager::open(&data_dir, key)
                 .map_err(|e| std::io::Error::other(e.to_string()))?;
-            app.manage(AppState { manager });
+            // A vault that holds a lock opens shut: the first frame the
+            // webview draws is the lock screen, and until a secret goes
+            // through, the commands below answer nothing about it.
+            let locked = tauri::async_runtime::block_on(manager.app_lock()).is_some();
+            app.manage(AppState {
+                manager,
+                locked: AtomicBool::new(locked),
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -756,6 +881,7 @@ pub fn run() {
             set_app_lock,
             clear_app_lock,
             verify_app_lock,
+            lock_app,
             export_backup,
             save_backup_file,
             pick_backup_file,
@@ -903,5 +1029,201 @@ mod tests {
             bare_file_name("wallet-transactions.csv", "x"),
             "wallet-transactions.csv"
         );
+    }
+
+    // --- the lock guard ---------------------------------------------
+    //
+    // The curtain falls in two places and they have to agree: the
+    // webview stops drawing, and the vault stops answering. These cover
+    // the second one, which is the one anything reaching the bridge
+    // gets to skip when it is not there.
+
+    use std::sync::atomic::AtomicBool;
+
+    use gerfaut_core::WalletManager;
+    use gerfaut_core::lock::LockKind;
+    use gerfaut_core::premium::PremiumState;
+    use gerfaut_core::store::VaultKey;
+
+    use super::AppState;
+
+    /// A vault with a PIN on it, shut the way the app starts it.
+    fn locked_state(dir: &std::path::Path) -> (AppState, tokio::runtime::Runtime) {
+        let manager = WalletManager::open(dir, VaultKey::Raw([9u8; 32])).unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime
+            .block_on(manager.set_app_lock(LockKind::Pin, "246813", None))
+            .unwrap();
+        let locked = runtime.block_on(manager.app_lock()).is_some();
+        (
+            AppState {
+                manager,
+                locked: AtomicBool::new(locked),
+            },
+            runtime,
+        )
+    }
+
+    #[test]
+    fn a_vault_with_a_lock_opens_shut_and_only_a_secret_opens_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, runtime) = locked_state(dir.path());
+
+        // Shut on arrival, under the kind the screen reads it by.
+        assert_eq!(state.unlocked().unwrap_err().kind, "locked");
+
+        // A wrong secret changes nothing.
+        let verdict = runtime
+            .block_on(super::verify_lock(&state, "000000"))
+            .unwrap();
+        assert!(!verdict.unlocked);
+        assert!(state.unlocked().is_err());
+
+        // The right one opens it.
+        let verdict = runtime
+            .block_on(super::verify_lock(&state, "246813"))
+            .unwrap();
+        assert!(verdict.unlocked);
+        assert!(state.unlocked().is_ok());
+
+        // And Ctrl+L shuts it again.
+        runtime.block_on(super::lock_vault(&state)).unwrap();
+        assert_eq!(state.unlocked().unwrap_err().kind, "locked");
+    }
+
+    /// Shutting a vault with no lock on it would leave no secret to
+    /// come back with: the window would have to be closed.
+    #[test]
+    fn a_vault_with_no_lock_cannot_be_shut() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = WalletManager::open(dir.path(), VaultKey::Raw([9u8; 32])).unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let state = AppState {
+            manager,
+            locked: AtomicBool::new(false),
+        };
+
+        runtime.block_on(super::lock_vault(&state)).unwrap();
+        assert!(state.unlocked().is_ok());
+    }
+
+    /// Behind the lock the settings answer the theme and the kind of
+    /// secret to ask for. A backend, an accepted certificate, an
+    /// account key or the last transactions broadcast, sitting in the
+    /// webview's cache, are there to be read.
+    #[test]
+    fn the_settings_read_behind_the_lock_carry_nothing_of_the_vault() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, runtime) = locked_state(dir.path());
+        let pref = |key: &str, value: &str| {
+            runtime
+                .block_on(state.manager.set_app_pref(key.to_owned(), value.to_owned()))
+                .unwrap();
+        };
+        pref("desktop.theme", "dark");
+        pref("broadcast.recent", "[{\"txid\":\"ab\"}]");
+        runtime
+            .block_on(state.manager.set_premium_state(PremiumState {
+                key: Some("abcdefghijkmnpqr".to_owned()),
+                ..PremiumState::default()
+            }))
+            .unwrap();
+        runtime
+            .block_on(
+                state
+                    .manager
+                    .trust_certificate("ssl://node.example:50002", &["AB"; 32].join(":")),
+            )
+            .unwrap();
+
+        let shut = runtime.block_on(super::settings_of(&state));
+        assert_eq!(
+            shut.app_prefs.get("desktop.theme").map(String::as_str),
+            Some("dark")
+        );
+        assert_eq!(shut.app_prefs.len(), 1, "{:?}", shut.app_prefs);
+        assert_eq!(shut.app_lock.map(|lock| lock.kind), Some(LockKind::Pin));
+        assert!(shut.backends.is_empty());
+        assert!(shut.electrum_certs.is_empty());
+        assert_eq!(shut.premium, PremiumState::default());
+
+        // And in full once a secret went through.
+        runtime
+            .block_on(super::verify_lock(&state, "246813"))
+            .unwrap();
+        let open = runtime.block_on(super::settings_of(&state));
+        assert_eq!(open.premium.key.as_deref(), Some("abcdefghijkmnpqr"));
+        assert_eq!(open.electrum_certs.len(), 1);
+        assert!(open.app_prefs.contains_key("broadcast.recent"));
+    }
+
+    /// The guard is one line at the top of a function: the day a command
+    /// is added without it, this is the only thing that notices.
+    ///
+    /// Four commands answer behind the lock, and only four: the two that
+    /// read the lock itself, the one that draws it, and the settings,
+    /// which go through the redaction above instead.
+    #[test]
+    fn every_command_that_reaches_the_vault_begins_with_the_guard() {
+        const PASSES_LOCKED: [&str; 4] =
+            ["app_lock", "verify_app_lock", "lock_app", "get_settings"];
+        let sources = [
+            ("lib.rs", include_str!("lib.rs")),
+            ("premium.rs", include_str!("premium.rs")),
+        ];
+
+        let mut checked = 0;
+        for (file, source) in sources {
+            let lines: Vec<&str> = source.lines().collect();
+            for (index, line) in lines.iter().enumerate() {
+                let Some(rest) = line
+                    .strip_prefix("pub async fn ")
+                    .or_else(|| line.strip_prefix("async fn "))
+                else {
+                    continue;
+                };
+                let name = rest.split('(').next().unwrap_or_default();
+                // Commands only. The plain helpers next to them take a
+                // `&AppState` and are called from a guarded command.
+                let command = lines[..index]
+                    .iter()
+                    .rev()
+                    .take_while(|above| {
+                        let above = above.trim_start();
+                        above.starts_with("///")
+                            || above.starts_with("//")
+                            || above.starts_with("#[")
+                    })
+                    .any(|above| above.trim() == "#[tauri::command]");
+                if !command {
+                    continue;
+                }
+                // The body opens at the first line ending in `{`.
+                let Some(offset) = lines[index..]
+                    .iter()
+                    .position(|line| line.trim_end().ends_with('{'))
+                else {
+                    continue;
+                };
+                let body = index + offset;
+                // A command handed no state never reaches the vault.
+                if !lines[index..=body]
+                    .iter()
+                    .any(|line| line.contains("tauri::State<'_, AppState>"))
+                {
+                    continue;
+                }
+                checked += 1;
+                let guarded = lines[body + 1].trim() == "state.unlocked()?;";
+                assert_eq!(
+                    guarded,
+                    !PASSES_LOCKED.contains(&name),
+                    "{file}: {name} reaches the vault, so it begins with \
+                     `state.unlocked()?;` unless it is one of {PASSES_LOCKED:?}"
+                );
+            }
+        }
+        // A count, so an empty scan cannot pass for a clean one.
+        assert!(checked >= 50, "only {checked} commands scanned");
     }
 }

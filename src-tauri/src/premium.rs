@@ -175,6 +175,7 @@ async fn store_licence(
 /// the same offline.
 #[tauri::command]
 pub async fn premium_status(state: tauri::State<'_, AppState>) -> CommandResult<PremiumStatus> {
+    state.unlocked()?;
     Ok(status(&state).await)
 }
 
@@ -186,6 +187,7 @@ pub async fn premium_activate(
     state: tauri::State<'_, AppState>,
     key: String,
 ) -> CommandResult<PremiumStatus> {
+    state.unlocked()?;
     if !licence::is_well_formed_key(&key) {
         return Err(CommandError {
             kind: "invalid_input",
@@ -204,6 +206,7 @@ pub async fn premium_activate(
 /// agreed to is not asked about twice.
 #[tauri::command]
 pub async fn premium_forget(state: tauri::State<'_, AppState>) -> CommandResult<PremiumStatus> {
+    state.unlocked()?;
     let mut premium = state.manager.premium_state().await;
     premium.key = None;
     premium.certificate = None;
@@ -217,6 +220,7 @@ pub async fn premium_forget(state: tauri::State<'_, AppState>) -> CommandResult<
 /// its new date here. A key with no paid time still reads its account.
 #[tauri::command]
 pub async fn premium_account(state: tauri::State<'_, AppState>) -> CommandResult<PremiumAccount> {
+    state.unlocked()?;
     let client = client(&state).await?;
     let account = client.account().await?;
     if let Ok(licence) = client.licence().await {
@@ -230,6 +234,7 @@ pub async fn premium_account(state: tauri::State<'_, AppState>) -> CommandResult
 
 #[tauri::command]
 pub async fn premium_wallets(state: tauri::State<'_, AppState>) -> CommandResult<Vec<WalletWatch>> {
+    state.unlocked()?;
     Ok(client(&state).await?.wallets().await?)
 }
 
@@ -242,6 +247,7 @@ pub async fn premium_watch_wallet(
     state: tauri::State<'_, AppState>,
     id: String,
 ) -> CommandResult<()> {
+    state.unlocked()?;
     let wallet = state
         .manager
         .list_wallets(None)
@@ -271,6 +277,7 @@ pub async fn premium_unwatch_wallet(
     state: tauri::State<'_, AppState>,
     id: String,
 ) -> CommandResult<()> {
+    state.unlocked()?;
     Ok(client(&state).await?.delete_wallet(&id).await?)
 }
 
@@ -278,6 +285,7 @@ pub async fn premium_unwatch_wallet(
 pub async fn premium_channels(
     state: tauri::State<'_, AppState>,
 ) -> CommandResult<Vec<ChannelView>> {
+    state.unlocked()?;
     let channels = client(&state).await?.channels().await?;
     Ok(channels.into_iter().map(view_of).collect())
 }
@@ -292,6 +300,7 @@ pub async fn premium_add_channel(
     target: Option<String>,
     secret: Option<String>,
 ) -> CommandResult<NewChannel> {
+    state.unlocked()?;
     let client = client(&state).await?;
     let (target, subscribe_url) = match kind {
         ChannelKind::Ntfy => {
@@ -316,6 +325,7 @@ pub async fn premium_delete_channel(
     state: tauri::State<'_, AppState>,
     id: String,
 ) -> CommandResult<()> {
+    state.unlocked()?;
     Ok(client(&state).await?.delete_channel(&id).await?)
 }
 
@@ -329,6 +339,7 @@ pub async fn premium_confirm_channel(
     id: String,
     code: String,
 ) -> CommandResult<ChannelView> {
+    state.unlocked()?;
     confirm_channel(&state, DEFAULT_BASE_URL, &id, &code).await
 }
 
@@ -359,6 +370,7 @@ async fn confirm_channel(
 pub async fn premium_delete_account(
     state: tauri::State<'_, AppState>,
 ) -> CommandResult<PremiumStatus> {
+    state.unlocked()?;
     delete_account(&state, DEFAULT_BASE_URL).await
 }
 
@@ -374,12 +386,14 @@ pub async fn premium_test_channel(
     state: tauri::State<'_, AppState>,
     id: String,
 ) -> CommandResult<()> {
+    state.unlocked()?;
     Ok(client(&state).await?.test_channel(&id).await?)
 }
 
 /// The last twenty events, newest first.
 #[tauri::command]
 pub async fn premium_events(state: tauri::State<'_, AppState>) -> CommandResult<Vec<Event>> {
+    state.unlocked()?;
     let events = client(&state).await?.events(0, EVENTS_PAGE).await?;
     Ok(latest_events(events, RECENT_EVENTS))
 }
@@ -391,6 +405,7 @@ pub async fn premium_events(state: tauri::State<'_, AppState>) -> CommandResult<
 pub async fn premium_heartbeat(
     state: tauri::State<'_, AppState>,
 ) -> CommandResult<HeartbeatReport> {
+    state.unlocked()?;
     let report = client(&state).await?.heartbeat(now_unix()).await?;
     let premium = state.manager.premium_state().await;
     if premium.acknowledged_offline_until.is_some() {
@@ -407,6 +422,7 @@ pub async fn premium_heartbeat(
 pub async fn premium_acknowledge_offline(
     state: tauri::State<'_, AppState>,
 ) -> CommandResult<PremiumStatus> {
+    state.unlocked()?;
     let mut premium = state.manager.premium_state().await;
     premium.acknowledged_offline_until = Some(now_unix() + ACKNOWLEDGE_SECS);
     state.manager.set_premium_state(premium).await?;
@@ -678,7 +694,10 @@ mod tests {
                 ..PremiumState::default()
             }))
             .unwrap();
-        AppState { manager }
+        AppState {
+            manager,
+            locked: std::sync::atomic::AtomicBool::new(false),
+        }
     }
 
     const EMAIL_CHANNEL: &str = r#"{"id":"4f8f5252-b152-4fae-b142-5e6f70819203","kind":"email","target":"a…@example.org","linked":true,"link_code":null,"link_url":null,"linked_name":null,"enabled":true,"created_at":1789000004}"#;

@@ -2507,11 +2507,18 @@ describe("the app lock", () => {
     document.documentElement.removeAttribute("data-theme");
   });
 
-  function mockLocked(verdicts: LockVerdict[], prefs?: Record<string, string>) {
+  function mockLocked(
+    verdicts: LockVerdict[],
+    prefs?: Record<string, string>,
+    seen?: string[],
+  ) {
     const settings = prefs ? { ...LOCKED, app_prefs: prefs } : LOCKED;
     let attempt = 0;
     mockIPC((cmd) => {
+      seen?.push(cmd);
       switch (cmd) {
+        case "lock_app":
+          return undefined;
         case "get_settings":
           return settings;
         case "app_lock":
@@ -2706,6 +2713,79 @@ describe("the app lock", () => {
     // And the theme is the first thing the vault's answer changes, so
     // no frame is ever painted on the wrong ramp.
     expect(drawn[0]).toBe("theme:dark");
+  });
+
+  it("asks the vault for nothing of a wallet while it is shut", async () => {
+    // The lock screen used to be a curtain in front of a cache the
+    // vault had already filled: the wallet list, its balances, the
+    // account key. Behind the curtain nothing is asked for at all.
+    const seen: string[] = [];
+    mockLocked([{ unlocked: true, failures: 0, retry_after_secs: 0 }], undefined, seen);
+    renderApp();
+    const user = userEvent.setup();
+
+    await screen.findByText("Locked");
+    expect(seen).not.toContain("list_wallets");
+
+    await user.type(screen.getByLabelText("PIN"), "1234");
+    await user.click(screen.getByRole("button", { name: /unlock/i }));
+    await screen.findByRole("navigation", { name: "Navigation" });
+
+    // And once a secret went through, the vault is read normally.
+    expect(seen).toContain("list_wallets");
+  });
+
+  it("Ctrl+L shuts the vault and empties what it had answered", async () => {
+    const seen: string[] = [];
+    mockLocked([{ unlocked: true, failures: 0, retry_after_secs: 0 }], undefined, seen);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByLabelText("PIN"), "1234");
+    await user.click(screen.getByRole("button", { name: /unlock/i }));
+    await screen.findByRole("navigation", { name: "Navigation" });
+    expect(client.getQueryData(["wallets", "signet"])).toBeDefined();
+
+    await user.keyboard("{Control>}l{/Control}");
+    await screen.findByText("Locked");
+
+    // The Rust side is told, so the commands stop answering there too.
+    await waitFor(() => expect(seen).toContain("lock_app"));
+    // And what it had already answered is gone from the webview.
+    expect(client.getQueryData(["wallets", "signet"])).toBeUndefined();
+    expect(client.getQueryData(["snapshot", WALLET.id])).toBeUndefined();
+    const kept = client.getQueryData<Settings>(["settings"]);
+    expect(kept?.app_lock).toEqual(LOCKED.app_lock);
+    expect(kept?.premium.key).toBeNull();
+    expect(kept?.electrum_certs).toEqual({});
+  });
+
+  it("reads a command refused by the lock as the lock, not a broken vault", async () => {
+    // A read in flight when the curtain falls comes back refused. The
+    // answer is the lock screen, not "the vault could not be opened".
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "get_settings":
+          return LOCKED;
+        case "app_lock":
+          return LOCKED.app_lock;
+        case "lock_app":
+          return undefined;
+        case "list_wallets":
+          throw { kind: "locked", message: "Gerfaut is locked." };
+        default:
+          return undefined;
+      }
+    });
+    renderApp();
+
+    expect(await screen.findByText("Locked")).toBeInTheDocument();
+    expect(screen.queryByText(/vault could not be opened/i)).not.toBeInTheDocument();
   });
 
   it("a PIN field takes digits only", async () => {

@@ -70,10 +70,14 @@ export function usePublicServers(network: Network) {
   });
 }
 
-export function useWallets(network?: Network) {
+/** The wallets of a network. `enabled` is how the lock keeps them out
+    of the cache: the list is names, kinds and networks, and behind the
+    lock screen none of it has any business being in the webview. */
+export function useWallets(network?: Network, enabled = true) {
   return useQuery({
     queryKey: keys.wallets(network),
     queryFn: () => ipc.listWallets(network),
+    enabled,
   });
 }
 

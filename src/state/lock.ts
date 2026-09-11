@@ -11,11 +11,41 @@
 // lock that fires while its owner reads a transaction teaches them to
 // turn it off. Ctrl+L is how someone leaving the desk draws the
 // curtain again.
+//
+// The curtain falls in two places. Here, so nothing of a wallet is in
+// the tree; and in the core, told through `lock_app`, so the vault
+// itself answers nothing while it is down. The second one is what
+// holds when the first one is got around.
 
 import { useEffect } from "react";
 import { create } from "zustand";
-import type { AppLock, LockVerdict } from "../lib/ipc";
-import { ipc } from "../lib/ipc";
+import type { AppLock, LockVerdict, Settings } from "../lib/ipc";
+import { ipc, isCommandError } from "../lib/ipc";
+
+/** Whether a command came back refused because the app is locked. */
+export function isLockedError(error: unknown): boolean {
+  return isCommandError(error) && error.kind === "locked";
+}
+
+/** The settings cut down to what the lock screen is drawn from: the
+    theme, and the kind of secret to ask for.
+
+    The Rust side cuts them the same way when it answers behind the
+    lock. It is done here as well because the copy already in the cache
+    when the curtain falls was answered in full — backends, accepted
+    certificates, the account key — and dropping the entry outright
+    would lose the theme and flash the splash on the way to the lock
+    screen. */
+export function lockedSettings(settings: Settings): Settings {
+  const theme = settings.app_prefs["desktop.theme"];
+  return {
+    ...settings,
+    backends: {},
+    electrum_certs: {},
+    app_prefs: theme === undefined ? {} : { "desktop.theme": theme },
+    premium: { key: null, certificate: null, watched: [], acknowledged_offline_until: null },
+  };
+}
 
 interface LockState {
   /** The lock the vault holds, without its hash; null when none. */
@@ -52,7 +82,13 @@ export const useLock = create<LockState>((set, get) => ({
   },
 
   lockNow: () => {
-    if (get().lock !== null) set({ locked: true });
+    if (get().lock === null) return;
+    // The curtain first, so nothing of a wallet is drawn while the
+    // vault is being shut; then the vault, which is what actually
+    // stops answering. A vault that refuses before the screen has
+    // changed would only paint failures over the wallet it is hiding.
+    set({ locked: true });
+    void ipc.lockApp().catch(() => {});
   },
 }));
 
