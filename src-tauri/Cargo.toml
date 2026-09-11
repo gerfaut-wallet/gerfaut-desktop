@@ -35,6 +35,8 @@ data-encoding = "2"
 # The tests sign the licences they then read back; the app itself never
 # signs anything.
 ed25519-dalek = "2"
+# A vault of their own for the tests that open one.
+tempfile = "3"
 
 # Cargo only honours [patch] in the root manifest: the same pin as in
 # gerfaut-core, see the note there.

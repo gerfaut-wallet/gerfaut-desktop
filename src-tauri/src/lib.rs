@@ -774,6 +774,8 @@ pub fn run() {
             premium::premium_channels,
             premium::premium_add_channel,
             premium::premium_delete_channel,
+            premium::premium_confirm_channel,
+            premium::premium_delete_account,
             premium::premium_test_channel,
             premium::premium_events,
             premium::premium_heartbeat,

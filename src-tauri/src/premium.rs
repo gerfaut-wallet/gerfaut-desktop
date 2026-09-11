@@ -319,6 +319,54 @@ pub async fn premium_delete_channel(
     Ok(client(&state).await?.delete_channel(&id).await?)
 }
 
+/// Confirms an e-mail channel with the code the server sent to that
+/// address: nothing is written to it before its owner typed the code
+/// back. A wrong or expired code, or too many tries, comes back in the
+/// server's words; the channel comes back as the list shows it.
+#[tauri::command]
+pub async fn premium_confirm_channel(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    code: String,
+) -> CommandResult<ChannelView> {
+    confirm_channel(&state, DEFAULT_BASE_URL, &id, &code).await
+}
+
+async fn confirm_channel(
+    state: &AppState,
+    base_url: &str,
+    id: &str,
+    code: &str,
+) -> CommandResult<ChannelView> {
+    let code = code.trim();
+    if code.is_empty() {
+        return Err(CommandError {
+            kind: "invalid_input",
+            message: "type the code from the e-mail".to_owned(),
+        });
+    }
+    let channel = state
+        .manager
+        .premium_confirm_channel(base_url, id, code)
+        .await?;
+    Ok(view_of(channel))
+}
+
+/// Deletes the account on the server, everything it watches and tells
+/// included, and forgets the key here once the server said it did. The
+/// opposite of `premium_forget`, which leaves the server as it is.
+#[tauri::command]
+pub async fn premium_delete_account(
+    state: tauri::State<'_, AppState>,
+) -> CommandResult<PremiumStatus> {
+    delete_account(&state, DEFAULT_BASE_URL).await
+}
+
+async fn delete_account(state: &AppState, base_url: &str) -> CommandResult<PremiumStatus> {
+    state.manager.premium_delete_account(base_url).await?;
+    Ok(status(state).await)
+}
+
 /// Sends a test message right away; the provider's refusal comes back
 /// in its own words.
 #[tauri::command]
@@ -523,6 +571,7 @@ mod tests {
             linked,
             link_code: code.map(str::to_owned),
             link_url: None,
+            linked_name: None,
             enabled: true,
             created_at: NOW,
         }
@@ -548,5 +597,177 @@ mod tests {
         assert_eq!(json["kind"], "telegram");
         assert_eq!(json["linked"], false);
         assert!(json["telegram_url"].is_string());
+    }
+
+    // --- against a server ---------------------------------------------
+    //
+    // The commands that talk to the server are run against one on
+    // loopback that answers every request the same way and hands each
+    // request to the test: what left the app is checked byte by byte.
+
+    use std::io::{Read, Write};
+    use std::net::{Ipv4Addr, Shutdown, TcpListener};
+    use std::sync::mpsc;
+
+    use gerfaut_core::WalletManager;
+    use gerfaut_core::store::VaultKey;
+
+    /// One HTTP request, read whole: the head, then as much body as its
+    /// `Content-Length` announces.
+    fn read_request(stream: &mut std::net::TcpStream) -> String {
+        let mut bytes = Vec::new();
+        let mut buf = [0u8; 4096];
+        loop {
+            let n = stream.read(&mut buf).unwrap_or(0);
+            if n == 0 {
+                break;
+            }
+            bytes.extend_from_slice(&buf[..n]);
+            let text = String::from_utf8_lossy(&bytes);
+            let Some(end) = text.find("\r\n\r\n") else {
+                continue;
+            };
+            let length = text[..end]
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().ok())
+                        .flatten()
+                })
+                .unwrap_or(0);
+            if bytes.len() >= end + 4 + length {
+                break;
+            }
+        }
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+
+    /// A premium server on loopback that answers every request with
+    /// `status` and `body`, and hands each request to the test.
+    fn stub_server(status: u16, body: &'static str) -> (String, mpsc::Receiver<String>) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { break };
+                let request = read_request(&mut stream);
+                let _ = sender.send(request);
+                let response = format!(
+                    "HTTP/1.1 {status} Stub\r\nContent-Type: application/json\r\n\
+                     Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.shutdown(Shutdown::Both);
+            }
+        });
+        (format!("http://{address}"), receiver)
+    }
+
+    /// A fresh vault holding an account: a key and a certificate.
+    fn state_with_account(dir: &std::path::Path) -> AppState {
+        let manager = WalletManager::open(dir, VaultKey::Raw([7u8; 32])).unwrap();
+        let (signing, _) = signer();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime
+            .block_on(manager.set_premium_state(PremiumState {
+                key: Some("abcdefghijkmnpqr".to_owned()),
+                certificate: Some(issue(&signing, NOW + 86_400)),
+                ..PremiumState::default()
+            }))
+            .unwrap();
+        AppState { manager }
+    }
+
+    const EMAIL_CHANNEL: &str = r#"{"id":"4f8f5252-b152-4fae-b142-5e6f70819203","kind":"email","target":"a…@example.org","linked":true,"link_code":null,"link_url":null,"linked_name":null,"enabled":true,"created_at":1789000004}"#;
+
+    /// The code goes to the channel's own route with the stored key,
+    /// the channel comes back as the list shows it, and a code the
+    /// server refuses is refused in its words.
+    #[test]
+    fn confirming_a_channel_sends_the_code_and_reads_the_channel_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        let (base_url, requests) = stub_server(200, EMAIL_CHANNEL);
+        let view = runtime
+            .block_on(confirm_channel(
+                &state,
+                &base_url,
+                "4f8f5252-b152-4fae-b142-5e6f70819203",
+                " 482913 ",
+            ))
+            .unwrap();
+        assert_eq!(view.channel.kind, ChannelKind::Email);
+        assert!(view.channel.linked);
+        assert_eq!(view.telegram_url, None);
+        let request = requests.recv().unwrap();
+        assert!(
+            request.starts_with(
+                "POST /v1/channels/4f8f5252-b152-4fae-b142-5e6f70819203/confirm HTTP/1.1"
+            ),
+            "{request}"
+        );
+        assert!(request.contains("Bearer abcdefghijkmnpqr"), "{request}");
+        assert!(request.ends_with(r#"{"code":"482913"}"#), "{request}");
+
+        // A wrong or expired code, and one try too many: the server's
+        // sentence, under the kind the screen reads it by.
+        for (status, body, words) in [
+            (
+                400,
+                r#"{"error":"wrong or expired code"}"#,
+                "wrong or expired code",
+            ),
+            (429, r#"{"error":"too many tries"}"#, "too many tries"),
+        ] {
+            let (base_url, _) = stub_server(status, body);
+            let error = runtime
+                .block_on(confirm_channel(&state, &base_url, "x", "000000"))
+                .unwrap_err();
+            assert_eq!(error.kind, "premium_rejected");
+            assert_eq!(error.message, words);
+        }
+
+        // An empty code never leaves the app.
+        let (base_url, requests) = stub_server(200, EMAIL_CHANNEL);
+        let error = runtime
+            .block_on(confirm_channel(&state, &base_url, "x", "  "))
+            .unwrap_err();
+        assert_eq!(error.kind, "invalid_input");
+        assert!(requests.try_recv().is_err());
+    }
+
+    /// One request with the stored key; the key is forgotten here only
+    /// once the server said the account is gone.
+    #[test]
+    fn deleting_the_account_forgets_the_key_once_the_server_confirms() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        let (base_url, _) = stub_server(503, r#"{"error":"node unreachable"}"#);
+        let error = runtime
+            .block_on(delete_account(&state, &base_url))
+            .unwrap_err();
+        assert_eq!(error.kind, "premium_unreachable");
+        assert_eq!(
+            runtime.block_on(status(&state)).key.as_deref(),
+            Some("abcd-efgh-ijkm-npqr")
+        );
+
+        let (base_url, requests) = stub_server(200, r#"{"deleted":true}"#);
+        let after = runtime.block_on(delete_account(&state, &base_url)).unwrap();
+        assert_eq!(after.key, None);
+        assert_eq!(after.licence, None);
+        let request = requests.recv().unwrap();
+        assert!(
+            request.starts_with("DELETE /v1/account HTTP/1.1"),
+            "{request}"
+        );
+        assert!(request.contains("Bearer abcdefghijkmnpqr"), "{request}");
     }
 }
