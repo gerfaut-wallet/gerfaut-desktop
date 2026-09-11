@@ -99,7 +99,12 @@ export function WatchedWalletsCard({
                         "Single addresses cannot be watched yet."
                       ) : server ? (
                         server.baseline_at === null ? (
-                          <span role="status">Scanning…</span>
+                          // The server has not finished its first pass
+                          // over this wallet: the counts it would show
+                          // are not the wallet's yet. "Scanning…" read
+                          // as work happening right now — a queue of an
+                          // hour reads as a scan stuck for an hour.
+                          <span role="status">First scan pending</span>
                         ) : (
                           <span className="tabular">
                             Watched since {shortDay(server.watched_since)} · {coinsWord(server.coins)}

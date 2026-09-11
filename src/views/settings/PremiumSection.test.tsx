@@ -488,7 +488,7 @@ describe("the watched wallets card", () => {
     await waitFor(() => expect(of("premium_watch_wallet", calls)).toEqual([{ id: "w-1" }]));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     const row = cold.closest("li")!;
-    expect(await within(row).findByText("Scanning…")).toBeInTheDocument();
+    expect(await within(row).findByText("First scan pending")).toBeInTheDocument();
     expect(within(row).getByText("Watched")).toBeInTheDocument();
     expect(row.querySelector("svg.lucide-gem")).not.toBeNull();
     expect(cold).toHaveAttribute("aria-checked", "true");
@@ -496,7 +496,7 @@ describe("the watched wallets card", () => {
     // The first scan finishes: the list was asked again on its own.
     watched = [WATCHED_DONE];
     expect(await within(row).findByText(/Watched since \w+ \d+ · 3 coins/)).toBeInTheDocument();
-    expect(within(row).queryByText("Scanning…")).not.toBeInTheDocument();
+    expect(within(row).queryByText("First scan pending")).not.toBeInTheDocument();
   });
 
   it("does not ask again for a wallet already agreed to, and stops at once", async () => {
