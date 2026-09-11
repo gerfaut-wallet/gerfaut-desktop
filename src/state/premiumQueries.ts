@@ -118,17 +118,38 @@ export function useActivatePremium() {
   });
 }
 
+/** Everything the old key was worth showing, dropped: what the server
+    said about it is not ours to show once it is not ours. */
+function forgetServerState(client: ReturnType<typeof useQueryClient>) {
+  client.removeQueries({ queryKey: premiumKeys.account });
+  client.removeQueries({ queryKey: premiumKeys.wallets });
+  client.removeQueries({ queryKey: premiumKeys.channels });
+  client.removeQueries({ queryKey: premiumKeys.events });
+}
+
+/** Deletes the account on the server — the wallets it watches, the
+    channels it tells, the key itself — and then forgets it here. The
+    core does the second half only once the server confirmed the first,
+    so a failed call leaves the key where it was. */
+export function useDeleteAccount() {
+  const client = useQueryClient();
+  const invalidate = useInvalidatePremium();
+  return useMutation({
+    mutationFn: () => ipc.premiumDeleteAccount(),
+    onSuccess: () => {
+      forgetServerState(client);
+      invalidate();
+    },
+  });
+}
+
 export function useForgetPremium() {
   const client = useQueryClient();
   const invalidate = useInvalidatePremium();
   return useMutation({
     mutationFn: () => ipc.premiumForget(),
     onSuccess: () => {
-      // What the server said about the old key is no longer ours to show.
-      client.removeQueries({ queryKey: premiumKeys.account });
-      client.removeQueries({ queryKey: premiumKeys.wallets });
-      client.removeQueries({ queryKey: premiumKeys.channels });
-      client.removeQueries({ queryKey: premiumKeys.events });
+      forgetServerState(client);
       invalidate();
     },
   });
@@ -160,6 +181,21 @@ export function useAddChannel() {
   return useMutation({
     mutationFn: (args: { kind: ChannelKind; target?: string; secret?: string }) =>
       ipc.premiumAddChannel(args.kind, args.target, args.secret),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: premiumKeys.channels });
+      void client.invalidateQueries({ queryKey: premiumKeys.account });
+    },
+  });
+}
+
+/** Sends back the code the server e-mailed, which is what turns an
+    e-mail channel on: nothing is written to an address before its owner
+    proved they read it. */
+export function useConfirmChannel() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; code: string }) =>
+      ipc.premiumConfirmChannel(args.id, args.code),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: premiumKeys.channels });
       void client.invalidateQueries({ queryKey: premiumKeys.account });

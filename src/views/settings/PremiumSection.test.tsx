@@ -130,6 +130,19 @@ const TELEGRAM_WAITING: Channel = {
   telegram_url: "https://t.me/GerfautAlertsBot?start=0123456789ab",
 };
 
+const EMAIL_WAITING: Channel = {
+  id: "c-mail",
+  kind: "email",
+  target: "l…c@example.org",
+  linked: false,
+  link_code: null,
+  link_url: null,
+  linked_name: null,
+  enabled: true,
+  created_at: NOW - 120,
+  telegram_url: null,
+};
+
 const EVENTS: PremiumEvent[] = [
   {
     id: 42,
@@ -611,6 +624,10 @@ describe("the channels card", () => {
         { kind: "email", target: "loic@example.org", secret: null },
       ]),
     );
+    // Created and silent: the server wrote once, to send the code.
+    const sent = screen.getByRole("dialog", { name: "Confirm this e-mail address" });
+    expect(sent).toHaveTextContent("Confirmation sent to loic@example.org");
+    await user.click(within(sent).getByRole("button", { name: "Later" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Add a channel" }));
@@ -627,6 +644,108 @@ describe("the channels card", () => {
       target: "https://example.invalid/hook",
       secret: "s3cret",
     });
+  });
+
+  it("turns an e-mail channel on only once its code comes back", async () => {
+    // An address is not a channel until its owner proves they read it:
+    // anyone can type someone else's e-mail into that field.
+    let channels: Channel[] = [EMAIL_WAITING];
+    let answer: () => unknown = () => {
+      channels = [{ ...EMAIL_WAITING, linked: true }];
+      return channels[0];
+    };
+    const calls = mockPremium({
+      premium_channels: () => channels,
+      premium_confirm_channel: () => answer(),
+    });
+    renderSection();
+    const user = userEvent.setup();
+
+    // The row says what it is waiting for, and offers the field.
+    expect(await screen.findByText("Waiting for the code")).toBeInTheDocument();
+    expect(card("Channels").queryByText("Linked")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Enter code" }));
+    const dialog = screen.getByRole("dialog", { name: "Confirm this e-mail address" });
+
+    const confirm = within(dialog).getByRole("button", { name: "Confirm" });
+    const field = within(dialog).getByLabelText("Code");
+    expect(confirm).toBeDisabled();
+    // Digits only, six of them.
+    await user.type(field, "48ab2913x");
+    expect(field).toHaveValue("482913");
+    expect(confirm).toBeEnabled();
+
+    await user.click(confirm);
+    await waitFor(() =>
+      expect(of("premium_confirm_channel", calls)).toEqual([
+        { id: "c-mail", code: "482913" },
+      ]),
+    );
+    expect(await card("Channels").findByText("Linked")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(useUi.getState().toast).toBe("Channel confirmed");
+  });
+
+  it("repeats what the server said about a code, in its own words", async () => {
+    let answer: () => unknown = () => {
+      throw { kind: "premium_rejected", message: "wrong or expired code" };
+    };
+    mockPremium({
+      premium_channels: () => [EMAIL_WAITING],
+      premium_confirm_channel: () => answer(),
+    });
+    renderSection();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Enter code" }));
+    const dialog = screen.getByRole("dialog", { name: "Confirm this e-mail address" });
+    const type = async (code: string) => {
+      await user.clear(within(dialog).getByLabelText("Code"));
+      await user.type(within(dialog).getByLabelText("Code"), code);
+      await user.click(within(dialog).getByRole("button", { name: "Confirm" }));
+    };
+
+    await type("000000");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Wrong or expired code.",
+    );
+
+    answer = () => {
+      throw { kind: "premium_rejected", message: "too many tries" };
+    };
+    await type("111111");
+    await waitFor(() =>
+      expect(within(dialog).getByRole("alert")).toHaveTextContent("Too many tries."),
+    );
+
+    // A 5xx that says what failed says it: the channel was not kept,
+    // and "could not reach the server" would send nobody anywhere.
+    answer = () => {
+      throw {
+        kind: "premium_unreachable",
+        message: "the premium server is unreachable: HTTP 502: the e-mail could not be sent",
+      };
+    };
+    await type("222222");
+    await waitFor(() =>
+      expect(within(dialog).getByRole("alert")).toHaveTextContent(
+        "The e-mail could not be sent.",
+      ),
+    );
+    // The dialog stays: the code is retyped where it was typed.
+    expect(within(dialog).getByRole("button", { name: "Confirm" })).toBeInTheDocument();
+  });
+
+  it("names the chat a Telegram channel is linked to", async () => {
+    mockPremium({
+      premium_channels: () => [
+        { ...TELEGRAM_WAITING, linked: true, link_code: null, telegram_url: null, linked_name: "Loïc" },
+      ],
+    });
+    renderSection();
+
+    // Who receives the alerts, not only that someone does.
+    expect(await screen.findByText("Linked to Loïc")).toBeInTheDocument();
   });
 
   it("tests and removes a channel from its menu, from the keyboard", async () => {

@@ -1008,6 +1008,9 @@ export const ipc = {
       secret: secret ?? null,
     }),
   premiumDeleteChannel: (id: string) => invoke<void>("premium_delete_channel", { id }),
+  premiumConfirmChannel: (id: string, code: string) =>
+    invoke<Channel>("premium_confirm_channel", { id, code }),
+  premiumDeleteAccount: () => invoke<PremiumStatus>("premium_delete_account"),
   premiumTestChannel: (id: string) => invoke<void>("premium_test_channel", { id }),
   premiumEvents: () => invoke<PremiumEvent[]>("premium_events"),
   premiumHeartbeat: () => invoke<HeartbeatReport>("premium_heartbeat"),

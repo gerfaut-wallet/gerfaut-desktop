@@ -21,7 +21,12 @@ import { Button, IconButton } from "../../../components/Button";
 import { Modal } from "../../../components/Modal";
 import { Pill } from "../../../components/StatusPill";
 import type { Channel, ChannelKind, NewChannel } from "../../../lib/ipc";
-import { useAddChannel, useDeleteChannel, useTestChannel } from "../../../state/premiumQueries";
+import {
+  useAddChannel,
+  useConfirmChannel,
+  useDeleteChannel,
+  useTestChannel,
+} from "../../../state/premiumQueries";
 import { useUi } from "../../../state/store";
 import { FieldLabel, SectionCard } from "../primitives";
 import { FailureNote } from "./shared";
@@ -59,11 +64,110 @@ function kindOf(kind: ChannelKind) {
   return KINDS.find((entry) => entry.kind === kind) ?? KINDS[0];
 }
 
-/** What the row shows for a channel's target: the masked address the
-    server gives, or the kind's name when there is nothing to show. */
+/** What the row shows for a channel's target: who it is linked to when
+    the server knows a name for it — the Telegram chat that sent the
+    code, so the owner sees whose screen the alerts land on and not only
+    that someone's does — then the masked address, then the kind's name.
+    */
 function targetOf(channel: Channel): string {
+  if (channel.linked && channel.linked_name !== null && channel.linked_name.length > 0) {
+    return `Linked to ${channel.linked_name}`;
+  }
   if (channel.target.length > 0) return channel.target;
   return channel.kind === "telegram" ? "Telegram" : kindOf(channel.kind).label;
+}
+
+/** A channel the server will not write to yet, and what it is waiting
+    for: the bot to be sent the code, or the code to be sent back. */
+function waitingWord(channel: Channel): string | null {
+  if (channel.linked) return null;
+  if (channel.kind === "telegram") return "Waiting for the bot";
+  if (channel.kind === "email") return "Waiting for the code";
+  return null;
+}
+
+/** How many digits the server sends. */
+const CODE_LENGTH = 6;
+
+/** The six digits the server e-mails, typed back.
+
+    An address is not a channel until its owner proves they read it:
+    anyone can type someone else's e-mail into this field, and without
+    the round trip that someone else starts receiving alerts about a
+    wallet they never heard of. */
+function CodeForm({
+  channel,
+  sentTo,
+  onDone,
+}: {
+  channel: Channel;
+  /** The address as it was typed, when this follows the creation; the
+      server hands the list a masked one. */
+  sentTo: string;
+  onDone: () => void;
+}) {
+  const confirm = useConfirmChannel();
+  const { showToast } = useUi();
+  const [code, setCode] = useState("");
+  const [failure, setFailure] = useState<unknown>(undefined);
+  const ready = code.length === CODE_LENGTH;
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!ready || confirm.isPending) return;
+    setFailure(undefined);
+    confirm.mutate(
+      { id: channel.id, code },
+      {
+        onSuccess: () => {
+          showToast("Channel confirmed");
+          onDone();
+        },
+        onError: (problem) => setFailure(problem),
+      },
+    );
+  };
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-4">
+      <p className="font-ui text-sm text-text">
+        Confirmation sent to <span className="font-medium">{sentTo}</span>. Enter the
+        six-digit code from that e-mail; it expires in an hour.
+      </p>
+      <div>
+        <FieldLabel htmlFor="channel-code">Code</FieldLabel>
+        <input
+          id="channel-code"
+          value={code}
+          onChange={(event) => {
+            setFailure(undefined);
+            setCode(event.target.value.replace(/\D/g, "").slice(0, CODE_LENGTH));
+          }}
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={CODE_LENGTH}
+          autoComplete="one-time-code"
+          autoFocus
+          placeholder="000000"
+          className="field-focus selectable h-11 w-40 rounded-sm border border-transparent bg-sunken px-3 text-center font-data text-[20px] tracking-[0.24em] text-text placeholder:text-muted/50"
+        />
+      </div>
+      <div className="mt-1 flex items-center justify-end gap-3">
+        <Button variant="ghost" onClick={onDone} disabled={confirm.isPending}>
+          Later
+        </Button>
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={!ready || confirm.isPending}
+          aria-busy={confirm.isPending || undefined}
+        >
+          {confirm.isPending ? "Confirming…" : "Confirm"}
+        </Button>
+      </div>
+      {failure !== undefined && <FailureNote error={failure} />}
+    </form>
+  );
 }
 
 /** Where alerts go: one row per channel, the way to add one, and the
@@ -87,6 +191,7 @@ export function ChannelsCard({
   const test = useTestChannel();
   const remove = useDeleteChannel();
   const [adding, setAdding] = useState(false);
+  const [confirming, setConfirming] = useState<Channel | null>(null);
   const [failure, setFailure] = useState<unknown>(undefined);
   const [testing, setTesting] = useState<string | null>(null);
 
@@ -124,7 +229,7 @@ export function ChannelsCard({
             {(channels ?? []).map((channel) => {
               const entry = kindOf(channel.kind);
               const Glyph = entry.icon;
-              const waiting = channel.kind === "telegram" && !channel.linked;
+              const waiting = waitingWord(channel);
               return (
                 <li key={channel.id} className="flex min-h-[56px] items-center gap-3 py-2.5 first:pt-0 last:pb-0">
                   <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-sunken text-text">
@@ -142,16 +247,16 @@ export function ChannelsCard({
                       {targetOf(channel)}
                     </span>
                   </span>
-                  {waiting ? (
+                  {waiting !== null ? (
                     <Pill tone="pending" icon={<Clock size={12} strokeWidth={2} aria-hidden className="shrink-0" />}>
-                      Waiting for the bot
+                      {waiting}
                     </Pill>
                   ) : (
                     <Pill tone="neutral" icon={<Check size={12} strokeWidth={2} aria-hidden className="shrink-0" />}>
                       Linked
                     </Pill>
                   )}
-                  {waiting && channel.telegram_url && (
+                  {waiting !== null && channel.telegram_url && (
                     <Button
                       variant="ghost"
                       className="h-9"
@@ -159,6 +264,11 @@ export function ChannelsCard({
                     >
                       <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
                       Open Telegram
+                    </Button>
+                  )}
+                  {waiting !== null && channel.kind === "email" && (
+                    <Button variant="ghost" className="h-9" onClick={() => setConfirming(channel)}>
+                      Enter code
                     </Button>
                   )}
                   <ChannelMenu
@@ -181,6 +291,21 @@ export function ChannelsCard({
       </SectionCard>
       {error !== undefined && <FailureNote error={error} onRetry={onRetry} />}
       {failure !== undefined && <FailureNote error={failure} />}
+      {confirming !== null && (
+        <Modal
+          open
+          onClose={() => setConfirming(null)}
+          centered
+          width={520}
+          title="Confirm this e-mail address"
+        >
+          <CodeForm
+            channel={confirming}
+            sentTo={targetOf(confirming)}
+            onDone={() => setConfirming(null)}
+          />
+        </Modal>
+      )}
       {adding && (
         <AddChannelModal
           channels={channels ?? []}
@@ -327,6 +452,7 @@ type Step =
   | { kind: "pick" }
   | { kind: "email" }
   | { kind: "webhook" }
+  | { kind: "code"; created: NewChannel; address: string }
   | { kind: "ntfy"; created: NewChannel }
   | { kind: "telegram"; created: NewChannel };
 
@@ -360,6 +486,10 @@ function AddChannelModal({
           onCreated(created, first);
           if (kind === "ntfy" || kind === "telegram") {
             setStep({ kind, created });
+          } else if (kind === "email") {
+            // Created, but silent: the server wrote once, to send the
+            // code, and writes nothing else until it comes back.
+            setStep({ kind: "code", created, address: fields?.target ?? "" });
           } else {
             showToast("Channel added");
             onClose();
@@ -400,9 +530,11 @@ function AddChannelModal({
         ? "Add an e-mail channel"
         : step.kind === "webhook"
           ? "Add a webhook"
-          : step.kind === "ntfy"
-            ? "Subscribe to this topic in the ntfy app"
-            : "Link Telegram";
+          : step.kind === "code"
+            ? "Confirm this e-mail address"
+            : step.kind === "ntfy"
+              ? "Subscribe to this topic in the ntfy app"
+              : "Link Telegram";
 
   const linked =
     step.kind === "telegram" &&
@@ -498,6 +630,14 @@ function AddChannelModal({
               </Button>
             </div>
           </form>
+        )}
+
+        {step.kind === "code" && (
+          <CodeForm
+            channel={step.created.channel}
+            sentTo={step.address}
+            onDone={onClose}
+          />
         )}
 
         {step.kind === "ntfy" && step.created.subscribe_url && (
