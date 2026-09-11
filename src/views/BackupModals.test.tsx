@@ -149,6 +149,8 @@ const PREVIEW: BackupPreview = {
       already_watched: true,
     },
   ],
+  backends: [{ network: "signet", backend: "mempool.space" }],
+  electrum_hosts: ["electrum.example.org:51002"],
 };
 
 function renderModal(node: React.ReactNode) {

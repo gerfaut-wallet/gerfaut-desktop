@@ -157,6 +157,32 @@ describe("BroadcastView", () => {
     expect(quiet.querySelector(".lucide-circle-question-mark")).toBeInTheDocument();
   });
 
+  /** The caution the core added when a PSBT may lie about what it
+      spends. A kind the table does not know renders no glyph at all, so
+      the one caution that says the fee on screen is not the fee being
+      paid would read as the quietest of the list. */
+  it("reads an input the PSBT declares wrong in red, under its own glyph", async () => {
+    const user = mount({
+      ...PREVIEW,
+      warnings: [
+        warning(
+          "input_mismatch",
+          "alert",
+          "Input 0 declares 1.00000000 BTC; the chain holds 0.00200000 BTC there.",
+        ),
+      ],
+    });
+    await preview(user);
+
+    const cautions = within(screen.getByRole("region", { name: "Before you send" }));
+    const [note] = cautions.getAllByRole("listitem");
+    expect(note.firstElementChild).toHaveClass("bg-alert-surface", "text-alert");
+    expect(note.querySelector(".lucide-equal-not")).toBeInTheDocument();
+    expect(
+      screen.getByText(/declares 1\.00000000 BTC; the chain holds/),
+    ).toBeInTheDocument();
+  });
+
   it("sets the cautions at the size every other note is read at", async () => {
     const user = mount({
       ...PREVIEW,

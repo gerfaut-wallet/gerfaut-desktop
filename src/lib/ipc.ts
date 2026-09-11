@@ -567,6 +567,9 @@ export interface Channel {
   linked: boolean;
   link_code: string | null;
   link_url: string | null;
+  /** What the channel is linked to, when the server knows a name for it:
+      the Telegram chat that sent the code. Null for the other kinds. */
+  linked_name: string | null;
   enabled: boolean;
   created_at: number;
   telegram_url: string | null;
@@ -641,10 +644,24 @@ export interface BackupWalletPreview {
   already_watched: boolean;
 }
 
+/** One backend the settings of a backup would put in place. */
+export interface BackupBackendPreview {
+  network: Network;
+  /** The host as a sync report names it, never a URL: one may carry
+      credentials. */
+  backend: string;
+}
+
 export interface BackupPreview {
   created_at: number;
   wallets: BackupWalletPreview[];
   has_settings: boolean;
+  /** What "apply node settings" would put in place, one entry per
+      network. Empty when the backup carries no settings. */
+  backends: BackupBackendPreview[];
+  /** The `host:port` of every Electrum certificate a restore would pin.
+      Empty when the backup carries no settings. */
+  electrum_hosts: string[];
 }
 
 export interface ImportChoices {
@@ -794,6 +811,7 @@ export type TxWarningKind =
   | "locked"
   | "input_unknown"
   | "input_spent"
+  | "input_mismatch"
   | "fee_unknown"
   | "dust_output"
   | "spends_watched";
