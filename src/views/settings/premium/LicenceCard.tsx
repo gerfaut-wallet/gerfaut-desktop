@@ -7,7 +7,11 @@ import { Notice } from "../../../components/Notice";
 import { PremiumPill } from "../../../components/PremiumPill";
 import type { PremiumStatus } from "../../../lib/ipc";
 import { PREMIUM_URL, RENEW_URL, formatKeyInput, isWellFormedKey } from "../../../lib/premium";
-import { useActivatePremium, useForgetPremium } from "../../../state/premiumQueries";
+import {
+  useActivatePremium,
+  useDeleteAccount,
+  useForgetPremium,
+} from "../../../state/premiumQueries";
 import { useUi } from "../../../state/store";
 import { FieldLabel, SectionCard } from "../primitives";
 import { FailureNote, GHOST_ON_TINT, longDate } from "./shared";
@@ -140,8 +144,37 @@ function KeyForm({
     risk, but the consequence is worth reading first. */
 function KeyInPlace({ status }: { status: PremiumStatus }) {
   const forget = useForgetPremium();
+  const erase = useDeleteAccount();
   const { showToast } = useUi();
   const [confirming, setConfirming] = useState(false);
+  /** Whether the server is asked to drop the account too, not only this
+      device. Off every time the confirmation opens: nobody deletes an
+      account by clicking twice in the same place. */
+  const [alsoServer, setAlsoServer] = useState(false);
+  const [failure, setFailure] = useState<unknown>(undefined);
+  const busy = forget.isPending || erase.isPending;
+
+  const open = () => {
+    setAlsoServer(false);
+    setFailure(undefined);
+    setConfirming(true);
+  };
+
+  // The core deletes on the server first and forgets here only once the
+  // server confirmed, so a call that fails leaves the key where it was
+  // and the note below says so.
+  const go = () => {
+    setFailure(undefined);
+    const done = (words: string) => ({
+      onSuccess: () => {
+        setConfirming(false);
+        showToast(words);
+      },
+      onError: (problem: unknown) => setFailure(problem),
+    });
+    if (alsoServer) erase.mutate(undefined, done("Account deleted"));
+    else forget.mutate(undefined, done("Key forgotten"));
+  };
   const key = status.key ?? "";
   const licence = status.licence;
 
@@ -187,7 +220,7 @@ function KeyInPlace({ status }: { status: PremiumStatus }) {
           variant="ghost"
           disabled={confirming}
           aria-expanded={confirming}
-          onClick={() => setConfirming(true)}
+          onClick={open}
         >
           Forget this key
         </Button>
@@ -201,28 +234,48 @@ function KeyInPlace({ status }: { status: PremiumStatus }) {
               <Button
                 variant="primary"
                 className="h-9"
-                disabled={forget.isPending}
-                onClick={() =>
-                  forget.mutate(undefined, {
-                    onSuccess: () => {
-                      setConfirming(false);
-                      showToast("Key forgotten");
-                    },
-                  })
-                }
+                disabled={busy}
+                aria-busy={busy || undefined}
+                onClick={go}
               >
-                {forget.isPending ? "Forgetting…" : "Forget the key"}
+                {alsoServer
+                  ? erase.isPending
+                    ? "Deleting…"
+                    : "Delete the account"
+                  : forget.isPending
+                    ? "Forgetting…"
+                    : "Forget the key"}
               </Button>
-              <Button variant="ghost" className={GHOST_ON_TINT} onClick={() => setConfirming(false)}>
+              <Button
+                variant="ghost"
+                className={GHOST_ON_TINT}
+                disabled={busy}
+                onClick={() => setConfirming(false)}
+              >
                 Cancel
               </Button>
             </span>
           }
         >
-          Forgetting the key stops the watch on this device, not on the server: your wallets
-          stay registered there until you remove them.
+          {alsoServer
+            ? "Deleting the account removes the wallets it watches, the channels it tells and the key itself from the server. This cannot be undone, and whatever paid time the key had left goes with it."
+            : "Forgetting the key stops the watch on this device, not on the server: your wallets stay registered there until you remove them."}
+          <label className="mt-2.5 flex cursor-pointer items-center gap-2 font-ui text-sm">
+            <input
+              type="checkbox"
+              checked={alsoServer}
+              disabled={busy}
+              onChange={(event) => {
+                setFailure(undefined);
+                setAlsoServer(event.target.checked);
+              }}
+              className="accent-(--color-primary)"
+            />
+            Also delete everything on the server
+          </label>
         </Notice>
       )}
+      {confirming && failure !== undefined && <FailureNote error={failure} />}
     </div>
   );
 }

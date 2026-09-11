@@ -362,6 +362,57 @@ describe("the licence card", () => {
     expect(await screen.findByLabelText("Account key")).toBeInTheDocument();
   });
 
+  it("deletes the account on the server only when asked to, and says so first", async () => {
+    let stored = ACTIVE;
+    let refuse = true;
+    const calls = mockPremium({
+      premium_status: () => stored,
+      premium_account: () => ACCOUNT,
+      premium_delete_account: () => {
+        if (refuse) {
+          throw { kind: "tor", message: "tor: no proxy answers" };
+        }
+        stored = NO_KEY;
+        return NO_KEY;
+      },
+    });
+    renderSection();
+    const user = userEvent.setup();
+    await screen.findByText(/Active until/);
+
+    await user.click(screen.getByRole("button", { name: "Forget this key" }));
+    const box = screen.getByLabelText("Also delete everything on the server");
+    // Off to start with: nobody deletes an account by clicking twice in
+    // the same place, and the default is the harmless half.
+    expect(box).not.toBeChecked();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /stops the watch on this device, not on the server/,
+    );
+    expect(screen.getByRole("button", { name: "Forget the key" })).toBeInTheDocument();
+
+    await user.click(box);
+    // And the sentence says what it costs, in the word that matters.
+    const confirmation = screen.getByRole("status");
+    expect(confirmation).toHaveTextContent(
+      /removes the wallets it watches, the channels it tells and the key itself/,
+    );
+    expect(confirmation).toHaveTextContent(/cannot be undone/);
+
+    // A call that fails leaves the key here: the core deletes on the
+    // server first and forgets afterwards.
+    await user.click(screen.getByRole("button", { name: "Delete the account" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Tor is not reachable/);
+    expect(screen.getByText(/Active until/)).toBeInTheDocument();
+
+    refuse = false;
+    await user.click(screen.getByRole("button", { name: "Delete the account" }));
+    await waitFor(() => expect(of("premium_delete_account", calls)).toHaveLength(2));
+    expect(await screen.findByLabelText("Account key")).toBeInTheDocument();
+    expect(useUi.getState().toast).toBe("Account deleted");
+    // Forgetting alone never reached the server.
+    expect(of("premium_forget", calls)).toEqual([]);
+  });
+
   it("says an expired licence in amber with the grace it has left", async () => {
     mockPremium({
       premium_status: () => ({
