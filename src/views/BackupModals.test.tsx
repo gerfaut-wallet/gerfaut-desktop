@@ -249,6 +249,30 @@ describe("exporting a backup", () => {
     expect(screen.getByRole("button", { name: /show qr code/i })).toBeInTheDocument();
   });
 
+  it("says what the password is really up against, where it is chosen", async () => {
+    // The file travels. Whoever ends up with it runs guesses on their
+    // own machine, forever: nothing slows that down but the passphrase.
+    mockIPC(() => undefined);
+    renderModal(
+      <BackupExportModal
+        open
+        onClose={() => {}}
+        wallets={WALLETS}
+        activeNetwork="signet"
+      />,
+    );
+
+    const hint = screen.getByText(
+      /This file can be copied and guessed offline: use a long passphrase, several words\./,
+    );
+    expect(hint).toBeInTheDocument();
+    // And it reaches the caret, not only the eye.
+    expect(screen.getByLabelText("Password")).toHaveAttribute(
+      "aria-describedby",
+      hint.id,
+    );
+  });
+
   it("the network scope sends only that network's ids", async () => {
     let sent: unknown = null;
     mockIPC((cmd, args) => {

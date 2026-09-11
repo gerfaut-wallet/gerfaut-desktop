@@ -262,6 +262,7 @@ export function BackupExportModal({
             id="backup-password"
             label="Password"
             value={password}
+            describedBy="backup-password-hint"
             onChange={(value) => {
               setPassword(value);
               setProblem(null);
@@ -271,14 +272,20 @@ export function BackupExportModal({
             id="backup-confirm"
             label="Confirm password"
             value={confirm}
+            describedBy="backup-password-hint"
             onChange={(value) => {
               setConfirm(value);
               setProblem(null);
             }}
           />
-          <p className="font-ui text-xs text-muted">
+          {/* What is at stake is not typing it twice, it is that the
+              file travels: whoever ends up with it can try passwords
+              on their own machine, forever, with nothing to slow them
+              down but the passphrase itself. */}
+          <p id="backup-password-hint" className="font-ui text-xs text-muted">
             Choose it now and type it on the other device. There is no way to
-            recover it.
+            recover it. This file can be copied and guessed offline: use a long
+            passphrase, several words.
           </p>
           {problem && <p className="font-ui text-xs text-muted">{problem}</p>}
           <div className="flex justify-end gap-2">
