@@ -9,11 +9,17 @@ import { MONTHS } from "./format";
 /** The site, and where a key is bought or topped up. */
 export const PREMIUM_URL = "https://gerfaut-wallet.com/premium";
 
-/** The renewal form with the key already in it; the site drops the key
-    from the address once it has read it. */
-export function renewUrl(key: string): string {
-  return `${PREMIUM_URL}?key=${encodeURIComponent(key)}`;
-}
+/** The renewal form, with no key in the address.
+ *
+ *  The key used to travel as `?key=…`. A query string is not a private
+ *  channel: it is written to the browser's history and omnibox, synced
+ *  with the profile, recorded in the site's own access logs and sent on
+ *  in the `Referer` of whatever the page loads next — and that key is
+ *  the account. The site's `replaceState` was taken for a cure; it is
+ *  not one. It rewrites the entry after the address has already been
+ *  recorded, requested and logged, and it cannot touch any of those.
+ *  The key goes to the clipboard instead, and its owner pastes it. */
+export const RENEW_URL = `${PREMIUM_URL}#renew`;
 
 /** The core's alphabet: no `l`, `o`, `0` or `1`, nothing to misread. */
 const KEY_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789";

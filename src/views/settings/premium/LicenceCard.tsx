@@ -6,7 +6,7 @@ import { Button } from "../../../components/Button";
 import { Notice } from "../../../components/Notice";
 import { PremiumPill } from "../../../components/PremiumPill";
 import type { PremiumStatus } from "../../../lib/ipc";
-import { PREMIUM_URL, formatKeyInput, isWellFormedKey, renewUrl } from "../../../lib/premium";
+import { PREMIUM_URL, RENEW_URL, formatKeyInput, isWellFormedKey } from "../../../lib/premium";
 import { useActivatePremium, useForgetPremium } from "../../../state/premiumQueries";
 import { useUi } from "../../../state/store";
 import { FieldLabel, SectionCard } from "../primitives";
@@ -145,6 +145,18 @@ function KeyInPlace({ status }: { status: PremiumStatus }) {
   const key = status.key ?? "";
   const licence = status.licence;
 
+  // The key goes to the clipboard, not into the address: see RENEW_URL.
+  // The page opens either way — someone who has the key in hand can
+  // still type it — and the toast says which of the two happened.
+  const renew = async () => {
+    const copied = await navigator.clipboard
+      .writeText(key)
+      .then(() => true)
+      .catch(() => false);
+    showToast(copied ? "Key copied, paste it on the renewal page" : "Could not copy the key");
+    await openUrl(RENEW_URL);
+  };
+
   return (
     <div className="flex flex-col gap-4">
       {licence?.status === "active" && (
@@ -167,7 +179,7 @@ function KeyInPlace({ status }: { status: PremiumStatus }) {
         </Notice>
       )}
       <div className="-ml-3 flex flex-wrap items-center gap-1">
-        <Button variant="ghost" onClick={() => void openUrl(renewUrl(key))}>
+        <Button variant="ghost" onClick={() => void renew()}>
           <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
           Renew
         </Button>

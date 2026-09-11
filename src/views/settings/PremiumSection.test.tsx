@@ -327,8 +327,14 @@ describe("the licence card", () => {
     expect(await screen.findByText(/Active until/)).toBeInTheDocument();
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not reach the Gerfaut server.");
 
+    // The key is the account, and an address bar is not a private
+    // channel: it goes to the clipboard, the site is opened without it.
     await user.click(screen.getByRole("button", { name: "Renew" }));
-    expect(opened.urls).toEqual(["https://gerfaut-wallet.com/premium?key=abcd-efgh-ijkm-npqr"]);
+    await waitFor(() =>
+      expect(opened.urls).toEqual(["https://gerfaut-wallet.com/premium#renew"]),
+    );
+    expect(await navigator.clipboard.readText()).toBe("abcd-efgh-ijkm-npqr");
+    expect(useUi.getState().toast).toBe("Key copied, paste it on the renewal page");
 
     await user.click(screen.getByRole("button", { name: "Forget this key" }));
     expect(of("premium_forget", calls)).toEqual([]);

@@ -6,7 +6,7 @@ import {
   isWellFormedKey,
   offlineSinceLabel,
   premiumFailure,
-  renewUrl,
+  RENEW_URL,
   serverNetwork,
 } from "./premium";
 
@@ -35,10 +35,11 @@ describe("the key field", () => {
     expect(isWellFormedKey("")).toBe(false);
   });
 
-  it("hands the key to the renewal form on the site", () => {
-    expect(renewUrl("abcd-efgh-ijkm-npqr")).toBe(
-      "https://gerfaut-wallet.com/premium?key=abcd-efgh-ijkm-npqr",
-    );
+  it("sends nobody to the site with the key in the address", () => {
+    // A query string is history, omnibox, access log and Referer. The
+    // key is the account: it travels through the clipboard instead.
+    expect(RENEW_URL).toBe("https://gerfaut-wallet.com/premium#renew");
+    expect(RENEW_URL).not.toMatch(/\?/);
   });
 });
 
