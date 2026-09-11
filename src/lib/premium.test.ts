@@ -60,8 +60,24 @@ describe("what the server says", () => {
       message: "This key has no paid time.",
       retry: false,
     });
-    expect(premiumFailure({ kind: "premium_unreachable", message: "timed out" })).toEqual({
-      message: "Could not reach the Gerfaut server.",
+    expect(
+      premiumFailure({
+        kind: "premium_unreachable",
+        message: "the premium server is unreachable: timed out",
+      }),
+    ).toEqual({ message: "Could not reach the Gerfaut server.", retry: true });
+    // A 5xx that says what went wrong says it, rather than being read
+    // as an outage: the server answered, it just could not do the thing.
+    expect(
+      premiumFailure({
+        kind: "premium_unreachable",
+        message: "the premium server is unreachable: HTTP 502: the e-mail could not be sent",
+      }),
+    ).toEqual({ message: "The e-mail could not be sent.", retry: true });
+    // Tor, raw, read "tor: no proxy answers on 127.0.0.1:9050".
+    expect(premiumFailure({ kind: "tor", message: "tor: no proxy answers" })).toEqual({
+      message:
+        "Tor is not reachable. While your backend is an onion address, Gerfaut sends these requests through Tor too.",
       retry: true,
     });
     // The server's own words, made a sentence.

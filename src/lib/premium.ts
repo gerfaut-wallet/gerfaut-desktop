@@ -87,10 +87,27 @@ export function premiumFailure(error: unknown): { message: string; retry: boolea
         return { message: "Unknown key.", retry: false };
       case "premium_no_paid_time":
         return { message: "This key has no paid time.", retry: false };
-      case "premium_unreachable":
-        return { message: "Could not reach the Gerfaut server.", retry: true };
+      case "premium_unreachable": {
+        // A 5xx carries the server's own sentence: it answered, it just
+        // could not do the thing — the e-mail that would not send, say.
+        // "Could not reach" would make a refusal read as an outage.
+        const words = /HTTP \d{3}: (.+)$/.exec(error.message)?.[1];
+        return {
+          message: words ? sentence(words) : "Could not reach the Gerfaut server.",
+          retry: true,
+        };
+      }
       case "premium_no_key":
         return { message: "Enter an account key first.", retry: false };
+      case "tor":
+        // The server is a clearnet address, but an onion backend sends
+        // everything through Tor, this included (D-36). Raw, this read
+        // "tor: no proxy answers on 127.0.0.1:9050".
+        return {
+          message:
+            "Tor is not reachable. While your backend is an onion address, Gerfaut sends these requests through Tor too.",
+          retry: true,
+        };
       default:
         return { message: sentence(error.message), retry: false };
     }
