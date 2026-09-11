@@ -25,6 +25,44 @@ import { useInvalidateWallet, useSyncAll } from "../state/queries";
 import { useUi } from "../state/store";
 import { FieldLabel, Segmented, Toggle } from "./settings/primitives";
 
+/** What "Apply node settings" would actually put in place: the server
+    every wallet of a network would then talk to, and the Electrum
+    certificates a restore would pin without asking again.
+
+    A backup is a file someone can be handed. Agreeing to a toggle that
+    only said "replaces your backend choice" meant agreeing to a server
+    and a pinned certificate nobody had read — every address of every
+    wallet on that network, to whoever wrote the file. Shown, it is a
+    choice; hidden, it was a trap. */
+function SettingsPreview({ preview }: { preview: BackupPreview }) {
+  const { backends, electrum_hosts: hosts } = preview;
+  if (backends.length === 0 && hosts.length === 0) return null;
+  return (
+    <div className="rounded-md bg-sunken px-3 py-2.5">
+      <dl className="flex flex-col gap-1.5">
+        {backends.map((entry) => (
+          <div key={entry.network} className="flex flex-wrap items-baseline gap-x-2">
+            <dt className="font-ui text-xs text-muted">{NETWORK_LABEL[entry.network]}</dt>
+            <dd className="selectable min-w-0 break-all font-data text-xs text-text">
+              {entry.backend}
+            </dd>
+          </div>
+        ))}
+        {hosts.length > 0 && (
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <dt className="font-ui text-xs text-muted">
+              {hosts.length === 1 ? "Pinned certificate" : "Pinned certificates"}
+            </dt>
+            <dd className="selectable min-w-0 break-all font-data text-xs text-text">
+              {hosts.join(", ")}
+            </dd>
+          </div>
+        )}
+      </dl>
+    </div>
+  );
+}
+
 const NETWORK_LABEL: Record<Network, string> = {
   mainnet: "Mainnet",
   signet: "Signet",
@@ -550,20 +588,24 @@ export function BackupRestoreModal({
             ))}
           </ul>
           {preview.has_settings && (
-            <div className="flex items-center justify-between gap-6">
-              <div>
-                <p className="font-ui text-sm font-medium text-text">
-                  Apply node settings
-                </p>
-                <p className="font-ui text-xs text-muted">
-                  Replaces your backend choice and gap limit with the backup's.
-                </p>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-6">
+                <div>
+                  <p className="font-ui text-sm font-medium text-text">
+                    Apply node settings
+                  </p>
+                  <p className="font-ui text-xs text-muted">
+                    Replaces your backend choice, accepted certificates and gap limit with
+                    the backup's.
+                  </p>
+                </div>
+                <Toggle
+                  checked={applySettings}
+                  onChange={setApplySettings}
+                  label="Apply node settings"
+                />
               </div>
-              <Toggle
-                checked={applySettings}
-                onChange={setApplySettings}
-                label="Apply node settings"
-              />
+              <SettingsPreview preview={preview} />
             </div>
           )}
           {problem && <p className="font-ui text-xs text-muted">{problem}</p>}

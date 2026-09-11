@@ -481,6 +481,41 @@ describe("restoring a backup", () => {
     expect(choices.apply_settings).toBe(true);
   });
 
+  it("names the server and the certificate the settings would put in place", async () => {
+    // A backup is a file someone can be handed. Agreeing to "apply node
+    // settings" without seeing them meant agreeing to a server and a
+    // pinned certificate nobody had read — every address of every
+    // wallet on that network, to whoever wrote the file.
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "pick_backup_file":
+          return PICKED;
+        case "preview_backup":
+          return PREVIEW;
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderModal(<BackupRestoreModal open onClose={() => {}} activeNetwork="signet" />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /open a file/i }));
+    await screen.findByText(/Backup read from/);
+    await user.type(screen.getByLabelText("Password"), "correct horse");
+    await user.click(screen.getByRole("button", { name: /open backup/i }));
+    await screen.findByText("Savings");
+
+    expect(
+      screen.getByText(
+        /Replaces your backend choice, accepted certificates and gap limit with the backup's\./,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("mempool.space")).toBeInTheDocument();
+    expect(screen.getByText("Signet")).toBeInTheDocument();
+    expect(screen.getByText("Pinned certificate")).toBeInTheDocument();
+    expect(screen.getByText("electrum.example.org:51002")).toBeInTheDocument();
+  });
+
   it("a wallet already watched stays on the list, greyed and out of reach", async () => {
     mockIPC((cmd) => {
       switch (cmd) {
