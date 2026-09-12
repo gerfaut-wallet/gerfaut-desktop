@@ -1198,6 +1198,53 @@ mod tests {
         assert!(open.app_prefs.contains_key("broadcast.recent"));
     }
 
+    /// The network the redacted settings name is the one the wallets
+    /// are on. The app asks for that network's wallets the moment a
+    /// secret goes through; a default answer for a signet vault sent it
+    /// after mainnet wallets it does not have, and drew it empty.
+    #[test]
+    fn the_network_read_behind_the_lock_is_the_one_the_wallets_are_on() {
+        use gerfaut_core::input::ImportOptions;
+
+        let dir = tempfile::tempdir().unwrap();
+        let (state, runtime) = locked_state(dir.path());
+        // The BIP 173 example address: public, and valid on signet.
+        let parsed = gerfaut_core::input::parse_input_with_options(
+            "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
+            &ImportOptions {
+                script: None,
+                derivation: None,
+            },
+        )
+        .unwrap();
+        runtime
+            .block_on(state.manager.set_active_network(Network::Signet))
+            .unwrap();
+        runtime
+            .block_on(
+                state
+                    .manager
+                    .add_wallet("Cold storage", &parsed, Network::Signet),
+            )
+            .unwrap();
+
+        let shut = runtime.block_on(super::settings_of(&state));
+        assert_eq!(shut.active_network, Network::Signet);
+
+        runtime
+            .block_on(super::verify_lock(&state, "246813"))
+            .unwrap();
+        let found = runtime.block_on(state.manager.list_wallets(Some(shut.active_network)));
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].network, Network::Signet);
+        // What a default answer would have sent the app after.
+        assert!(
+            runtime
+                .block_on(state.manager.list_wallets(Some(Network::Mainnet)))
+                .is_empty()
+        );
+    }
+
     /// The guard is one line at the top of a function: the day a command
     /// is added without it, this is the only thing that notices.
     ///

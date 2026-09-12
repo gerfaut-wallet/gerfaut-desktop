@@ -2803,6 +2803,55 @@ describe("the app lock", () => {
     expect(kept?.electrum_certs).toEqual({});
   });
 
+  it("asks the vault about its own network from the first read after an unlock", async () => {
+    // The settings answered behind the lock carry the vault's network,
+    // and that is what the first list and the first sync go out with.
+    // Answered as the default instead, a signet vault was asked for
+    // its mainnet wallets — none — and drawn empty, tour and all.
+    const asked: { cmd: string; network: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      const payload = (args ?? {}) as { network?: unknown };
+      if (cmd === "list_wallets" || cmd === "sync_all") {
+        asked.push({ cmd, network: payload.network });
+      }
+      switch (cmd) {
+        case "get_settings":
+          return LOCKED;
+        case "app_lock":
+          return LOCKED.app_lock;
+        case "verify_app_lock":
+          return { unlocked: true, failures: 0, retry_after_secs: 0 };
+        case "list_wallets":
+          return payload.network === "signet" ? [WALLET] : [];
+        case "wallet_snapshot":
+          return SNAPSHOT;
+        case "utxos":
+          return [];
+        case "receive_addresses":
+          return receiveEntries(0);
+        case "fetch_price_history":
+          return PRICE_HISTORY;
+        case "set_app_pref":
+          return undefined;
+        case "sync_all":
+          return { reports: [], failures: [] };
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderApp();
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByLabelText("PIN"), "1234");
+    await user.click(screen.getByRole("button", { name: /unlock/i }));
+    await screen.findAllByText(WALLET.name);
+    await waitFor(() => expect(asked.some((call) => call.cmd === "sync_all")).toBe(true));
+
+    expect(asked.length).toBeGreaterThan(0);
+    for (const call of asked) expect(call.network).toBe("signet");
+    expect(screen.queryByText(/no wallets watched yet/i)).not.toBeInTheDocument();
+  });
+
   it("reads a command refused by the lock as the lock, not a broken vault", async () => {
     // A read in flight when the curtain falls comes back refused. The
     // answer is the lock screen, not "the vault could not be opened".
