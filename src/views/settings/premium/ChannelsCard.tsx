@@ -1,5 +1,6 @@
 import { clsx } from "clsx";
 import {
+  AlertTriangle,
   Bell,
   BellRing,
   Check,
@@ -19,6 +20,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { Button, IconButton } from "../../../components/Button";
 import { Modal } from "../../../components/Modal";
+import { Notice } from "../../../components/Notice";
 import { Pill } from "../../../components/StatusPill";
 import type { Channel, ChannelKind, NewChannel } from "../../../lib/ipc";
 import {
@@ -86,12 +88,24 @@ function waitingWord(channel: Channel): string | null {
   return null;
 }
 
+/** What happened to a channel the server turned off, and the way back.
+    Only a webhook goes this way today — one written to a private or
+    local address, which the server refuses to post to and disables
+    rather than keep trying — but the flag belongs to every kind, so
+    every kind has a sentence rather than a silence. */
+function offReason(channel: Channel): string {
+  return channel.kind === "webhook"
+    ? "This webhook points at an address that is not reachable from the internet, so nothing is delivered to it. Point it at a public address and add it again."
+    : "The server turned this channel off, so nothing is delivered to it. Remove it and add it again.";
+}
+
 /** Why a test on this channel would not go through, or null when it
     would. The server writes nothing to a channel it has no target for
-    and answers "this channel is not linked yet", so the menu says so
-    itself instead of offering an action whose only outcome is that
-    error. */
+    and answers "this channel is not linked yet", and nothing at all to
+    one it has turned off, so the menu says so itself instead of
+    offering an action whose only outcome is that error. */
 function testBlocked(channel: Channel): string | null {
+  if (!channel.enabled) return "Nothing is delivered";
   return channel.linked ? null : "Not linked yet";
 }
 
@@ -239,53 +253,75 @@ export function ChannelsCard({
               const entry = kindOf(channel.kind);
               const Glyph = entry.icon;
               const waiting = waitingWord(channel);
+              // The server turned this one off and delivers nothing to
+              // it, whatever else the row would have said: that state
+              // comes first, and the way back is not the one it was
+              // waiting for.
+              const off = !channel.enabled;
               return (
-                <li key={channel.id} className="flex min-h-[56px] items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-                  <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-sunken text-text">
-                    <Glyph size={16} strokeWidth={1.5} aria-hidden />
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate font-ui text-sm font-medium text-text">{entry.label}</span>
-                    <span
-                      className={clsx(
-                        "truncate text-xs text-muted",
-                        channel.kind === "webhook" || channel.kind === "ntfy" ? "font-data" : "font-ui",
-                      )}
-                      title={targetOf(channel)}
-                    >
-                      {targetOf(channel)}
+                <li key={channel.id} className="py-2.5 first:pt-0 last:pb-0">
+                  <div className="flex min-h-[56px] items-center gap-3">
+                    <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-sunken text-text">
+                      <Glyph size={16} strokeWidth={1.5} aria-hidden />
                     </span>
-                  </span>
-                  {waiting !== null ? (
-                    <Pill tone="pending" icon={<Clock size={12} strokeWidth={2} aria-hidden className="shrink-0" />}>
-                      {waiting}
-                    </Pill>
-                  ) : (
-                    <Pill tone="neutral" icon={<Check size={12} strokeWidth={2} aria-hidden className="shrink-0" />}>
-                      Linked
-                    </Pill>
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate font-ui text-sm font-medium text-text">{entry.label}</span>
+                      <span
+                        className={clsx(
+                          "truncate text-xs text-muted",
+                          channel.kind === "webhook" || channel.kind === "ntfy" ? "font-data" : "font-ui",
+                        )}
+                        title={targetOf(channel)}
+                      >
+                        {targetOf(channel)}
+                      </span>
+                    </span>
+                    {off ? (
+                      <Pill
+                        tone="pending"
+                        icon={<AlertTriangle size={12} strokeWidth={2} aria-hidden className="shrink-0" />}
+                      >
+                        Not delivering
+                      </Pill>
+                    ) : waiting !== null ? (
+                      <Pill tone="pending" icon={<Clock size={12} strokeWidth={2} aria-hidden className="shrink-0" />}>
+                        {waiting}
+                      </Pill>
+                    ) : (
+                      <Pill tone="neutral" icon={<Check size={12} strokeWidth={2} aria-hidden className="shrink-0" />}>
+                        Linked
+                      </Pill>
+                    )}
+                    {!off && waiting !== null && channel.telegram_url && (
+                      <Button
+                        variant="ghost"
+                        className="h-9"
+                        onClick={() => void openUrl(channel.telegram_url!)}
+                      >
+                        <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
+                        Open Telegram
+                      </Button>
+                    )}
+                    {!off && waiting !== null && channel.kind === "email" && (
+                      <Button variant="ghost" className="h-9" onClick={() => setConfirming(channel)}>
+                        Enter code
+                      </Button>
+                    )}
+                    <ChannelMenu
+                      channel={channel}
+                      busy={testing === channel.id || remove.isPending}
+                      onTest={() => sendTest(channel)}
+                      onRemove={() => removeChannel(channel)}
+                    />
+                  </div>
+                  {off && (
+                    // Amber, and the words say it on their own: nothing
+                    // is at risk on chain, something has to be done for
+                    // the alerts to arrive again.
+                    <Notice tone="info" role="status" className="mt-2">
+                      {offReason(channel)}
+                    </Notice>
                   )}
-                  {waiting !== null && channel.telegram_url && (
-                    <Button
-                      variant="ghost"
-                      className="h-9"
-                      onClick={() => void openUrl(channel.telegram_url!)}
-                    >
-                      <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
-                      Open Telegram
-                    </Button>
-                  )}
-                  {waiting !== null && channel.kind === "email" && (
-                    <Button variant="ghost" className="h-9" onClick={() => setConfirming(channel)}>
-                      Enter code
-                    </Button>
-                  )}
-                  <ChannelMenu
-                    channel={channel}
-                    busy={testing === channel.id || remove.isPending}
-                    onTest={() => sendTest(channel)}
-                    onRemove={() => removeChannel(channel)}
-                  />
                 </li>
               );
             })}

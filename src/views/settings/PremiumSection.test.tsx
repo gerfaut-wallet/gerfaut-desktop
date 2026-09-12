@@ -143,6 +143,21 @@ const EMAIL_WAITING: Channel = {
   telegram_url: null,
 };
 
+/** A webhook the server turned off: it points at an address no one can
+    reach from the internet, so nothing is delivered to it. */
+const WEBHOOK_OFF: Channel = {
+  id: "c-hook",
+  kind: "webhook",
+  target: "https://192.168.1.40/gerfaut/alerts?token=wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  linked: true,
+  link_code: null,
+  link_url: null,
+  linked_name: null,
+  enabled: false,
+  created_at: NOW - 86_400,
+  telegram_url: null,
+};
+
 const EVENTS: PremiumEvent[] = [
   {
     id: 42,
@@ -857,6 +872,64 @@ describe("the channels card", () => {
     // The menu stays open, and what can still be done is still offered.
     const remove = within(screen.getByRole("menu")).getByRole("menuitem", { name: "Remove" });
     expect(remove).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("says a channel the server turned off delivers nothing", async () => {
+    // A disabled channel used to read like any linked one: the pill said
+    // "Linked" while the server wrote nothing to it, and its owner had
+    // no way to learn that.
+    const silent: Channel = { ...EMAIL_WAITING, id: "c-mail-off", target: "", enabled: false };
+    const calls = mockPremium({ premium_channels: () => [NTFY, WEBHOOK_OFF, silent] });
+    renderSection();
+    const user = userEvent.setup();
+    await screen.findByText("abc…xyz");
+    const rows = card("Channels").getAllByRole("listitem");
+
+    // The one that works is untouched.
+    expect(within(rows[0]).getByText("Linked")).toBeInTheDocument();
+    expect(within(rows[0]).queryByRole("status")).not.toBeInTheDocument();
+
+    // The webhook says its own state in words and in a shape, never in a
+    // colour alone, and the whole URL is still there to be read.
+    const state = within(rows[1]).getByText("Not delivering");
+    expect(state.closest("[data-tone]")).toHaveAttribute("data-tone", "pending");
+    expect(rows[1].querySelector("svg.lucide-triangle-alert")).not.toBeNull();
+    expect(within(rows[1]).queryByText("Linked")).not.toBeInTheDocument();
+    expect(within(rows[1]).getByTitle(WEBHOOK_OFF.target)).toHaveTextContent(WEBHOOK_OFF.target);
+    expect(within(rows[1]).getByRole("status")).toHaveTextContent(
+      "This webhook points at an address that is not reachable from the internet, so nothing is delivered to it. Point it at a public address and add it again.",
+    );
+
+    // And no test where a test cannot go: the reason takes its place.
+    await user.click(screen.getByRole("button", { name: /^More for Webhook/ }));
+    const item = within(screen.getByRole("menu")).getByRole("menuitem", { name: /^Send a test/ });
+    expect(item).toHaveAttribute("aria-disabled", "true");
+    expect(item).toHaveTextContent("Nothing is delivered");
+    await user.click(item);
+    expect(of("premium_test_channel", calls)).toEqual([]);
+
+    // A kind the address sentence does not fit still says the truth, and
+    // the code it was waiting for is no longer asked for: nothing that
+    // arrives now would be delivered anywhere.
+    expect(within(rows[2]).getByText("Not delivering")).toBeInTheDocument();
+    expect(within(rows[2]).getByRole("status")).toHaveTextContent(
+      "The server turned this channel off, so nothing is delivered to it. Remove it and add it again.",
+    );
+    expect(within(rows[2]).queryByRole("button", { name: "Enter code" })).not.toBeInTheDocument();
+  });
+
+  it("says the channels could not be read, and offers to ask again", async () => {
+    const calls = mockPremium({ premium_channels: refused("premium_unreachable") });
+    renderSection();
+    const user = userEvent.setup();
+    const note = await screen.findByText("Could not reach the Gerfaut server.");
+    expect(note.closest("[role='alert']")).not.toBeNull();
+    // The card says what it has, which is nothing, and never a state it
+    // cannot stand behind.
+    expect(card("Channels").queryByText("Linked")).not.toBeInTheDocument();
+
+    await user.click(screen.getAllByRole("button", { name: "Retry" })[0]);
+    await waitFor(() => expect(of("premium_channels", calls).length).toBeGreaterThan(1));
   });
 });
 
