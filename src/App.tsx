@@ -142,7 +142,12 @@ export default function App() {
   // The tour only ever stands in front of an empty vault: someone with
   // wallets already knows what this is. The vault's own preference is
   // what decides, not the hydrated copy, which lands a frame later.
-  const emptyVault = (wallets.data?.length ?? 0) === 0;
+  //
+  // Empty means answered and empty. A list not read yet is not one:
+  // the curtain going up throws the cache away, so every unlock passes
+  // through that moment, and a vault that holds wallets but never
+  // wrote the flag would greet its owner again each time.
+  const emptyVault = wallets.data !== undefined && wallets.data.length === 0;
   const tourSeen =
     settings.data?.app_prefs["onboarding.seen"] === "1" || tourDismissed;
   useEffect(() => {

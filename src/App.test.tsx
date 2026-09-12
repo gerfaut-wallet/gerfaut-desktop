@@ -2880,6 +2880,65 @@ describe("the welcome tour", () => {
     expect(screen.queryByText("Watch, never spend")).not.toBeInTheDocument();
   });
 
+  it("never greets a vault that holds wallets, not even across a lock", async () => {
+    // The tour stands in front of an empty vault and nothing else. A
+    // vault that holds wallets and never wrote the flag used to be
+    // greeted at every launch and every unlock, because the list was
+    // read as empty for the frame before it was read at all — and an
+    // unlock always starts from that frame, the curtain having emptied
+    // the cache.
+    const LOCKED: Settings = {
+      ...SETTINGS,
+      app_prefs: {},
+      app_lock: { kind: "pin", biometric: false },
+    };
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "get_settings":
+          return LOCKED;
+        case "app_lock":
+          return LOCKED.app_lock;
+        case "lock_app":
+          return undefined;
+        case "verify_app_lock":
+          return { unlocked: true, failures: 0, retry_after_secs: 0 };
+        case "list_wallets":
+          return [WALLET];
+        case "wallet_snapshot":
+          return SNAPSHOT;
+        case "utxos":
+          return [];
+        case "receive_addresses":
+          return receiveEntries(0);
+        case "fetch_price_history":
+          return PRICE_HISTORY;
+        case "set_app_pref":
+          return undefined;
+        case "sync_all":
+          return { reports: [], failures: [] };
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderApp();
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByLabelText("PIN"), "1234");
+    await user.click(screen.getByRole("button", { name: /unlock/i }));
+    await screen.findByRole("navigation", { name: "Navigation" });
+    await screen.findAllByText(WALLET.name);
+    expect(screen.queryByText("Watch, never spend")).not.toBeInTheDocument();
+
+    await user.keyboard("{Control>}l{/Control}");
+    await screen.findByText("Locked");
+    await user.type(screen.getByLabelText("PIN"), "1234");
+    await user.click(screen.getByRole("button", { name: /unlock/i }));
+    await screen.findByRole("navigation", { name: "Navigation" });
+    await screen.findAllByText(WALLET.name);
+
+    expect(screen.queryByText("Watch, never spend")).not.toBeInTheDocument();
+  });
+
   it("walking to the end remembers it", async () => {
     const prefs: Record<string, string> = {};
     mockIPC((cmd, args) => {
