@@ -37,15 +37,25 @@ export function isLockedError(error: unknown): boolean {
     would lose the theme and flash the splash on the way to the lock
     screen. */
 export function lockedSettings(settings: Settings): Settings {
-  const theme = settings.app_prefs["desktop.theme"];
+  const kept: Settings["app_prefs"] = {};
+  for (const key of LOCKED_PREFS) {
+    const value = settings.app_prefs[key];
+    if (value !== undefined) kept[key] = value;
+  }
   return {
     ...settings,
     backends: {},
     electrum_certs: {},
-    app_prefs: theme === undefined ? {} : { "desktop.theme": theme },
+    app_prefs: kept,
     premium: { key: null, certificate: null, watched: [], acknowledged_offline_until: null },
   };
 }
+
+/** The preferences that survive the curtain, the same two the Rust side
+    keeps: the theme, so the lock screen is not painted in the wrong one,
+    and whether the welcome tour has been through, so it is not shown
+    again at every unlock. Neither says what the vault holds. */
+const LOCKED_PREFS = ["desktop.theme", "onboarding.seen"] as const;
 
 interface LockState {
   /** The lock the vault holds, without its hash; null when none. */

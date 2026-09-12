@@ -11,6 +11,7 @@ const FULL: Settings = {
   gap_limit: 20,
   app_prefs: {
     "desktop.theme": "dark",
+    "onboarding.seen": "1",
     "display.unit": "sats",
     "broadcast.recent": '[{"txid":"ab","hex":"00","network":"signet"}]',
   },
@@ -28,8 +29,13 @@ const FULL: Settings = {
 describe("the settings kept behind the lock", () => {
   it("keeps the theme and the kind of lock, and nothing of the vault", () => {
     const shut = lockedSettings(FULL);
+    // What the lock screen and the first frame after it are drawn from.
+    // The Rust side keeps exactly these two as well.
+    expect(shut.app_prefs["desktop.theme"]).toBe(FULL.app_prefs["desktop.theme"]);
+    expect(shut.app_prefs["onboarding.seen"]).toBe(FULL.app_prefs["onboarding.seen"]);
+    expect(shut.active_network).toBe(FULL.active_network);
 
-    expect(shut.app_prefs).toEqual({ "desktop.theme": "dark" });
+    expect(shut.app_prefs).toEqual({ "desktop.theme": "dark", "onboarding.seen": "1" });
     expect(shut.backends).toEqual({});
     expect(shut.electrum_certs).toEqual({});
     expect(shut.premium.key).toBeNull();

@@ -588,6 +588,7 @@ mod tests {
             link_code: code.map(str::to_owned),
             link_url: None,
             linked_name: None,
+            linked_at: None,
             enabled: true,
             created_at: NOW,
         }

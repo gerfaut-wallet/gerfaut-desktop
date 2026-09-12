@@ -414,15 +414,29 @@ async fn settings_of(state: &AppState) -> Settings {
 /// say what the shell remembers — the unit, the masked amounts, the
 /// transactions last broadcast — and wait for the unlock.
 const THEME_PREF: &str = "desktop.theme";
+/// Whether the welcome tour has been through. Behind the lock this has
+/// to survive with the theme: without it the app reads as a vault with
+/// no wallets and no tour seen, and shows the tour again at every
+/// unlock. It says nothing about what is watched.
+const ONBOARDING_PREF: &str = "onboarding.seen";
 
 fn locked_settings(settings: Settings) -> Settings {
-    let theme = settings
-        .app_prefs
-        .get(THEME_PREF)
-        .map(|theme| (THEME_PREF.to_owned(), theme.clone()));
+    let kept = [THEME_PREF, ONBOARDING_PREF]
+        .into_iter()
+        .filter_map(|key| {
+            settings
+                .app_prefs
+                .get(key)
+                .map(|value| (key.to_owned(), value.clone()))
+        })
+        .collect();
     Settings {
-        app_prefs: theme.into_iter().collect(),
+        app_prefs: kept,
         app_lock: settings.app_lock,
+        // The network is not the vault's business either, and filling it
+        // from the defaults would answer "mainnet" for a signet vault --
+        // which is the network the app then asks the open vault about.
+        active_network: settings.active_network,
         ..Settings::default()
     }
 }
@@ -1042,6 +1056,7 @@ mod tests {
 
     use gerfaut_core::WalletManager;
     use gerfaut_core::lock::LockKind;
+    use gerfaut_core::network::Network;
     use gerfaut_core::premium::PremiumState;
     use gerfaut_core::store::VaultKey;
 
@@ -1121,7 +1136,11 @@ mod tests {
                 .unwrap();
         };
         pref("desktop.theme", "dark");
+        pref("onboarding.seen", "1");
         pref("broadcast.recent", "[{\"txid\":\"ab\"}]");
+        runtime
+            .block_on(state.manager.set_active_network(Network::Signet))
+            .unwrap();
         runtime
             .block_on(state.manager.set_premium_state(PremiumState {
                 key: Some("abcdefghijkmnpqr".to_owned()),
@@ -1141,7 +1160,17 @@ mod tests {
             shut.app_prefs.get("desktop.theme").map(String::as_str),
             Some("dark")
         );
-        assert_eq!(shut.app_prefs.len(), 1, "{:?}", shut.app_prefs);
+        // The welcome tour is shown once, not at every unlock: without
+        // this the app reopens on a vault that looks empty and untoured.
+        assert_eq!(
+            shut.app_prefs.get("onboarding.seen").map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(shut.app_prefs.len(), 2, "{:?}", shut.app_prefs);
+        // And the network is the vault's own, not the default: answering
+        // mainnet here sends the app to ask the open vault for mainnet
+        // wallets it does not have.
+        assert_eq!(shut.active_network, Network::Signet);
         assert_eq!(shut.app_lock.map(|lock| lock.kind), Some(LockKind::Pin));
         assert!(shut.backends.is_empty());
         assert!(shut.electrum_certs.is_empty());
