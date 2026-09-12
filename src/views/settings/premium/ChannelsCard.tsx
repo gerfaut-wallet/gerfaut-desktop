@@ -86,6 +86,15 @@ function waitingWord(channel: Channel): string | null {
   return null;
 }
 
+/** Why a test on this channel would not go through, or null when it
+    would. The server writes nothing to a channel it has no target for
+    and answers "this channel is not linked yet", so the menu says so
+    itself instead of offering an action whose only outcome is that
+    error. */
+function testBlocked(channel: Channel): string | null {
+  return channel.linked ? null : "Not linked yet";
+}
+
 /** How many digits the server sends. */
 const CODE_LENGTH = 6;
 
@@ -413,7 +422,7 @@ function ChannelMenu({
           onKeyDown={onKeyDown}
           className="absolute right-0 top-full z-30 mt-1.5 w-[220px] rounded-lg border border-border bg-surface p-1.5 shadow-overlay motion-safe:animate-[menu-in_150ms_ease-out]"
         >
-          <MenuItem icon={Send} onClick={() => pick(onTest)}>
+          <MenuItem icon={Send} blocked={testBlocked(channel)} onClick={() => pick(onTest)}>
             Send a test
           </MenuItem>
           <MenuItem icon={Trash2} onClick={() => pick(onRemove)}>
@@ -428,22 +437,39 @@ function ChannelMenu({
 function MenuItem({
   icon: Icon,
   onClick,
+  blocked,
   children,
 }: {
   icon: LucideIcon;
   onClick: () => void;
+  /** Why the item cannot be picked, when it cannot. It stays in the
+      menu, dimmed and still focusable — the arrow keys do not drop the
+      focus on it, and the menu keeps saying what it can do — and the
+      reason reads under the name. */
+  blocked?: string | null;
   children: string;
 }) {
+  const off = blocked != null;
   return (
     <button
       type="button"
       role="menuitem"
       tabIndex={-1}
-      onClick={onClick}
-      className="flex min-h-10 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left font-ui text-sm font-medium text-text transition-colors duration-100 hover:bg-sunken/70 focus-visible:bg-sunken/70 focus-visible:outline-none"
+      aria-disabled={off || undefined}
+      onClick={off ? undefined : onClick}
+      className={clsx(
+        "flex min-h-10 w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left font-ui text-sm font-medium text-text transition-colors duration-100 focus-visible:bg-sunken/70 focus-visible:outline-none",
+        off ? "cursor-not-allowed opacity-45" : "cursor-pointer hover:bg-sunken/70",
+      )}
     >
       <Icon size={16} strokeWidth={1.5} aria-hidden className="shrink-0 text-muted" />
-      {children}
+      {/* Two blocks, so a reader announces the name then the reason. */}
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate">{children}</span>
+        {off && (
+          <span className="truncate font-ui text-[11px] font-normal text-muted">{blocked}</span>
+        )}
+      </span>
     </button>
   );
 }

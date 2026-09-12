@@ -835,6 +835,29 @@ describe("the channels card", () => {
     await waitFor(() => expect(of("premium_delete_channel", calls)).toEqual([{ id: "c-ntfy" }]));
     expect(await screen.findByText(/No channels yet/)).toBeInTheDocument();
   });
+
+  it("offers no test on a channel the server has no target for yet", async () => {
+    // The server answers "this channel is not linked yet" to a test on
+    // an address that has not sent its code back. The menu said so
+    // afterwards, as an error; it says so before, as a reason.
+    const calls = mockPremium({ premium_channels: () => [EMAIL_WAITING] });
+    renderSection();
+    const user = userEvent.setup();
+    await screen.findByText("l…c@example.org");
+
+    await user.click(screen.getByRole("button", { name: /^More for E-mail/ }));
+    const item = within(screen.getByRole("menu")).getByRole("menuitem", {
+      name: /^Send a test/,
+    });
+    expect(item).toHaveAttribute("aria-disabled", "true");
+    expect(item).toHaveTextContent("Not linked yet");
+
+    await user.click(item);
+    expect(of("premium_test_channel", calls)).toEqual([]);
+    // The menu stays open, and what can still be done is still offered.
+    const remove = within(screen.getByRole("menu")).getByRole("menuitem", { name: "Remove" });
+    expect(remove).not.toHaveAttribute("aria-disabled");
+  });
 });
 
 // --- recent alerts ------------------------------------------------------------
