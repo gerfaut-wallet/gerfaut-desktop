@@ -883,6 +883,10 @@ export interface CommandError {
     | "wallet_not_found"
     | "duplicate_wallet"
     | "vault"
+    /** The vault, or a backup, would not open with the key given: the
+        password is wrong or the file is damaged. Any other refusal of a
+        file — one a newer Gerfaut wrote, say — stays `vault`. */
+    | "wrong_key"
     | "sync"
     | "backend_unavailable"
     | "descriptor"

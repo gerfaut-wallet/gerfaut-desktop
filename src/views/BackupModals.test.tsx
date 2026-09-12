@@ -428,7 +428,10 @@ describe("restoring a backup", () => {
         case "pick_backup_file":
           return PICKED;
         case "preview_backup":
-          return Promise.reject({ kind: "vault", message: "vault decryption failed" });
+          return Promise.reject({
+            kind: "wrong_key",
+            message: "vault decryption failed: wrong key or corrupted file",
+          });
         default:
           throw new Error(`unexpected command ${cmd}`);
       }
@@ -448,6 +451,47 @@ describe("restoring a backup", () => {
     expect(
       await screen.findByText("Wrong password, or the file is damaged."),
     ).toBeInTheDocument();
+  });
+
+  it("repeats the core's refusal of a file a newer Gerfaut wrote", async () => {
+    // A password that was right must not be blamed: the core names the
+    // file's version, in its own words, and those words reach the
+    // screen as they are. Both the envelope and the payload can be
+    // newer than this build.
+    const refusals = [
+      {
+        kind: "invalid_input",
+        message: "invalid backup: backup version 2 needs a newer Gerfaut",
+      },
+      { kind: "vault", message: "vault version 3 is not supported by this build" },
+    ];
+    let attempt = 0;
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "pick_backup_file":
+          return PICKED;
+        case "preview_backup":
+          return Promise.reject(refusals[attempt++]);
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderModal(<BackupRestoreModal open onClose={() => {}} activeNetwork="signet" />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /open a file/i }));
+    await screen.findByText(/Backup read from/);
+    await user.type(screen.getByLabelText("Password"), "correct horse");
+    await user.click(screen.getByRole("button", { name: /open backup/i }));
+    expect(
+      await screen.findByText("invalid backup: backup version 2 needs a newer Gerfaut"),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /open backup/i }));
+    expect(
+      await screen.findByText("vault version 3 is not supported by this build"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/wrong password/i)).not.toBeInTheDocument();
   });
 
   it("unchecking a wallet leaves it out of the restore", async () => {

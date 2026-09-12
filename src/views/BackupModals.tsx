@@ -415,9 +415,13 @@ export function BackupRestoreModal({
     }
   };
 
+  // Only the failure a password explains is put in those words. What
+  // else the core refuses — a backup a newer Gerfaut wrote, a file
+  // that is not one — it says itself, and blaming the password for it
+  // would send someone retyping a password that was right.
   const message = (error: unknown) => {
     if (isCommandError(error)) {
-      return error.kind === "vault"
+      return error.kind === "wrong_key"
         ? "Wrong password, or the file is damaged."
         : error.message;
     }

@@ -12,7 +12,7 @@ use gerfaut_core::backup::{
 use gerfaut_core::chain::BackendConfig;
 use gerfaut_core::chain::connect::ScannedBackend;
 use gerfaut_core::chain::tor::{TorRoute, TorSettings, TorStatus};
-use gerfaut_core::error::{CoreError, PremiumError};
+use gerfaut_core::error::{CoreError, PremiumError, VaultError};
 use gerfaut_core::input::qr::QrProgress;
 use gerfaut_core::input::{DerivationChoice, ImportOptions, ParsedInput, ScriptKind};
 use gerfaut_core::lock::{AppLock, LockKind, LockVerdict};
@@ -72,6 +72,11 @@ impl From<CoreError> for CommandError {
             CoreError::NetworkMismatch { .. } => "network_mismatch",
             CoreError::WalletNotFound(_) => "wallet_not_found",
             CoreError::DuplicateWallet(_) => "duplicate_wallet",
+            // The one vault failure a password explains, named apart so
+            // the screen says "wrong password" for it and for nothing
+            // else: a backup written by a newer Gerfaut is refused in
+            // the core's own words, not blamed on the person typing.
+            CoreError::Vault(VaultError::WrongKeyOrCorrupted) => "wrong_key",
             CoreError::Vault(_) => "vault",
             CoreError::Sync { .. } => "sync",
             CoreError::Broadcast { .. } => "broadcast",
@@ -976,6 +981,35 @@ mod tests {
         assert_eq!(
             error.message,
             "a single address cannot be watched yet; send a descriptor"
+        );
+    }
+
+    /// A wrong backup password has a kind of its own, so the screen can
+    /// say "wrong password" for that and for nothing else. A file a
+    /// newer Gerfaut wrote — a newer envelope, or a newer payload
+    /// schema — reaches the screen in the core's words.
+    #[test]
+    fn a_wrong_key_is_told_apart_from_a_file_this_build_cannot_read() {
+        use gerfaut_core::error::VaultError;
+
+        let wrong = CommandError::from(CoreError::Vault(VaultError::WrongKeyOrCorrupted));
+        assert_eq!(wrong.kind, "wrong_key");
+
+        let envelope = CommandError::from(CoreError::Vault(VaultError::UnsupportedVersion(9)));
+        assert_eq!(envelope.kind, "vault");
+        assert_eq!(
+            envelope.message,
+            "vault version 9 is not supported by this build"
+        );
+
+        let schema = CommandError::from(CoreError::InvalidInput {
+            kind: "backup",
+            detail: "backup version 2 needs a newer Gerfaut".to_owned(),
+        });
+        assert_eq!(schema.kind, "invalid_input");
+        assert_eq!(
+            schema.message,
+            "invalid backup: backup version 2 needs a newer Gerfaut"
         );
     }
 
