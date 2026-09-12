@@ -757,6 +757,9 @@ describe("the channels card", () => {
     // Created and silent: the server wrote once, to send the code.
     const sent = screen.getByRole("dialog", { name: "Confirm this e-mail address" });
     expect(sent).toHaveTextContent("Confirmation sent to loic@example.org");
+    // An address has no space to break at: a long one has to be allowed
+    // to break, or it runs out of a narrow dialog.
+    expect(within(sent).getByText("loic@example.org")).toHaveClass("wrap-anywhere");
     await user.click(within(sent).getByRole("button", { name: "Later" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 

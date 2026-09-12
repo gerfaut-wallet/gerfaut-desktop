@@ -153,9 +153,12 @@ function CodeForm({
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
+      {/* An address has no space to break at: left alone, a long one
+          runs out of a narrow dialog. It breaks where it must and
+          nowhere else, so a short one still reads in one piece. */}
       <p className="font-ui text-sm text-text">
-        Confirmation sent to <span className="font-medium">{sentTo}</span>. Enter the
-        six-digit code from that e-mail; it expires in an hour.
+        Confirmation sent to <span className="font-medium wrap-anywhere">{sentTo}</span>.
+        Enter the six-digit code from that e-mail; it expires in an hour.
       </p>
       <div>
         <FieldLabel htmlFor="channel-code">Code</FieldLabel>
