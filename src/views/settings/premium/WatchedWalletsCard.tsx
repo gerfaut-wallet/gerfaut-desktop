@@ -2,6 +2,7 @@ import { clsx } from "clsx";
 import { Eye } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../../../components/Button";
+import { Notice } from "../../../components/Notice";
 import { WatchedPill } from "../../../components/PremiumPill";
 import type { Network, WalletMeta, WalletWatch } from "../../../lib/ipc";
 import { NETWORK_WORD, coinsWord, shortDay } from "../../../lib/premium";
@@ -9,13 +10,15 @@ import { walletGlyph } from "../../../lib/walletIcons";
 import { useUnwatchWallet, useWatchWallet } from "../../../state/premiumQueries";
 import { SectionCard, Toggle } from "../primitives";
 import { ConsentModal } from "./ConsentModal";
-import { FailureNote, GLYPH_CHIP } from "./shared";
+import { FailureNote, GHOST_ON_TINT, GLYPH_CHIP } from "./shared";
 
 /** The wallets of the server's network, each with the switch that sends
-    it there or takes it back. The first "on" of a wallet asks first,
-    once; "off" takes effect at once, since it can be undone as fast.
-    Under them, the wallets the server still watches that this device
-    no longer has, with the one thing left to do about them. */
+    it there or takes it back. Both directions ask first: "on" once per
+    wallet, since its descriptor leaves the device; "off" every time,
+    since the server deletes the wallet's alert history with it, and
+    nothing brings that back. Under them, the wallets the server still
+    watches that this device no longer has, with the one thing left to
+    do about them. */
 export function WatchedWalletsCard({
   wallets,
   network,
@@ -40,6 +43,8 @@ export function WatchedWalletsCard({
   const watch = useWatchWallet();
   const unwatch = useUnwatchWallet();
   const [asking, setAsking] = useState<WalletMeta | null>(null);
+  /** The wallet whose unwatch waits for a yes, by id. */
+  const [leaving, setLeaving] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [failure, setFailure] = useState<unknown>(undefined);
   const byId = new Map((watched ?? []).map((wallet) => [wallet.id, wallet]));
@@ -63,10 +68,14 @@ export function WatchedWalletsCard({
     });
   };
 
+  /** Tells the server, once the yes is given. On a failure the question
+      stays up: the retry is one click, and what it would do is still in
+      front of the reader. */
   const stop = (id: string) => {
     setFailure(undefined);
     setPending(id);
     unwatch.mutate(id, {
+      onSuccess: () => setLeaving(null),
       onError: (problem) => setFailure(problem),
       onSettled: () => setPending(null),
     });
@@ -74,7 +83,7 @@ export function WatchedWalletsCard({
 
   const toggle = (wallet: WalletMeta, on: boolean) => {
     if (!on) {
-      stop(wallet.id);
+      setLeaving(wallet.id);
       return;
     }
     if (consented.includes(wallet.id)) {
@@ -100,71 +109,95 @@ export function WatchedWalletsCard({
               const Glyph = walletGlyph(wallet.icon);
               const busy = pending === wallet.id;
               return (
-                <li key={wallet.id} className="flex min-h-[56px] items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-                  <span className={GLYPH_CHIP}>
-                    <Glyph size={16} strokeWidth={1.5} aria-hidden />
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate font-ui text-sm font-medium text-text">
-                      {wallet.name}
+                <li key={wallet.id} className="flex flex-col py-2.5 first:pt-0 last:pb-0">
+                  <div className="flex min-h-[56px] items-center gap-3">
+                    <span className={GLYPH_CHIP}>
+                      <Glyph size={16} strokeWidth={1.5} aria-hidden />
                     </span>
-                    <span className="font-ui text-xs text-muted">
-                      {single ? (
-                        "Single addresses cannot be watched yet."
-                      ) : server ? (
-                        server.baseline_at === null ? (
-                          // The server has not finished its first pass
-                          // over this wallet: the counts it would show
-                          // are not the wallet's yet. "Scanning…" read
-                          // as work happening right now — a queue of an
-                          // hour reads as a scan stuck for an hour.
-                          <span role="status">First scan pending</span>
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate font-ui text-sm font-medium text-text">
+                        {wallet.name}
+                      </span>
+                      <span className="font-ui text-xs text-muted">
+                        {single ? (
+                          "Single addresses cannot be watched yet."
+                        ) : server ? (
+                          server.baseline_at === null ? (
+                            // The server has not finished its first pass
+                            // over this wallet: the counts it would show
+                            // are not the wallet's yet. "Scanning…" read
+                            // as work happening right now — a queue of an
+                            // hour reads as a scan stuck for an hour.
+                            <span role="status">First scan pending</span>
+                          ) : (
+                            <span className="tabular">
+                              Watched since {shortDay(server.watched_since)} ·{" "}
+                              {coinsWord(server.coins)}
+                            </span>
+                          )
                         ) : (
-                          <span className="tabular">
-                            Watched since {shortDay(server.watched_since)} · {coinsWord(server.coins)}
-                          </span>
-                        )
-                      ) : (
-                        "Descriptor wallet"
-                      )}
+                          "Descriptor wallet"
+                        )}
+                      </span>
                     </span>
-                  </span>
-                  {server && <WatchedPill />}
-                  <Toggle
-                    checked={server !== undefined}
-                    disabled={single || !ready}
-                    busy={busy}
-                    label={`Watch ${wallet.name} from the server`}
-                    onChange={(on) => toggle(wallet, on)}
-                  />
+                    {server && <WatchedPill />}
+                    <Toggle
+                      checked={server !== undefined}
+                      disabled={single || !ready}
+                      busy={busy}
+                      label={`Watch ${wallet.name} from the server`}
+                      onChange={(on) => toggle(wallet, on)}
+                    />
+                  </div>
+                  {leaving === wallet.id && (
+                    <UnwatchNote
+                      name={wallet.name}
+                      local
+                      busy={busy}
+                      onConfirm={() => stop(wallet.id)}
+                      onCancel={() => setLeaving(null)}
+                    />
+                  )}
                 </li>
               );
             })}
             {gone.map((server) => {
               const busy = pending === server.id;
               return (
-                <li key={server.id} className="flex min-h-[56px] items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-                  <span className={GLYPH_CHIP}>
-                    <GoneGlyph size={16} strokeWidth={1.5} aria-hidden />
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate font-ui text-sm font-medium text-text">
-                      {server.name}
+                <li key={server.id} className="flex flex-col py-2.5 first:pt-0 last:pb-0">
+                  <div className="flex min-h-[56px] items-center gap-3">
+                    <span className={GLYPH_CHIP}>
+                      <GoneGlyph size={16} strokeWidth={1.5} aria-hidden />
                     </span>
-                    <span className="font-ui text-xs text-muted">
-                      Removed from this device, still watched by the server.
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate font-ui text-sm font-medium text-text">
+                        {server.name}
+                      </span>
+                      <span className="font-ui text-xs text-muted">
+                        Removed from this device, still watched by the server.
+                      </span>
                     </span>
-                  </span>
-                  <WatchedPill />
-                  <Button
-                    className="h-9"
-                    disabled={!ready || busy}
-                    aria-busy={busy || undefined}
-                    aria-label={`Unwatch ${server.name}`}
-                    onClick={() => stop(server.id)}
-                  >
-                    Unwatch
-                  </Button>
+                    <WatchedPill />
+                    <Button
+                      className="h-9"
+                      disabled={!ready || busy}
+                      aria-busy={busy || undefined}
+                      aria-expanded={leaving === server.id}
+                      aria-label={`Unwatch ${server.name}`}
+                      onClick={() => setLeaving(server.id)}
+                    >
+                      Unwatch
+                    </Button>
+                  </div>
+                  {leaving === server.id && (
+                    <UnwatchNote
+                      name={server.name}
+                      local={false}
+                      busy={busy}
+                      onConfirm={() => stop(server.id)}
+                      onCancel={() => setLeaving(null)}
+                    />
+                  )}
                 </li>
               );
             })}
@@ -189,5 +222,52 @@ export function WatchedWalletsCard({
         onCancel={() => setAsking(null)}
       />
     </>
+  );
+}
+
+/** The question before the server forgets a wallet, under its row.
+    Amber, not red: no coin and nothing private is at stake, but the
+    server deletes the alert history along with the wallet, and that
+    does not come back — so it is said where the decision is made, in
+    one sentence, and the yes waits for the answer before it can be
+    given twice. */
+function UnwatchNote({
+  name,
+  local,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  name: string;
+  /** This device still holds the wallet: only the server's side ends. */
+  local: boolean;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Notice
+      tone="info"
+      className="mt-2.5"
+      action={
+        <span className="flex items-center gap-2">
+          <Button
+            variant="primary"
+            className="h-9"
+            disabled={busy}
+            aria-busy={busy || undefined}
+            onClick={onConfirm}
+          >
+            {busy ? "Unwatching…" : "Unwatch"}
+          </Button>
+          <Button variant="ghost" className={GHOST_ON_TINT} disabled={busy} onClick={onCancel}>
+            Cancel
+          </Button>
+        </span>
+      }
+    >
+      Unwatching "{name}" also deletes its alert history on the server
+      {local ? "; the wallet stays on this device." : "."}
+    </Notice>
   );
 }

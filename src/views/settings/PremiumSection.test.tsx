@@ -534,7 +534,7 @@ describe("the watched wallets card", () => {
     expect(within(row).queryByText("First scan pending")).not.toBeInTheDocument();
   });
 
-  it("does not ask again for a wallet already agreed to, and stops at once", async () => {
+  it("asks in amber before the server forgets a wallet, and not again on the way back", async () => {
     let watched: WalletWatch[] = [WATCHED_DONE];
     const calls = mockPremium({
       premium_status: () => ({ ...ACTIVE, consented: ["w-1"] }),
@@ -553,11 +553,33 @@ describe("the watched wallets card", () => {
     const cold = await screen.findByRole("switch", { name: "Watch Cold storage from the server" });
     await waitFor(() => expect(cold).toHaveAttribute("aria-checked", "true"));
     await waitFor(() => expect(cold).toBeEnabled());
+    const row = cold.closest("li")!;
 
-    // Off: no confirmation, the server is told at once.
+    // Off: the server deletes the alert history with the wallet, so the
+    // switch asks first — in amber, nothing private is at stake — and
+    // stays on until the answer.
     await user.click(cold);
+    const note = within(row).getByText(/also deletes its alert history/);
+    expect(note).toHaveTextContent(
+      'Unwatching "Cold storage" also deletes its alert history on the server; the wallet stays on this device.',
+    );
+    expect(note.closest(".bg-pending-surface")).not.toBeNull();
+    expect(row.querySelector(".bg-alert-surface")).toBeNull();
+    expect(of("premium_unwatch_wallet", calls)).toEqual([]);
+    expect(cold).toHaveAttribute("aria-checked", "true");
+
+    // Cancel: nothing went out, nothing changed.
+    await user.click(within(row).getByRole("button", { name: "Cancel" }));
+    expect(within(row).queryByRole("button", { name: "Unwatch" })).not.toBeInTheDocument();
+    expect(of("premium_unwatch_wallet", calls)).toEqual([]);
+    expect(cold).toHaveAttribute("aria-checked", "true");
+
+    // Yes: the server is told, the question goes, the switch follows.
+    await user.click(cold);
+    await user.click(within(row).getByRole("button", { name: "Unwatch" }));
     await waitFor(() => expect(of("premium_unwatch_wallet", calls)).toEqual([{ id: "w-1" }]));
     await waitFor(() => expect(cold).toHaveAttribute("aria-checked", "false"));
+    expect(within(row).queryByRole("button", { name: "Unwatch" })).not.toBeInTheDocument();
     expect(screen.queryByText("Watched")).not.toBeInTheDocument();
 
     // On again: the consent stands, so no dialog.
@@ -610,15 +632,29 @@ describe("the watched wallets card", () => {
     const unwatch = within(row).getByRole("button", { name: "Unwatch Old wallet" });
     await waitFor(() => expect(unwatch).toBeEnabled());
 
-    // Out of reach: the note says so, and the row stays.
+    // The button asks first, and the sentence fits a wallet this device
+    // no longer has: nothing stays here, only the server's side ends.
     await user.click(unwatch);
+    expect(unwatch).toHaveAttribute("aria-expanded", "true");
+    const note = within(row).getByText(/also deletes its alert history/);
+    expect(note).toHaveTextContent(
+      'Unwatching "Old wallet" also deletes its alert history on the server.',
+    );
+    expect(note).not.toHaveTextContent("stays on this device");
+    expect(of("premium_unwatch_wallet", calls)).toEqual([]);
+
+    // Out of reach: the note says so, the row stays, and so does the
+    // question — the retry is one click away.
+    await user.click(within(row).getByRole("button", { name: "Unwatch" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not reach the Gerfaut server.");
     expect(of("premium_unwatch_wallet", calls)).toEqual([{ id: "w-gone" }]);
     expect(screen.getByText("Old wallet")).toBeInTheDocument();
+    const again = within(row).getByRole("button", { name: "Unwatch" });
+    await waitFor(() => expect(again).toBeEnabled());
 
     // Told: the row goes, and the wallet this device has is untouched.
     reachable = true;
-    await user.click(unwatch);
+    await user.click(again);
     await waitFor(() =>
       expect(of("premium_unwatch_wallet", calls)).toEqual([{ id: "w-gone" }, { id: "w-gone" }]),
     );

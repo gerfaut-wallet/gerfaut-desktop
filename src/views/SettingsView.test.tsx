@@ -531,6 +531,8 @@ describe("settings sections", () => {
     await user.click(remove);
     expect(calls.some((call) => call.cmd === "remove_wallet")).toBe(false);
     expect(within(row).getByText(/cannot be undone/)).toBeInTheDocument();
+    // No key, so the server has nothing of this wallet to forget.
+    expect(within(row).queryByText(/alert history/)).not.toBeInTheDocument();
     const confirm = within(row).getByRole("button", { name: "Remove wallet" });
     expect(confirm.className).not.toMatch(/alert/);
 
@@ -545,6 +547,29 @@ describe("settings sections", () => {
         { id: "w-1" },
       ]),
     );
+  });
+
+  it("says the server forgets a watched wallet too, when removing it", async () => {
+    // A key and a yes for this wallet: the core will queue the unwatch,
+    // and the confirmation says what that deletes — without asking the
+    // server anything from here.
+    const calls = mockSettingsIpc();
+    act(() => useUi.getState().openSettings("wallets"));
+    renderSettings([WALLET], {
+      ...SETTINGS,
+      premium: {
+        ...SETTINGS.premium,
+        key: "abcdefghijkmnpqr",
+        watched: [{ wallet_id: "w-1", consented_at: 1_755_000_000 }],
+      },
+    });
+    const user = userEvent.setup();
+    const row = screen.getByText("Cold storage").closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Remove" }));
+    expect(within(row).getByText(/cannot be undone/)).toHaveTextContent(
+      "The server stops watching it too, and deletes its alert history.",
+    );
+    expect(calls.some((call) => call.cmd === "premium_wallets")).toBe(false);
   });
 
   it("offers no reordering to a single wallet", () => {

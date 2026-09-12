@@ -30,7 +30,9 @@ export function SettingsView({
   const content: Record<SettingsSection, ReactNode> = {
     general: <GeneralSection />,
     network: <NetworkSection settings={settings} />,
-    wallets: <WalletsSection wallets={wallets} gapLimit={settings.gap_limit} />,
+    wallets: (
+      <WalletsSection wallets={wallets} gapLimit={settings.gap_limit} premium={settings.premium} />
+    ),
     security: <SecuritySection lock={settings.app_lock} />,
     notifications: <NotificationsSection />,
     backup: <BackupSection activeNetwork={settings.active_network} />,

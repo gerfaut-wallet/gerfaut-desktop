@@ -15,9 +15,10 @@ import { clsx } from "clsx";
 import { Button, IconButton } from "../../components/Button";
 import { DropLine, useDragReorder } from "../../components/DragReorder";
 import { Notice } from "../../components/Notice";
-import type { WalletMeta } from "../../lib/ipc";
+import type { PremiumState, WalletMeta, WalletWatch } from "../../lib/ipc";
 import { moveItem } from "../../lib/reorder";
 import { walletGlyph } from "../../lib/walletIcons";
+import { usePremiumWallets } from "../../state/premiumQueries";
 import {
   useRemoveWallet,
   useRenameWallet,
@@ -66,12 +67,41 @@ function GapLimitField({ gapLimit }: { gapLimit: number }) {
   );
 }
 
+/** Whether removing a wallet also ends the server's watch of it. The
+    core queues the unwatch when a key is set and the wallet was agreed
+    to, so that is the rule read here; the server's own list, when the
+    Premium section already fetched it, narrows the answer — a wallet
+    switched off there was agreed to once and is watched no more. */
+function watchedByServer(
+  premium: PremiumState,
+  server: WalletWatch[] | undefined,
+  id: string,
+): boolean {
+  if (premium.key === null || !premium.watched.some((wallet) => wallet.wallet_id === id)) {
+    return false;
+  }
+  return server === undefined || server.some((wallet) => wallet.id === id);
+}
+
 /** The shared gap limit, then every wallet of the shown network in the
     order it is listed everywhere, with what can be done to it: move,
     change its icon, rescan, rename, remove. */
-export function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; gapLimit: number }) {
+export function WalletsSection({
+  wallets,
+  gapLimit,
+  premium,
+}: {
+  wallets: WalletMeta[];
+  gapLimit: number;
+  /** The account as the vault keeps it: enough to know, with no
+      network, which removal the server will hear about. */
+  premium: PremiumState;
+}) {
   const { showToast, syncErrors } = useUi();
   const removeWallet = useRemoveWallet();
+  // What the server said it watches, if the Premium section asked it
+  // this session. Read from the cache only: this section asks nothing.
+  const server = usePremiumWallets(false);
   const renameWallet = useRenameWallet();
   const setIcon = useSetWalletIcon();
   const rescan = useRescanWallet();
@@ -297,6 +327,11 @@ export function WalletsSection({ wallets, gapLimit }: { wallets: WalletMeta[]; g
                       Removing "{wallet.name}" deletes its labels and cached
                       history from Gerfaut, and cannot be undone. It only stops
                       watching: nothing moves on chain.
+                      {/* The terms promise it, the server cascades it: the
+                          alert history goes with the wallet. Said here,
+                          where the decision is made. */}
+                      {watchedByServer(premium, server.data, wallet.id) &&
+                        " The server stops watching it too, and deletes its alert history."}
                     </Notice>
                   )}
                 </li>
