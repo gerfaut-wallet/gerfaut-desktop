@@ -47,7 +47,7 @@ export function NotificationsSection() {
         <div>
           <SettingRow
             title="New transactions"
-            hint="A notification when a sync finds a transaction you have not seen. Amounts follow the display unit and stay hidden while balances are masked."
+            hint="A notification when a sync finds a transaction you have not seen. Amounts follow the display unit and stay hidden while balances are masked. Notifications already shown stay in the system notification center after Gerfaut locks; Hide amounts is what keeps amounts out of them."
           >
             <Toggle
               checked={notifyNewTx}

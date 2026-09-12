@@ -2592,9 +2592,10 @@ describe("the app lock", () => {
   });
 
   it("syncs nothing while the curtain is drawn", async () => {
-    // A sync behind the lock screen posts a notification naming a
-    // wallet and an amount over it — the one thing the screen exists
-    // to stop. The refresh is not dropped, only held back.
+    // A sync behind the lock screen posts a *new* notification naming
+    // a wallet and an amount over it. Locking cannot take back the ones
+    // the system already showed — that is what masking is for — but it
+    // must not add to them. The refresh is not dropped, only held back.
     let syncs = 0;
     mockIPC((cmd) => {
       switch (cmd) {

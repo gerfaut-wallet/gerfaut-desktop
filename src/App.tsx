@@ -103,10 +103,12 @@ export default function App() {
 
   // One background refresh at startup; data stays visibly stamped. It
   // waits for the lock, like the rhythm below: a sync that lands behind
-  // the lock screen posts a notification naming a wallet and an amount
-  // over it, which is the one thing the screen is there to stop. The
-  // refresh is not lost, it is deferred — unlocking runs this effect
-  // again with `autosynced` still false.
+  // the lock screen posts a *new* notification naming a wallet and an
+  // amount over it. Locking takes nothing back — what the system
+  // already showed stays in its notification center, and masking is
+  // what keeps amounts out of it — but it stops the app adding to the
+  // pile. The refresh is not lost, it is deferred: unlocking runs this
+  // effect again with `autosynced` still false.
   useEffect(() => {
     if (locked) return;
     if (wallets.data && wallets.data.length > 0 && !autosynced.current && network) {
@@ -129,7 +131,8 @@ export default function App() {
     if (!notifyNewTx || notifyInterval <= 0 || !network || !hasWallets) return;
     const timer = setInterval(() => {
       // Nothing runs behind the lock screen: a sync there would post a
-      // notification naming a wallet and an amount over it.
+      // *new* notification naming a wallet and an amount over it. The
+      // ones already posted are the system's, and stay where they are.
       if (useLock.getState().locked) return;
       syncAllRef.current.mutate(network);
     }, notifyInterval * 1000);
