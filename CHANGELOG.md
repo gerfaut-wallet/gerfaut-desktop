@@ -19,6 +19,7 @@ Gerfaut watches Bitcoin wallets it cannot spend from. There is no key generation
 - A wallet whose descriptor holds a Miniscript policy gets a page for it: every spending path, who can take it, and the countdown left on the ones that wait for a timelock.
 - Export the history of a wallet as CSV.
 - Broadcast a transaction someone else signed. Paste its hex, open the file a signing device wrote, or scan its QR code. Gerfaut shows what the transaction does before it sends anything.
+- When no backend confirms a coin a PSBT spends, the preview says so in amber and marks the fee and the input total as what the PSBT claims: check them on a backend you trust, or on the signing device, before you send.
 - Mainnet, signet, testnet4 and regtest.
 
 ### Talking to the chain
@@ -33,6 +34,7 @@ Gerfaut watches Bitcoin wallets it cannot spend from. There is no key generation
 
 - A Premium section in Settings, for the alert service at gerfaut-wallet.com. Enter an account key, and the licence is verified offline from the certificate the vault holds: the app shows whether it is active with no network at all, and never waits on the server to say so.
 - Choose which wallets the server watches. Each one is agreed to explicitly, the first scan is shown as pending until the server has done it, and a wallet removed from the app is unregistered from the server, at the next heartbeat if the server is out of reach at the time. Wallets the server still watches for this account but this device no longer holds are listed, so they can be unregistered too.
+- The switch that takes a wallet off the server asks first, and so does removing a wallet the server watches: the server deletes the wallet's alert history along with it, and the confirmation says so.
 - Four kinds of channel: ntfy, Telegram, e-mail and webhook. An e-mail address receives nothing until its owner types back the six-digit code it was sent. A Telegram row names the chat it is linked to. A channel the server turned off is shown as not delivering, with the reason, and a test is only offered on a channel the server would deliver to.
 - The recent alerts, and a banner on the overview when the watch has gone offline.
 - Renewing opens the site with the key on the clipboard, never in the address bar.
