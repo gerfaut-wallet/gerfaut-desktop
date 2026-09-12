@@ -145,6 +145,14 @@ async fn client(state: &AppState) -> CommandResult<PremiumClient> {
     Ok(state.manager.premium_client(DEFAULT_BASE_URL).await?)
 }
 
+/// Tells the server about the wallets removed from this device since it
+/// last heard, and lets a failure go: what could not be told stays
+/// queued in the vault for the next call, and whatever the caller came
+/// to do does not depend on it.
+pub(crate) async fn flush_unwatch(state: &AppState) {
+    let _ = state.manager.premium_flush_unwatch(DEFAULT_BASE_URL).await;
+}
+
 async fn status(state: &AppState) -> PremiumStatus {
     status_of(
         &state.manager.premium_state().await,
@@ -232,9 +240,13 @@ pub async fn premium_account(state: tauri::State<'_, AppState>) -> CommandResult
     })
 }
 
+/// The wallets the server watches. A removal it has not heard of yet is
+/// told first: the list is what the screen holds against this device's
+/// wallets, and it should not show a wallet the user already removed.
 #[tauri::command]
 pub async fn premium_wallets(state: tauri::State<'_, AppState>) -> CommandResult<Vec<WalletWatch>> {
     state.unlocked()?;
+    flush_unwatch(&state).await;
     Ok(client(&state).await?.wallets().await?)
 }
 
@@ -400,12 +412,15 @@ pub async fn premium_events(state: tauri::State<'_, AppState>) -> CommandResult<
 
 /// The server's heartbeat, verified against the embedded key and this
 /// device's clock. One that verifies also lifts a dismissed banner: the
-/// next outage is a new one, and gets shown.
+/// next outage is a new one, and gets shown. The pulse is also when a
+/// wallet removed while the server was out of reach gets unwatched
+/// there: every fifteen minutes, the queue gets its chance.
 #[tauri::command]
 pub async fn premium_heartbeat(
     state: tauri::State<'_, AppState>,
 ) -> CommandResult<HeartbeatReport> {
     state.unlocked()?;
+    flush_unwatch(&state).await;
     let report = client(&state).await?.heartbeat(now_unix()).await?;
     let premium = state.manager.premium_state().await;
     if premium.acknowledged_offline_until.is_some() {
@@ -488,6 +503,7 @@ mod tests {
                 consented_at: NOW,
             }],
             acknowledged_offline_until: Some(NOW + 100),
+            pending_unwatch: Vec::new(),
         };
         let status = status_of(&state, &public, NOW);
         assert_eq!(status.key.as_deref(), Some("abcd-efgh-ijkm-npqr"));

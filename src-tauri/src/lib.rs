@@ -368,10 +368,22 @@ async fn rename_wallet(
     Ok(state.manager.rename_wallet(&id, &name).await?)
 }
 
+/// Removes the wallet here, then tells the premium server on the side.
+/// The core queued the wallet for unwatching in the same write that
+/// removed it, so the answer does not wait for the network: a server
+/// out of reach now is told at the next heartbeat.
 #[tauri::command]
-async fn remove_wallet(state: tauri::State<'_, AppState>, id: String) -> CommandResult<()> {
+async fn remove_wallet(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> CommandResult<()> {
     state.unlocked()?;
-    Ok(state.manager.remove_wallet(&id).await?)
+    state.manager.remove_wallet(&id).await?;
+    tauri::async_runtime::spawn(async move {
+        premium::flush_unwatch(&app.state::<AppState>()).await;
+    });
+    Ok(())
 }
 
 #[tauri::command]
