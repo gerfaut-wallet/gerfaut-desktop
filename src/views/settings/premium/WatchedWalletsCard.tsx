@@ -1,5 +1,7 @@
+import { clsx } from "clsx";
 import { Eye } from "lucide-react";
 import { useState } from "react";
+import { Button } from "../../../components/Button";
 import { WatchedPill } from "../../../components/PremiumPill";
 import type { Network, WalletMeta, WalletWatch } from "../../../lib/ipc";
 import { NETWORK_WORD, coinsWord, shortDay } from "../../../lib/premium";
@@ -11,7 +13,9 @@ import { FailureNote, GLYPH_CHIP } from "./shared";
 
 /** The wallets of the server's network, each with the switch that sends
     it there or takes it back. The first "on" of a wallet asks first,
-    once; "off" takes effect at once, since it can be undone as fast. */
+    once; "off" takes effect at once, since it can be undone as fast.
+    Under them, the wallets the server still watches that this device
+    no longer has, with the one thing left to do about them. */
 export function WatchedWalletsCard({
   wallets,
   network,
@@ -39,6 +43,13 @@ export function WatchedWalletsCard({
   const [pending, setPending] = useState<string | null>(null);
   const [failure, setFailure] = useState<unknown>(undefined);
   const byId = new Map((watched ?? []).map((wallet) => [wallet.id, wallet]));
+  // Watched by the server, gone from this device: removed while the
+  // server could not be told, or added from another device on the same
+  // key. Without a descriptor here there is nothing to turn back on,
+  // only the server's side to close. Nothing until the server answered.
+  const local = new Set(wallets.map((wallet) => wallet.id));
+  const gone = (watched ?? []).filter((wallet) => !local.has(wallet.id));
+  const GoneGlyph = walletGlyph("wallet");
 
   const start = (wallet: WalletMeta) => {
     setFailure(undefined);
@@ -52,10 +63,10 @@ export function WatchedWalletsCard({
     });
   };
 
-  const stop = (wallet: WalletMeta) => {
+  const stop = (id: string) => {
     setFailure(undefined);
-    setPending(wallet.id);
-    unwatch.mutate(wallet.id, {
+    setPending(id);
+    unwatch.mutate(id, {
       onError: (problem) => setFailure(problem),
       onSettled: () => setPending(null),
     });
@@ -63,7 +74,7 @@ export function WatchedWalletsCard({
 
   const toggle = (wallet: WalletMeta, on: boolean) => {
     if (!on) {
-      stop(wallet);
+      stop(wallet.id);
       return;
     }
     if (consented.includes(wallet.id)) {
@@ -76,9 +87,12 @@ export function WatchedWalletsCard({
   return (
     <>
       <SectionCard icon={<Eye size={18} strokeWidth={1.5} />} title="Watched wallets">
-        {wallets.length === 0 ? (
-          <p className="font-ui text-sm text-muted">No wallets on {NETWORK_WORD[network]} yet.</p>
-        ) : (
+        {wallets.length === 0 && (
+          <p className={clsx("font-ui text-sm text-muted", gone.length > 0 && "mb-3")}>
+            No wallets on {NETWORK_WORD[network]} yet.
+          </p>
+        )}
+        {(wallets.length > 0 || gone.length > 0) && (
           <ul className="flex flex-col divide-y divide-border">
             {wallets.map((wallet) => {
               const single = wallet.kind.type === "single_address";
@@ -123,6 +137,34 @@ export function WatchedWalletsCard({
                     label={`Watch ${wallet.name} from the server`}
                     onChange={(on) => toggle(wallet, on)}
                   />
+                </li>
+              );
+            })}
+            {gone.map((server) => {
+              const busy = pending === server.id;
+              return (
+                <li key={server.id} className="flex min-h-[56px] items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                  <span className={GLYPH_CHIP}>
+                    <GoneGlyph size={16} strokeWidth={1.5} aria-hidden />
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate font-ui text-sm font-medium text-text">
+                      {server.name}
+                    </span>
+                    <span className="font-ui text-xs text-muted">
+                      Removed from this device, still watched by the server.
+                    </span>
+                  </span>
+                  <WatchedPill />
+                  <Button
+                    className="h-9"
+                    disabled={!ready || busy}
+                    aria-busy={busy || undefined}
+                    aria-label={`Unwatch ${server.name}`}
+                    onClick={() => stop(server.id)}
+                  >
+                    Unwatch
+                  </Button>
                 </li>
               );
             })}

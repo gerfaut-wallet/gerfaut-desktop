@@ -104,6 +104,15 @@ const WATCHED_DONE: WalletWatch = {
   value_sats: 150_000_000,
 };
 
+/** A wallet the server watches that this device no longer has. */
+const GONE: WalletWatch = {
+  ...WATCHED_DONE,
+  id: "w-gone",
+  name: "Old wallet",
+  coins: 1,
+  value_sats: 50_000_000,
+};
+
 const NTFY: Channel = {
   id: "c-ntfy",
   kind: "ntfy",
@@ -559,6 +568,61 @@ describe("the watched wallets card", () => {
     await user.click(cold);
     expect(await screen.findByRole("alert")).toHaveTextContent("This key has no paid time.");
     expect(cold).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("lists a wallet the server watches that this device no longer has, until it is unwatched", async () => {
+    let watched: WalletWatch[] = [WATCHED_DONE, GONE];
+    let reachable = false;
+    const calls = mockPremium({
+      premium_status: () => ({ ...ACTIVE, consented: ["w-1"] }),
+      premium_wallets: () => watched,
+      premium_unwatch_wallet: ({ id }) => {
+        if (!reachable) throw { kind: "premium_unreachable", message: "timed out" };
+        watched = watched.filter((wallet) => wallet.id !== id);
+        return undefined;
+      },
+    });
+    renderSection();
+    const user = userEvent.setup();
+    const cold = await screen.findByRole("switch", { name: "Watch Cold storage from the server" });
+    await waitFor(() => expect(cold).toHaveAttribute("aria-checked", "true"));
+
+    // The server's row: its name, why it is here, the marker, and no
+    // switch, since there is nothing on this device to turn back on.
+    const row = (await screen.findByText("Old wallet")).closest("li")!;
+    expect(
+      within(row).getByText("Removed from this device, still watched by the server."),
+    ).toBeInTheDocument();
+    expect(within(row).getByText("Watched")).toBeInTheDocument();
+    expect(row.querySelector("svg.lucide-gem")).not.toBeNull();
+    expect(within(row).queryByRole("switch")).not.toBeInTheDocument();
+    const unwatch = within(row).getByRole("button", { name: "Unwatch Old wallet" });
+    await waitFor(() => expect(unwatch).toBeEnabled());
+
+    // Out of reach: the note says so, and the row stays.
+    await user.click(unwatch);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not reach the Gerfaut server.");
+    expect(of("premium_unwatch_wallet", calls)).toEqual([{ id: "w-gone" }]);
+    expect(screen.getByText("Old wallet")).toBeInTheDocument();
+
+    // Told: the row goes, and the wallet this device has is untouched.
+    reachable = true;
+    await user.click(unwatch);
+    await waitFor(() =>
+      expect(of("premium_unwatch_wallet", calls)).toEqual([{ id: "w-gone" }, { id: "w-gone" }]),
+    );
+    await waitFor(() => expect(screen.queryByText("Old wallet")).not.toBeInTheDocument());
+    expect(cold).toHaveAttribute("aria-checked", "true");
+    expect(within(cold.closest("li")!).getByText("Watched")).toBeInTheDocument();
+  });
+
+  it("keeps the empty sentence, and still lists what the server watches, when this device has no wallet", async () => {
+    mockPremium({ list_wallets: () => [], premium_wallets: () => [GONE] });
+    renderSection([]);
+    expect(await screen.findByText("No wallets on mainnet yet.")).toBeInTheDocument();
+    const row = (await screen.findByText("Old wallet")).closest("li")!;
+    expect(within(row).getByRole("button", { name: "Unwatch Old wallet" })).toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
   });
 });
 
