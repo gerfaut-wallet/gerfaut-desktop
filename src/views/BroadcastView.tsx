@@ -378,6 +378,29 @@ const WARNING_ICON: Record<TxWarningKind, LucideIcon> = {
   spends_watched: WalletIcon,
 };
 
+/** What the reader can do about a caution, for the kinds where the
+    screen knows where to look. The core says what is wrong; this only
+    says what to do next, and never touches the tone. */
+const WARNING_ADVICE: Partial<Record<TxWarningKind, string>> = {
+  input_unknown:
+    "Look the coin up on a backend you trust, or check the amounts on the signing device, before you send.",
+};
+
+/** Whether a figure on the preview is the PSBT's own word. The core
+    says so coin by coin — nothing stood behind it, no backend and no
+    watched wallet — and a total or a fee summed over such a coin rests
+    on the same claim. Only a PSBT carries the values of what it spends,
+    so what this marks is always its. */
+function restsOnClaims(preview: TxPreview): boolean {
+  return preview.warnings.some((warning) => warning.kind === "input_unknown");
+}
+
+/** The mark on a figure nobody confirmed: amber, and in words, since a
+    colour alone tells nothing to a reader who cannot see it. */
+function Claimed() {
+  return <span className="font-ui text-[11px] font-medium text-pending">as the PSBT claims</span>;
+}
+
 /** The inputs of a transaction waiting to be sent, as diagram branches:
     an input is named by the outpoint it spends. */
 function previewInputBranches(inputs: TxInputPreview[]): TxBranch[] {
@@ -414,6 +437,11 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
   const { masked, unit } = useUi();
   const amount = (sats: number | null) =>
     sats === null ? "n/a" : masked ? MASKED : formatAmount(sats, unit);
+  // A fee that rests on the PSBT's word is marked everywhere it shows,
+  // the diagram included: a figure that looks confirmed in one place
+  // and doubtful in another is read from the confident one.
+  const claimed = restsOnClaims(preview);
+  const feeNote = claimed && preview.fee_sats !== null ? <Claimed /> : undefined;
 
   return (
     <div className="flex flex-col gap-5 rounded-lg border border-border bg-surface p-5">
@@ -448,6 +476,7 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
         inputs={previewInputBranches(preview.inputs)}
         outputs={previewOutputBranches(preview.outputs)}
         feeSats={preview.fee_sats}
+        feeNote={feeNote}
       />
 
       {preview.warnings.length > 0 && (
@@ -456,22 +485,26 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
             Before you send
           </h2>
           <ul className="flex flex-col gap-2">
-            {preview.warnings.map((warning) => (
-              // The core answers the one question that picks the tone,
-              // so the same caution never reads red here and amber on
-              // the phone. The glyph only says what it is about.
-              <li key={warning.kind + warning.message}>
-                <Notice tone={warning.severity} icon={WARNING_ICON[warning.kind]}>
-                  {warning.message}
-                </Notice>
-              </li>
-            ))}
+            {preview.warnings.map((warning) => {
+              const advice = WARNING_ADVICE[warning.kind];
+              return (
+                // The core answers the one question that picks the tone,
+                // so the same caution never reads red here and amber on
+                // the phone. The glyph only says what it is about.
+                <li key={warning.kind + warning.message}>
+                  <Notice tone={warning.severity} icon={WARNING_ICON[warning.kind]}>
+                    {warning.message}
+                    {advice ? ` ${advice}` : ""}
+                  </Notice>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <IoList title="Inputs" side="in" ios={preview.inputs} />
+        <IoList title="Inputs" side="in" ios={preview.inputs} claimed={claimed} />
         <IoList title="Outputs" side="out" ios={preview.outputs} />
       </div>
 
@@ -492,8 +525,10 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
           {/* RBF, the word the chain gave it and the one people look
               for — the same name the transaction detail uses. */}
           <Fact label="RBF">{preview.rbf ? "signalled (BIP-125)" : "not signalled"}</Fact>
-          <Fact label="Fee">{amount(preview.fee_sats)}</Fact>
-          <Fact label="Fee rate">
+          <Fact label="Fee" note={feeNote}>
+            {amount(preview.fee_sats)}
+          </Fact>
+          <Fact label="Fee rate" note={feeNote}>
             {preview.fee_rate_sat_vb !== null
               ? `${preview.fee_rate_sat_vb.toFixed(1)} sat/vB`
               : "n/a"}
@@ -508,18 +543,30 @@ function IoList({
   title,
   side,
   ios,
+  claimed = false,
 }: {
   title: string;
   side: "in" | "out";
   ios: (TxInputPreview | TxOutputPreview)[];
+  /** A value on this side is the PSBT's own word, so the total is too.
+      Which row it is the core does not say, and a mark on the wrong
+      row would be a claim of its own: the total carries it. */
+  claimed?: boolean;
 }) {
   // What the side carries, on the heading that counts it: the flow
   // summary used to say it, and a count alone answers half the question.
-  const total = useAmountText(sumSats(ios.map((io) => io.value_sats)));
+  const sum = sumSats(ios.map((io) => io.value_sats));
+  const total = useAmountText(sum);
   return (
     <section aria-label={title} className="min-w-0">
       <h2 className="mb-2 px-1 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
         {title} ({ios.length}) <span className="tabular">· {total}</span>
+        {claimed && sum !== null && (
+          <>
+            {" · "}
+            <Claimed />
+          </>
+        )}
       </h2>
       <ul className="flex flex-col gap-1.5">
         {ios.map((io, index) => {
@@ -591,19 +638,34 @@ function IoList({
   );
 }
 
-function Fact({ label, children }: { label: string; children: ReactNode }) {
+function Fact({
+  label,
+  note,
+  children,
+}: {
+  label: string;
+  /** A line under the figure, for what qualifies it. */
+  note?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <div className="min-w-0">
       <dt className="font-ui text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
         {label}
       </dt>
-      <dd className="tabular mt-0.5 truncate font-ui text-sm text-text">{children}</dd>
+      <dd className="tabular mt-0.5 truncate font-ui text-sm text-text">
+        {children}
+        {note && <span className="block">{note}</span>}
+      </dd>
     </div>
   );
 }
 
 function ConfirmBody({ preview }: { preview: TxPreview }) {
   const { masked, unit } = useUi();
+  // The last figure read before an irreversible send: if it is the
+  // PSBT's word, it is marked here as it was on the preview.
+  const claimed = restsOnClaims(preview) && preview.fee_sats !== null;
   return (
     <div className="flex flex-col gap-3">
       <p className="font-ui text-sm text-text">
@@ -612,7 +674,7 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
       </p>
       <dl className="grid grid-cols-2 gap-3 rounded-md bg-sunken/50 p-3">
         <Fact label="Outputs">{groupThousands(String(preview.outputs.length))}</Fact>
-        <Fact label="Fee">
+        <Fact label="Fee" note={claimed ? <Claimed /> : undefined}>
           {preview.fee_sats === null
             ? "unknown"
             : masked
@@ -624,7 +686,7 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
                 }`}
         </Fact>
       </dl>
-      {preview.warnings.some((warning) => warning.severity === "alert") && (
+      {(claimed || preview.warnings.some((warning) => warning.severity === "alert")) && (
         <p className="font-ui text-xs text-pending">
           The cautions listed on the preview still apply.
         </p>

@@ -183,6 +183,67 @@ describe("BroadcastView", () => {
     ).toBeInTheDocument();
   });
 
+  /** A coin nothing stood behind — no backend answered, or none knew
+      it. The core says so, in amber, and the preview still shows the
+      fee it summed over the PSBT's own word. The mark says which figures
+      are that word; the caution says where to check them. */
+  it("marks every figure that rests on the PSBT's word when a coin was not checked", async () => {
+    const user = mount({
+      ...PREVIEW,
+      inputs: [{ ...PREVIEW.inputs[0], wallet: null }],
+      warnings: [
+        warning(
+          "input_unknown",
+          "info",
+          "Input 0 could not be checked: no backend answered about this coin.",
+        ),
+      ],
+    });
+    await preview(user);
+
+    // Amber, and the caution ends on what to do about it.
+    const cautions = within(screen.getByRole("region", { name: "Before you send" }));
+    const [note] = cautions.getAllByRole("listitem");
+    expect(note.firstElementChild).toHaveClass("bg-pending-surface", "text-pending");
+    expect(note).toHaveTextContent(
+      "Input 0 could not be checked: no backend answered about this coin. Look the coin up on a backend you trust, or check the amounts on the signing device, before you send.",
+    );
+
+    // The inputs' total, the fee in the diagram, the fee and its rate
+    // among the facts: four figures, four marks, in amber and in words.
+    expect(screen.getByRole("region", { name: "Inputs" })).toHaveTextContent(
+      "Inputs (1) · 0.00200000 BTC · as the PSBT claims",
+    );
+    expect(screen.getByRole("region", { name: "Outputs" })).not.toHaveTextContent(
+      "as the PSBT claims",
+    );
+    expect(
+      within(screen.getByRole("region", { name: "Transaction diagram" })).getByText(
+        "as the PSBT claims",
+      ),
+    ).toHaveClass("text-pending");
+    const technical = within(screen.getByRole("region", { name: "Technical" }));
+    expect(technical.getAllByText("as the PSBT claims")).toHaveLength(2);
+    expect(screen.getAllByText("as the PSBT claims")).toHaveLength(4);
+
+    // The last look before an irreversible send carries the same mark,
+    // and the reminder that the cautions still stand.
+    await user.click(screen.getByRole("button", { name: "Broadcast" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(dialog.getByText("as the PSBT claims")).toHaveClass("text-pending");
+    expect(dialog.getByText("The cautions listed on the preview still apply.")).toBeInTheDocument();
+  });
+
+  it("marks nothing when every coin was confirmed", async () => {
+    const user = mount();
+    await preview(user);
+    expect(screen.queryByText("as the PSBT claims")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Broadcast" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(dialog.queryByText("as the PSBT claims")).not.toBeInTheDocument();
+    expect(dialog.queryByText(/still apply/)).not.toBeInTheDocument();
+  });
+
   it("sets the cautions at the size every other note is read at", async () => {
     const user = mount({
       ...PREVIEW,

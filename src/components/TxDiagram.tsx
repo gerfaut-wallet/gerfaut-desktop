@@ -150,10 +150,14 @@ export function TxDiagram({
   inputs,
   outputs,
   feeSats,
+  feeNote,
 }: {
   inputs: TxBranch[];
   outputs: TxBranch[];
   feeSats: number | null;
+  /** What qualifies the fee, under its amount: a figure nobody
+      confirmed says so where the eye first meets it. */
+  feeNote?: ReactNode;
 }) {
   const frameRef = useRef<HTMLElement>(null);
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -315,7 +319,7 @@ export function TxDiagram({
           drop, and the fee stays where the eye left the node. */}
       {fee !== null && (
         <div className="relative mt-[18px] flex justify-center">
-          <FeeNode ref={feeRef} sats={fee} />
+          <FeeNode ref={feeRef} sats={fee} note={feeNote} />
         </div>
       )}
     </section>
@@ -366,7 +370,15 @@ const boxTone = (mine: boolean) =>
     the transaction, carrying the amount alone — the sat/vB is a fact,
     and repeating it here blurs the reading. No role icon either: a fee
     has no role to name. */
-function FeeNode({ ref, sats }: { ref: Ref<HTMLDivElement>; sats: number }) {
+function FeeNode({
+  ref,
+  sats,
+  note,
+}: {
+  ref: Ref<HTMLDivElement>;
+  sats: number;
+  note?: ReactNode;
+}) {
   const { masked, unit } = useUi();
   return (
     <div
@@ -379,6 +391,7 @@ function FeeNode({ ref, sats }: { ref: Ref<HTMLDivElement>; sats: number }) {
       <span className="selectable tabular text-[11px] font-medium leading-4 text-text">
         {masked ? MASKED : formatAmount(sats, unit)}
       </span>
+      {note && <span className="leading-4">{note}</span>}
     </div>
   );
 }
