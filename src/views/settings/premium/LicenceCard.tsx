@@ -231,8 +231,11 @@ function KeyInPlace({ status }: { status: PremiumStatus }) {
           role="status"
           action={
             <span className="flex items-center gap-2">
+              {/* The note stays amber either way: nothing here can lose
+                  funds. The button is where the red goes, and only for
+                  the half that cannot be undone. */}
               <Button
-                variant="primary"
+                variant={alsoServer ? "danger" : "primary"}
                 className="h-9"
                 disabled={busy}
                 aria-busy={busy || undefined}
@@ -258,7 +261,7 @@ function KeyInPlace({ status }: { status: PremiumStatus }) {
           }
         >
           {alsoServer
-            ? "Deleting the account removes the wallets it watches, the channels it tells and the key itself from the server. This cannot be undone, and whatever paid time the key had left goes with it."
+            ? "Deleting the account removes from the server the wallets it watches, the channels it tells and its alert log, and the key stops working everywhere. This cannot be undone, and whatever paid time the key had left is not refunded."
             : "Forgetting the key stops the watch on this device, not on the server: your wallets stay registered there until you remove them."}
           <label className="mt-2.5 flex cursor-pointer items-center gap-2 font-ui text-sm">
             <input

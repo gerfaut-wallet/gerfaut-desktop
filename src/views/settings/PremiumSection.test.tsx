@@ -412,15 +412,26 @@ describe("the licence card", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       /stops the watch on this device, not on the server/,
     );
-    expect(screen.getByRole("button", { name: "Forget the key" })).toBeInTheDocument();
+    const forgetButton = screen.getByRole("button", { name: "Forget the key" });
+    expect(forgetButton).toBeInTheDocument();
+    expect(forgetButton).toHaveClass("bg-primary");
 
     await user.click(box);
-    // And the sentence says what it costs, in the word that matters.
+    // And the sentence says everything that goes, paid time included.
     const confirmation = screen.getByRole("status");
     expect(confirmation).toHaveTextContent(
-      /removes the wallets it watches, the channels it tells and the key itself/,
+      /removes from the server the wallets it watches, the channels it tells and its alert log/,
     );
+    expect(confirmation).toHaveTextContent(/the key stops working everywhere/);
     expect(confirmation).toHaveTextContent(/cannot be undone/);
+    expect(confirmation).toHaveTextContent(/paid time .* is not refunded/);
+    // The note stays amber — nothing here can lose funds — and the red
+    // goes on the button, the one thing that cannot be undone.
+    expect(confirmation).toHaveClass("bg-pending-surface");
+    expect(confirmation).not.toHaveClass("bg-alert-surface");
+    const erase = screen.getByRole("button", { name: "Delete the account" });
+    expect(erase).toHaveClass("bg-alert");
+    expect(erase).not.toHaveClass("bg-primary");
 
     // A call that fails leaves the key here: the core deletes on the
     // server first and forgets afterwards.
