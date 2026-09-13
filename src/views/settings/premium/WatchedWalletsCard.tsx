@@ -252,7 +252,7 @@ function UnwatchNote({
       action={
         <span className="flex items-center gap-2">
           <Button
-            variant="primary"
+            variant="danger"
             className="h-9"
             disabled={busy}
             aria-busy={busy || undefined}
