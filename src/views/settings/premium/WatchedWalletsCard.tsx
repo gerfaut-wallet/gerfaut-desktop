@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
 import { Eye } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/Button";
 import { Notice } from "../../../components/Notice";
 import { WatchedPill } from "../../../components/PremiumPill";
@@ -45,6 +45,13 @@ export function WatchedWalletsCard({
   const [asking, setAsking] = useState<WalletMeta | null>(null);
   /** The wallet whose unwatch waits for a yes, by id. */
   const [leaving, setLeaving] = useState<string | null>(null);
+  /** The same, as the last render left it: a server's answer arrives
+      long after the click it followed, and asks which question is
+      open now, not which was open then. */
+  const leavingNow = useRef(leaving);
+  useEffect(() => {
+    leavingNow.current = leaving;
+  }, [leaving]);
   const [pending, setPending] = useState<string | null>(null);
   const [failure, setFailure] = useState<unknown>(undefined);
   /** The card's heading: where the focus lands once a question, and
@@ -80,16 +87,17 @@ export function WatchedWalletsCard({
 
   /** Tells the server, once the yes is given. On a failure the question
       stays up: the retry is one click, and what it would do is still in
-      front of the reader. On success the question goes, and with it the
-      button that answered: the heading takes the focus, so it is not
-      dropped on the body. */
+      front of the reader. On success this row's question goes, and with
+      it the button that answered: the heading takes the focus, so it is
+      not dropped on the body. A question opened on another row in the
+      meantime is not this answer's to close, and keeps the focus. */
   const stop = (id: string) => {
     setFailure(undefined);
     setPending(id);
     unwatch.mutate(id, {
       onSuccess: () => {
-        setLeaving(null);
-        heading.current?.focus();
+        setLeaving((current) => (current === id ? null : current));
+        if (leavingNow.current === id) heading.current?.focus();
       },
       onError: (problem) => setFailure(problem),
       onSettled: () => setPending(null),
