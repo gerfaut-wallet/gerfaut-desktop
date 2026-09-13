@@ -396,9 +396,15 @@ function restsOnClaims(preview: TxPreview): boolean {
 }
 
 /** The mark on a figure nobody confirmed: amber, and in words, since a
-    colour alone tells nothing to a reader who cannot see it. */
+    colour alone tells nothing to a reader who cannot see it. It keeps
+    its own case and tracking wherever it sits: in a heading set in
+    capitals it would shout otherwise. */
 function Claimed() {
-  return <span className="font-ui text-[11px] font-medium text-pending">as the PSBT claims</span>;
+  return (
+    <span className="font-ui text-[11px] font-medium normal-case tracking-normal text-pending">
+      as the PSBT claims
+    </span>
+  );
 }
 
 /** The inputs of a transaction waiting to be sent, as diagram branches:

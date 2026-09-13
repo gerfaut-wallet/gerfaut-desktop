@@ -211,8 +211,13 @@ describe("BroadcastView", () => {
 
     // The inputs' total, the fee in the diagram, the fee and its rate
     // among the facts: four figures, four marks, in amber and in words.
-    expect(screen.getByRole("region", { name: "Inputs" })).toHaveTextContent(
-      "Inputs (1) · 0.00200000 BTC · as the PSBT claims",
+    const inputs = screen.getByRole("region", { name: "Inputs" });
+    expect(inputs).toHaveTextContent("Inputs (1) · 0.00200000 BTC · as the PSBT claims");
+    // The heading is set in capitals; the mark keeps its own case there.
+    expect(within(inputs).getByRole("heading")).toHaveClass("uppercase");
+    expect(within(inputs).getByText("as the PSBT claims")).toHaveClass(
+      "normal-case",
+      "tracking-normal",
     );
     expect(screen.getByRole("region", { name: "Outputs" })).not.toHaveTextContent(
       "as the PSBT claims",
