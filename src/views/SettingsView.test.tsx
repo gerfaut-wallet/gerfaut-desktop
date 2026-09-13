@@ -562,10 +562,16 @@ describe("settings sections", () => {
     // No key, so the server has nothing of this wallet to forget.
     expect(within(row).queryByText(/alert history/)).not.toBeInTheDocument();
     // The yes of a destructive confirmation is the one button that
-    // wears red; the note around it keeps its amber.
+    // wears red; the note around it keeps its amber, and reads Cancel
+    // first, the yes last.
     const confirm = within(row).getByRole("button", { name: "Remove wallet" });
     expect(confirm).toHaveClass("bg-alert");
-    expect(within(row).getByText(/cannot be undone/).closest(".bg-pending-surface")).not.toBeNull();
+    const notice = within(row).getByText(/cannot be undone/).closest<HTMLElement>(".bg-pending-surface");
+    expect(notice).not.toBeNull();
+    expect(within(notice!).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Cancel",
+      "Remove wallet",
+    ]);
 
     await user.click(within(row).getByRole("button", { name: "Cancel" }));
     expect(within(row).queryByRole("button", { name: "Remove wallet" })).not.toBeInTheDocument();

@@ -286,8 +286,13 @@ function UnwatchNote({
       tone="info"
       role="status"
       className="mt-2.5"
+      // Cancel first, the destructive yes last: the way out comes
+      // before the way through, here as on the mobile.
       action={
         <span className="flex items-center gap-2">
+          <Button variant="ghost" className={GHOST_ON_TINT} disabled={busy} onClick={onCancel}>
+            Cancel
+          </Button>
           <Button
             variant="danger"
             className="h-9"
@@ -296,9 +301,6 @@ function UnwatchNote({
             onClick={onConfirm}
           >
             {busy ? "Unwatching…" : "Unwatch"}
-          </Button>
-          <Button variant="ghost" className={GHOST_ON_TINT} disabled={busy} onClick={onCancel}>
-            Cancel
           </Button>
         </span>
       }

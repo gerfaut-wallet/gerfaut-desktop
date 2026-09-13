@@ -303,7 +303,17 @@ export function WalletsSection({
                     <Notice
                       tone="info"
                       className="mt-3"
+                      // Cancel first, the destructive yes last: the way
+                      // out comes before the way through, here as on
+                      // the mobile.
                       action={<span className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          className="h-9 hover:bg-surface hover:shadow-[inset_0_0_0_1px_var(--color-border)] dark:hover:bg-sunken dark:hover:shadow-none"
+                          onClick={() => setConfirmRemove(null)}
+                        >
+                          Cancel
+                        </Button>
                         <Button
                           variant="danger"
                           className="h-9"
@@ -315,13 +325,6 @@ export function WalletsSection({
                           }
                         >
                           Remove wallet
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          className="h-9 hover:bg-surface hover:shadow-[inset_0_0_0_1px_var(--color-border)] dark:hover:bg-sunken dark:hover:shadow-none"
-                          onClick={() => setConfirmRemove(null)}
-                        >
-                          Cancel
                         </Button>
                       </span>}
                     >

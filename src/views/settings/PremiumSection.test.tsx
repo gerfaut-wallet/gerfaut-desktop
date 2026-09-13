@@ -572,6 +572,11 @@ describe("the watched wallets card", () => {
     expect(row.querySelector(".bg-alert-surface")).toBeNull();
     expect(of("premium_unwatch_wallet", calls)).toEqual([]);
     expect(cold).toHaveAttribute("aria-checked", "true");
+    // Cancel first, the destructive yes last, as on the mobile.
+    expect(within(question).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Cancel",
+      "Unwatch",
+    ]);
 
     // Cancel: nothing went out, nothing changed, and the focus is back
     // on the switch the question came from.
