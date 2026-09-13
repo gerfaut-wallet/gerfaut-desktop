@@ -3,8 +3,15 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { BackendConfig, ScannedBackend, Settings, WalletMeta } from "../lib/ipc";
-import { useWallets } from "../state/queries";
+import type {
+  BackendConfig,
+  ScannedBackend,
+  Settings,
+  WalletMeta,
+  WalletWatch,
+} from "../lib/ipc";
+import { premiumKeys } from "../state/premiumQueries";
+import { useSettings, useWallets } from "../state/queries";
 import { useUi } from "../state/store";
 import { BackendSection } from "./settings/BackendSection";
 import { SettingsView } from "./SettingsView";
@@ -304,6 +311,27 @@ function renderLiveSettings() {
   );
 }
 
+/** The view fed from the vault on both sides, settings included: what
+    a premium write changes there, the wallets section reads next. */
+function VaultSettings() {
+  const settings = useSettings();
+  const wallets = useWallets();
+  if (!settings.data) return null;
+  return <SettingsView settings={settings.data} wallets={wallets.data ?? []} />;
+}
+
+/** Renders the vault-fed view and hands back its cache, for a test that
+    lets part of it go the way time would. */
+function renderVaultSettings() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <VaultSettings />
+    </QueryClientProvider>,
+  );
+  return client;
+}
+
 /** Answers what the sections ask on their own, and records every call. */
 function mockSettingsIpc(
   overrides: Record<string, (args: Record<string, unknown>) => unknown> = {},
@@ -573,6 +601,91 @@ describe("settings sections", () => {
       "The server stops watching it too, and deletes its alert history.",
     );
     expect(calls.some((call) => call.cmd === "premium_wallets")).toBe(false);
+  });
+
+  it("stops saying the server forgets a wallet once it was unwatched", async () => {
+    // The vault's side: the core drops the wallet from the watched list
+    // along with the consent when the server has let it go, and the
+    // settings are read again for the sentence to follow.
+    let premium = {
+      ...SETTINGS.premium,
+      key: "abcdefghijkmnpqr",
+      watched: [{ wallet_id: "w-1", consented_at: 1_755_000_000 }],
+    };
+    let consented = ["w-1"];
+    let server: WalletWatch[] = [
+      {
+        id: "w-1",
+        name: "Cold storage",
+        script_kind: "p2wpkh",
+        watched_since: 1_755_000_000,
+        baseline_at: 1_755_000_100,
+        baseline_height: 910_000,
+        coins: 1,
+        value_sats: 150_000,
+      },
+    ];
+    const status = () => ({
+      key: "abcd-efgh-ijkm-npqr",
+      licence: { status: "active", until: 1_804_809_600 },
+      consented,
+      acknowledged_offline_until: null,
+    });
+    mockSettingsIpc({
+      get_settings: () => ({ ...SETTINGS, premium }),
+      premium_status: status,
+      premium_account: () => ({
+        account: { active: true, paid_until: 1_804_809_600, wallets: 1, channels: 0, network: "bitcoin" },
+        status: status(),
+      }),
+      premium_wallets: () => server,
+      premium_channels: () => [],
+      premium_events: () => [],
+      premium_unwatch_wallet: () => {
+        server = [];
+        consented = [];
+        premium = { ...premium, watched: [] };
+        return undefined;
+      },
+    });
+    act(() => useUi.getState().openSettings("wallets"));
+    const client = renderVaultSettings();
+    const user = userEvent.setup();
+
+    // Watched and agreed to: the removal says what the server does.
+    let row = (await screen.findByText("Cold storage")).closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Remove" }));
+    expect(within(row).getByText(/cannot be undone/)).toHaveTextContent(
+      "The server stops watching it too, and deletes its alert history.",
+    );
+    await user.click(within(row).getByRole("button", { name: "Cancel" }));
+
+    // Unwatched from the premium section.
+    act(() => useUi.getState().openSettings("premium"));
+    const cold = await screen.findByRole("switch", { name: "Watch Cold storage from the server" });
+    await waitFor(() => expect(cold).toHaveAttribute("aria-checked", "true"));
+    await waitFor(() => expect(cold).toBeEnabled());
+    await user.click(cold);
+    await user.click(screen.getByRole("button", { name: "Unwatch" }));
+    await waitFor(() => expect(cold).toHaveAttribute("aria-checked", "false"));
+
+    // Time passes elsewhere and the server's list leaves the cache, as
+    // it does minutes after the premium section is left: what the
+    // wallets section says then rests on the settings alone, and they
+    // were read again after the unwatch.
+    act(() => useUi.getState().openSettings("general"));
+    client.removeQueries({ queryKey: premiumKeys.wallets });
+
+    // Back in Wallets: the server has nothing of this wallet to forget
+    // any more, and the confirmation no longer says it does.
+    act(() => useUi.getState().openSettings("wallets"));
+    row = (await screen.findByText("Cold storage")).closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Remove" }));
+    await waitFor(() =>
+      expect(within(row).getByText(/cannot be undone/)).not.toHaveTextContent(
+        "The server stops watching",
+      ),
+    );
   });
 
   it("offers no reordering to a single wallet", () => {
