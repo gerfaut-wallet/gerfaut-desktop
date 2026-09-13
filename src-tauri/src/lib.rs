@@ -48,6 +48,9 @@ fn premium_kind(error: &PremiumError) -> &'static str {
         PremiumError::UnknownKey => "premium_unknown_key",
         PremiumError::NoPaidTime => "premium_no_paid_time",
         PremiumError::Rejected(_) => "premium_rejected",
+        // Nothing under that id on the server: the screen shows it as
+        // it shows a refusal, in the server's words.
+        PremiumError::NotFound => "premium_rejected",
         PremiumError::Unreachable(_) | PremiumError::UnexpectedResponse(_) => "premium_unreachable",
         PremiumError::InvalidCertificate(_)
         | PremiumError::InvalidHeartbeat(_)
