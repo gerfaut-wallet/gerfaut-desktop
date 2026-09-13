@@ -13,12 +13,12 @@ import { ConsentModal } from "./ConsentModal";
 import { FailureNote, GHOST_ON_TINT, GLYPH_CHIP } from "./shared";
 
 /** The wallets of the server's network, each with the switch that sends
-    it there or takes it back. Both directions ask first: "on" once per
-    wallet, since its descriptor leaves the device; "off" every time,
-    since the server deletes the wallet's alert history with it, and
-    nothing brings that back. Under them, the wallets the server still
-    watches that this device no longer has, with the one thing left to
-    do about them. */
+    it there or takes it back. Both directions ask first: "on" before
+    the descriptor leaves the device, once per yes — an unwatch takes
+    the yes back with it; "off" every time, since the server deletes
+    the wallet's alert history with it, and nothing brings that back.
+    Under them, the wallets the server still watches that this device
+    no longer has, with the one thing left to do about them. */
 export function WatchedWalletsCard({
   wallets,
   network,

@@ -534,17 +534,21 @@ describe("the watched wallets card", () => {
     expect(within(row).queryByText("First scan pending")).not.toBeInTheDocument();
   });
 
-  it("asks in amber before the server forgets a wallet, and not again on the way back", async () => {
+  it("asks in amber before the server forgets a wallet, and the consent again on the way back", async () => {
     let watched: WalletWatch[] = [WATCHED_DONE];
+    let consented = ["w-1"];
     const calls = mockPremium({
-      premium_status: () => ({ ...ACTIVE, consented: ["w-1"] }),
+      premium_status: () => ({ ...ACTIVE, consented }),
       premium_wallets: () => watched,
+      // The core takes the yes back along with the watch.
       premium_unwatch_wallet: () => {
         watched = [];
+        consented = [];
         return undefined;
       },
       premium_watch_wallet: () => {
         watched = [WATCHED_DONE];
+        consented = ["w-1"];
         return undefined;
       },
     });
@@ -582,10 +586,17 @@ describe("the watched wallets card", () => {
     expect(within(row).queryByRole("button", { name: "Unwatch" })).not.toBeInTheDocument();
     expect(screen.queryByText("Watched")).not.toBeInTheDocument();
 
-    // On again: the consent stands, so no dialog.
+    // The status was read again with the rest: the yes is gone.
+    await waitFor(() => expect(of("premium_status", calls)).toHaveLength(2));
+
+    // On again: the yes went with the watch, so the descriptor leaves
+    // only on a new one.
     await user.click(cold);
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "Watch this wallet from the server" });
+    expect(of("premium_watch_wallet", calls)).toEqual([]);
+    await user.click(within(dialog).getByRole("button", { name: "Watch this wallet" }));
     await waitFor(() => expect(of("premium_watch_wallet", calls)).toEqual([{ id: "w-1" }]));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     await waitFor(() => expect(cold).toHaveAttribute("aria-checked", "true"));
   });
 

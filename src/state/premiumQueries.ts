@@ -165,14 +165,15 @@ export function useWatchWallet() {
   });
 }
 
+/** Ends the server's watch of a wallet. The core withdraws the consent
+    with it, so the status is read again along with the server's lists,
+    and the settings too: the switch asks the question again on the way
+    back, and a removal no longer says the server hears about it. */
 export function useUnwatchWallet() {
-  const client = useQueryClient();
+  const invalidate = useInvalidatePremium();
   return useMutation({
     mutationFn: (id: string) => ipc.premiumUnwatchWallet(id),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: premiumKeys.wallets });
-      void client.invalidateQueries({ queryKey: premiumKeys.account });
-    },
+    onSuccess: invalidate,
   });
 }
 
