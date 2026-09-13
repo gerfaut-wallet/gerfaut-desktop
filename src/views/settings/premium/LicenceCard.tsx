@@ -231,9 +231,18 @@ function KeyInPlace({ status }: { status: PremiumStatus }) {
           role="status"
           action={
             <span className="flex items-center gap-2">
-              {/* The note stays amber either way: nothing here can lose
-                  funds. The button is where the red goes, and only for
-                  the half that cannot be undone. */}
+              {/* Cancel first, the destructive yes last, as everywhere
+                  else. The note stays amber either way: nothing here can
+                  lose funds. The button is where the red goes, and only
+                  for the half that cannot be undone. */}
+              <Button
+                variant="ghost"
+                className={GHOST_ON_TINT}
+                disabled={busy}
+                onClick={() => setConfirming(false)}
+              >
+                Cancel
+              </Button>
               <Button
                 variant={alsoServer ? "danger" : "primary"}
                 className="h-9"
@@ -248,14 +257,6 @@ function KeyInPlace({ status }: { status: PremiumStatus }) {
                   : forget.isPending
                     ? "Forgetting…"
                     : "Forget the key"}
-              </Button>
-              <Button
-                variant="ghost"
-                className={GHOST_ON_TINT}
-                disabled={busy}
-                onClick={() => setConfirming(false)}
-              >
-                Cancel
               </Button>
             </span>
           }
