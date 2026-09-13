@@ -290,7 +290,13 @@ pub async fn premium_unwatch_wallet(
     id: String,
 ) -> CommandResult<()> {
     state.unlocked()?;
-    Ok(client(&state).await?.delete_wallet(&id).await?)
+    // The manager withdraws the consent with the watch: switching the
+    // wallet back on asks the question again, and removing it later
+    // queues nothing for a server that already forgot it.
+    Ok(state
+        .manager
+        .premium_unwatch_wallet(DEFAULT_BASE_URL, &id)
+        .await?)
 }
 
 #[tauri::command]
