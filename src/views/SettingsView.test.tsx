@@ -518,7 +518,7 @@ describe("settings sections", () => {
     expect(within(row).getByRole("button", { name: "Move down" })).toHaveFocus();
   });
 
-  it("removes a wallet behind a confirmation that says what goes, without red", async () => {
+  it("removes a wallet behind a confirmation that says what goes, red on the yes alone", async () => {
     const calls = mockSettingsIpc({ remove_wallet: () => undefined });
     act(() => useUi.getState().openSettings("wallets"));
     renderSettings();
@@ -533,8 +533,11 @@ describe("settings sections", () => {
     expect(within(row).getByText(/cannot be undone/)).toBeInTheDocument();
     // No key, so the server has nothing of this wallet to forget.
     expect(within(row).queryByText(/alert history/)).not.toBeInTheDocument();
+    // The yes of a destructive confirmation is the one button that
+    // wears red; the note around it keeps its amber.
     const confirm = within(row).getByRole("button", { name: "Remove wallet" });
-    expect(confirm.className).not.toMatch(/alert/);
+    expect(confirm).toHaveClass("bg-alert");
+    expect(within(row).getByText(/cannot be undone/).closest(".bg-pending-surface")).not.toBeNull();
 
     await user.click(within(row).getByRole("button", { name: "Cancel" }));
     expect(within(row).queryByRole("button", { name: "Remove wallet" })).not.toBeInTheDocument();

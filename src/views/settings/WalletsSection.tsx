@@ -276,8 +276,9 @@ export function WalletsSection({
                           <Pencil size={14} strokeWidth={1.5} aria-hidden />
                           Rename
                         </Button>
-                        {/* A removal is a neutral action behind an explicit
-                            confirmation: Alerte is kept for coins moving. */}
+                        {/* Neutral here: red belongs to the confirmation
+                            step, on its yes below, never to a lone remove
+                            button. */}
                         <Button
                           variant="ghost"
                           className="h-9"
@@ -304,7 +305,7 @@ export function WalletsSection({
                       className="mt-3"
                       action={<span className="flex items-center gap-2">
                         <Button
-                          variant="primary"
+                          variant="danger"
                           className="h-9"
                           onClick={() =>
                             void removeWallet.mutateAsync(wallet.id).then(() => {
