@@ -561,30 +561,35 @@ describe("the watched wallets card", () => {
 
     // Off: the server deletes the alert history with the wallet, so the
     // switch asks first — in amber, nothing private is at stake — and
-    // stays on until the answer.
+    // stays on until the answer. The question answers the click, so a
+    // screen reader hears it as it appears.
     await user.click(cold);
-    const note = within(row).getByText(/also deletes its alert history/);
-    expect(note).toHaveTextContent(
+    const question = within(row).getByRole("status");
+    expect(question).toHaveTextContent(
       'Unwatching "Cold storage" also deletes its alert history on the server; the wallet stays on this device.',
     );
-    expect(note.closest(".bg-pending-surface")).not.toBeNull();
+    expect(question).toHaveClass("bg-pending-surface");
     expect(row.querySelector(".bg-alert-surface")).toBeNull();
     expect(of("premium_unwatch_wallet", calls)).toEqual([]);
     expect(cold).toHaveAttribute("aria-checked", "true");
 
-    // Cancel: nothing went out, nothing changed.
+    // Cancel: nothing went out, nothing changed, and the focus is back
+    // on the switch the question came from.
     await user.click(within(row).getByRole("button", { name: "Cancel" }));
-    expect(within(row).queryByRole("button", { name: "Unwatch" })).not.toBeInTheDocument();
+    expect(within(row).queryByRole("status")).not.toBeInTheDocument();
     expect(of("premium_unwatch_wallet", calls)).toEqual([]);
     expect(cold).toHaveAttribute("aria-checked", "true");
+    expect(cold).toHaveFocus();
 
-    // Yes: the server is told, the question goes, the switch follows.
+    // Yes: the server is told, the question goes, the switch follows,
+    // and the focus lands on the card's heading rather than nowhere.
     await user.click(cold);
     await user.click(within(row).getByRole("button", { name: "Unwatch" }));
     await waitFor(() => expect(of("premium_unwatch_wallet", calls)).toEqual([{ id: "w-1" }]));
     await waitFor(() => expect(cold).toHaveAttribute("aria-checked", "false"));
-    expect(within(row).queryByRole("button", { name: "Unwatch" })).not.toBeInTheDocument();
+    expect(within(row).queryByRole("status")).not.toBeInTheDocument();
     expect(screen.queryByText("Watched")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Watched wallets" })).toHaveFocus();
 
     // The status was read again with the rest: the yes is gone.
     await waitFor(() => expect(of("premium_status", calls)).toHaveLength(2));
@@ -647,15 +652,22 @@ describe("the watched wallets card", () => {
     // no longer has: nothing stays here, only the server's side ends.
     await user.click(unwatch);
     expect(unwatch).toHaveAttribute("aria-expanded", "true");
-    const note = within(row).getByText(/also deletes its alert history/);
-    expect(note).toHaveTextContent(
+    const question = within(row).getByRole("status");
+    expect(question).toHaveTextContent(
       'Unwatching "Old wallet" also deletes its alert history on the server.',
     );
-    expect(note).not.toHaveTextContent("stays on this device");
+    expect(question).not.toHaveTextContent("stays on this device");
     expect(of("premium_unwatch_wallet", calls)).toEqual([]);
+
+    // Cancel: the question goes, the focus is back on the button.
+    await user.click(within(row).getByRole("button", { name: "Cancel" }));
+    expect(within(row).queryByRole("status")).not.toBeInTheDocument();
+    expect(unwatch).toHaveAttribute("aria-expanded", "false");
+    expect(unwatch).toHaveFocus();
 
     // Out of reach: the note says so, the row stays, and so does the
     // question — the retry is one click away.
+    await user.click(unwatch);
     await user.click(within(row).getByRole("button", { name: "Unwatch" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not reach the Gerfaut server.");
     expect(of("premium_unwatch_wallet", calls)).toEqual([{ id: "w-gone" }]);
@@ -664,6 +676,8 @@ describe("the watched wallets card", () => {
     await waitFor(() => expect(again).toBeEnabled());
 
     // Told: the row goes, and the wallet this device has is untouched.
+    // The button that was pressed went with the row: the focus is on
+    // the card's heading, not dropped on the body.
     reachable = true;
     await user.click(again);
     await waitFor(() =>
@@ -672,6 +686,7 @@ describe("the watched wallets card", () => {
     await waitFor(() => expect(screen.queryByText("Old wallet")).not.toBeInTheDocument());
     expect(cold).toHaveAttribute("aria-checked", "true");
     expect(within(cold.closest("li")!).getByText("Watched")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Watched wallets" })).toHaveFocus();
   });
 
   it("keeps the empty sentence, and still lists what the server watches, when this device has no wallet", async () => {

@@ -1,10 +1,12 @@
 import { clsx } from "clsx";
-import type { ButtonHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, Ref } from "react";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 
 interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
+  /** The element itself, for a caller that hands the focus back to it. */
+  ref?: Ref<HTMLButtonElement>;
 }
 
 /** The three button roles of the design system. One primary per screen. */

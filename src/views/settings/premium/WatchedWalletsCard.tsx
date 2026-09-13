@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
 import { Eye } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "../../../components/Button";
 import { Notice } from "../../../components/Notice";
 import { WatchedPill } from "../../../components/PremiumPill";
@@ -47,6 +47,16 @@ export function WatchedWalletsCard({
   const [leaving, setLeaving] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [failure, setFailure] = useState<unknown>(undefined);
+  /** The card's heading: where the focus lands once a question, and
+      the button that answered it, are gone. */
+  const heading = useRef<HTMLHeadingElement>(null);
+  /** The switch or button each question is asked from, by wallet id,
+      so a Cancel can put the focus back on it. */
+  const triggers = useRef(new Map<string, HTMLElement>());
+  const remember = (id: string) => (element: HTMLElement | null) => {
+    if (element) triggers.current.set(id, element);
+    else triggers.current.delete(id);
+  };
   const byId = new Map((watched ?? []).map((wallet) => [wallet.id, wallet]));
   // Watched by the server, gone from this device: removed while the
   // server could not be told, or added from another device on the same
@@ -70,15 +80,26 @@ export function WatchedWalletsCard({
 
   /** Tells the server, once the yes is given. On a failure the question
       stays up: the retry is one click, and what it would do is still in
-      front of the reader. */
+      front of the reader. On success the question goes, and with it the
+      button that answered: the heading takes the focus, so it is not
+      dropped on the body. */
   const stop = (id: string) => {
     setFailure(undefined);
     setPending(id);
     unwatch.mutate(id, {
-      onSuccess: () => setLeaving(null),
+      onSuccess: () => {
+        setLeaving(null);
+        heading.current?.focus();
+      },
       onError: (problem) => setFailure(problem),
       onSettled: () => setPending(null),
     });
+  };
+
+  /** Closes the question and puts the focus back where it was asked. */
+  const cancel = (id: string) => {
+    setLeaving(null);
+    triggers.current.get(id)?.focus();
   };
 
   const toggle = (wallet: WalletMeta, on: boolean) => {
@@ -95,7 +116,11 @@ export function WatchedWalletsCard({
 
   return (
     <>
-      <SectionCard icon={<Eye size={18} strokeWidth={1.5} />} title="Watched wallets">
+      <SectionCard
+        icon={<Eye size={18} strokeWidth={1.5} />}
+        title="Watched wallets"
+        headingRef={heading}
+      >
         {wallets.length === 0 && (
           <p className={clsx("font-ui text-sm text-muted", gone.length > 0 && "mb-3")}>
             No wallets on {NETWORK_WORD[network]} yet.
@@ -142,6 +167,7 @@ export function WatchedWalletsCard({
                     </span>
                     {server && <WatchedPill />}
                     <Toggle
+                      ref={remember(wallet.id)}
                       checked={server !== undefined}
                       disabled={single || !ready}
                       busy={busy}
@@ -155,7 +181,7 @@ export function WatchedWalletsCard({
                       local
                       busy={busy}
                       onConfirm={() => stop(wallet.id)}
-                      onCancel={() => setLeaving(null)}
+                      onCancel={() => cancel(wallet.id)}
                     />
                   )}
                 </li>
@@ -179,6 +205,7 @@ export function WatchedWalletsCard({
                     </span>
                     <WatchedPill />
                     <Button
+                      ref={remember(server.id)}
                       className="h-9"
                       disabled={!ready || busy}
                       aria-busy={busy || undefined}
@@ -195,7 +222,7 @@ export function WatchedWalletsCard({
                       local={false}
                       busy={busy}
                       onConfirm={() => stop(server.id)}
-                      onCancel={() => setLeaving(null)}
+                      onCancel={() => cancel(server.id)}
                     />
                   )}
                 </li>
@@ -230,7 +257,8 @@ export function WatchedWalletsCard({
     server deletes the alert history along with the wallet, and that
     does not come back — so it is said where the decision is made, in
     one sentence, and the yes waits for the answer before it can be
-    given twice. */
+    given twice. It answers a click, so a screen reader hears it as it
+    appears. */
 function UnwatchNote({
   name,
   local,
@@ -248,6 +276,7 @@ function UnwatchNote({
   return (
     <Notice
       tone="info"
+      role="status"
       className="mt-2.5"
       action={
         <span className="flex items-center gap-2">

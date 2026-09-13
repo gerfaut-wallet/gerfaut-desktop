@@ -2,18 +2,24 @@
 // their own files; this keeps their frame, rows and controls identical.
 
 import { clsx } from "clsx";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 export function SectionCard({
   icon,
   title,
   children,
   className,
+  headingRef,
 }: {
   icon: ReactNode;
   title: string;
   children: ReactNode;
   className?: string;
+  /** The heading, for a section that moves the focus there once what
+      held it is gone — a question answered, a row removed. Given a
+      ref, the heading takes the focus from a script and never from
+      Tab. */
+  headingRef?: Ref<HTMLHeadingElement>;
 }) {
   return (
     <section
@@ -22,7 +28,11 @@ export function SectionCard({
         className,
       )}
     >
-      <h2 className="mb-4 flex items-center gap-2 font-display text-base font-semibold text-text">
+      <h2
+        ref={headingRef}
+        tabIndex={headingRef ? -1 : undefined}
+        className="mb-4 flex items-center gap-2 font-display text-base font-semibold text-text"
+      >
         <span className="text-muted">{icon}</span>
         {title}
       </h2>
@@ -118,6 +128,7 @@ export function Toggle({
   label,
   disabled = false,
   busy = false,
+  ref,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
@@ -127,9 +138,12 @@ export function Toggle({
   disabled?: boolean;
   /** Waiting on an answer: inert meanwhile, and said so. */
   busy?: boolean;
+  /** The switch itself, for a caller that hands the focus back to it. */
+  ref?: Ref<HTMLButtonElement>;
 }) {
   return (
     <button
+      ref={ref}
       type="button"
       role="switch"
       aria-checked={checked}
