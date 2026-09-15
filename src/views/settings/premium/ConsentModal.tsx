@@ -51,7 +51,7 @@ export function ConsentModal({
           <Button variant="ghost" onClick={onCancel} disabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={onConfirm} disabled={busy} aria-busy={busy || undefined}>
+          <Button variant="premium" onClick={onConfirm} disabled={busy} aria-busy={busy || undefined}>
             {busy ? "Watching…" : "Watch this wallet"}
           </Button>
         </div>

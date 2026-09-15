@@ -6,7 +6,8 @@ import type { SettingsSection } from "../../state/store";
 
 /** The eight pages of Settings, in the order they are listed. Premium
     comes last, and its gem keeps the premium colour whether the entry
-    is current or not: the one marker of the paid service in the app. */
+    is current or not; selected, its bar takes it too, so the paid
+    service reads as such from the navigation on. */
 export const SECTIONS: { id: SettingsSection; label: string; icon: LucideIcon }[] = [
   { id: "general", label: "General", icon: SlidersHorizontal },
   { id: "network", label: "Network", icon: Globe },
@@ -81,7 +82,10 @@ export function SettingsNav({
                 {current && (
                   <span
                     aria-hidden
-                    className="absolute left-0 top-1/2 hidden h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary @4xl:block"
+                    className={clsx(
+                      "absolute left-0 top-1/2 hidden h-5 w-0.5 -translate-y-1/2 rounded-full @4xl:block",
+                      id === "premium" ? "bg-premium" : "bg-primary",
+                    )}
                   />
                 )}
                 <Icon

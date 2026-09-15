@@ -270,6 +270,9 @@ describe("the licence card", () => {
     const activate = screen.getByRole("button", { name: "Activate" });
     expect(field).toHaveAttribute("placeholder", "xxxx-xxxx-xxxx-xxxx");
     expect(activate).toBeDisabled();
+    // The paid service acts in its own colour, from the first button on.
+    expect(activate).toHaveClass("bg-premium");
+    expect(screen.getByRole("button", { name: "Get Premium" })).toHaveClass("text-premium");
     // Without a key the section is one card, and asks the server nothing.
     expect(screen.queryByRole("heading", { name: "Watched wallets" })).not.toBeInTheDocument();
     expect(calls.some((call) => call.cmd.startsWith("premium_") && call.cmd !== "premium_status")).toBe(false);
@@ -414,7 +417,7 @@ describe("the licence card", () => {
     );
     const forgetButton = screen.getByRole("button", { name: "Forget the key" });
     expect(forgetButton).toBeInTheDocument();
-    expect(forgetButton).toHaveClass("bg-primary");
+    expect(forgetButton).toHaveClass("bg-premium");
 
     await user.click(box);
     // And the sentence says everything that goes, paid time included.
@@ -431,7 +434,7 @@ describe("the licence card", () => {
     expect(confirmation).not.toHaveClass("bg-alert-surface");
     const erase = screen.getByRole("button", { name: "Delete the account" });
     expect(erase).toHaveClass("bg-alert");
-    expect(erase).not.toHaveClass("bg-primary");
+    expect(erase).not.toHaveClass("bg-premium");
 
     // A call that fails leaves the key here: the core deletes on the
     // server first and forgets afterwards.
@@ -527,6 +530,7 @@ describe("the watched wallets card", () => {
     expect(within(row).getByText("Watched")).toBeInTheDocument();
     expect(row.querySelector("svg.lucide-gem")).not.toBeNull();
     expect(cold).toHaveAttribute("aria-checked", "true");
+    expect(cold).toHaveClass("bg-premium");
 
     // The first scan finishes: the list was asked again on its own.
     watched = [WATCHED_DONE];

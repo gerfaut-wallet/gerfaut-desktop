@@ -408,6 +408,11 @@ describe("settings sections", () => {
     expect(heading("About")).not.toBeInTheDocument();
     expect(heading("Watched wallets")).not.toBeInTheDocument();
     expect(nav().getByRole("button", { name: "Premium" })).toHaveAttribute("aria-current", "page");
+    // Selected, the entry marks itself in the premium colour, not the
+    // action blue every other section takes.
+    expect(
+      nav().getByRole("button", { name: "Premium" }).querySelector("span[aria-hidden]"),
+    ).toHaveClass("bg-premium");
   });
 
   it("lists the eight sections in order, each with an icon, the gem in the premium colour", () => {

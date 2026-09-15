@@ -184,7 +184,7 @@ function CodeForm({
         </Button>
         <Button
           type="submit"
-          variant="primary"
+          variant="premium"
           disabled={!ready || confirm.isPending}
           aria-busy={confirm.isPending || undefined}
         >
@@ -241,7 +241,7 @@ export function ChannelsCard({
 
   return (
     <>
-      <SectionCard icon={<BellRing size={18} strokeWidth={1.5} />} title="Channels">
+      <SectionCard icon={<BellRing size={18} strokeWidth={1.5} />} title="Channels" premium>
         {unreachable && channels === undefined ? (
           <p className="font-ui text-sm text-muted">Waiting for the server.</p>
         ) : loading && channels === undefined ? (
@@ -687,7 +687,7 @@ function AddChannelModal({
               </Button>
               <Button
                 type="submit"
-                variant="primary"
+                variant="premium"
                 disabled={add.isPending || (step.kind === "email" ? !emailValid : !webhookValid)}
                 aria-busy={add.isPending || undefined}
               >
@@ -732,7 +732,7 @@ function AddChannelModal({
                 <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
                 Open in ntfy
               </Button>
-              <Button variant="primary" onClick={onClose}>
+              <Button variant="premium" onClick={onClose}>
                 Done
               </Button>
             </div>
@@ -768,7 +768,7 @@ function AddChannelModal({
                     Open Telegram
                   </Button>
                 )}
-                <Button variant="primary" onClick={onClose}>
+                <Button variant="premium" onClick={onClose}>
                   Done
                 </Button>
               </span>

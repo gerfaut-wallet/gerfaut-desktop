@@ -1,7 +1,7 @@
 import { clsx } from "clsx";
 import type { ButtonHTMLAttributes, Ref } from "react";
 
-type Variant = "primary" | "secondary" | "ghost" | "danger";
+type Variant = "primary" | "secondary" | "ghost" | "danger" | "premium" | "premium-ghost";
 
 interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
@@ -9,7 +9,9 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   ref?: Ref<HTMLButtonElement>;
 }
 
-/** The three button roles of the design system. One primary per screen. */
+/** The button roles of the design system. One primary per screen. The
+    premium pair is the primary and the ghost in the premium colour: an
+    action on the paid service reads as such before its words do. */
 export function Button({ variant = "secondary", className, ...rest }: Props) {
   return (
     <button
@@ -22,6 +24,11 @@ export function Button({ variant = "secondary", className, ...rest }: Props) {
           "bg-primary text-on-primary hover:bg-primary-hover disabled:hover:bg-primary",
         variant === "secondary" && "bg-sunken text-text hover:bg-border/60",
         variant === "ghost" && "bg-transparent text-muted hover:bg-sunken hover:text-text",
+        // The paid service's own primary and ghost: never on a chain
+        // state, never outside the premium section and its dialogs.
+        variant === "premium" &&
+          "bg-premium text-on-premium hover:bg-premium-hover disabled:hover:bg-premium",
+        variant === "premium-ghost" && "bg-transparent text-premium hover:bg-sunken",
         // Destructive confirmations only, never a lone delete button.
         variant === "danger" &&
           "bg-alert text-white hover:opacity-90 dark:text-background",

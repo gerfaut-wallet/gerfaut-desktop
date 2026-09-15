@@ -128,6 +128,7 @@ export function WatchedWalletsCard({
         icon={<Eye size={18} strokeWidth={1.5} />}
         title="Watched wallets"
         headingRef={heading}
+        premium
       >
         {wallets.length === 0 && (
           <p className={clsx("font-ui text-sm text-muted", gone.length > 0 && "mb-3")}>
@@ -176,6 +177,7 @@ export function WatchedWalletsCard({
                     {server && <WatchedPill />}
                     <Toggle
                       ref={remember(wallet.id)}
+                      tone="premium"
                       checked={server !== undefined}
                       disabled={single || !ready}
                       busy={busy}

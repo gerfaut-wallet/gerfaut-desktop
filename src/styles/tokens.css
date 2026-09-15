@@ -55,8 +55,12 @@
   --color-confirmed-surface: #dcf5e6;
   --color-pending: #745400;
   --color-pending-surface: #fdf0cf;
-  /* Bruyere: reserved for premium mentions, nothing else. */
+  /* Bruyere: everything that belongs to the paid service, and nothing
+     else. The marker, the premium entry, and the controls that act on
+     the account, so what is premium reads as such at a glance. */
   --color-premium: #6d28d9;
+  --color-premium-hover: #5b21b6;
+  --color-on-premium: #ffffff;
   --color-premium-surface: #f3eefc;
 
   --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
@@ -105,6 +109,8 @@
   --color-pending: #c1983a;
   --color-pending-surface: #1f2933;
   --color-premium: #c4b5fd;
+  --color-premium-hover: #ddd6fe;
+  --color-on-premium: #0b0f14;
   --color-premium-surface: #1f2933;
   --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.5);
 }

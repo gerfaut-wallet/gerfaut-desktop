@@ -80,7 +80,7 @@ export function RecentAlertsCard({
 
   return (
     <>
-      <SectionCard icon={<History size={18} strokeWidth={1.5} />} title="Recent alerts">
+      <SectionCard icon={<History size={18} strokeWidth={1.5} />} title="Recent alerts" premium>
         {unreachable && events === undefined ? (
           <p className="font-ui text-sm text-muted">Waiting for the server.</p>
         ) : loading && events === undefined ? (

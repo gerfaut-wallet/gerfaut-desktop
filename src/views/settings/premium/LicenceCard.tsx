@@ -49,7 +49,7 @@ export function LicenceCard({
   // about the key, or about the account, goes under it.
   return (
     <>
-      <SectionCard icon={<KeyRound size={18} strokeWidth={1.5} />} title="Licence">
+      <SectionCard icon={<KeyRound size={18} strokeWidth={1.5} />} title="Licence" premium>
         {status.key === null ? (
           <KeyForm
             value={key}
@@ -117,7 +117,7 @@ function KeyForm({
             />
             <Button
               type="submit"
-              variant="primary"
+              variant="premium"
               disabled={!ready || pending}
               aria-busy={pending || undefined}
             >
@@ -130,7 +130,7 @@ function KeyForm({
           </p>
         </div>
         <div>
-          <Button variant="ghost" className="-ml-3" onClick={() => void openUrl(PREMIUM_URL)}>
+          <Button variant="premium-ghost" className="-ml-3" onClick={() => void openUrl(PREMIUM_URL)}>
             <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
             Get Premium
           </Button>
@@ -212,7 +212,7 @@ function KeyInPlace({ status }: { status: PremiumStatus }) {
         </Notice>
       )}
       <div className="-ml-3 flex flex-wrap items-center gap-1">
-        <Button variant="ghost" onClick={() => void renew()}>
+        <Button variant="premium-ghost" onClick={() => void renew()}>
           <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
           Renew
         </Button>
@@ -244,7 +244,7 @@ function KeyInPlace({ status }: { status: PremiumStatus }) {
                 Cancel
               </Button>
               <Button
-                variant={alsoServer ? "danger" : "primary"}
+                variant={alsoServer ? "danger" : "premium"}
                 className="h-9"
                 disabled={busy}
                 aria-busy={busy || undefined}
@@ -273,7 +273,7 @@ function KeyInPlace({ status }: { status: PremiumStatus }) {
                 setFailure(undefined);
                 setAlsoServer(event.target.checked);
               }}
-              className="accent-(--color-primary)"
+              className="accent-(--color-premium)"
             />
             Also delete everything on the server
           </label>
