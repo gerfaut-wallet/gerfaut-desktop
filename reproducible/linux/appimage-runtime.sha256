@@ -1,0 +1,18 @@
+# The AppImage runtime: the small ELF program at the head of every
+# AppImage, which mounts the squashfs image that follows it and starts
+# the application. It ships inside the file users download.
+#
+# Left alone, the appimagetool inside linuxdeploy-plugin-appimage fetches
+# it at build time from the `continuous` release of AppImage/type2-runtime,
+# a reference that moves, and checks nothing. The recipe downloads it from
+# a dated release instead, checks it against the hash below and hands it
+# to the plugin through LDAI_RUNTIME_FILE, so the build needs no network
+# and the runtime cannot change between two builds.
+#
+# Source:
+#   runtime-x86_64  https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
+#
+# To move to a newer runtime on purpose: pick a dated release, read what
+# changed since this one, update the URL in targets/linux.sh and paste
+# the output of `sha256sum runtime-x86_64` below.
+2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d  runtime-x86_64
