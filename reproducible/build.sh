@@ -31,8 +31,8 @@ Options:
 
 Environment:
   GERFAUT_ENGINE      docker or podman (default: the first one found)
-  GERFAUT_RUN_ARGS    extra arguments for the build container, for
-                      example "--cpus 4 --hostname elsewhere"
+  GERFAUT_RUN_ARGS    extra arguments for every container the scripts
+                      start, for example "--cpus 4"
 USAGE
 }
 
@@ -138,6 +138,7 @@ run_build() {
         -e SOURCE_DATE_EPOCH="$epoch" \
         -v "$cache:/cache" \
         -v "$(hostpath "$stage"):/src:ro" \
+        ${GERFAUT_RUN_ARGS:-} \
         "$image" fetch "$target"
     echo "--> build (no network)"
     engine run --rm --network none \
