@@ -26,15 +26,31 @@ export const NETWORKS: { value: Network; label: string; hint: string }[] = [
 
 // --- electrum url helpers ----------------------------------------------
 
+/** A stored Electrum address back into the three fields of the form.
+    An IPv6 literal is full of colons, so the port is only ever what
+    follows the closing bracket, or the single colon of a name or an
+    IPv4. The host comes back without its brackets, the way a scan
+    hands it over; `buildElectrumUrl` puts them back. Anything that
+    reads as neither leaves the port empty rather than guessing one. */
 export function parseElectrumUrl(url: string): { host: string; port: string; tls: boolean } {
-  const tls = !url.startsWith("tcp://");
-  const rest = url.replace(/^(ssl|tcp):\/\//, "");
-  const [host, port] = rest.split(":");
-  return { host: host ?? "", port: port ?? "", tls };
+  const text = url.trim();
+  const tls = !/^tcp:\/\//i.test(text);
+  const rest = text.replace(/^(ssl|tcp):\/\//i, "").split(/[/?#]/)[0] ?? "";
+  const digits = (value: string) => (/^\d+$/.test(value) ? value : "");
+  const bracketed = /^\[([^\]]*)\](?::(.*))?$/.exec(rest);
+  if (bracketed) return { host: bracketed[1] ?? "", port: digits(bracketed[2] ?? ""), tls };
+  const colon = rest.indexOf(":");
+  // No colon is a bare name; more than one is a bare IPv6, port and all
+  // undecidable, so the whole of it is the host.
+  if (colon === -1 || colon !== rest.lastIndexOf(":")) return { host: rest, port: "", tls };
+  return { host: rest.slice(0, colon), port: digits(rest.slice(colon + 1)), tls };
 }
 
 export function buildElectrumUrl(host: string, port: string, tls: boolean): string {
-  return `${tls ? "ssl" : "tcp"}://${host.trim()}:${port.trim()}`;
+  const name = host.trim();
+  // A bare IPv6 goes in brackets, or its last group reads as the port.
+  const literal = name.includes(":") && !name.startsWith("[") ? `[${name}]` : name;
+  return `${tls ? "ssl" : "tcp"}://${literal}:${port.trim()}`;
 }
 
 // --- the card -----------------------------------------------------------

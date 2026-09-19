@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - The app says "private key" wherever it used to say "key" alone: on the Backup & sync card, the welcome tour, the empty home page and the Receive page. A backup does hold public keys, inside its descriptors.
+- An Electrum server saved under an IPv6 address comes back into the backend form whole, with its port. It used to be cut at the first colon.
 
 ## [0.1.0] - 2026-09-12
 
