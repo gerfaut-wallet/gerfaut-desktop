@@ -17,3 +17,6 @@ dist/
 src-tauri/target/
 src-tauri/gen/
 tsconfig.tsbuildinfo
+
+# Reproducible build output
+reproducible/out/

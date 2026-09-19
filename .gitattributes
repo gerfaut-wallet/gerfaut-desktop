@@ -1,3 +1,8 @@
 # Read as a git revision by a workflow, and a trailing carriage return
 # is not one.
 *.rev text eol=lf
+# Run inside a Linux container, whatever system checked them out.
+*.sh text eol=lf
+*.py text eol=lf
+reproducible/Dockerfile text eol=lf
+*.sha256 text eol=lf
