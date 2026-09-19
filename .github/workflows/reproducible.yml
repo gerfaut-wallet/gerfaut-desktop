@@ -1,0 +1,63 @@
+# Proof that the Linux packages are reproducible: the same commit is
+# built twice, in two separate containers of the same pinned image, and
+# the job fails if a single byte of the .deb, the .rpm or the .AppImage
+# differs. When it does fail, the diffoscope reports are attached to the
+# run. See docs/REPRODUCIBLE-BUILDS.md.
+#
+# Started by hand: Actions, Reproducible build, Run workflow. It builds
+# the application twice from nothing, so it is not something to run on
+# every push.
+
+name: Reproducible build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    permissions:
+      contents: read
+    # Named, never `-latest`, like the release workflow. The runner only
+    # hosts the container engine: nothing of it reaches the artefacts.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: gerfaut-desktop
+          persist-credentials: false
+
+      - name: Read the pinned gerfaut-core revision
+        id: core
+        run: echo "rev=$(cat gerfaut-desktop/.github/gerfaut-core.rev)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: gerfaut-wallet/gerfaut-core
+          ref: ${{ steps.core.outputs.rev }}
+          ssh-key: ${{ secrets.CORE_DEPLOY_KEY }}
+          path: gerfaut-core
+          persist-credentials: false
+
+      # No token, no secret and no write permission from here on. The
+      # script builds the pinned image, then runs each build in a
+      # container that has no network.
+      - name: Build twice and compare
+        run: gerfaut-desktop/reproducible/build.sh linux --twice --out "$PWD/out"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: reproducible-linux
+          if-no-files-found: warn
+          path: |
+            out/build-1/SHA256SUMS
+            out/build-1/*.deb
+            out/build-1/*.rpm
+            out/build-1/*.AppImage
+            out/build-1/build-info/
+            out/build-2/SHA256SUMS
+            out/build-2/diffoscope/
