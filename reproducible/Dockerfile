@@ -132,10 +132,12 @@ RUN apt-get update \
 
 
 # --- Explaining a mismatch ----------------------------------------------
+# diffoscope, with what it needs to read an rpm header and to print a
+# hex dump.
 FROM linux AS tools
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends diffoscope-minimal \
+ && apt-get install -y --no-install-recommends diffoscope-minimal python3-rpm xxd \
  && rm -rf /var/lib/apt/lists/*
 
 ENTRYPOINT []
