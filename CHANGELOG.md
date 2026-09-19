@@ -6,8 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- A notice in a corner of the window when a newer Gerfaut is out, such as "Gerfaut 0.2.0 is available". Its button opens Settings › About, where the download is, and "Later" closes it. It shows once per version, takes no focus, blocks nothing, and never appears over the lock screen.
+
 ### Changed
 
+- Gerfaut now looks for a newer version on its own, at most once a day and only while it is unlocked. It asks GitHub for the latest release of this repository and sends nothing else. GitHub sees your IP address, as it does when you press the button. The check is paused while a backend is an onion address, because this request does not go through Tor, and a switch in Settings › About turns it off. In 0.1.0 the check only ran when you pressed the button.
+- The download button in Settings › About always opens the releases page of this repository, whatever address the answer carried.
 - Premium controls and the Premium settings entry now use the Premium colour, so what belongs to the paid service reads as such at a glance.
 
 ### Fixed

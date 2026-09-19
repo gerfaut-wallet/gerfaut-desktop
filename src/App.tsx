@@ -3,9 +3,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "./components/Button";
 import { EmptyState } from "./components/EmptyState";
 import { Toast } from "./components/Toast";
+import { UpdateNotice } from "./components/UpdateNotice";
 import { Sidebar } from "./shell/Sidebar";
 import { isLockedError, lockedSettings, useLock, useLockShortcut } from "./state/lock";
 import { usePremiumWatch } from "./state/premium";
+import { useUpdateCheck } from "./state/update";
 import { LockScreen } from "./views/LockScreen";
 import { WelcomeTour } from "./views/WelcomeTour";
 import type { Settings } from "./lib/ipc";
@@ -139,6 +141,10 @@ export default function App() {
     return () => clearInterval(timer);
   }, [notifyNewTx, notifyInterval, network, hasWallets]);
 
+  // A look at the latest release, at most once a day and never behind
+  // the lock: see `state/update`.
+  useUpdateCheck(lockSeen && !locked);
+
   // The tour only ever stands in front of an empty vault: someone with
   // wallets already knows what this is. The vault's own preference is
   // what decides, not the hydrated copy, which lands a frame later.
@@ -258,6 +264,7 @@ export default function App() {
       )}
       <AddWalletModal activeNetwork={settings.data.active_network} />
       <WelcomeTour open={tourOpen} onClose={() => setTourOpen(false)} />
+      <UpdateNotice />
       <Toast />
     </div>
   );

@@ -1,69 +1,117 @@
 import { Compass, Info, RefreshCw } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../../components/Button";
-import type { UpdateCheck } from "../../lib/ipc";
+import type { Settings } from "../../lib/ipc";
+import { isUpdate } from "../../lib/version";
 import { useCheckUpdate } from "../../state/queries";
+import { RELEASES_URL, usesOnionBackend, useUpdate } from "../../state/update";
 import { WelcomeTour } from "../WelcomeTour";
-import { SectionCard } from "./primitives";
+import { SectionCard, SettingRow, Toggle } from "./primitives";
 
-const APP_VERSION = "0.1.0";
+export const APP_VERSION = "0.1.0";
 
-/** The version, the way to a newer one, and the tour again. */
-export function AboutSection() {
+/** The version, the way to a newer one, and the tour again.
+
+    A newer release already known, from the daily check or from an
+    earlier press of the button, is offered as soon as the card opens:
+    this is where the update notice sends people. The download button
+    opens the releases page this app names itself, never an address the
+    network answered. */
+export function AboutSection({ settings }: { settings: Pick<Settings, "backends"> }) {
   const check = useCheckUpdate();
-  const [result, setResult] = useState<UpdateCheck | "failed" | null>(null);
+  const [result, setResult] = useState<"current" | "failed" | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
+  const latest = useUpdate((state) => state.latest);
+  const auto = useUpdate((state) => state.auto);
+  const arriving = useUpdate((state) => state.arriving);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const available = latest !== null && isUpdate(latest, APP_VERSION);
+  const onion = usesOnionBackend(settings);
+
+  // Sent here by the update notice, whose button is gone by now: the
+  // card's heading takes the focus it held.
+  useEffect(() => {
+    if (!arriving) return;
+    heading.current?.focus();
+    useUpdate.getState().setArriving(false);
+  }, [arriving]);
 
   return (
     <SectionCard
       icon={<Info size={18} strokeWidth={1.5} />}
       title="About"
+      headingRef={heading}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="font-ui text-sm text-text">
-          Gerfaut {APP_VERSION}
-          <span className="ml-2 font-ui text-xs text-muted">for Windows, macOS, and Linux</span>
-        </p>
-        <span className="flex items-center gap-3">
-          {result === "failed" && (
-            <span className="font-ui text-xs text-muted">
-              Could not reach the release page. Try again later.
+      <div className="flex flex-col gap-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="font-ui text-sm text-text">
+            Gerfaut {APP_VERSION}
+            <span className="ml-2 font-ui text-xs text-muted">for Windows, macOS, and Linux</span>
+          </p>
+          <span className="flex flex-wrap items-center gap-3">
+            <span role="status" className="font-ui text-xs text-muted">
+              {available
+                ? `Gerfaut ${latest} is available.`
+                : result === "failed"
+                  ? "Could not reach the release page. Try again later."
+                  : result === "current"
+                    ? "You are up to date."
+                    : ""}
             </span>
-          )}
-          {result !== null && result !== "failed" && !result.update_available && (
-            <span className="font-ui text-xs text-muted">You are up to date.</span>
-          )}
-          {result !== null && result !== "failed" && result.update_available && (
-            <Button variant="primary" onClick={() => void openUrl(result.url)}>
-              Get {result.latest}
+            {available && (
+              <Button variant="primary" onClick={() => void openUrl(RELEASES_URL)}>
+                Get {latest}
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              disabled={check.isPending}
+              onClick={() =>
+                check.mutate(undefined, {
+                  onSuccess: (data) => {
+                    // Here the answer is on screen already, so the
+                    // notice has nothing left to announce.
+                    useUpdate.getState().record(data?.latest, { seen: true });
+                    setResult("current");
+                  },
+                  onError: () => setResult("failed"),
+                })
+              }
+            >
+              <RefreshCw
+                size={14}
+                strokeWidth={1.5}
+                aria-hidden
+                className={check.isPending ? "motion-safe:animate-spin" : undefined}
+              />
+              {check.isPending ? "Checking…" : "Check for updates"}
             </Button>
-          )}
-          <Button
-            variant="ghost"
-            disabled={check.isPending}
-            onClick={() =>
-              check.mutate(undefined, {
-                onSuccess: (data) => setResult(data),
-                onError: () => setResult("failed"),
-              })
-            }
+          </span>
+        </div>
+        <div>
+          <SettingRow
+            title="Check for updates automatically"
+            hint="Asks GitHub for the latest release at most once a day while Gerfaut is unlocked, and tells you once when there is a newer one. Nothing is downloaded."
           >
-            <RefreshCw
-              size={14}
-              strokeWidth={1.5}
-              aria-hidden
-              className={check.isPending ? "motion-safe:animate-spin" : undefined}
+            <Toggle
+              checked={auto}
+              onChange={(on) => useUpdate.getState().setAuto(on)}
+              label="Check for updates automatically"
             />
-            {check.isPending ? "Checking…" : "Check for updates"}
+          </SettingRow>
+          {auto && onion && (
+            <p className="mt-1.5 font-ui text-xs text-muted">
+              Paused while a backend is an onion address: this request would not go through Tor.
+            </p>
+          )}
+        </div>
+        <div>
+          <Button variant="ghost" onClick={() => setTourOpen(true)}>
+            <Compass size={14} strokeWidth={1.5} aria-hidden />
+            Show the welcome tour
           </Button>
-        </span>
-      </div>
-      <div className="mt-3">
-        <Button variant="ghost" onClick={() => setTourOpen(true)}>
-          <Compass size={14} strokeWidth={1.5} aria-hidden />
-          Show the welcome tour
-        </Button>
+        </div>
       </div>
       <WelcomeTour open={tourOpen} onClose={() => setTourOpen(false)} />
     </SectionCard>

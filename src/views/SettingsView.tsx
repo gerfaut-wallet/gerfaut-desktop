@@ -36,7 +36,7 @@ export function SettingsView({
     security: <SecuritySection lock={settings.app_lock} />,
     notifications: <NotificationsSection />,
     backup: <BackupSection activeNetwork={settings.active_network} />,
-    about: <AboutSection />,
+    about: <AboutSection settings={settings} />,
     premium: <PremiumSection wallets={wallets} />,
   };
 
