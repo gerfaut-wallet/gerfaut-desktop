@@ -170,7 +170,7 @@ export function ReceiveView({ walletId }: { walletId: string }) {
                 Verify this address on your signing device before sharing it.
               </span>
               <span className="mt-0.5 block text-xs text-muted">
-                Gerfaut only watches: it never holds the keys behind it.
+                Gerfaut only watches: it never holds the private keys behind it.
               </span>
             </Notice>
 

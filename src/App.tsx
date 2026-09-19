@@ -222,7 +222,7 @@ export default function App() {
               ) : walletList.length === 0 ? (
                 <EmptyState
                   title="No wallets watched yet"
-                  hint="Add a descriptor, an extended public key, or an address. Gerfaut watches it and never touches a key."
+                  hint="Add a descriptor, an extended public key, or an address. Gerfaut watches it and never touches a private key."
                   action={
                     <Button
                       variant="primary"

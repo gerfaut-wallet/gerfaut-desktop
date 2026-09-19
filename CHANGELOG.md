@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Premium controls and the Premium settings entry now use the Premium colour, so what belongs to the paid service reads as such at a glance.
 
+### Fixed
+
+- The app says "private key" wherever it used to say "key" alone: on the Backup & sync card, the welcome tour, the empty home page and the Receive page. A backup does hold public keys, inside its descriptors.
+
 ## [0.1.0] - 2026-09-12
 
 First public release. Windows, macOS and Linux.
@@ -51,7 +55,7 @@ Gerfaut watches Bitcoin wallets it cannot spend from. There is no key generation
 
 - The wallet list is stored encrypted. Its key lives in the operating system credential store, the Windows Credential Manager, the macOS Keychain or the Secret Service on Linux.
 - Lock the app with a PIN or a password. While it is locked the vault answers nothing: every command is refused on the Rust side, and the webview holds no descriptor, no balance and no account key until a secret goes through. Behind the lock the app reads only the theme, whether the welcome tour has been seen, the network and the kind of secret to ask for, so unlocking lands on the same vault it left, on the same network.
-- Export every wallet you watch into a backup sealed with a password of your own, as a file or as an animated QR code. The same backup restores on another machine or on the phone. It holds descriptors and addresses, never a key. The file can be copied and guessed offline, and the app says so where the password is chosen.
+- Export every wallet you watch into a backup sealed with a password of your own, as a file or as an animated QR code. The same backup restores on another machine or on the phone. It holds descriptors and addresses, never a private key or a seed. The file can be copied and guessed offline, and the app says so where the password is chosen.
 - Restoring a backup that carries node settings shows what applying them would put in place: the server every wallet of a network would then talk to, and the certificates it would pin. A backup written by a newer Gerfaut is refused by name, not mistaken for a wrong password.
 - Fiat value beside the balance, in the currency you pick, from CoinGecko, Kraken or mempool.space. Amounts in BTC or in sats. No price source is asked anything until fiat value is turned on.
 - Light and dark themes.

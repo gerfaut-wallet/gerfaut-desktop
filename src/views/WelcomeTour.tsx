@@ -19,7 +19,7 @@ const STEPS: Step[] = [
   {
     icon: <Eye size={32} strokeWidth={1.5} aria-hidden />,
     title: "Watch, never spend",
-    body: "Gerfaut holds no key and signs nothing. It watches the wallets you give it: a descriptor, an extended public key, an address.",
+    body: "Gerfaut holds no private key and signs nothing. It watches the wallets you give it: a descriptor, an extended public key, an address.",
   },
   {
     icon: <Plus size={32} strokeWidth={1.5} aria-hidden />,

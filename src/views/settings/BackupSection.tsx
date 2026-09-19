@@ -21,7 +21,7 @@ export function BackupSection({ activeNetwork }: { activeNetwork: Network }) {
         Every wallet you watch, encrypted with a password you choose. Restore it
         on another device: the same file or QR code moves your wallets between
         the desktop and the phone. A backup holds descriptors and addresses,
-        never a key.
+        never a private key or a seed.
       </p>
       <div className="mt-4 flex gap-2">
         <Button variant="ghost" onClick={() => setExporting(true)}>
