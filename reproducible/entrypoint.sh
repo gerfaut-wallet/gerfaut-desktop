@@ -38,6 +38,7 @@ case "$phase" in
         find "$OUT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
         mkdir -p "$OUT/build-info"
         cp /etc/gerfaut-image-packages "$OUT/build-info/image-packages"
+        write_sources
         build_frontend
         target_build
         write_sums

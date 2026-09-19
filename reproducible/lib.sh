@@ -152,6 +152,22 @@ tauri_build() {
     )
 }
 
+# Which commits the artefacts were built from. A build against a core
+# other than the pinned one is allowed for development, and it must not
+# be mistaken for a release build afterwards: the file says so, and
+# compare.py reads it.
+write_sources() {
+    {
+        echo "gerfaut-desktop ${GERFAUT_DESKTOP_REV:-unknown}"
+        echo "gerfaut-core ${GERFAUT_CORE_REV:-unknown}"
+        if [ "${GERFAUT_CORE_REV:-}" != "${GERFAUT_CORE_PINNED:-}" ]; then
+            echo "gerfaut-core-pinned ${GERFAUT_CORE_PINNED:-unknown}"
+            echo "NOT A RELEASE BUILD: the core is not the pinned revision"
+        fi
+    } > "$OUT/build-info/sources"
+    cat "$OUT/build-info/sources"
+}
+
 # Every artefact at the top of /out, sorted by name.
 write_sums() {
     (

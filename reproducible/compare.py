@@ -310,6 +310,7 @@ def explain_stage(dir_a: Path, dir_b: Path) -> list[str]:
         return []
     lines = []
     for name, meaning in (
+        ("sources", "the two builds do not come from the same commits"),
         ("image-packages", "the two images do not hold the same packages: different toolchain"),
         ("frontend.sha256", "the frontend (Vite output) differs"),
         ("binary.sha256", "the compiled binary differs"),
@@ -374,6 +375,13 @@ def main() -> int:
         if args.diffoscope:
             report = run_diffoscope(set_a[name], set_b[name], args.diffoscope)
             print(f"      full report: {report}" if report else "      diffoscope is not installed, no full report")
+
+    # Said whatever the hashes are: two unpinned builds can match each
+    # other and still be nothing a release should be compared with.
+    for directory in (args.first, args.second):
+        sources = directory / "build-info" / "sources"
+        if sources.is_file() and "NOT A RELEASE BUILD" in sources.read_text():
+            print(f"  warning: {directory} was built against a core other than the pinned one")
 
     if failed:
         for line in explain_stage(args.first, args.second):

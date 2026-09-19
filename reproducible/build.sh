@@ -144,6 +144,9 @@ run_build() {
     engine run --rm --network none \
         -e SOURCE_DATE_EPOCH="$epoch" \
         -e GERFAUT_JOBS="$jobs" \
+        -e GERFAUT_DESKTOP_REV="$commit" \
+        -e GERFAUT_CORE_REV="$core_rev" \
+        -e GERFAUT_CORE_PINNED="$pinned" \
         -v "$cache:/cache" \
         -v "$(hostpath "$stage"):/src:ro" \
         -v "$(hostpath "$dest"):/out" \
