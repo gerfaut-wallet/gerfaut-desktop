@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Gerfaut now looks for a newer version on its own, at most once a day and only while it is unlocked. It asks GitHub for the latest release of this repository and sends nothing else. GitHub sees your IP address, as it does when you press the button. The check is paused while a backend is an onion address, because this request does not go through Tor, and a switch in Settings › About turns it off. In 0.1.0 the check only ran when you pressed the button.
+- Gerfaut looks for a newer version on its own, at most once a day and only while it is unlocked. It asks GitHub for the latest release of this repository and sends nothing else. The request takes the route your syncs take. With a clearnet backend GitHub sees your IP address, as it does when you press the button. With an onion backend the request goes through Tor, the button included, and when Tor is not available nothing is sent and Settings › About says so. A switch there turns the automatic check off.
 - The download button in Settings › About always opens the releases page of this repository, whatever address the answer carried.
 - Premium controls and the Premium settings entry now use the Premium colour, so what belongs to the paid service reads as such at a glance.
 
@@ -66,7 +66,7 @@ Gerfaut watches Bitcoin wallets it cannot spend from. There is no key generation
 - Restoring a backup that carries node settings shows what applying them would put in place: the server every wallet of a network would then talk to, and the certificates it would pin. A backup written by a newer Gerfaut is refused by name, not mistaken for a wrong password.
 - Fiat value beside the balance, in the currency you pick, from CoinGecko, Kraken or mempool.space. Amounts in BTC or in sats. No price source is asked anything until fiat value is turned on.
 - Light and dark themes.
-- A check for a newer version, when you press the button and never on its own.
+- A check for a newer version, from a button in Settings › About and on its own at most once a day. A switch turns the automatic check off.
 
 ### Verifying a download
 

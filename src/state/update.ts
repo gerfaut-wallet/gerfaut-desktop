@@ -3,10 +3,10 @@
 // The check asks GitHub for the latest release of this repository and
 // nothing else: no identifier goes with it, but GitHub sees the address
 // it comes from. So it runs on its own at most once a day, only while
-// the app is unlocked, never when a backend is an onion address (the
-// request would go out beside Tor rather than through it), and a
-// setting turns it off. The button in Settings › About stays there for
-// everyone.
+// the app is unlocked, and a setting turns it off. It takes the route
+// the syncs take: with an onion backend the core sends it through Tor,
+// and when Tor cannot be had it sends nothing and answers `tor`. The
+// button in Settings › About goes the same way.
 //
 // What the network answers is read as a version or dropped. It is never
 // shown as it came, and no address it carries is ever opened: the only
@@ -17,8 +17,7 @@
 
 import { useEffect } from "react";
 import { create } from "zustand";
-import { ipc } from "../lib/ipc";
-import type { Settings } from "../lib/ipc";
+import { ipc, isCommandError } from "../lib/ipc";
 import { useLock } from "./lock";
 import { compareVersions, isUpdate, normalizeVersion, parseVersion } from "../lib/version";
 
@@ -47,6 +46,9 @@ interface UpdateState {
   arriving: boolean;
   /** A check the app started on its own is on its way. */
   checking: boolean;
+  /** The last check needed Tor and Tor could not be had: nothing was
+      sent. Said in a line on the About card, nowhere else. */
+  torUnavailable: boolean;
 
   hydrate: (prefs: Record<string, string>) => void;
   /** Reads the preferences from the vault itself. The cached settings
@@ -63,6 +65,7 @@ interface UpdateState {
   /** Closes the notice for this version. */
   dismiss: () => void;
   setArriving: (arriving: boolean) => void;
+  setTorUnavailable: (torUnavailable: boolean) => void;
   /** Checks if the rules above allow it. Never throws. */
   checkIfDue: () => Promise<void>;
 }
@@ -79,6 +82,7 @@ export const useUpdate = create<UpdateState>((set, get) => ({
   checkedAt: 0,
   arriving: false,
   checking: false,
+  torUnavailable: false,
 
   hydrate: (prefs) => {
     const checkedAt = Number(prefs["update.checked_at"]);
@@ -125,6 +129,7 @@ export const useUpdate = create<UpdateState>((set, get) => ({
   },
 
   setArriving: (arriving) => set({ arriving }),
+  setTorUnavailable: (torUnavailable) => set({ torUnavailable }),
 
   checkIfDue: async () => {
     const { ready, auto, checkedAt, checking } = get();
@@ -134,19 +139,23 @@ export const useUpdate = create<UpdateState>((set, get) => ({
     if (checkedAt <= now && now - checkedAt < CHECK_EVERY) return;
     set({ checking: true });
     try {
-      // The backends are asked of the vault, now, for the reason `load`
-      // gives: in the cut-down settings every backend reads as absent.
       // A lock that fell meanwhile ends it here, with nothing sent.
-      const settings = await ipc.getSettings();
-      if (useLock.getState().locked || usesOnionBackend(settings)) return;
+      if (useLock.getState().locked) return;
       // Stamped before the answer: offline or refused, it still counts,
       // so "at most once a day" holds whatever the network does.
       set({ checkedAt: now });
       persist("update.checked_at", String(now));
       const answer = await ipc.checkUpdate();
+      set({ torUnavailable: false });
       get().record(answer?.latest);
-    } catch {
-      // Offline, rate limited, no release yet: nothing to say.
+    } catch (error) {
+      // Offline, rate limited, no release yet: nothing to say. Tor
+      // required and out of reach is the one case where no request
+      // went out at all: the day is not spent, and About says why.
+      if (isCommandError(error) && error.kind === "tor") {
+        set({ torUnavailable: true, checkedAt });
+        persist("update.checked_at", String(checkedAt));
+      }
     } finally {
       set({ checking: false });
     }
@@ -165,14 +174,6 @@ export function pendingUpdate(
   const closed = parseVersion(dismissed);
   if (next && closed && compareVersions(next, closed) <= 0) return null;
   return latest;
-}
-
-/** Whether any configured backend is an onion address. Read wide on
-    purpose: a false yes only skips a check. */
-export function usesOnionBackend(settings: Pick<Settings, "backends">): boolean {
-  return Object.values(settings.backends).some(
-    (backend) => backend !== undefined && "url" in backend && /\.onion\b/i.test(backend.url),
-  );
 }
 
 /** Runs the daily check while `enabled`, which is while the app is

@@ -25,7 +25,7 @@ const SETTINGS: Settings = {
 };
 
 /** What GitHub is made to answer: a tag, or a failure. */
-type Answer = { latest: unknown } | "offline";
+type Answer = { latest: unknown } | "offline" | "no-tor";
 
 interface Vault {
   /** The preferences as the vault holds them, written through. */
@@ -86,6 +86,10 @@ function mockVault(options: {
         if (vault.answer === "offline") {
           return Promise.reject({ kind: "sync", message: "github: error sending request" });
         }
+        // Tor is required and cannot be had: the core sent nothing.
+        if (vault.answer === "no-tor") {
+          return Promise.reject({ kind: "tor", message: "tor: no proxy answers" });
+        }
         return { latest: vault.answer.latest, url: "https://evil.example/download", update_available: true };
       default:
         throw new Error(`unexpected command ${cmd}`);
@@ -124,6 +128,7 @@ function reset() {
     checkedAt: 0,
     arriving: false,
     checking: false,
+    torUnavailable: false,
   });
 }
 
@@ -331,7 +336,7 @@ describe("the update notice", () => {
     expect(notice()).not.toBeInTheDocument();
   });
 
-  it("asks nothing on its own while a backend is an onion address", async () => {
+  it("checks with an onion backend too: the core sends it through Tor", async () => {
     const vault = mockVault({
       answer: { latest: "v0.2.0" },
       backends: {
@@ -343,17 +348,40 @@ describe("the update notice", () => {
     });
     renderApp();
     const user = userEvent.setup();
-    await settled(vault, 0);
-    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    await settled(vault, 1);
 
-    expect(vault.checks).toBe(0);
-    expect(vault.prefs["update.checked_at"]).toBeUndefined();
-    expect(notice()).not.toBeInTheDocument();
-
-    // And Settings says why.
+    expect(await findNotice()).toHaveTextContent("Gerfaut 0.2.0 is available");
+    await user.click(screen.getByRole("button", { name: "Later" }));
     await user.click(screen.getByRole("button", { name: "Settings" }));
     await user.click(screen.getByRole("button", { name: "About" }));
-    expect(await screen.findByText(/Paused while a backend is an onion address/)).toBeInTheDocument();
+    expect(await screen.findByText(/With an onion backend the request goes through Tor/)).toBeInTheDocument();
+    expect(screen.queryByText(/Paused/)).not.toBeInTheDocument();
+  });
+
+  it("says so quietly when Tor is needed and cannot be had, and does not spend the day", async () => {
+    const vault = mockVault({ answer: "no-tor" });
+    renderApp();
+    const user = userEvent.setup();
+    await settled(vault, 1);
+
+    expect(notice()).not.toBeInTheDocument();
+    // Nothing went out, so the next unlock or hour tries again.
+    await waitFor(() => expect(vault.prefs["update.checked_at"]).toBe("0"));
+    expect(useUpdate.getState().checkedAt).toBe(0);
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "About" }));
+    expect(
+      await screen.findByText("Tor is not available, so the check was not sent."),
+    ).toBeInTheDocument();
+
+    // The button goes the same way, and a check that lands clears the line.
+    vault.answer = { latest: `v${APP_VERSION}` };
+    await user.click(screen.getByRole("button", { name: "Check for updates" }));
+    expect(await screen.findByText("You are up to date.")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Tor is not available, so the check was not sent."),
+    ).not.toBeInTheDocument();
   });
 });
 

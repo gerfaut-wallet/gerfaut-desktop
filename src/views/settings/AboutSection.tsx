@@ -2,10 +2,10 @@ import { Compass, Info, RefreshCw } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../components/Button";
-import type { Settings } from "../../lib/ipc";
+import { isCommandError } from "../../lib/ipc";
 import { isUpdate } from "../../lib/version";
 import { useCheckUpdate } from "../../state/queries";
-import { RELEASES_URL, usesOnionBackend, useUpdate } from "../../state/update";
+import { RELEASES_URL, useUpdate } from "../../state/update";
 import { WelcomeTour } from "../WelcomeTour";
 import { SectionCard, SettingRow, Toggle } from "./primitives";
 
@@ -17,8 +17,12 @@ export const APP_VERSION = "0.1.0";
     earlier press of the button, is offered as soon as the card opens:
     this is where the update notice sends people. The download button
     opens the releases page this app names itself, never an address the
-    network answered. */
-export function AboutSection({ settings }: { settings: Pick<Settings, "backends"> }) {
+    network answered.
+
+    The check takes the route the syncs take, so with an onion backend
+    it goes through Tor. When Tor cannot be had nothing is sent, and one
+    quiet line says so. */
+export function AboutSection() {
   const check = useCheckUpdate();
   const [result, setResult] = useState<"current" | "failed" | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
@@ -27,7 +31,7 @@ export function AboutSection({ settings }: { settings: Pick<Settings, "backends"
   const arriving = useUpdate((state) => state.arriving);
   const heading = useRef<HTMLHeadingElement>(null);
   const available = latest !== null && isUpdate(latest, APP_VERSION);
-  const onion = usesOnionBackend(settings);
+  const torUnavailable = useUpdate((state) => state.torUnavailable);
 
   // Sent here by the update notice, whose button is gone by now: the
   // card's heading takes the focus it held.
@@ -73,9 +77,14 @@ export function AboutSection({ settings }: { settings: Pick<Settings, "backends"
                     // Here the answer is on screen already, so the
                     // notice has nothing left to announce.
                     useUpdate.getState().record(data?.latest, { seen: true });
+                    useUpdate.getState().setTorUnavailable(false);
                     setResult("current");
                   },
-                  onError: () => setResult("failed"),
+                  onError: (error) => {
+                    const tor = isCommandError(error) && error.kind === "tor";
+                    useUpdate.getState().setTorUnavailable(tor);
+                    setResult(tor ? null : "failed");
+                  },
                 })
               }
             >
@@ -92,7 +101,7 @@ export function AboutSection({ settings }: { settings: Pick<Settings, "backends"
         <div>
           <SettingRow
             title="Check for updates automatically"
-            hint="Asks GitHub for the latest release at most once a day while Gerfaut is unlocked, and tells you once when there is a newer one. Nothing is downloaded."
+            hint="Asks GitHub for the latest release at most once a day while Gerfaut is unlocked, and tells you once when there is a newer one. Nothing is downloaded. With an onion backend the request goes through Tor."
           >
             <Toggle
               checked={auto}
@@ -100,9 +109,9 @@ export function AboutSection({ settings }: { settings: Pick<Settings, "backends"
               label="Check for updates automatically"
             />
           </SettingRow>
-          {auto && onion && (
-            <p className="mt-1.5 font-ui text-xs text-muted">
-              Paused while a backend is an onion address: this request would not go through Tor.
+          {torUnavailable && (
+            <p role="status" className="mt-1.5 font-ui text-xs text-muted">
+              Tor is not available, so the check was not sent.
             </p>
           )}
         </div>
