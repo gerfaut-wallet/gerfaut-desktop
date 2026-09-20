@@ -21,7 +21,7 @@ This page covers the three Linux packages and the Windows installer, all for x86
 
 You need no Rust, no Node and no Python on the host. Everything runs in the container.
 
-The Windows installer needs a little less: 2.4 GB for its image, 2 GB of downloads, and 10 to 12 minutes per build. It also needs you to accept a licence from Microsoft, see "Verify the Windows installer" below.
+The Windows installer needs a little less: 2.4 GB for its image, 2 GB of downloads, and 8 to 10 minutes per build. It also needs you to accept a licence from Microsoft, see "Verify the Windows installer" below.
 
 ## Verify a published release
 
@@ -207,7 +207,7 @@ If none of these explains it, please open an issue with the output of `compare.s
 
 `gerfaut-core <sha> is not in ../gerfaut-core: fetch it first`. Your clone of the core is older than the pinned commit. Run `git -C ../gerfaut-core fetch`.
 
-`<name> does not match the hash in ...`. One of the pinned downloads changed upstream. The build refuses to go on, which is the point. An older tag can stop being rebuildable this way if upstream removes or replaces a file. Keeping a copy of the cache volume (`gerfaut-desktop-rb-cache-<image id>`) avoids that.
+`<name> does not match the hash in ...`. One of the pinned downloads changed upstream. The build refuses to go on, which is the point. An older tag can stop being rebuildable this way if upstream removes or replaces a file. Keeping a copy of the cache volume (`gerfaut-desktop-rb-cache-<target>-<rust version>-<recipe>`) avoids that.
 
 The build is killed without an error message. The container engine ran out of memory. Give it 8 GB, or lower the number of parallel jobs with `--jobs 4`.
 
