@@ -402,6 +402,12 @@ describe("settings sections", () => {
     }
     expect(screen.getByRole("button", { name: "Check for updates" })).toBeInTheDocument();
 
+    // The backup card says what a backup holds in the words the phone uses.
+    await user.click(nav().getByRole("button", { name: "Backup & sync" }));
+    expect(
+      screen.getByText(/A backup holds descriptors and addresses, never a private key or seed\.$/),
+    ).toBeInTheDocument();
+
     // Premium last: the licence card, and without a key nothing else.
     await user.click(nav().getByRole("button", { name: "Premium" }));
     expect(await screen.findByRole("heading", { name: "Licence" })).toBeInTheDocument();
