@@ -64,11 +64,10 @@ interface UiState {
   priceRange: PriceRange;
   /** External explorer warning acknowledged: skip the dialog when set. */
   explorerAck: boolean;
-  /** A notification when a sync finds a transaction; off by default. */
+  /** Live alerts: a notification when a transaction shows up and when
+      it confirms. Off by default. The Rust side starts and stops the
+      watch on this preference as it is written. */
   notifyNewTx: boolean;
-  /** Seconds between background syncs while open; 0 leaves it to the
-      user's own Sync all. */
-  notifyInterval: number;
   /** The system refused notifications the last time we asked. */
   notificationsRefused: boolean;
   /** The welcome tour has been seen. */
@@ -99,7 +98,6 @@ interface UiState {
   setExplorerAck: (acknowledged: boolean) => void;
   setNotifyNewTx: (enabled: boolean) => void;
   setNotificationsRefused: (refused: boolean) => void;
-  setNotifyInterval: (seconds: number) => void;
   setOnboardingSeen: (seen: boolean) => void;
   markTourSeen: () => void;
   showToast: (message: string) => void;
@@ -153,7 +151,6 @@ export const useUi = create<UiState>((set, get) => ({
   priceRange: "month",
   explorerAck: false,
   notifyNewTx: false,
-  notifyInterval: 0,
   notificationsRefused: false,
   onboardingSeen: false,
   tourDismissed: false,
@@ -226,10 +223,6 @@ export const useUi = create<UiState>((set, get) => ({
     persist("notify.new_tx", notifyNewTx ? "1" : "0");
   },
   setNotificationsRefused: (notificationsRefused) => set({ notificationsRefused }),
-  setNotifyInterval: (notifyInterval) => {
-    set({ notifyInterval });
-    persist("notify.interval", String(notifyInterval));
-  },
   setOnboardingSeen: (onboardingSeen) => {
     set({ onboardingSeen });
     persist("onboarding.seen", onboardingSeen ? "1" : "0");
@@ -280,7 +273,6 @@ export const useUi = create<UiState>((set, get) => ({
       masked: prefs["desktop.masked"] === "1",
       // Both are opt-in: an explicit "1" is the only yes.
       notifyNewTx: prefs["notify.new_tx"] === "1",
-      notifyInterval: Number(prefs["notify.interval"] ?? "0") || 0,
       onboardingSeen: prefs["onboarding.seen"] === "1",
       sidebarCollapsed: prefs["desktop.sidebar"] === "collapsed",
       unit,

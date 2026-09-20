@@ -13,38 +13,14 @@ import type {
   Network,
   ParsedInput,
   PriceRange,
-  SyncReport,
-  WalletMeta,
   WalletIconId,
 } from "../lib/ipc";
 import { ipc, isCommandError } from "../lib/ipc";
-import { announce } from "./notifications";
 import { useUi } from "./store";
 
-/** Names the notifications need, read from the list already in cache
-    so a notice never costs a round trip. */
-function walletNames(client: ReturnType<typeof useQueryClient>): Record<string, string> {
-  const names: Record<string, string> = {};
-  for (const [, data] of client.getQueriesData<WalletMeta[]>({ queryKey: ["wallets"] })) {
-    for (const wallet of data ?? []) names[wallet.id] = wallet.name;
-  }
-  return names;
-}
-
-/** Posts what a batch of sync reports found, if the user asked to be
-    told. Called after the reports are in, never instead of them. */
-function announceReports(
-  client: ReturnType<typeof useQueryClient>,
-  reports: SyncReport[],
-): void {
-  const ui = useUi.getState();
-  void announce(reports, {
-    enabled: ui.notifyNewTx,
-    names: walletNames(client),
-    unit: ui.unit,
-    masked: ui.masked,
-  });
-}
+// What a sync found is announced by the Rust side, which posts the
+// notifications and keeps the record of what was said: a sync asked
+// for here and the live watch never say the same thing twice.
 
 export const keys = {
   settings: ["settings"] as const,
@@ -160,13 +136,11 @@ export function useSyncing(): boolean {
 
 export function useSyncWallet() {
   const invalidate = useInvalidateWallet();
-  const client = useQueryClient();
   return useMutation({
     mutationKey: ["sync"],
     mutationFn: (id: string) => ipc.syncWallet(id),
-    onSuccess: (report, id) => {
+    onSuccess: (_report, id) => {
       useUi.getState().setSyncError(id, null);
-      announceReports(client, [report]);
     },
     onError: (error, id) =>
       useUi
@@ -182,14 +156,12 @@ export function useSyncWallet() {
     are only found by starting over. */
 export function useRescanWallet() {
   const invalidate = useInvalidateWallet();
-  const client = useQueryClient();
   return useMutation({
     // The same key as a sync, so the sidebar icon turns for it too.
     mutationKey: ["sync"],
     mutationFn: (id: string) => ipc.rescanWallet(id),
     onSuccess: (report, id) => {
       useUi.getState().setSyncError(id, null);
-      announceReports(client, [report]);
       const found =
         report.new_tx_count === 0
           ? "no new transactions"
@@ -230,13 +202,11 @@ export function useLoadMoreHistory() {
 
 export function useSyncAll() {
   const invalidate = useInvalidateWallet();
-  const client = useQueryClient();
   return useMutation({
     mutationKey: ["sync"],
     mutationFn: (network?: Network) => ipc.syncAll(network),
     onSuccess: (report) => {
       const ui = useUi.getState();
-      announceReports(client, report.reports);
       for (const sync of report.reports) {
         ui.setSyncError(sync.wallet_id, null);
       }

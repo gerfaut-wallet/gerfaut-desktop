@@ -720,6 +720,7 @@ mod tests {
         AppState {
             manager,
             locked: std::sync::atomic::AtomicBool::new(false),
+            live: crate::live::LiveAlerts::default(),
         }
     }
 

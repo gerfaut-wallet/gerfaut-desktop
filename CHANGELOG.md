@@ -8,10 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Live alerts. With notifications on, Gerfaut keeps one connection open to your backend and tells you when a transaction reaches the mempool, incoming or outgoing, and again when it confirms. An Electrum server pushes the change, so the notification arrives within seconds. An Esplora backend is polled once a minute. It works for as long as Gerfaut is open, minimised and locked included, and the pages update at the same moment.
+- Settings › Notifications shows where the watch stands, such as "Connected · Electrum · host" or "Polling every minute · host", and what the open connection tells the server: what a sync already tells it, and also how long Gerfaut stays connected. With the Automatic backend, Gerfaut first tries an Electrum server run by one of the public operators already in the rotation, because Electrum is what pushes changes.
+- A "Send a test notification" button, because it is the only reliable way to know whether the system shows them.
 - A notice in a corner of the window when a newer Gerfaut is out, such as "Gerfaut 0.2.0 is available". Its button opens Settings › About, where the download is, and "Later" closes it. It shows once per version, takes no focus, blocks nothing, and never appears over the lock screen.
 
 ### Changed
 
+- Notifications are posted while Gerfaut is locked too. A notification posted then names no wallet and no amount, only that a transaction appeared or confirmed and whether it is outgoing. Unlocked, amounts follow the display unit and stay hidden while balances are masked, as before.
+- The "Check while open" rhythm is gone. With notifications on, the watch is live; with them off, Gerfaut syncs when it opens and when you ask.
+- A transaction is announced once when it appears and once when it confirms, whether the live watch or a sync you asked for saw it first, and across restarts.
 - Gerfaut looks for a newer version on its own, at most once a day and only while it is unlocked. It asks GitHub for the latest release of this repository and sends nothing else. The request takes the route your syncs take. With a clearnet backend GitHub sees your IP address, as it does when you press the button. With an onion backend the request goes through Tor, the button included, and when Tor is not available nothing is sent and Settings › About says so. A switch there turns the automatic check off.
 - The download button in Settings › About always opens the releases page of this repository, whatever address the answer carried.
 - Premium controls and the Premium settings entry now use the Premium colour, so what belongs to the paid service reads as such at a glance.
@@ -44,8 +50,8 @@ Gerfaut watches Bitcoin wallets it cannot spend from. There is no key generation
 - Public Esplora servers by default, or your own node over Esplora or Electrum.
 - An Electrum server with a self-signed certificate is shown to you, fingerprint, subject and expiry, and trusted only once you say so.
 - A `.onion` backend goes through Tor. Gerfaut uses the Tor already running on the machine when there is one and starts its own otherwise, so reaching a hidden service needs no second install. The built-in client is arti; the first connection takes up to a minute and a half while it bootstraps.
-- Sync on demand, or every 5, 15 or 60 minutes while the app is open. A rescan is a separate, explicit action.
-- A system notification when a sync finds a transaction, off until you turn it on. Nothing is posted while the app is locked; what the system already showed stays where it is, and masking is what keeps amounts out of it.
+- Sync when the app opens and on demand. A rescan is a separate, explicit action.
+- A system notification when a transaction shows up, off until you turn it on. What the system already showed stays in its notification center after Gerfaut locks, and masking is what keeps amounts out of it.
 
 ### Getting told when something moves
 

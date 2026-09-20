@@ -34,7 +34,7 @@ export function SettingsView({
       <WalletsSection wallets={wallets} gapLimit={settings.gap_limit} premium={settings.premium} />
     ),
     security: <SecuritySection lock={settings.app_lock} />,
-    notifications: <NotificationsSection />,
+    notifications: <NotificationsSection settings={settings} />,
     backup: <BackupSection activeNetwork={settings.active_network} />,
     about: <AboutSection />,
     premium: <PremiumSection wallets={wallets} />,

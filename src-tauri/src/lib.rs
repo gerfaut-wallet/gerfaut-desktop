@@ -30,6 +30,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
 
+mod live;
+mod notice;
 mod premium;
 
 /// Error shape every command returns; the frontend matches on `kind`.
@@ -120,6 +122,9 @@ pub(crate) struct AppState {
     /// raised again by [`lock_app`], and taken down by one thing only:
     /// a secret the core verified.
     pub(crate) locked: AtomicBool,
+    /// The live watch and what it posts. It runs on this side, behind
+    /// the lock included: see [`live`].
+    pub(crate) live: live::LiveAlerts,
 }
 
 impl AppState {
@@ -338,18 +343,34 @@ async fn receive_addresses(
     Ok(state.manager.receive_addresses(&id, lookahead).await?)
 }
 
+/// A sync asked for by hand. What it found is announced from here, and
+/// through the record the live watch uses, so nothing is said twice.
 #[tauri::command]
-async fn sync_wallet(state: tauri::State<'_, AppState>, id: String) -> CommandResult<SyncReport> {
+async fn sync_wallet(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> CommandResult<SyncReport> {
     state.unlocked()?;
-    Ok(state.manager.sync_wallet(&id).await?)
+    let imports = live::never_synced(&state.manager).await;
+    let report = state.manager.sync_wallet(&id).await?;
+    live::announce_report(&app, &report, imports.contains(&id)).await;
+    Ok(report)
 }
 
 /// Scans a wallet again from its first address with the current gap
 /// limit, for funds an incremental sync can no longer see.
 #[tauri::command]
-async fn rescan_wallet(state: tauri::State<'_, AppState>, id: String) -> CommandResult<SyncReport> {
+async fn rescan_wallet(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> CommandResult<SyncReport> {
     state.unlocked()?;
-    Ok(state.manager.rescan_wallet(&id).await?)
+    let imports = live::never_synced(&state.manager).await;
+    let report = state.manager.rescan_wallet(&id).await?;
+    live::announce_report(&app, &report, imports.contains(&id)).await;
+    Ok(report)
 }
 
 /// Fetches an older round of history for a watched address. Returns how
@@ -362,11 +383,17 @@ async fn load_more_history(state: tauri::State<'_, AppState>, id: String) -> Com
 
 #[tauri::command]
 async fn sync_all(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     network: Option<Network>,
 ) -> CommandResult<SyncAllReport> {
     state.unlocked()?;
-    Ok(state.manager.sync_all(network).await)
+    let imports = live::never_synced(&state.manager).await;
+    let all = state.manager.sync_all(network).await;
+    for report in &all.reports {
+        live::announce_report(&app, report, imports.contains(&report.wallet_id)).await;
+    }
+    Ok(all)
 }
 
 #[tauri::command]
@@ -516,14 +543,23 @@ async fn forget_certificate(state: tauri::State<'_, AppState>, host: String) -> 
     Ok(state.manager.forget_certificate(&host).await?)
 }
 
+/// Writes one preference. The one that turns the alerts on or off
+/// starts or stops the live watch in the same breath, so the window
+/// has no second call to forget.
 #[tauri::command]
 async fn set_app_pref(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     key: String,
     value: String,
 ) -> CommandResult<()> {
     state.unlocked()?;
-    Ok(state.manager.set_app_pref(key, value).await?)
+    let alerts = key == live::NOTIFY_PREF;
+    state.manager.set_app_pref(key, value).await?;
+    if alerts {
+        live::apply(&app).await;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -813,16 +849,20 @@ async fn preview_backup(
 
 #[tauri::command]
 async fn import_backup(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     source: String,
     password: String,
     choices: ImportChoices,
 ) -> CommandResult<ImportReport> {
     state.unlocked()?;
-    Ok(state
+    let report = state
         .manager
         .import_backup(&source, &password, &choices)
-        .await?)
+        .await?;
+    // A backup can carry the preferences, the alerts among them.
+    live::apply(&app).await;
+    Ok(report)
 }
 
 // --- vault key ---------------------------------------------------------
@@ -886,6 +926,15 @@ pub fn run() {
             app.manage(AppState {
                 manager,
                 locked: AtomicBool::new(locked),
+                live: live::LiveAlerts::default(),
+            });
+            // The watch starts with the app when the alerts are on,
+            // locked or not, and before the opening sync so nothing
+            // falls between the two.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                live::apply(&handle).await;
+                live::keep_time(handle).await;
             });
             Ok(())
         })
@@ -953,10 +1002,17 @@ pub fn run() {
             premium::premium_test_channel,
             premium::premium_events,
             premium::premium_heartbeat,
-            premium::premium_acknowledge_offline
+            premium::premium_acknowledge_offline,
+            live::live_status,
+            live::send_test_notification
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                live::shutdown(app);
+            }
+        });
 }
 
 #[cfg(test)]
@@ -1137,6 +1193,7 @@ mod tests {
             AppState {
                 manager,
                 locked: AtomicBool::new(locked),
+                live: crate::live::LiveAlerts::default(),
             },
             runtime,
         )
@@ -1179,6 +1236,7 @@ mod tests {
         let state = AppState {
             manager,
             locked: AtomicBool::new(false),
+            live: crate::live::LiveAlerts::default(),
         };
 
         runtime.block_on(super::lock_vault(&state)).unwrap();
@@ -1309,6 +1367,7 @@ mod tests {
         let sources = [
             ("lib.rs", include_str!("lib.rs")),
             ("premium.rs", include_str!("premium.rs")),
+            ("live.rs", include_str!("live.rs")),
         ];
 
         let mut checked = 0;

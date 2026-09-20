@@ -13,6 +13,7 @@
       "identifier": "opener:allow-open-url",
       "allow": [{ "url": "ntfy://*" }]
     },
-    "notification:default"
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission"
   ]
 }

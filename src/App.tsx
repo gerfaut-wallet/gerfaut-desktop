@@ -5,6 +5,7 @@ import { EmptyState } from "./components/EmptyState";
 import { Toast } from "./components/Toast";
 import { UpdateNotice } from "./components/UpdateNotice";
 import { Sidebar } from "./shell/Sidebar";
+import { useLiveEvents } from "./state/live";
 import { isLockedError, lockedSettings, useLock, useLockShortcut } from "./state/lock";
 import { usePremiumWatch } from "./state/premium";
 import { useUpdateCheck } from "./state/update";
@@ -51,8 +52,6 @@ export default function App() {
     view,
     activeWalletId,
     hydratePrefs,
-    notifyInterval,
-    notifyNewTx,
     tourDismissed,
   } = useUi();
   const hydrated = useRef(false);
@@ -104,13 +103,9 @@ export default function App() {
   }, [locked, client]);
 
   // One background refresh at startup; data stays visibly stamped. It
-  // waits for the lock, like the rhythm below: a sync that lands behind
-  // the lock screen posts a *new* notification naming a wallet and an
-  // amount over it. Locking takes nothing back — what the system
-  // already showed stays in its notification center, and masking is
-  // what keeps amounts out of it — but it stops the app adding to the
-  // pile. The refresh is not lost, it is deferred: unlocking runs this
-  // effect again with `autosynced` still false.
+  // waits for the unlock because the vault answers nothing before it,
+  // and it is not lost: unlocking runs this effect again with
+  // `autosynced` still false.
   useEffect(() => {
     if (locked) return;
     if (wallets.data && wallets.data.length > 0 && !autosynced.current && network) {
@@ -119,27 +114,11 @@ export default function App() {
     }
   }, [wallets.data, network, syncAll, locked]);
 
-  // And then on the rhythm the user chose, while the window is open and
-  // unlocked. It talks to the configured backend and to nothing else.
-  //
-  // The mutation object is read through a ref: TanStack returns a fresh
-  // one on every render, and this component re-renders on every toast,
-  // so keeping it in the dependencies would restart the timer before it
-  // ever fired.
-  const hasWallets = (wallets.data?.length ?? 0) > 0;
-  const syncAllRef = useRef(syncAll);
-  syncAllRef.current = syncAll;
-  useEffect(() => {
-    if (!notifyNewTx || notifyInterval <= 0 || !network || !hasWallets) return;
-    const timer = setInterval(() => {
-      // Nothing runs behind the lock screen: a sync there would post a
-      // *new* notification naming a wallet and an amount over it. The
-      // ones already posted are the system's, and stay where they are.
-      if (useLock.getState().locked) return;
-      syncAllRef.current.mutate(network);
-    }, notifyInterval * 1000);
-    return () => clearInterval(timer);
-  }, [notifyNewTx, notifyInterval, network, hasWallets]);
+  // After that, nothing here keeps time. With the alerts on, the Rust
+  // side holds a connection to the backend, syncs the wallet that moved
+  // and posts the notification, window minimised or locked included;
+  // this side reads again what it is told has changed.
+  useLiveEvents(lockSeen && !locked);
 
   // A look at the latest release, at most once a day and never behind
   // the lock: see `state/update`.

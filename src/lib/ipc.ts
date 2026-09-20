@@ -874,6 +874,28 @@ export interface UpdateCheck {
   update_available: boolean;
 }
 
+/** Where the live watch stands, as the core reports it. */
+export type WatchState = "off" | "connecting" | "connected" | "reconnecting" | "polling";
+export type WatchTransport = "electrum" | "mempool_websocket" | "esplora_polling";
+
+export interface WatchStatus {
+  state: WatchState;
+  transport: WatchTransport | null;
+  /** The host in use or being tried, never a full address. */
+  server: string | null;
+  /** Why the last connection failed, while reconnecting. */
+  detail: string | null;
+  watched_scripts: number;
+  /** Scripts the server pushes changes for; the rest are polled. */
+  pushed_scripts: number;
+}
+
+export interface LiveStatus {
+  /** The alerts are on, so a watch should be running. */
+  enabled: boolean;
+  status: WatchStatus;
+}
+
 export interface CommandError {
   kind:
     | "unrecognized_input"
@@ -900,6 +922,8 @@ export interface CommandError {
     | "premium_rejected"
     | "premium_unreachable"
     | "premium_invalid"
+    /** The system refused to post a notification. */
+    | "notification"
     | "internal";
   message: string;
 }
@@ -974,6 +998,8 @@ export const ipc = {
   fetchPriceHistory: (source: PriceSource, currency: FiatCurrency, range: PriceRange) =>
     invoke<PriceHistory>("fetch_price_history", { source, currency, range }),
   checkUpdate: () => invoke<UpdateCheck>("check_update"),
+  liveStatus: () => invoke<LiveStatus>("live_status"),
+  sendTestNotification: () => invoke<void>("send_test_notification"),
   appLock: () => invoke<AppLock | null>("app_lock"),
   setAppLock: (kind: LockKind, secret: string, current?: string) =>
     invoke<void>("set_app_lock", { kind, secret, current: current ?? null }),
