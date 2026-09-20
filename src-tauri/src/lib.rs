@@ -51,6 +51,9 @@ fn premium_kind(error: &PremiumError) -> &'static str {
         // Nothing under that id on the server: the screen shows it as
         // it shows a refusal, in the server's words.
         PremiumError::NotFound => "premium_rejected",
+        // Not a refusal of the request: the same one may pass after the
+        // wait, so the screen says to try again rather than what failed.
+        PremiumError::RateLimited { .. } => "premium_rate_limited",
         PremiumError::Unreachable(_) | PremiumError::UnexpectedResponse(_) => "premium_unreachable",
         PremiumError::InvalidCertificate(_)
         | PremiumError::InvalidHeartbeat(_)
@@ -611,10 +614,21 @@ async fn fetch_price_history(
     Ok(gerfaut_core::price::fetch_price_history(source, currency, range).await?)
 }
 
+/// The repository whose releases the app compares itself with.
+const RELEASES_REPO: &str = "gerfaut-wallet/gerfaut-desktop";
+
+/// Asks for the latest release, by the route the syncs take: through
+/// Tor when a backend is an onion address, and not at all when Tor is
+/// required and cannot be had. That case answers `tor`, which the
+/// screen words apart from "could not check".
 #[tauri::command]
-async fn check_update(app: tauri::AppHandle) -> CommandResult<gerfaut_core::updates::UpdateCheck> {
+async fn check_update(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> CommandResult<gerfaut_core::updates::UpdateCheck> {
+    state.unlocked()?;
     let current = app.package_info().version.to_string();
-    Ok(gerfaut_core::updates::check_update("gerfaut-wallet/gerfaut-desktop", &current).await?)
+    Ok(state.manager.check_update(RELEASES_REPO, &current).await?)
 }
 
 // --- tor ---------------------------------------------------------------
