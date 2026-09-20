@@ -1,8 +1,10 @@
-# Proof that the Linux packages are reproducible: the same commit is
-# built twice, in two separate containers of the same pinned image, and
-# the job fails if a single byte of the .deb, the .rpm or the .AppImage
-# differs. When it does fail, the diffoscope reports are attached to the
-# run. See docs/REPRODUCIBLE-BUILDS.md.
+# Proof that the Linux packages and the Windows installer are
+# reproducible: the same commit is built twice, in two separate
+# containers of the same pinned image, and the job fails if a single
+# byte of the .deb, the .rpm, the .AppImage or the setup .exe differs.
+# When it does fail, the diffoscope reports are attached to the run. The
+# Windows installer is then installed, started and removed on a Windows
+# runner. See docs/REPRODUCIBLE-BUILDS.md.
 #
 # Started by hand: Actions, Reproducible build, Run workflow. It builds
 # the application twice from nothing, so it is not something to run on
@@ -61,3 +63,134 @@ jobs:
             out/build-1/build-info/
             out/build-2/SHA256SUMS
             out/build-2/diffoscope/
+
+  # The Windows installer, cross-built in the same kind of container.
+  # The job passes --accept-microsoft-license: the build downloads the
+  # Microsoft C runtime and Windows SDK from Microsoft to the runner,
+  # checks them against the committed hashes and throws them away with
+  # the runner. They are never uploaded: the artefact holds the
+  # installer and the build log, nothing else.
+  windows:
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: gerfaut-desktop
+          persist-credentials: false
+
+      - name: Read the pinned gerfaut-core revision
+        id: core
+        run: echo "rev=$(cat gerfaut-desktop/.github/gerfaut-core.rev)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: gerfaut-wallet/gerfaut-core
+          ref: ${{ steps.core.outputs.rev }}
+          ssh-key: ${{ secrets.CORE_DEPLOY_KEY }}
+          path: gerfaut-core
+          persist-credentials: false
+
+      - name: Build twice and compare
+        run: >
+          gerfaut-desktop/reproducible/build.sh windows --twice
+          --accept-microsoft-license --out "$PWD/out"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: reproducible-windows
+          if-no-files-found: warn
+          path: |
+            out/build-1/SHA256SUMS
+            out/build-1/*.exe
+            out/build-1/build-info/
+            out/build-2/SHA256SUMS
+            out/build-2/diffoscope/
+
+  # The installer built on Linux, run on Windows. A matching hash says
+  # nothing about whether the program starts: this job installs it,
+  # starts it and removes it again. It compiles nothing.
+  windows-smoke:
+    needs: windows
+    permissions:
+      contents: read
+    runs-on: windows-2025
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: reproducible-windows
+          path: artefact
+
+      - name: Check that the file is the one the Linux job built
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = Get-ChildItem artefact/build-1/Gerfaut_*_x64-setup.exe
+          $line = Get-Content artefact/build-1/SHA256SUMS | Where-Object { $_ -like "*$($setup.Name)" }
+          $want = ($line -split '\s+')[0]
+          $have = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          "$have  $($setup.Name)"
+          if ($have -ne $want) { throw "the hash differs from the one in SHA256SUMS ($want)" }
+          # Unsigned today. The day this changes, the page about
+          # reproducible builds has to say how a signature is set aside.
+          $signature = (Get-AuthenticodeSignature $setup).Status
+          if ($signature -ne 'NotSigned') { throw "unexpected Authenticode status: $signature" }
+          "SETUP=$($setup.FullName)" >> $env:GITHUB_ENV
+
+      - name: Install silently
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $done = Start-Process $env:SETUP -ArgumentList '/S' -Wait -PassThru
+          if ($done.ExitCode -ne 0) { throw "the installer exited with $($done.ExitCode)" }
+          $app = Join-Path $env:LOCALAPPDATA 'Gerfaut\gerfaut-desktop.exe'
+          if (-not (Test-Path $app)) { throw "not installed: $app" }
+          $info = (Get-Item $app).VersionInfo
+          $info | Format-List ProductName, FileDescription, FileVersion, ProductVersion, LegalCopyright
+          $version = $env:SETUP -replace '.*Gerfaut_(.+)_x64-setup\.exe$', '$1'
+          if ($info.ProductName -ne 'Gerfaut') { throw "product name: $($info.ProductName)" }
+          if ($info.ProductVersion -ne $version) { throw "product version: $($info.ProductVersion), expected $version" }
+          $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Gerfaut'
+          if ((Get-ItemProperty $key).DisplayVersion -ne $version) { throw 'the uninstall entry does not carry the version' }
+          if (-not (Test-Path (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Gerfaut.lnk'))) { throw 'no Start Menu entry' }
+
+      - name: Start the application
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = Join-Path $env:LOCALAPPDATA 'Gerfaut\gerfaut-desktop.exe'
+          $process = Start-Process $app -PassThru
+          Start-Sleep -Seconds 10
+          if ($process.HasExited) { throw "the application exited with $($process.ExitCode)" }
+          # The window is a WebView2: no child process means no window.
+          $children = Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" |
+            Where-Object { $_.CommandLine -like '*gerfaut*' }
+          "WebView2 processes: $(@($children).Count)"
+          if (-not $children) { throw 'the application started no WebView2 process' }
+          Stop-Process -Id $process.Id -Force
+          Wait-Process -Id $process.Id -Timeout 30 -ErrorAction SilentlyContinue
+
+      - name: Uninstall silently
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:LOCALAPPDATA 'Gerfaut'
+          # The uninstaller copies itself to a temporary directory and
+          # returns at once, so the result is waited for, not the process.
+          Start-Process (Join-Path $dir 'uninstall.exe') -ArgumentList '/S' -Wait
+          $left = @(
+            $dir,
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Gerfaut',
+            (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Gerfaut.lnk'),
+            (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Gerfaut.lnk')
+          )
+          foreach ($attempt in 1..30) {
+            if (-not ($left | Where-Object { Test-Path $_ })) { break }
+            Start-Sleep -Seconds 2
+          }
+          $still = $left | Where-Object { Test-Path $_ }
+          if ($still) { throw "left behind: $($still -join ', ')" }
+          'nothing left behind'
