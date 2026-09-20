@@ -100,22 +100,23 @@ fn status_of(state: &PremiumState, public_key_hex: &str, now: i64) -> PremiumSta
     }
 }
 
-/// The descriptor text a wallet is registered with: the external
-/// descriptor alone, or both on two lines, the form the core's own
-/// parser reads back. A single address has none.
-fn descriptor_input(kind: &WalletKind) -> Option<String> {
+/// The text a wallet is registered with: the external descriptor
+/// alone, or both on two lines, the form the core's own parser reads
+/// back. A single address goes as it was imported: to the server it is
+/// a wallet of one script.
+fn descriptor_input(kind: &WalletKind) -> String {
     match kind {
         WalletKind::Descriptors {
             external,
             internal: Some(internal),
             ..
-        } => Some(format!("{external}\n{internal}")),
+        } => format!("{external}\n{internal}"),
         WalletKind::Descriptors {
             external,
             internal: None,
             ..
-        } => Some(external.clone()),
-        WalletKind::SingleAddress { .. } => None,
+        } => external.clone(),
+        WalletKind::SingleAddress { address } => address.clone(),
     }
 }
 
@@ -270,10 +271,7 @@ pub async fn premium_watch_wallet(
             kind: "wallet_not_found",
             message: format!("no wallet with id {id}"),
         })?;
-    let input = descriptor_input(&wallet.kind).ok_or_else(|| CommandError {
-        kind: "invalid_input",
-        message: "a single address cannot be watched yet".to_owned(),
-    })?;
+    let input = descriptor_input(&wallet.kind);
     let mut premium = state.manager.premium_state().await;
     premium.consent(&id, now_unix());
     state.manager.set_premium_state(premium).await?;
@@ -559,22 +557,22 @@ mod tests {
             script: ScriptKind::Segwit,
         };
         assert_eq!(
-            descriptor_input(&pair).as_deref(),
-            Some("wpkh(A/0/*)#aaaaaaaa\nwpkh(A/1/*)#bbbbbbbb")
+            descriptor_input(&pair),
+            "wpkh(A/0/*)#aaaaaaaa\nwpkh(A/1/*)#bbbbbbbb"
         );
         let external_only = WalletKind::Descriptors {
             external: "wpkh(A/0/*)#aaaaaaaa".to_owned(),
             internal: None,
             script: ScriptKind::Segwit,
         };
-        assert_eq!(
-            descriptor_input(&external_only).as_deref(),
-            Some("wpkh(A/0/*)#aaaaaaaa")
-        );
+        assert_eq!(descriptor_input(&external_only), "wpkh(A/0/*)#aaaaaaaa");
         let address = WalletKind::SingleAddress {
             address: "bc1q...".to_owned(),
         };
-        assert_eq!(descriptor_input(&address), None);
+        // A single address is watchable: it is registered as the
+        // address itself, which the server reads as a wallet of one
+        // script.
+        assert_eq!(descriptor_input(&address), "bc1q...");
     }
 
     fn event(id: i64) -> Event {

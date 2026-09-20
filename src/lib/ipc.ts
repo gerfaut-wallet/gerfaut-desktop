@@ -553,6 +553,12 @@ export interface WalletWatch {
   baseline_height: number | null;
   coins: number;
   value_sats: number;
+  /** False once the server has refused the wallet: it keeps the row to
+      say why, and watches nothing under it. Absent from a server that
+      refuses no wallet. */
+  watching?: boolean;
+  /** Why the server does not watch this wallet, in its own words. */
+  refusal?: { code: string; message: string } | null;
 }
 
 export type ChannelKind = "ntfy" | "telegram" | "email" | "webhook";
@@ -589,6 +595,8 @@ export type EventKind =
   | "receive_confirmed"
   | "timelock_due"
   | "wallet_registered"
+  /** The server no longer watches the wallet; `data.message` says why. */
+  | "wallet_refused"
   | "other";
 
 /** One entry of the account's event log. */
@@ -922,6 +930,8 @@ export interface CommandError {
     | "premium_rejected"
     | "premium_unreachable"
     | "premium_invalid"
+    /** The premium server asks to wait; the message says how long. */
+    | "premium_rate_limited"
     /** The system refused to post a notification. */
     | "notification"
     | "internal";

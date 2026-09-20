@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Live alerts. With notifications on, Gerfaut keeps one connection open to your backend and tells you when a transaction reaches the mempool, incoming or outgoing, and again when it confirms. An Electrum server pushes the change, so the notification arrives within seconds. An Esplora backend is polled once a minute. It works for as long as Gerfaut is open, minimised and locked included, and the pages update at the same moment.
 - Settings › Notifications shows where the watch stands, such as "Connected · Electrum · host" or "Polling every minute · host", and what the open connection tells the server: what a sync already tells it, and also how long Gerfaut stays connected. With the Automatic backend, Gerfaut first tries an Electrum server run by one of the public operators already in the rotation, because Electrum is what pushes changes.
+- Premium can watch a wallet that is a single address. The question asked before it leaves the device says "The address" for these wallets.
+- A wallet the Premium server refuses to watch says why, in the server's own sentence, under its row in Watched wallets and in Recent alerts. When the server asks to wait, the note says for how long.
 - A "Send a test notification" button, because it is the only reliable way to know whether the system shows them.
 - A notice in a corner of the window when a newer Gerfaut is out, such as "Gerfaut 0.2.0 is available". Its button opens Settings › About, where the download is, and "Later" closes it. It shows once per version, takes no focus, blocks nothing, and never appears over the lock screen.
 

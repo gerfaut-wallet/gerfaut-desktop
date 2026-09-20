@@ -73,6 +73,17 @@ impl From<CoreError> for CommandError {
                 message: words.clone(),
             };
         }
+        // A rate limit is no failure of the request: the screen says
+        // when to try again, calmly, and nothing else.
+        if let CoreError::Premium(PremiumError::RateLimited { retry_after }) = &error {
+            return CommandError {
+                kind: "premium_rate_limited",
+                message: match retry_after {
+                    Some(seconds) => format!("Try again in {seconds} s."),
+                    None => "Try again in a moment.".to_owned(),
+                },
+            };
+        }
         let kind = match &error {
             CoreError::UnrecognizedInput(_) => "unrecognized_input",
             CoreError::PrivateMaterialRejected => "private_material",
@@ -1048,13 +1059,27 @@ mod tests {
     #[test]
     fn a_refusal_keeps_the_servers_own_words() {
         let error = CommandError::from(CoreError::Premium(PremiumError::Rejected(
-            "a single address cannot be watched yet; send a descriptor".to_owned(),
+            "that is not an address Gerfaut can watch: addr() holds one address".to_owned(),
         )));
         assert_eq!(error.kind, "premium_rejected");
         assert_eq!(
             error.message,
-            "a single address cannot be watched yet; send a descriptor"
+            "that is not an address Gerfaut can watch: addr() holds one address"
         );
+    }
+
+    /// A rate limit reaches the screen as a wait, not as a failure.
+    #[test]
+    fn a_rate_limit_says_when_to_try_again() {
+        let timed = CommandError::from(CoreError::Premium(PremiumError::RateLimited {
+            retry_after: Some(42),
+        }));
+        assert_eq!(timed.kind, "premium_rate_limited");
+        assert_eq!(timed.message, "Try again in 42 s.");
+        let open = CommandError::from(CoreError::Premium(PremiumError::RateLimited {
+            retry_after: None,
+        }));
+        assert_eq!(open.message, "Try again in a moment.");
     }
 
     /// A wrong backup password has a kind of its own, so the screen can

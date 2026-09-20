@@ -153,10 +153,10 @@ export function WatchedWalletsCard({
                         {wallet.name}
                       </span>
                       <span className="font-ui text-xs text-muted">
-                        {single ? (
-                          "Single addresses cannot be watched yet."
-                        ) : server ? (
-                          server.baseline_at === null ? (
+                        {server ? (
+                          refused(server) ? (
+                            "Not watched by the server"
+                          ) : server.baseline_at === null ? (
                             // The server has not finished its first pass
                             // over this wallet: the counts it would show
                             // are not the wallet's yet. "Scanning…" read
@@ -169,22 +169,25 @@ export function WatchedWalletsCard({
                               {coinsWord(server.coins)}
                             </span>
                           )
+                        ) : single ? (
+                          "Single address"
                         ) : (
                           "Descriptor wallet"
                         )}
                       </span>
                     </span>
-                    {server && <WatchedPill />}
+                    {server && !refused(server) && <WatchedPill />}
                     <Toggle
                       ref={remember(wallet.id)}
                       tone="premium"
                       checked={server !== undefined}
-                      disabled={single || !ready}
+                      disabled={!ready}
                       busy={busy}
                       label={`Watch ${wallet.name} from the server`}
                       onChange={(on) => toggle(wallet, on)}
                     />
                   </div>
+                  {server && refused(server) && <RefusalNote server={server} />}
                   {leaving === wallet.id && (
                     <UnwatchNote
                       name={wallet.name}
@@ -213,7 +216,7 @@ export function WatchedWalletsCard({
                         Removed from this device, still watched by the server.
                       </span>
                     </span>
-                    <WatchedPill />
+                    {!refused(server) && <WatchedPill />}
                     <Button
                       ref={remember(server.id)}
                       className="h-9"
@@ -226,6 +229,7 @@ export function WatchedWalletsCard({
                       Unwatch
                     </Button>
                   </div>
+                  {refused(server) && <RefusalNote server={server} />}
                   {leaving === server.id && (
                     <UnwatchNote
                       name={server.name}
@@ -254,11 +258,32 @@ export function WatchedWalletsCard({
       <ConsentModal
         open={asking !== null}
         walletName={asking?.name ?? ""}
+        singleAddress={asking?.kind.type === "single_address"}
         busy={asking !== null && pending === asking.id}
         onConfirm={() => asking && start(asking)}
         onCancel={() => setAsking(null)}
       />
     </>
+  );
+}
+
+/** The server keeps the row of a wallet it refused, to say why, and
+    watches nothing under it. */
+function refused(server: WalletWatch): boolean {
+  return server.watching === false;
+}
+
+/** Why the server does not watch a wallet, in the server's own
+    sentence, under the row. Amber, not red: nothing is lost and nothing
+    leaked, the wallet is simply not covered, and the person should
+    know before they rely on it. */
+function RefusalNote({ server }: { server: WalletWatch }) {
+  return (
+    <div className="mt-2">
+      <Notice tone="info" role="status">
+        {server.refusal?.message ?? "The server does not watch this wallet."}
+      </Notice>
+    </div>
   );
 }
 

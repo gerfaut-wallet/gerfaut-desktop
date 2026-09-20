@@ -5,16 +5,20 @@ import { Notice } from "../../../components/Notice";
 /** The question asked once per wallet before its descriptor leaves the
     device. Red, because privacy is what is at stake (D-20): the server
     will know every address of the wallet from then on. What goes is
-    listed in full, and the yes repeats the consequence. */
+    listed in full, and the yes repeats the consequence. A wallet that
+    is a single address sends that address, and the words say so. */
 export function ConsentModal({
   open,
   walletName,
+  singleAddress = false,
   busy,
   onConfirm,
   onCancel,
 }: {
   open: boolean;
   walletName: string;
+  /** The wallet is one address, not a descriptor. */
+  singleAddress?: boolean;
   busy: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -23,8 +27,10 @@ export function ConsentModal({
     <Modal open={open} onClose={onCancel} centered width={520} title="Watch this wallet from the server">
       <div className="flex flex-col gap-4">
         <Notice tone="alert">
-          Gerfaut's server will learn every address of this wallet, present and future, and
-          see when coins move. It keeps nothing else: no name, no e-mail unless you add one as
+          {singleAddress
+            ? "Gerfaut's server will learn this address and see when coins move."
+            : "Gerfaut's server will learn every address of this wallet, present and future, and see when coins move."}{" "}
+          It keeps nothing else: no name, no e-mail unless you add one as
           a channel, no IP address.
         </Notice>
         <div>
@@ -36,7 +42,7 @@ export function ConsentModal({
               <span aria-hidden className="text-muted">
                 ·
               </span>
-              The descriptor
+              {singleAddress ? "The address" : "The descriptor"}
             </li>
             <li className="flex items-baseline gap-2">
               <span aria-hidden className="text-muted">

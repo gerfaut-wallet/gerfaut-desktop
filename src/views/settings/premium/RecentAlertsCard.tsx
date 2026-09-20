@@ -7,6 +7,7 @@ import {
   CircleAlert,
   Clock,
   Eye,
+  EyeOff,
   History,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -27,6 +28,7 @@ const GLYPH: Record<EventKind, LucideIcon> = {
   receive_confirmed: ArrowDownLeft,
   timelock_due: Clock,
   wallet_registered: Eye,
+  wallet_refused: EyeOff,
   other: Bell,
 };
 
@@ -42,10 +44,21 @@ function tone(kind: EventKind): string {
       return "bg-confirmed-surface text-confirmed";
     case "timelock_due":
     case "receive_detected":
+    // A wallet the server stopped watching is worth reading, and no
+    // coin moved: amber.
+    case "wallet_refused":
       return "bg-pending-surface text-pending";
     default:
       return "bg-sunken text-muted";
   }
+}
+
+/** The server's sentence in a `wallet_refused` event, shown as it is;
+    null when the data is not what this build reads. */
+function refusalWords(data: unknown): string | null {
+  if (typeof data !== "object" || data === null) return null;
+  const message = (data as { message?: unknown }).message;
+  return typeof message === "string" && message.trim() !== "" ? message : null;
 }
 
 /** The last twenty things the server said, newest first. A row opens
@@ -111,6 +124,9 @@ export function RecentAlertsCard({
                       <span className="text-muted"> · </span>
                       {eventWords(event.kind)}
                     </span>
+                    {event.kind === "wallet_refused" && refusalWords(event.data) !== null && (
+                      <span className="font-ui text-xs text-text">{refusalWords(event.data)}</span>
+                    )}
                     <span className="tabular font-ui text-xs text-muted">
                       {relativeTime(event.at)}
                     </span>

@@ -99,6 +99,10 @@ export function premiumFailure(error: unknown): { message: string; retry: boolea
       }
       case "premium_no_key":
         return { message: "Enter an account key first.", retry: false };
+      case "premium_rate_limited":
+        // Not a failure of what was asked: the Rust side words the
+        // wait ("Try again in 42 s."), and the same request may pass.
+        return { message: `The server asks to wait. ${error.message}`, retry: true };
       case "tor":
         // The server is a clearnet address, but an onion backend sends
         // everything through Tor, this included (D-36). Raw, this read
@@ -166,6 +170,8 @@ export function eventWords(kind: EventKind): string {
       return "a timelock is due";
     case "wallet_registered":
       return "watch started";
+    case "wallet_refused":
+      return "no longer watched";
     default:
       return "something happened";
   }

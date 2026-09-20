@@ -467,15 +467,17 @@ describe("the licence card", () => {
 // --- watched wallets ---------------------------------------------------------
 
 describe("the watched wallets card", () => {
-  it("lists the wallets of the server's network and keeps a single address on the shelf", async () => {
+  it("lists the wallets of the server's network, a single address among them", async () => {
     mockPremium();
     renderSection();
     const cold = await screen.findByRole("switch", { name: "Watch Cold storage from the server" });
     const donations = screen.getByRole("switch", { name: "Watch Donations from the server" });
     await waitFor(() => expect(cold).toBeEnabled());
     expect(cold).toHaveAttribute("aria-checked", "false");
-    expect(donations).toBeDisabled();
-    expect(screen.getByText("Single addresses cannot be watched yet.")).toBeInTheDocument();
+    expect(donations).toBeEnabled();
+    expect(donations).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByText("Single address")).toBeInTheDocument();
+    expect(screen.queryByText(/cannot be watched yet/)).not.toBeInTheDocument();
     // The row wears the wallet's own glyph.
     expect(cold.closest("li")!.querySelector("svg.lucide-snowflake")).not.toBeNull();
   });
@@ -612,6 +614,84 @@ describe("the watched wallets card", () => {
     await waitFor(() => expect(of("premium_watch_wallet", calls)).toEqual([{ id: "w-1" }]));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     await waitFor(() => expect(cold).toHaveAttribute("aria-checked", "true"));
+  });
+
+  it("watches a single address, and the question says the address is what leaves", async () => {
+    let watched: WalletWatch[] = [];
+    const calls = mockPremium({
+      premium_wallets: () => watched,
+      premium_watch_wallet: () => {
+        watched = [{ ...WATCHED_DONE, id: "w-2", name: "Donations", script_kind: "addr" }];
+        return undefined;
+      },
+    });
+    renderSection();
+    const user = userEvent.setup();
+    const donations = await screen.findByRole("switch", { name: "Watch Donations from the server" });
+    await waitFor(() => expect(donations).toBeEnabled());
+    await user.click(donations);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("The address")).toBeInTheDocument();
+    expect(within(dialog).queryByText("The descriptor")).not.toBeInTheDocument();
+    expect(dialog).toHaveTextContent("Gerfaut's server will learn this address and see when coins move.");
+    expect(dialog).not.toHaveTextContent("present and future");
+
+    await user.click(within(dialog).getByRole("button", { name: "Watch this wallet" }));
+    await waitFor(() => expect(of("premium_watch_wallet", calls)).toEqual([{ id: "w-2" }]));
+    await waitFor(() => expect(donations).toHaveAttribute("aria-checked", "true"));
+  });
+
+  it("still says the descriptor for a descriptor wallet", async () => {
+    mockPremium();
+    renderSection();
+    const user = userEvent.setup();
+    const cold = await screen.findByRole("switch", { name: "Watch Cold storage from the server" });
+    await waitFor(() => expect(cold).toBeEnabled());
+    await user.click(cold);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("The descriptor")).toBeInTheDocument();
+    expect(dialog).toHaveTextContent("every address of this wallet, present and future");
+  });
+
+  it("shows a wallet the server refused in the server's own sentence, in amber, without the watched pill", async () => {
+    const sentence =
+      "This wallet holds more than 5,000 coins, which is more than Gerfaut watches for one wallet.";
+    mockPremium({
+      premium_status: () => ({ ...ACTIVE, consented: ["w-1"] }),
+      premium_wallets: () => [
+        { ...WATCHED_DONE, watching: false, refusal: { code: "too_many_coins", message: sentence } },
+      ],
+    });
+    renderSection();
+    const cold = await screen.findByRole("switch", { name: "Watch Cold storage from the server" });
+    const row = cold.closest("li")!;
+    const note = await within(row).findByRole("status");
+    expect(note).toHaveTextContent(sentence);
+    // Amber, never the alert red: nothing was lost and nothing leaked.
+    expect(note.className).toMatch(/pending/);
+    expect(note.className).not.toMatch(/alert/);
+    expect(within(row).getByText("Not watched by the server")).toBeInTheDocument();
+    expect(within(row).queryByText("Watched")).not.toBeInTheDocument();
+    expect(within(row).queryByText(/Watched since/)).not.toBeInTheDocument();
+    // The switch is still there to take the wallet off the server.
+    expect(cold).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("says a rate limit calmly, with the wait, and offers Retry", async () => {
+    mockPremium({
+      premium_status: () => ({ ...ACTIVE, consented: ["w-1"] }),
+      premium_watch_wallet: refused("premium_rate_limited", "Try again in 42 s."),
+    });
+    renderSection();
+    const user = userEvent.setup();
+    const cold = await screen.findByRole("switch", { name: "Watch Cold storage from the server" });
+    await waitFor(() => expect(cold).toBeEnabled());
+    await user.click(cold);
+    const note = await screen.findByRole("alert");
+    expect(note).toHaveTextContent("The server asks to wait. Try again in 42 s.");
+    expect(note.className).not.toMatch(/alert-surface/);
+    expect(within(note).getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 
   it("says in amber what the server refused, in its own words", async () => {
@@ -1104,6 +1184,33 @@ describe("the recent alerts card", () => {
     await user.click(within(rows[0]).getByRole("button"));
     expect(useUi.getState().activeWalletId).toBe("w-1");
     expect(useUi.getState().view).toBe("home");
+  });
+
+  it("lists a wallet the server stopped watching, with the server's sentence, in amber", async () => {
+    const sentence = "This wallet holds more than 5,000 coins.";
+    mockPremium({
+      premium_events: () => [
+        {
+          id: 50,
+          kind: "wallet_refused",
+          wallet: "w-1",
+          wallet_name: "Cold storage",
+          at: NOW - 60,
+          data: { code: "too_many_coins", limit: 5000, message: sentence },
+        },
+        ...EVENTS,
+      ],
+    });
+    renderSection([COLD, DONATION]);
+    const alerts = within((await screen.findByRole("heading", { name: "Recent alerts" })).closest("section")!);
+    const rows = await alerts.findAllByRole("listitem");
+    expect(rows).toHaveLength(4);
+    expect(rows[0]).toHaveTextContent("Cold storage · no longer watched");
+    expect(rows[0]).toHaveTextContent(sentence);
+    expect(rows[0].querySelector("svg.lucide-eye-off")).not.toBeNull();
+    const chip = rows[0].querySelector("span[aria-hidden]")!;
+    expect(chip.className).toMatch(/pending/);
+    expect(chip.className).not.toMatch(/alert/);
   });
 
   it("says what an empty list means", async () => {

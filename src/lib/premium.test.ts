@@ -84,12 +84,16 @@ describe("what the server says", () => {
     expect(
       premiumFailure({
         kind: "premium_rejected",
-        message: "a single address cannot be watched yet; send a descriptor",
+        message: "that is not an address Gerfaut can watch: addr() holds one address",
       }),
     ).toEqual({
-      message: "A single address cannot be watched yet; send a descriptor.",
+      message: "That is not an address Gerfaut can watch: addr() holds one address.",
       retry: false,
     });
+    // A rate limit is a wait, worded by the Rust side, and worth a retry.
+    expect(
+      premiumFailure({ kind: "premium_rate_limited", message: "Try again in 42 s." }),
+    ).toEqual({ message: "The server asks to wait. Try again in 42 s.", retry: true });
     // Something that is not a command error at all: the bridge failed.
     expect(premiumFailure(new Error("boom")).retry).toBe(true);
   });
