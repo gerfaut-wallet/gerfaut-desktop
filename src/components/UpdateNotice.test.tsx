@@ -159,6 +159,22 @@ describe("the update notice", () => {
     expect(Number(vault.prefs["update.checked_at"])).toBeGreaterThan(0);
   });
 
+  it("sits in the layout above the page, so it can never cover an amount", async () => {
+    const vault = mockVault({ answer: { latest: "v0.2.0" } });
+    renderApp();
+    await settled(vault, 1);
+
+    const region = await findNotice();
+    // Part of the canvas, not a layer over it: no fixed or absolute
+    // box, and the page comes after it inside the same column.
+    expect(region.className).not.toMatch(/\b(fixed|absolute|sticky)\b/);
+    const main = screen.getByRole("main");
+    expect(main).toContainElement(region);
+    const page = screen.getByText("No wallets watched yet");
+    expect(region.compareDocumentPosition(page) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(region).not.toContainElement(page);
+  });
+
   it("closes on Later, remembers the version, and stays closed the next time", async () => {
     const vault = mockVault({ answer: { latest: "v0.2.0" } });
     const first = renderApp();

@@ -199,8 +199,11 @@ export default function App() {
       />
 
       <main className="min-w-0 flex-1 p-2 pl-0">
-        <div className="h-full overflow-hidden rounded-[var(--radius-canvas)] bg-background shadow-canvas">
-          <div className="h-full overflow-y-auto">
+        <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-canvas)] bg-background shadow-canvas">
+          {/* In the layout, above the page: it pushes the page down and
+              never covers what the page shows. */}
+          <UpdateNotice />
+          <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto h-full max-w-[1280px] px-6 py-4">
               {view === "settings" ? (
                 <SettingsView settings={settings.data} wallets={walletList} />
@@ -243,7 +246,6 @@ export default function App() {
       )}
       <AddWalletModal activeNetwork={settings.data.active_network} />
       <WelcomeTour open={tourOpen} onClose={() => setTourOpen(false)} />
-      <UpdateNotice />
       <Toast />
     </div>
   );

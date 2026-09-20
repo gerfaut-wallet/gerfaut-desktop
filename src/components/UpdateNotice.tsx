@@ -5,11 +5,15 @@ import { pendingUpdate, useUpdate } from "../state/update";
 import { APP_VERSION } from "../views/settings/AboutSection";
 import { Button } from "./Button";
 
-/** Says once that a newer Gerfaut exists, from a corner of the window.
+/** Says once that a newer Gerfaut exists, in a strip at the top of the
+ *  canvas.
  *
  *  It is a piece of information and behaves like one. It takes no
- *  focus, dims nothing and blocks nothing; it waits at the end of the
- *  tab order, where it sits on screen. "Later" closes it for this
+ *  focus, dims nothing and blocks nothing. It is part of the layout and
+ *  floats over nothing: the page below moves down by its height, so it
+ *  can never sit on an amount, a transaction or an address, whatever
+ *  the page and the width of the window. It comes before the page in
+ *  the tab order, where it sits on screen. "Later" closes it for this
  *  version, and so does Escape when the keyboard is on the notice or on
  *  nothing at all: a menu, a field or a dialog that holds the focus
  *  keeps its own Escape. It does not leave on a timer, since what
@@ -50,22 +54,22 @@ export function UpdateNotice() {
     <section
       ref={ref}
       aria-label="Update available"
-      className="fixed bottom-6 right-6 z-40 w-[340px] max-w-[calc(100vw-3rem)] rounded-lg border border-border bg-surface p-4 shadow-overlay motion-safe:animate-[modal-in_250ms_ease-out]"
+      className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-surface px-6 py-2"
     >
-      <div className="flex items-start gap-2.5">
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <span className="flex h-5 shrink-0 items-center text-muted">
           <CircleArrowUp size={16} strokeWidth={1.5} aria-hidden />
         </span>
-        <div role="status" className="min-w-0 flex-1">
+        <div role="status" className="flex min-w-0 flex-wrap items-baseline gap-x-2">
           <p className="font-ui text-sm font-medium leading-5 text-text">
             Gerfaut <span className="tabular">{version}</span> is available
           </p>
-          <p className="mt-0.5 font-ui text-xs text-muted">
+          <p className="font-ui text-xs text-muted">
             You are running <span className="tabular">{APP_VERSION}</span>.
           </p>
         </div>
       </div>
-      <div className="mt-3 flex justify-end gap-2">
+      <div className="flex shrink-0 justify-end gap-2">
         <Button variant="ghost" onClick={() => useUpdate.getState().dismiss()}>
           Later
         </Button>

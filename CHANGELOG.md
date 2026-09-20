@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Premium can watch a wallet that is a single address. The question asked before it leaves the device says "The address" for these wallets.
 - A wallet the Premium server refuses to watch says why, in the server's own sentence, under its row in Watched wallets and in Recent alerts. When the server asks to wait, the note says for how long.
 - A "Send a test notification" button, because it is the only reliable way to know whether the system shows them.
-- A notice in a corner of the window when a newer Gerfaut is out, such as "Gerfaut 0.2.0 is available". Its button opens Settings › About, where the download is, and "Later" closes it. It shows once per version, takes no focus, blocks nothing, and never appears over the lock screen.
+- A notice in a strip above the page when a newer Gerfaut is out, such as "Gerfaut 0.2.0 is available". Its button opens Settings › About, where the download is, and "Later" closes it. It shows once per version, takes no focus, covers nothing on the page, and never appears on the lock screen.
 
 ### Changed
 
