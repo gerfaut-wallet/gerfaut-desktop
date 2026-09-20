@@ -2,7 +2,8 @@
 #
 # One file, one stage per target. `base` holds what every target shares:
 # the operating system, the compiler and Node. `linux` adds what the
-# Linux packages need. `tools` adds diffoscope and is only ever used to
+# Linux packages need, `windows` what the cross-built Windows installer
+# needs. `tools` adds diffoscope and is only ever used to
 # explain a mismatch, never to build.
 #
 # Everything that can reach an artefact is frozen:
@@ -129,6 +130,46 @@ RUN apt-get update \
       cpio desktop-file-utils rpm squashfs-tools zstd \
  && rm -rf /var/lib/apt/lists/* \
  && dpkg-query -W -f '${Package} ${Version} ${Architecture}\n' | sort > /etc/gerfaut-image-packages
+
+
+# --- Windows installer: NSIS setup .exe, cross-built --------------------
+FROM base AS windows
+
+# xwin downloads the Microsoft C runtime and the Windows SDK and lays
+# them out for a Linux compiler. The image holds the tool, never what it
+# downloads: that happens in the fetch phase of each build, on the
+# machine of whoever builds, and lands in the cache volume.
+#   https://github.com/Jake-Shadle/xwin/releases
+ARG XWIN_VERSION=0.10.0
+ARG XWIN_SHA256=d870eb4b2f390878af6da1ccd3cf321d22fcb72720984853b4be732ae597fc88
+
+# clang-cl compiles the C code some crates carry (SQLite, zstd, ring,
+# aws-lc), llvm-lib archives it and llvm-rc compiles the version
+# resource. The linker is not in this list: it is the rust-lld of the
+# pinned Rust toolchain. makensis comes with its stubs, the head of
+# every installer it writes, so the nsis package is part of the promise.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends clang-15 llvm-15 nsis \
+ && rm -rf /var/lib/apt/lists/* \
+ && ln -s /usr/lib/llvm-15/bin/clang /usr/local/bin/clang-cl \
+ && ln -s /usr/lib/llvm-15/bin/llvm-lib /usr/local/bin/llvm-lib \
+ && ln -s /usr/lib/llvm-15/bin/llvm-rc /usr/local/bin/llvm-rc \
+ && clang-cl --version | grep -qF 'clang version 15.' \
+ && dpkg-query -W -f '${Package} ${Version} ${Architecture}\n' | sort > /etc/gerfaut-image-packages
+
+# The standard library for Windows. rustup reads its hash from the
+# release manifest of the toolchain the base stage installed, the same
+# file that lists the compiler itself.
+RUN CARGO_HOME=/opt/cargo rustup target add x86_64-pc-windows-msvc \
+ && test -d "$(rustc --print target-libdir --target x86_64-pc-windows-msvc)"
+
+RUN curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/xwin.tar.gz \
+      "https://github.com/Jake-Shadle/xwin/releases/download/${XWIN_VERSION}/xwin-${XWIN_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+ && echo "${XWIN_SHA256}  /tmp/xwin.tar.gz" | sha256sum -c - \
+ && tar -xzf /tmp/xwin.tar.gz -C /usr/local/bin --strip-components=1 --no-same-owner \
+      "xwin-${XWIN_VERSION}-x86_64-unknown-linux-musl/xwin" \
+ && rm /tmp/xwin.tar.gz \
+ && xwin --version | grep -qF "${XWIN_VERSION}"
 
 
 # --- Explaining a mismatch ----------------------------------------------
