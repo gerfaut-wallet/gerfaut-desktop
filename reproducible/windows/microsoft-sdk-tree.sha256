@@ -1,0 +1,6 @@
+# The headers and libraries `xwin splat` lays out from the files of
+# microsoft-sdk.sha256, as one hash: the sha256 of every file sorted by
+# path, then every symbolic link with its target, then every directory.
+# sdk_tree_hash in reproducible/targets/windows.sh computes it. The
+# build checks it again before it compiles anything.
+8b22f6760c6d9a01e24bc11cdf41cac0cf94bcde406b836cf9d26715b145c446  sdk

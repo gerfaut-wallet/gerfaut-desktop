@@ -6,3 +6,6 @@
 *.py text eol=lf
 reproducible/Dockerfile text eol=lf
 *.sha256 text eol=lf
+*.nsh text eol=lf
+# Microsoft's file, kept byte for byte: its sha256 is how it is recognised.
+reproducible/windows/manifest_17.json -text

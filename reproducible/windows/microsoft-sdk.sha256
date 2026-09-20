@@ -1,0 +1,61 @@
+# What xwin 0.10.0 downloads from Microsoft for manifest_17.json: the
+# package manifest of Visual Studio 17.14.41, then the C runtime 14.44
+# and the Windows SDK 10.0.26100 for x86_64, desktop variant.
+#
+# Nothing of this is in the repository or in a container image. The fetch
+# phase downloads it from Microsoft on the machine of whoever builds,
+# once they have accepted the licence, and checks every file against
+# this list. A missing file, an extra file or a different byte stops the
+# build.
+#
+# xwin checks each package against the hash the package manifest gives,
+# but it cannot check the package manifest itself: the hash the channel
+# manifest gives for it is wrong, upstream says so. This list closes the
+# gap. The recipe downloads that file itself and checks it before xwin
+# reads it.
+#
+# To move to a newer release: replace manifest_17.json with
+# https://aka.ms/vs/17/release/channel, run the fetch phase, and write
+# this list again from /cache/microsoft/xwin/dl:
+#   find . -type f ! -name manifest_17.json -printf '%P\0' | sort -z | xargs -0 sha256sum
+852382a9aa73502b7849c1bcadfb603ba7175c4e8b60e6aba03c7de711d4ece5  Microsoft.VC.14.44.17.14.CRT.Headers.base.vsix
+f01f701a7bcd9587a340898c851424f6a52bb913a70c185ff0d5bf0288c5831a  Microsoft.VC.14.44.17.14.CRT.x64.Desktop.base.vsix
+9135b03c0df53c7a0aa9bef7230a1c2ff4263a0ee7baa7e419d034f484f6bb56  Microsoft.VC.14.44.17.14.CRT.x64.Store.base.vsix
+f1e5159feb948ce90a81dcc6a427dde844610230cb6ed787e35d422de527a5f8  Win11SDK_10.0.26100_headers.msi
+1f350449f6f598a4d9b316e69ad9b845db8e8d919b8b34f5c07b32598f6de319  Win11SDK_10.0.26100_headers/07a57cdb41ba28cced14005f087267be.cab
+bd490c2da3b5837261d43791a02ea3bb6aef1de787f52bec5e7dd638bfb77f51  Win11SDK_10.0.26100_headers/2e876dd22fa5e6785f137e3422dd50ec.cab
+cadd61caab00b5ad3ef449efb54f8a7b1a43a7cfb85f321b544ca578b14e179b  Win11SDK_10.0.26100_headers/4fe4c8b88812f5339018c0eef95acdb9.cab
+2e956ca1cf17800b0f9811a6249b945f045addf18ee85ffe7aea99ec6c27243a  Win11SDK_10.0.26100_libs_x86_64.msi
+ec209a224c9b2d31f3409208d30f5a6335c55217ad384d6212c833ac83360eba  Win11SDK_10.0.26100_libs_x86_64/58314d0646d7e1a25e97c902166c3155.cab
+c9f78ae3e730ea1789a37001e204a970099d2acc555cc537fb45ea0bb23b347c  Win11SDK_10.0.26100_store_headers.msi
+c590f816f3bb15a79a0bf815ca942aeec4a36c08fd66fa35a243c86b4f8bac7d  Win11SDK_10.0.26100_store_headers/766c0ffd568bbb31bf7fb6793383e24a.cab
+afca62a1e32f28fad347f7610c6ef663506a798db78ac4e4cf545aeaa4c5d1d3  Win11SDK_10.0.26100_store_headers/8125ee239710f33ea485965f76fae646.cab
+b9e05d77c4e719d4f394b5a66328cfb2df2a80914785545eeb049a69fcb11d3c  Win11SDK_10.0.26100_store_headers/c0aa6d435b0851bf34365aadabd0c20f.cab
+be5ee13ccc98b87211b4f3686972b00fa16f20f266fe9dc5572d62f001e0547c  Win11SDK_10.0.26100_store_headers_onecoreuap.msi
+4e5f0346d59faae3742c79d48df74f221b202da347f5751cc3e53156941368f1  Win11SDK_10.0.26100_store_headers_onecoreuap/e89e3dcbb016928c7e426238337d69eb.cab
+1381535d2f6b1894a092da67f8a8fb048a4dfe8060ce75b3275affa81b02586e  Win11SDK_10.0.26100_store_libs.msi
+902003e4976c7bc4bcda9f31f1d835b8072235532412770f66b0bc9f0882cb7e  Win11SDK_10.0.26100_store_libs/05047a45609f311645eebcac2739fc4c.cab
+0b26ede2d22ea531d921269dfffcd14cc71d6932cac0f2720fcec37079286643  Win11SDK_10.0.26100_store_libs/13d68b8a7b6678a368e2d13ff4027521.cab
+43c40559098a2c1efbef6af16f97a44fd80b3bb9fe8ae117c4e6f9f3f852b8e8  Win11SDK_10.0.26100_store_libs/463ad1b0783ebda908fd6c16a4abfe93.cab
+57e7e309413d05b781ae76d1b5c54dc7aff350b6a460920f1f358e8003aabdfb  Win11SDK_10.0.26100_store_libs/5a22e5cde814b041749fb271547f4dd5.cab
+46e21578a4cfce3bd6e4eacc10b92121a825ce443cc2f6cce84b07e37b9d21bc  Win11SDK_10.0.26100_store_libs/e10768bb6e9d0ea730280336b697da66.cab
+154f4a24ec22ea0c932709f0e1a2c443946b42c14291a49a280ab4ea0eaa504d  Win11SDK_10.0.26100_store_libs/f9b24c8280986c0683fbceca5326d806.cab
+09725127b70e645fd0c86f004a1b0204ae72d685d70b2e3856efc00533aaeec3  Win11SDK_10.0.26100_uap_headers.msi
+c536e6742d56a05c47310c23e09a9e5a5552d914f5752ff9050eee88e009bcf9  Win11SDK_10.0.26100_uap_headers/f2e05dfd38ed343d3de77209cf3ecdae.cab
+d189ca50e5632b546795922e2262794c068d6ff301860feb4522b8b93cbb3ba8  Win11SDK_10.0.26100_x64_headers.msi
+9d88fa269dc02fd3fde50a056c04d6dfcc5b8a15739ae0f3e7ac51cc1c88f5b8  Win11SDK_10.0.26100_x64_headers/d1de88680a8e53fe75e01e94dc0ed767.cab
+14667a930569186a25e75eb35614ce43549b7406705e098db71ffe9b31c60faa  Win11SDK_10.0.26100_x64_uap_headers.msi
+de70f656de01fd2f2e17539b4a50ddd66e2b0ac4486dfbf870cf4dc499db24c7  Win11SDK_10.0.26100_x64_uap_headers/b0656253ef2f688d2982eafa2e73f621.cab
+f0a50ea157222c29abd5ea6ff01bfc3c33b04e011c5e45ee2ca38ef0778e5643  pkg_manifest_6e470016e4324c84c255ffd0beb3767d17ec89cc8561e9409ee3e1f6d29400f5.vsman
+54448641eef058318b540188245a62982f97ccc462c0c1c1cf3c6d771e26f214  ucrt.msi
+fd8099addd4b177bc38e1c25ead2f1237a3b92979c2b7083eb756c7ff4549f83  ucrt/16ab2ea2187acffa6435e334796c8c89.cab
+351c9fb52417528084206c13fde01992031e2a79fbbe94e808963ed6470610af  ucrt/2868a02217691d527e42fe0520627bfa.cab
+96d28a324939c9a6bbceb3acfa1061525a0e63ad95ae286a5778ed3e8ae366fa  ucrt/6ee7bbee8435130a869cf971694fd9e2.cab
+f4737a26feb8b380788379b2a7710ad306bfb1bf13f5177361f2a0b29dc25737  ucrt/78fa3c824c2c48bd4a49ab5969adaaf7.cab
+495312c864a202eb3301cc63e919f5e83d14c8cde07bf9ebf8054332fa9c7c25  ucrt/7afc7b670accd8e3cc94cfffd516f5cb.cab
+37af50386bf3b5afc2f4117af9988c0bec85e65ae5a9c3a6f0e83eda3a1cd168  ucrt/80dcdb79b8a5960a384abe5a217a7e3a.cab
+a8ec9e2ff216856ad9fdcd6516092c08f33adefbfdc696113f6f31552e7cf138  ucrt/96076045170fe5db6d5dcf14b6f6688e.cab
+c777aea86b4126c90b7ae9017a2bf753f57b9dd450761db7d312d5bd8f5874fa  ucrt/a1e2a83aa8a71c48c742eeaff6e71928.cab
+d0edd2447f7314f283f61b3db56eb65e01ca2b6f24bd4be52aaa285466fbc1ff  ucrt/b2f03f34ff83ec013b9e45c7cd8e8a73.cab
+3120fb967c9bd33edf5e44370a52708f27c1e249e39bad07f9cb745d094de7fb  ucrt/beb5360d2daaa3167dea7ad16c28f996.cab
+212c2e08ca3aafb8111f780de5b97d5d921b7e0c4346f1455434907c263eb414  ucrt/f9ff50431335056fb4fbac05b8268204.cab

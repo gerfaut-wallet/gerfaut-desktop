@@ -1,0 +1,14 @@
+# The one file the NSIS bundler of tauri-bundler 2.9.4 (the one inside
+# @tauri-apps/cli 2.11.4, see package-lock.json) downloads on a Linux
+# host: a plugin its installer template calls, packed into every
+# installer and run on the user's machine at install time.
+#
+# The bundler looks for it in ~/.cache/tauri/NSIS and checks it against
+# a SHA-1 of its own (75197fee3c6a814fe035788d1c34ead39349b860). The
+# recipe puts the file there first, checked against the sha256 below, so
+# the bundler downloads nothing. Check the version again at every bump
+# of the Tauri CLI: NSIS_TAURI_UTILS_URL in
+# crates/tauri-bundler/src/bundle/windows/nsis/mod.rs.
+#
+#   https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.3/nsis_tauri_utils.dll
+5ba143b5db4a87d32d6e7802e033330aae56cbceabe0d1e3ba41948385ad4709  nsis_tauri_utils.dll
