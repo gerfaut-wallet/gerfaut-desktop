@@ -3,6 +3,7 @@
 # for byte, with the files on the releases page.
 #
 #   reproducible/verify.sh v0.1.0
+#   reproducible/verify.sh v0.1.0 --target windows --accept-microsoft-license
 #
 # It clones both repositories at the tag into a fresh directory, builds
 # with the recipe of that tag, downloads the published files and prints a
@@ -11,7 +12,7 @@
 set -euo pipefail
 
 usage() {
-    sed -n '2,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     cat <<'USAGE'
 
 Options:
@@ -21,6 +22,11 @@ Options:
   --desktop-url URL   clone gerfaut-desktop from URL
   --core-url URL      clone gerfaut-core from URL
   --jobs N            cap the number of parallel compiler jobs
+  --accept-microsoft-license
+                      windows only: you have read and you accept the licence
+                      of the Microsoft C runtime and Windows SDK, which the
+                      build downloads from Microsoft to this machine
+                      (https://go.microsoft.com/fwlink/?LinkId=2086102)
 USAGE
 }
 
@@ -32,6 +38,7 @@ desktop_url=https://github.com/gerfaut-wallet/gerfaut-desktop
 core_url=https://github.com/gerfaut-wallet/gerfaut-core
 release_url=https://github.com/gerfaut-wallet/gerfaut-desktop/releases/download
 jobs=()
+license=()
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -41,6 +48,7 @@ while [ $# -gt 0 ]; do
         --desktop-url) desktop_url="$2"; shift 2 ;;
         --core-url) core_url="$2"; shift 2 ;;
         --jobs) jobs=(--jobs "$2"); shift 2 ;;
+        --accept-microsoft-license) license=(--accept-microsoft-license); shift ;;
         -h|--help) usage; exit 0 ;;
         -*) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
         *) [ -z "$tag" ] || { usage >&2; exit 2; }; tag="$1"; shift ;;
@@ -62,7 +70,7 @@ git clone --quiet "$core_url" "$work/gerfaut-core"
 git -C "$work/gerfaut-core" -c advice.detachedHead=false checkout --quiet "$core_rev"
 
 "$work/gerfaut-desktop/reproducible/build.sh" "$target" \
-    --core "$work/gerfaut-core" --out "$work/rebuilt" "${jobs[@]}"
+    --core "$work/gerfaut-core" --out "$work/rebuilt" "${jobs[@]}" "${license[@]}"
 
 if [ -z "$published" ]; then
     published="$work/published"
@@ -79,6 +87,8 @@ fi
 
 echo
 echo "==> published release against the rebuild"
+# compare.py runs in the image that has just built.
+export GERFAUT_COMPARE_IMAGE="${GERFAUT_COMPARE_IMAGE:-gerfaut-desktop-rb:$target}"
 if "$work/gerfaut-desktop/reproducible/compare.sh" --published "$published" "$work/rebuilt"; then
     echo "==> VERIFIED: the published $target files of $tag are the ones this source builds"
 else

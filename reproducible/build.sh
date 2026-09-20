@@ -4,6 +4,7 @@
 #
 #   reproducible/build.sh linux            build once into reproducible/out/linux
 #   reproducible/build.sh linux --twice    build twice and compare the hashes
+#   reproducible/build.sh windows --accept-microsoft-license
 #
 # The script exports both source trees from git, so the working tree, the
 # checkout location and the host toolchain have no say in the result. It
@@ -15,7 +16,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
 
 usage() {
-    sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     cat <<'USAGE'
 
 Options:
@@ -28,6 +29,11 @@ Options:
   --no-cache      download everything again instead of reusing the volume
   --any-core      accept a gerfaut-core checkout other than the pinned one
   --jobs N        cap the number of parallel compiler jobs
+  --accept-microsoft-license
+                  windows only: you have read and you accept the licence of
+                  the Microsoft C runtime and Windows SDK, which the build
+                  downloads from Microsoft to this machine
+                  (https://go.microsoft.com/fwlink/?LinkId=2086102)
 
 Environment:
   GERFAUT_ENGINE      docker or podman (default: the first one found)
@@ -53,6 +59,7 @@ with_image=1
 use_cache=1
 any_core=0
 jobs=""
+microsoft_license=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -65,6 +72,7 @@ while [ $# -gt 0 ]; do
         --skip-image) with_image=0; shift ;;
         --no-cache) use_cache=0; shift ;;
         --any-core) any_core=1; shift ;;
+        --accept-microsoft-license) microsoft_license=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
@@ -136,6 +144,7 @@ run_build() {
     echo "--> fetch (network, every download checked against a committed hash)"
     engine run --rm \
         -e SOURCE_DATE_EPOCH="$epoch" \
+        -e GERFAUT_ACCEPT_MICROSOFT_LICENSE="$microsoft_license" \
         -v "$cache:/cache" \
         -v "$(hostpath "$stage"):/src:ro" \
         ${GERFAUT_RUN_ARGS:-} \
@@ -169,7 +178,9 @@ echo "==> build 2 of 2"
 run_build "$out/build-2"
 
 echo
-if "$here/compare.sh" "$out/build-1" "$out/build-2"; then
+# compare.py runs in the image that has just built, so a Windows build
+# does not pull in the Linux image for a comparison.
+if GERFAUT_COMPARE_IMAGE="${GERFAUT_COMPARE_IMAGE:-$image}" "$here/compare.sh" "$out/build-1" "$out/build-2"; then
     echo "==> reproducible: both builds produced the same artefacts"
 else
     echo "==> NOT reproducible: the two builds differ" >&2
