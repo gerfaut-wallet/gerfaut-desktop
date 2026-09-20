@@ -15,7 +15,8 @@ Two uses:
 
 On a mismatch the tool opens the two files and reports what differs:
 which member of a .deb, which header tag of an .rpm, the runtime or the
-payload of an AppImage, and the build stage the difference comes from
+payload of an AppImage, the stub, the header or the packed file of a
+Windows installer, and the build stage the difference comes from
 when both sides carry a build-info directory. With --diffoscope DIR it
 also writes a full diffoscope report per file, when diffoscope is
 installed (the `tools` stage of reproducible/Dockerfile has it).
@@ -286,6 +287,119 @@ def explain_appimage(a: bytes, b: bytes, path_a: Path, path_b: Path) -> list[str
     return lines
 
 
+# --- Windows: PE files and NSIS installers -------------------------------
+
+
+def pe_layout(data: bytes) -> tuple[dict, list[tuple[str, int, int]]]:
+    """The header fields a build can leak into, and (name, offset, size) per section."""
+    if data[:2] != b"MZ":
+        raise ValueError("not a PE file")
+    pe = struct.unpack_from("<I", data, 0x3C)[0]
+    if data[pe:pe + 4] != b"PE\0\0":
+        raise ValueError("bad PE signature")
+    count, stamp = struct.unpack_from("<HI", data, pe + 6)
+    optional_size = struct.unpack_from("<H", data, pe + 20)[0]
+    optional = pe + 24
+    fields = {
+        "TimeDateStamp": stamp,
+        "CheckSum": struct.unpack_from("<I", data, optional + 64)[0],
+    }
+    sections = []
+    table = optional + optional_size
+    for i in range(count):
+        entry = table + 40 * i
+        name = data[entry:entry + 8].rstrip(b"\0").decode("ascii", "replace")
+        size, offset = struct.unpack_from("<II", data, entry + 16)
+        sections.append((name, offset, size))
+    return fields, sections
+
+
+def pe_end(data: bytes) -> int:
+    """Where the image ends and whatever was appended to it starts."""
+    _, sections = pe_layout(data)
+    return max((offset + size for _, offset, size in sections), default=0)
+
+
+def explain_pe(a: bytes, b: bytes, what: str) -> list[str]:
+    fields_a, sections_a = pe_layout(a)
+    fields_b, sections_b = pe_layout(b)
+    lines = []
+    for key, value in fields_a.items():
+        if value != fields_b[key]:
+            lines.append(f"{what}: PE header {key} differs: {value:#010x} and {fields_b[key]:#010x}")
+    if [s[0] for s in sections_a] != [s[0] for s in sections_b]:
+        lines.append(f"{what}: PE sections differ: {[s[0] for s in sections_a]} and {[s[0] for s in sections_b]}")
+        return lines
+    for (name, off_a, size_a), (_, off_b, size_b) in zip(sections_a, sections_b):
+        part_a, part_b = a[off_a:off_a + size_a], b[off_b:off_b + size_b]
+        if part_a != part_b:
+            lines.extend(explain_bytes(part_a, part_b, f"{what}: section {name}"))
+    return lines or explain_bytes(a, b, f"{what}: outside the header fields and the sections")
+
+
+NSIS_MAGIC = b"\xef\xbe\xad\xdeNullsoftInst"
+
+
+def nsis_parts(data: bytes) -> tuple[bytes, bytes, bytes]:
+    """The stub, the 28-byte first header and the compressed payload."""
+    at = data.find(NSIS_MAGIC, pe_end(data) - 4) - 4
+    if at < 0:
+        raise ValueError("no NSIS header after the PE image")
+    return data[:at], data[at:at + 28], data[at + 28:]
+
+
+def nsis_unpack(payload: bytes) -> bytes:
+    """A solid LZMA payload: five bytes of properties, then the raw stream."""
+    properties, dictionary = struct.unpack_from("<BI", payload, 0)
+    options = {
+        "id": lzma.FILTER_LZMA1, "dict_size": dictionary,
+        "lc": properties % 9, "lp": properties // 9 % 5, "pb": properties // 45,
+    }
+    return lzma.LZMADecompressor(lzma.FORMAT_RAW, filters=[options]).decompress(payload[5:])
+
+
+def nsis_blocks(raw: bytes) -> list[bytes]:
+    """The installer header first, then one block per packed file."""
+    blocks, at = [], 0
+    while at + 4 <= len(raw):
+        size = struct.unpack_from("<I", raw, at)[0] & 0x7FFFFFFF
+        blocks.append(raw[at + 4:at + 4 + size])
+        at += 4 + size
+    return blocks
+
+
+def explain_nsis(a: bytes, b: bytes) -> list[str]:
+    stub_a, first_a, pay_a = nsis_parts(a)
+    stub_b, first_b, pay_b = nsis_parts(b)
+    lines = []
+    if stub_a != stub_b:
+        lines.append("NSIS stub differs: not the same nsis package, or not the same icon and version resource")
+        lines.extend(explain_pe(stub_a, stub_b, "stub"))
+    if first_a != first_b:
+        lines.append("NSIS first header differs: the flags, or the size of what follows")
+    if pay_a == pay_b:
+        return lines
+    try:
+        raw_a, raw_b = nsis_unpack(pay_a), nsis_unpack(pay_b)
+    except (lzma.LZMAError, struct.error) as error:
+        return lines + [f"NSIS payload differs and could not be unpacked ({error})"]
+    if raw_a == raw_b:
+        return lines + ["NSIS payload: same content once unpacked, so the compressor differs"]
+    blocks_a, blocks_b = nsis_blocks(raw_a), nsis_blocks(raw_b)
+    if len(blocks_a) != len(blocks_b):
+        lines.append(f"NSIS payload: {len(blocks_a)} and {len(blocks_b)} blocks")
+    for index, (block_a, block_b) in enumerate(zip(blocks_a, blocks_b)):
+        if block_a == block_b:
+            continue
+        if index == 0:
+            lines.extend(explain_bytes(block_a, block_b, "NSIS installer header (script, strings, file dates)"))
+        elif block_a[:2] == b"MZ" and block_b[:2] == b"MZ":
+            lines.extend(explain_pe(block_a, block_b, f"packed file {index} (a PE file of {len(block_a)} bytes)"))
+        else:
+            lines.extend(explain_bytes(block_a, block_b, f"packed file {index}"))
+    return lines
+
+
 # --- driver --------------------------------------------------------------
 
 
@@ -298,6 +412,8 @@ def explain(path_a: Path, path_b: Path) -> list[str]:
             return explain_rpm(a, b)
         if path_a.suffix == ".AppImage":
             return explain_appimage(a, b, path_a, path_b)
+        if path_a.suffix == ".exe":
+            return explain_nsis(a, b)
     except (ValueError, struct.error, tarfile.TarError, OSError) as error:
         return [f"could not open the file as a {path_a.suffix} ({error})"] + explain_bytes(a, b, path_a.name)
     return explain_bytes(a, b, path_a.name)

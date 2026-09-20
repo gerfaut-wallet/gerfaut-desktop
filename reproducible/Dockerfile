@@ -173,12 +173,12 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/xwin.tar.gz \
 
 
 # --- Explaining a mismatch ----------------------------------------------
-# diffoscope, with what it needs to read an rpm header and to print a
-# hex dump.
+# diffoscope, with what it needs to read an rpm header, to list a
+# Windows installer and to print a hex dump.
 FROM linux AS tools
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends diffoscope-minimal python3-rpm xxd \
+ && apt-get install -y --no-install-recommends diffoscope-minimal p7zip-full python3-rpm xxd \
  && rm -rf /var/lib/apt/lists/*
 
 ENTRYPOINT []
