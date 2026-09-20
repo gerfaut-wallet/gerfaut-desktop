@@ -126,13 +126,17 @@ archive "$repo" "$commit" gerfaut-desktop
 archive "$core" "$core_rev" gerfaut-core
 
 # Downloads only, each one checked against a committed hash; the
-# artefacts do not depend on it. Keyed on the image so a rebuilt image
-# never reuses the cache of an older toolchain.
-image_id="$(engine image inspect --format '{{.Id}}' "$image" | sed 's/^sha256://' | cut -c1-12)"
+# artefacts do not depend on it. Keyed on the target, the compiler and
+# the Dockerfile of the commit, so a new toolchain never reuses the cache
+# of an older one. Not on the image id: some engines give a new id to
+# every build of the same recipe, and each run would download everything
+# again and leave a volume behind.
+recipe="$(git -C "$repo" rev-parse "$commit:reproducible/Dockerfile" | cut -c1-12)"
+rust="$(git -C "$repo" show "$commit:rust-toolchain.toml" | sed -n 's/^channel *= *"\(.*\)"/\1/p')"
 if [ "$use_cache" -eq 1 ]; then
-    cache="gerfaut-desktop-rb-cache-$image_id"
+    cache="gerfaut-desktop-rb-cache-$target-$rust-$recipe"
 else
-    volume="gerfaut-desktop-rb-cache-$image_id-$$"
+    volume="gerfaut-desktop-rb-cache-$target-$rust-$recipe-$$"
     cache="$volume"
 fi
 
