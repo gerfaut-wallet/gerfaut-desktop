@@ -102,6 +102,8 @@ The first one has the network. It downloads what the build needs into a cache vo
 
 The second one has no network at all (`--network none`). It installs the npm packages from the cache, builds the frontend, compiles the application with `cargo --locked --offline`, and makes the packages. A tool that tries to fetch something at this point fails, and the build stops.
 
+The cache volume is shared by every build of the same recipe on your machine, so the second container does not trust it. It mounts it read-only and checks again what it takes from it: npm checks each package against `package-lock.json`, the recipe checks each Rust crate against `Cargo.lock` and each helper file against its hash. Cargo gets a fresh home inside the container, so a configuration file or an unpacked crate left in the volume by another build is never read.
+
 ## What is pinned
 
 | Input | Pinned to | Where |

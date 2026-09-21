@@ -168,7 +168,7 @@ run_build() {
         -e GERFAUT_DESKTOP_REV="$commit" \
         -e GERFAUT_CORE_REV="$core_rev" \
         -e GERFAUT_CORE_PINNED="$pinned" \
-        -v "$cache:/cache" \
+        -v "$cache:/cache:ro" \
         -v "$(hostpath "$stage"):/src:ro" \
         -v "$(hostpath "$dest"):/out" \
         ${GERFAUT_RUN_ARGS:-} \

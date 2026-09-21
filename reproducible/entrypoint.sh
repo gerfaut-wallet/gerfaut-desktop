@@ -6,7 +6,9 @@
 # what the build needs into /cache, every file checked against a hash
 # committed in this repository (package-lock.json, Cargo.lock, the pinned
 # tool lists). `build` runs with no network at all, so nothing can reach
-# an artefact without having gone through one of those checks.
+# an artefact without having gone through one of those checks. It also
+# sees the cache read-only, and checks again what it takes from it: other
+# builds share the volume, and what they left there is not trusted.
 #
 # Run it through reproducible/build.sh rather than by hand.
 # shellcheck source-path=SCRIPTDIR
@@ -26,8 +28,14 @@ esac
 # shellcheck source=targets/linux.sh
 . "$here/targets/$target.sh"
 
-repro_env
+case "$phase" in
+    fetch|build) ;;
+    *) die "unknown phase: $phase" ;;
+esac
+repro_env "$phase"
 prepare_dirs
+# Before Cargo runs at all, even to print its version.
+[ "$phase" != fetch ] || prune_cargo_cache
 check_toolchain
 
 case "$phase" in
@@ -41,12 +49,10 @@ case "$phase" in
         mkdir -p "$OUT/build-info"
         cp /etc/gerfaut-image-packages "$OUT/build-info/image-packages"
         write_sources
+        seed_cargo_home
         build_frontend
         target_build
         write_sums
         fix_owner
-        ;;
-    *)
-        die "unknown phase: $phase"
         ;;
 esac
