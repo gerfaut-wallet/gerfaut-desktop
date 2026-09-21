@@ -1,14 +1,14 @@
 # Reproducible builds
 
-The Linux packages of Gerfaut (`.deb`, `.rpm` and `.AppImage`) and its Windows installer (`Gerfaut_<version>_x64-setup.exe`) are built inside a Linux container where every input is pinned. Two builds of the same commit give the same files, byte for byte, whatever the machine, the day or the number of processor cores.
+The Linux packages of Gerfaut (`.deb`, `.rpm` and `.AppImage`), its Windows installer (`Gerfaut_<version>_x64-setup.exe`) and its macOS application (`Gerfaut_<version>_universal.zip`) are built inside a Linux container where every input is pinned. Two builds of the same commit give the same files, byte for byte, whatever the machine, the day or the number of processor cores.
 
 This means you do not have to trust the machine that produced the file you downloaded. Rebuild the tag yourself, run `sha256sum` on your file and on the published one, and the two hashes are equal.
 
-Nothing has to be set aside for the comparison. A Linux package carries no signature inside it, and the Windows installer has no Authenticode signature today. The author's [minisign](https://jedisct1.github.io/minisign/) signature covers `SHA256SUMS` and lives in a separate file, `SHA256SUMS.minisig`.
+Nothing has to be set aside for the comparison. A Linux package carries no signature inside it, and the Windows installer has no Authenticode signature today. The macOS application has an ad hoc signature, made of hashes only, which the build writes itself. The author's [minisign](https://jedisct1.github.io/minisign/) signature covers `SHA256SUMS` and lives in a separate file, `SHA256SUMS.minisig`.
 
 ## Scope
 
-This page covers the three Linux packages and the Windows installer, all for x86_64. The Windows installer is built on Linux too, so you need no Windows machine to check it. There is no `.msi`: it can only be made on Windows, so it could not be held to this promise. A release built with this recipe says so in its notes. A release that does not say so was built on a hosted runner, outside the container, and its files will not match a rebuild. Its tag may not even carry the `reproducible` directory.
+This page covers the three Linux packages and the Windows installer, all for x86_64, and the macOS application, for Apple silicon and Intel. The Windows installer and the macOS application are built on Linux too, so you need no Windows machine and no Mac to check them. There is no `.msi`: it can only be made on Windows, so it could not be held to this promise. There is no `.dmg` either, see "The zip" below. A release built with this recipe says so in its notes. A release that does not say so was built on a hosted runner, outside the container, and its files will not match a rebuild. Its tag may not even carry the `reproducible` directory.
 
 ## What you need
 
@@ -22,6 +22,8 @@ This page covers the three Linux packages and the Windows installer, all for x86
 You need no Rust, no Node and no Python on the host. Everything runs in the container.
 
 The Windows installer needs a little less: 2.4 GB for its image, 2 GB of downloads, and 8 to 10 minutes per build. It also needs you to accept a licence from Microsoft, see "Verify the Windows installer" below.
+
+The macOS application needs 2.7 GB for its image, which downloads 1.9 GB of LLVM once while it is built, then 0.65 GB of downloads and 25 minutes per build, since the application is compiled twice. It also needs the Apple SDK, which you make yourself from Xcode, see "Verify the macOS application" below.
 
 ## Verify a published release
 
@@ -65,6 +67,57 @@ The steps are the same as above, on a Linux machine, with one file to compare: `
 
 The downloaded files stay in the cache volume on your machine. Do not publish that volume, or an image made from it.
 
+## Verify the macOS application
+
+The macOS application is linked against the Apple SDK: the headers and the library stubs that come with Xcode. The build cannot download it for you, so you make it once, from Xcode, and hand it to the build.
+
+### Make the Apple SDK
+
+1. Download Xcode 26.1.1 from Apple. You need an Apple ID, which is free. Sign in on [Apple's download page](https://developer.apple.com/download/all/?q=Xcode%2026.1.1) and take `Xcode_26.1.1_Apple_silicon.xip`.
+
+2. Check the file you got:
+
+   ```sh
+   sha256sum Xcode_26.1.1_Apple_silicon.xip
+   ```
+
+   The hash must be `f4c65b01e2807372b61553c71036dbfef492d7c79d4c380a5afb61aa1018e555`.
+
+3. Make the SDK from it:
+
+   ```sh
+   gerfaut-desktop/reproducible/make-apple-sdk.sh Xcode_26.1.1_Apple_silicon.xip
+   ```
+
+   The script checks the `.xip` again, then works in the pinned image, without network. It unpacks the part of Xcode that holds the SDK with `extract_xcode.py` and `cpio`, and writes two tarballs into `apple-sdk/`. It then checks their hashes:
+
+   ```
+   9600fa93644df674ee916b5e2c8a6ba8dacf631996a65dc922d003b98b5ea3b1  Xcode-26.1.1-17B100-extracted-SDK-with-libcxx-headers.tar
+   fb8a938117fc12e5982d77c241f3168bdab9441cecacff51d5de277e66f337f3  Xcode-26.1.1-17B100-extracted-SDK-cryptexes.tar
+   ```
+
+The first tarball is the SDK Bitcoin Core builds its macOS releases with: the same file, with the same hash, written by the same `gen-sdk.py`. That script and `extract_xcode.py` come from the Bitcoin Core project and are copied byte for byte in `reproducible/macos/`, with the commit each one comes from.
+
+The second tarball exists because of a change in the macOS 26 SDK. WebKit, JavaScriptCore and a few other frameworks now live in a separate folder, `System/Cryptexes`, and the usual folder only holds links to them. `gen-sdk.py` leaves that folder out, which suits Bitcoin Core. Gerfaut shows its window in a WebKit view, so it needs it. `reproducible/macos/gen-sdk-cryptexes.py` writes that folder the way `gen-sdk.py` writes the rest, into the same tree.
+
+On a Mac with Xcode 26.1.1, the two scripts write the same two files: run `python3 reproducible/macos/gen-sdk.py /path/to/Xcode.app` and `python3 reproducible/macos/gen-sdk-cryptexes.py /path/to/Xcode.app`.
+
+### Rebuild and compare
+
+```sh
+gerfaut-desktop/reproducible/verify.sh v<version> --target macos --macos-sdk apple-sdk
+```
+
+The steps are the same as for Linux, with one file to compare: `Gerfaut_<version>_universal.zip`.
+
+The build refuses a tarball whose hash is not the one in `reproducible/macos/apple-sdk.sha256`. It mounts the two files read-only into the container that compiles, the one with no network. The container that downloads never sees them.
+
+### Apple's licence
+
+The SDK belongs to Apple and it is not free software. Bitcoin Core states its position this way: "These SDKs are free to download, but not redistributable." Gerfaut takes the same position. The SDK is in no repository and in no container image, nobody publishes it, and only its hashes are published. Each person who rebuilds makes their own copy from Xcode. Keep yours to yourself.
+
+The Xcode licence also limits the use of the SDK to computers made by Apple. A build on Linux does not follow that clause. Bitcoin Core and Tor Browser have built their macOS releases on Linux this way for years, and Gerfaut accepts the same risk. Read the licence and decide for yourself before you rebuild.
+
 ## Build without comparing
 
 From a checkout of this repository, with `gerfaut-core` cloned next to it:
@@ -72,15 +125,17 @@ From a checkout of this repository, with `gerfaut-core` cloned next to it:
 ```sh
 reproducible/build.sh linux
 reproducible/build.sh windows --accept-microsoft-license
+reproducible/build.sh macos --macos-sdk apple-sdk
 ```
 
-The packages land in `reproducible/out/linux/` and the installer in `reproducible/out/windows/`, next to a `SHA256SUMS` file and a `build-info` directory. The script builds the commit at `HEAD`, never the working tree, and it always uses the `gerfaut-core` commit named in `.github/gerfaut-core.rev`.
+The packages land in `reproducible/out/linux/`, the installer in `reproducible/out/windows/` and the zip in `reproducible/out/macos/`, next to a `SHA256SUMS` file and a `build-info` directory. The script builds the commit at `HEAD`, never the working tree, and it always uses the `gerfaut-core` commit named in `.github/gerfaut-core.rev`.
 
 To check that the build is stable on your own machine, ask for two:
 
 ```sh
 reproducible/build.sh linux --twice
 reproducible/build.sh windows --twice --accept-microsoft-license
+reproducible/build.sh macos --twice --macos-sdk apple-sdk
 ```
 
 It builds twice, in two separate containers, and fails if a single byte differs. This is what the `Reproducible build` workflow runs.
@@ -101,6 +156,8 @@ The build then runs in two containers.
 The first one has the network. It downloads what the build needs into a cache volume: npm packages, Rust crates, and six helper files for the AppImage. Each download is checked against a hash committed in this repository before it is kept.
 
 The second one has no network at all (`--network none`). It installs the npm packages from the cache, builds the frontend, compiles the application with `cargo --locked --offline`, and makes the packages. A tool that tries to fetch something at this point fails, and the build stops.
+
+For the macOS application, the second container is also the only one that sees the Apple SDK, mounted read-only, and it checks the hashes again before it unpacks it.
 
 The cache volume is shared by every build of the same recipe on your machine, so the second container does not trust it. It mounts it read-only and checks again what it takes from it: npm checks each package against `package-lock.json`, the recipe checks each Rust crate against `Cargo.lock` and each helper file against its hash. Cargo gets a fresh home inside the container, so a configuration file or an unpacked crate left in the volume by another build is never read.
 
@@ -123,6 +180,13 @@ The cache volume is shared by every build of the same recipe on your machine, so
 | Windows: xwin | 0.10.0, by sha256 of the release archive | `reproducible/Dockerfile` |
 | Windows: Microsoft C runtime 14.44 and Windows SDK 10.0.26100 | Microsoft's channel manifest for Visual Studio 17.14.41, the sha256 of each of the 41 files it leads to, and one hash for the unpacked tree | `reproducible/windows/manifest_17.json`, `microsoft-sdk.sha256`, `microsoft-sdk-tree.sha256` |
 | Windows: `nsis_tauri_utils.dll`, the plugin Tauri's installer calls | 0.5.3, by sha256 | `reproducible/windows/nsis-plugin.sha256` |
+| macOS: clang, llvm-ar, llvm-lipo and llvm-objdump | LLVM 22.1.8, by sha256 of the official release archive | `reproducible/Dockerfile` |
+| macOS: the Rust standard library for `aarch64-apple-darwin` and `x86_64-apple-darwin`, and the linker `rust-lld` | the Rust release manifest above | `reproducible/Dockerfile` |
+| macOS: rcodesign | 0.29.0, by sha256 of the release archive | `reproducible/Dockerfile` |
+| macOS: zip 3.0 and cpio | the same dated snapshot of the Ubuntu archive | `reproducible/Dockerfile` |
+| macOS: the Apple SDK 26.1, from Xcode 26.1.1 (17B100) | sha256 of the Xcode archive and of the two SDK tarballs | `reproducible/macos/apple-sdk.sha256` |
+| macOS: `gen-sdk.py` and `extract_xcode.py`, from Bitcoin Core | a copy of each, with its commit and its sha256 | `reproducible/macos/` |
+| macOS: `gen-sdk-cryptexes.py` | this repository | `reproducible/macos/` |
 
 On top of the versions, the recipe fixes what a tool could pick up from its surroundings. `SOURCE_DATE_EPOCH` is the date of the commit being built. The timezone is UTC, the locale is `C` and the umask is 022. The build path is always `/build`, and `--remap-path-prefix` turns the few absolute paths the compiler records into `/gerfaut`, `/cargo` and `/rustup`. Incremental compilation is off. The home directory is an empty one inside the build tree, so no configuration file is found by accident.
 
@@ -184,9 +248,70 @@ This holds as long as the installer has no Authenticode signature, which is the 
 
 A matching hash says nothing about whether the program runs. The `Reproducible build` workflow therefore takes the installer built on Linux to a Windows runner. It checks that the hash is the one the Linux job printed, installs it silently, reads the version information of the installed program, starts it for 10 seconds, checks that it opened a WebView2 window, then uninstalls it and checks that nothing is left.
 
+## The macOS application
+
+The zip holds `Gerfaut.app`, the application Tauri builds on a Mac with `tauri build --target universal-apple-darwin`: one program for Apple silicon and Intel, the same bundle, and a signature Tauri writes when told to sign ad hoc. It differs from a build made on a Mac in the tools that make it, and those are listed here.
+
+### How it is compiled
+
+The application is compiled twice through the Tauri CLI, once for `aarch64-apple-darwin` (Apple silicon) and once for `x86_64-apple-darwin` (Intel), as Tauri does on a Mac. rustc compiles the Rust code as it does on a Mac. clang, from the official LLVM 22.1.8 release, compiles the C and Objective-C code some crates carry (SQLite, zstd, ring, aws-lc, and the notification code of `mac-notification-sys`) in place of Apple's clang. `rust-lld`, the linker that ships with the pinned Rust toolchain, replaces Apple's `ld`, as it replaces `link.exe` for Windows. `llvm-lipo` joins the two programs into one universal binary, where Tauri calls Apple's `lipo`.
+
+The oldest macOS each half runs on is the one a Mac build gets: 10.13 on Intel, the `LSMinimumSystemVersion` Tauri writes, and 11.0 on Apple silicon, the first macOS that ran on it. The linker records the SDK version, 26.1, in each half, as Xcode's linker does. The build checks both values after linking.
+
+aws-lc-sys builds aws-lc with its `cc`-based build, the one it picks on a Mac too. The recipe sets `AWS_LC_SYS_CMAKE_BUILDER=0` so that it never tries CMake, whose Apple branch only runs on a Mac.
+
+rustc strips the debug information of an Apple program with `rust-objcopy`, a tool of the Rust toolchain. In Rust 1.97.0 for Linux, that tool cannot find the LLVM library it is linked against: rustc then prints a warning and leaves the debug map in the program, with the paths of the build in it. The image adds the link the tool looks for, so the program is stripped as on a Mac.
+
+### How the bundle is laid out
+
+Tauri's macOS bundler only compiles on a Mac. The recipe lays the bundle out itself, the way that bundler does:
+
+```
+Gerfaut.app/Contents/Info.plist
+Gerfaut.app/Contents/MacOS/gerfaut-desktop
+Gerfaut.app/Contents/Resources/icon.icns
+Gerfaut.app/Contents/_CodeSignature/CodeResources
+```
+
+`reproducible/macos/info-plist.py` writes `Info.plist` from `tauri.conf.json`: Tauri's keys, in Tauri's order, in the same XML text, byte for byte. The icon is `src-tauri/icons/icon.icns`, copied as it is. If the configuration asks for something the script does not handle, such as file associations or extra resources, it stops, rather than write a bundle that differs from Tauri's.
+
+The `macos-reference` job of the workflow checks this. It builds the same commit on a Mac with Tauri's own bundler and compares the two bundles: the same `Info.plist` byte for byte, the same icon, the same files with the same modes, and in each half of the program the same libraries and the same macOS versions. The one difference is `_CodeSignature`, because Tauri signs nothing when no signing identity is set.
+
+### The signature
+
+On Apple silicon every program must be signed, and a program whose signature does not cover the rest of its bundle can be reported as damaged once downloaded. The recipe signs the whole bundle ad hoc with [rcodesign](https://github.com/indygreg/apple-platform-rs), as Tauri's bundler does when told to sign with the identity `-`. The signature seals the program and the other files of the bundle together, in `_CodeSignature/CodeResources`. Its identifier is `CFBundleIdentifier`, `com.gerfautwallet.gerfaut`, and it turns the hardened runtime on, which is Tauri's default.
+
+An ad hoc signature holds hashes and nothing else: no certificate, no key, no date, no answer from a server. The build makes it again byte for byte, like the rest. The linker's own signature is turned off (`-no_adhoc_codesign`): the bundle is signed once, when it is complete.
+
+The application is not notarised. The first time you open a downloaded copy, macOS refuses it. Open System Settings, then Privacy & Security, and click Open Anyway.
+
+### The zip
+
+`zip` 3.0 from the pinned Ubuntu snapshot writes `Gerfaut_<version>_universal.zip`, after the signature. Every file and folder is dated with the commit date, in UTC. The entries are sorted by name. The modes are fixed: 755 for the folders and the program, 644 for the other files. `-X` leaves out the fields that would carry an owner or a second date. Finder unpacks the zip as it is, modes and signature included.
+
+There is no `.dmg`. Making one reproducibly on Linux takes three more tools and a fake clock, which is how Tor Browser does it, and a zip carries the same bundle.
+
+### What keeps the clock out
+
+The linker writes no date into a Mach-O program, and it derives the program's identifier (`LC_UUID`) from the content. rustc and clang see the same fixed paths as for Linux, remapped to `/gerfaut`, `/cargo`, `/rustup` and `/sdk`, and the build stops if a path of the container is left in the program. The signature has no date, and every date in the zip is the commit date.
+
+### What differs by design
+
+Nothing. The published zip and your rebuild are the same bytes.
+
+This holds as long as the application is signed ad hoc and not notarised, which is the case today. A Developer ID signature is made with a private key, and notarisation adds a ticket from Apple: neither can be rebuilt. If releases get them one day, this page will explain how to set them aside before comparing, as Bitcoin Core does with its detached signatures.
+
+### What is tested, and where
+
+A matching hash says nothing about whether the program runs on a Mac. The `Reproducible build` workflow therefore takes the zip built on Linux to two macOS runners, one with Apple silicon and one with Intel. On each, it checks the hash, unpacks the zip with `ditto`, which is what Finder uses, and checks the signature with `codesign --verify --deep --strict`: ad hoc, with sealed resources and the hardened runtime. It checks that the program holds both halves, starts the application and checks that it still runs 10 seconds later. Then it marks a copy as downloaded by Safari and checks that Gatekeeper refuses it for the ordinary reason, and does not call it damaged.
+
+In the workflow, the Apple SDK comes from the Xcode 26.1.1 of a macOS runner, made with the same two scripts and checked against the same hashes. It reaches the Linux job through the Actions cache of the repository, which cannot be read from outside a workflow run, and it is never uploaded as an artifact.
+
 ## The binary
 
 The three Linux packages do not hold the same binary. Tauri writes the kind of package into the executable before it bundles it: three bytes, `DEB`, `RPM` or `APP`. The `.deb` and the `.rpm` binaries differ by those three bytes and nothing else. The AppImage one differs more, because linuxdeploy also strips it and sets its library path. `build-info/binary.sha256` is the hash of the executable as the compiler left it, before any of this.
+
+For macOS, `build-info/binary.sha256` holds the two halves as the linker left them and the universal binary before signing. `build-info/macho.txt` lists what each half targets and which libraries it loads, and `build-info/signature.txt` describes the signature.
 
 `build-info/sources` names the two commits a build came from. A build made with `--any-core`, against a core other than the pinned one, says so in that file, and `compare.sh` repeats it. Such a build is for development and is never what a release is compared with.
 
@@ -194,7 +319,7 @@ The release profile is Cargo's default: optimised, 16 codegen units, no LTO, deb
 
 ## When the hashes differ
 
-`compare.sh` does not stop at "different". It opens both files and reports where they differ: which member of the `.deb` and which field of which entry, which header tag of the `.rpm`, the runtime or the payload of the AppImage, and for the Windows installer the stub, the script or the packed file, down to the section of the program inside it. If both sides have a `build-info` directory, it also tells you whether the toolchain, the frontend or the binary already differed, or whether the difference comes from packaging alone. Then it builds a second image that has [diffoscope](https://diffoscope.org/) and writes a full report for each file into `diffoscope/`, inside the second directory.
+`compare.sh` does not stop at "different". It opens both files and reports where they differ: which member of the `.deb` and which field of which entry, which header tag of the `.rpm`, the runtime or the payload of the AppImage, for the Windows installer the stub, the script or the packed file, down to the section of the program inside it, and for the macOS zip the entry and, inside the application, the half, the load command, the section or the first signed page that differs. If both sides have a `build-info` directory, it also tells you whether the toolchain, the frontend or the binary already differed, or whether the difference comes from packaging alone. Then it builds a second image that has [diffoscope](https://diffoscope.org/) and writes a full report for each file into `diffoscope/`, inside the second directory.
 
 A downloaded file is treated as hostile until its hash matches. The comparison runs in a container with no network, both directories are mounted read-only, and the report directory is the only place it can write to. The verdict rests on the hashes alone. The explanation stops at fixed limits, so a crafted file cannot make it hang or fill the memory, and control characters are escaped before anything is printed.
 
@@ -210,6 +335,8 @@ If none of these explains it, please open an issue with the output of `compare.s
 ## Troubleshooting
 
 `gerfaut-core <sha> is not in ../gerfaut-core: fetch it first`. Your clone of the core is older than the pinned commit. Run `git -C ../gerfaut-core fetch`.
+
+`.../Xcode-26.1.1-... is not the file this recipe pins`. A tarball in the directory you passed with `--macos-sdk` is not the SDK this recipe pins. Make both again from Xcode 26.1.1 with `make-apple-sdk.sh`, and check the hash of the `.xip` first.
 
 `<name> does not match the hash in ...`. One of the pinned downloads changed upstream. The build refuses to go on, which is the point. An older tag can stop being rebuildable this way if upstream removes or replaces a file. Keeping a copy of the cache volume (`gerfaut-desktop-rb-cache-<target>-<rust version>-<recipe>`) avoids that.
 
@@ -228,7 +355,3 @@ It does not prove that a build on your machine matches. Only your own rebuild do
 ## What is not reproducible
 
 The container image itself. Two builds of `reproducible/Dockerfile` do not give the same image bytes, because layer archives carry dates. They do give the same installed packages, toolchain and tools, and that is what reaches the artefacts. `build-info/image-packages` lists the system packages of the image a build ran in, so two builds can be compared on that point too.
-
-## Other platforms
-
-The macOS application is built on a hosted runner, outside this recipe, and the promise on this page does not extend to it.

@@ -51,7 +51,7 @@ npm run tauri dev      # run it
 npm run tauri build    # installers, under src-tauri/target/release/bundle
 ```
 
-To build the Linux packages or the Windows installer in a pinned container, where two builds of the same commit give the same bytes, see [docs/REPRODUCIBLE-BUILDS.md](docs/REPRODUCIBLE-BUILDS.md).
+To build the Linux packages, the Windows installer or the macOS application in a pinned container, where two builds of the same commit give the same bytes, see [docs/REPRODUCIBLE-BUILDS.md](docs/REPRODUCIBLE-BUILDS.md).
 
 ## Releases
 
