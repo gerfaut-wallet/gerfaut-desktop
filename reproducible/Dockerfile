@@ -58,14 +58,20 @@ SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 # is lost: apt still checks the archive's signature against the keyring
 # of the pinned base image, and every package against the signed index.
 # The exception is removed as soon as ca-certificates is in.
-RUN for pocket in jammy jammy-updates jammy-security; do \
+#
+# The snapshot service has bad minutes. apt retries each download, and
+# `update --error-on=any` stops on an index it could not fetch: left to
+# itself, apt only warns, carries on with no index, and fails later with
+# a message that points elsewhere. Every stage below keeps both rules.
+RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80retries \
+ && for pocket in jammy jammy-updates jammy-security; do \
       echo "deb https://snapshot.ubuntu.com/ubuntu/${APT_SNAPSHOT} ${pocket} main universe"; \
     done > /etc/apt/sources.list \
  && echo 'Acquire::https::snapshot.ubuntu.com::Verify-Peer "false";' > /etc/apt/apt.conf.d/99bootstrap \
- && apt-get update \
+ && apt-get update --error-on=any \
  && apt-get install -y --no-install-recommends ca-certificates \
  && rm /etc/apt/apt.conf.d/99bootstrap \
- && apt-get update \
+ && apt-get update --error-on=any \
  && apt-get install -y --no-install-recommends \
       build-essential curl file git pkg-config python3 xz-utils \
  && rm -rf /var/lib/apt/lists/*
@@ -104,16 +110,16 @@ RUN printf '%s\n' \
       '    [ "${#hash}" -eq 64 ] || { echo "rust-dist: no hash for $package" >&2; exit 1; }' \
       '    file="/opt/rust-dist/dist/${url#https://static.rust-lang.org/dist/}"' \
       '    mkdir -p "$(dirname "$file")"' \
-      '    curl --proto =https --tlsv1.2 -fsSL -o "$file" "$url"' \
+      '    curl --proto =https --tlsv1.2 --retry 5 -fsSL -o "$file" "$url"' \
       '    echo "$hash  $file" | sha256sum -c -' \
       'done' \
       > /usr/local/bin/rust-dist \
  && chmod 0755 /usr/local/bin/rust-dist \
- && curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/rustup-init \
+ && curl --proto '=https' --tlsv1.2 --retry 5 -fsSL -o /tmp/rustup-init \
       "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init" \
  && echo "${RUSTUP_INIT_SHA256}  /tmp/rustup-init" | sha256sum -c - \
  && mkdir -p /opt/rust-dist/dist \
- && curl --proto '=https' --tlsv1.2 -fsSL -o "/opt/rust-dist/dist/channel-rust-${RUST_VERSION}.toml" \
+ && curl --proto '=https' --tlsv1.2 --retry 5 -fsSL -o "/opt/rust-dist/dist/channel-rust-${RUST_VERSION}.toml" \
       "https://static.rust-lang.org/dist/channel-rust-${RUST_VERSION}.toml" \
  && echo "${RUST_MANIFEST_SHA256}  /opt/rust-dist/dist/channel-rust-${RUST_VERSION}.toml" | sha256sum -c - \
  && echo "${RUST_MANIFEST_SHA256}  channel-rust-${RUST_VERSION}.toml" \
@@ -128,7 +134,7 @@ RUN printf '%s\n' \
  && find /opt/rust-dist/dist -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + \
  && rustc --version | grep -qF "rustc ${RUST_VERSION} "
 
-RUN curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/node.tar.xz \
+RUN curl --proto '=https' --tlsv1.2 --retry 5 -fsSL -o /tmp/node.tar.xz \
       "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
  && echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - \
  && mkdir /opt/node \
@@ -168,7 +174,7 @@ FROM base AS linux
 # The list README.md gives, plus the packaging tools: dpkg-deb comes with
 # the base system, rpm brings rpmbuild, squashfs-tools writes the
 # AppImage payload, and desktop-file-utils checks the desktop entry.
-RUN apt-get update \
+RUN apt-get update --error-on=any \
  && apt-get install -y --no-install-recommends \
       libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
       libdbus-1-dev patchelf wget xdg-utils \
@@ -193,7 +199,7 @@ ARG XWIN_SHA256=d870eb4b2f390878af6da1ccd3cf321d22fcb72720984853b4be732ae597fc88
 # resource. The linker is not in this list: it is the rust-lld of the
 # pinned Rust toolchain. makensis comes with its stubs, the head of
 # every installer it writes, so the nsis package is part of the promise.
-RUN apt-get update \
+RUN apt-get update --error-on=any \
  && apt-get install -y --no-install-recommends clang-15 llvm-15 nsis \
  && rm -rf /var/lib/apt/lists/* \
  && ln -s /usr/lib/llvm-15/bin/clang /usr/local/bin/clang-cl \
@@ -212,7 +218,7 @@ RUN rust-dist x86_64-pc-windows-msvc rust-std \
  && find /opt/rust-dist/dist -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + \
  && test -d "$(rustc --print target-libdir --target x86_64-pc-windows-msvc)"
 
-RUN curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/xwin.tar.gz \
+RUN curl --proto '=https' --tlsv1.2 --retry 5 -fsSL -o /tmp/xwin.tar.gz \
       "https://github.com/Jake-Shadle/xwin/releases/download/${XWIN_VERSION}/xwin-${XWIN_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
  && echo "${XWIN_SHA256}  /tmp/xwin.tar.gz" | sha256sum -c - \
  && tar -xzf /tmp/xwin.tar.gz -C /usr/local/bin --strip-components=1 --no-same-owner \
@@ -226,7 +232,7 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/xwin.tar.gz \
 # Windows installer and to print a hex dump.
 FROM linux AS tools
 
-RUN apt-get update \
+RUN apt-get update --error-on=any \
  && apt-get install -y --no-install-recommends diffoscope-minimal p7zip-full python3-rpm xxd \
  && rm -rf /var/lib/apt/lists/*
 
