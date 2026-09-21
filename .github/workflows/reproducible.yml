@@ -219,9 +219,15 @@ jobs:
   # A macOS runner, which ships Xcode, makes its two tarballs with the
   # committed scripts and checks them against the committed hashes. They
   # reach the Linux job through the Actions cache of this repository,
-  # keyed by those hashes: a cache can only be read from inside a
-  # workflow run. A Linux runner looks the cache up first, so the macOS
-  # runner only starts when the SDK is not there yet.
+  # keyed by those hashes. A Linux runner looks the cache up first, so the
+  # macOS runner only starts when the SDK is not there yet.
+  #
+  # A cache can only be read from inside a workflow run, but in a public
+  # repository that includes the run of a pull request from a fork, whose
+  # workflow the fork writes. So these jobs refuse to run in a public
+  # repository: the SDK caches have to be deleted, and sealed with a
+  # secret the runs of forks do not get, before this repository is made
+  # public.
   apple-sdk-lookup:
     if: inputs.target == 'all' || inputs.target == 'macos'
     permissions:
@@ -239,8 +245,11 @@ jobs:
 
       - name: Read the pinned SDK
         id: sdk
+        env:
+          PRIVATE: ${{ github.event.repository.private }}
         run: |
           set -euo pipefail
+          [ "$PRIVATE" = true ] || { echo "::error::the Apple SDK is only cached in a private repository"; exit 1; }
           hash="$(awk '!/^#/ && $2 ~ /[.]tar$/' reproducible/macos/apple-sdk.sha256 | sha256sum | cut -c1-32)"
           echo "key=apple-sdk-$hash" >> "$GITHUB_OUTPUT"
 
@@ -296,6 +305,22 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
+      # Before the code is checked out, so that nothing a cache holds can
+      # land on top of it. The two tarballs are all it may hold, and
+      # build.sh checks their hashes.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: apple-sdk
+          key: ${{ needs.apple-sdk-lookup.outputs.key }}
+          fail-on-cache-miss: true
+
+      - name: Check what the cache held
+        run: |
+          set -euo pipefail
+          have="$(find . -mindepth 1 -printf '%P\n' | LC_ALL=C sort | tr '\n' ' ')"
+          want="apple-sdk apple-sdk/Xcode-26.1.1-17B100-extracted-SDK-cryptexes.tar apple-sdk/Xcode-26.1.1-17B100-extracted-SDK-with-libcxx-headers.tar "
+          [ "$have" = "$want" ] || { echo "unexpected files from the cache: $have"; exit 1; }
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           path: gerfaut-desktop
@@ -312,12 +337,6 @@ jobs:
           ssh-key: ${{ secrets.CORE_DEPLOY_KEY }}
           path: gerfaut-core
           persist-credentials: false
-
-      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: apple-sdk
-          key: ${{ needs.apple-sdk-lookup.outputs.key }}
-          fail-on-cache-miss: true
 
       # build.sh checks the SDK against the hashes again and mounts it
       # read-only into the build container, which has no network.
@@ -366,7 +385,10 @@ jobs:
           set -euo pipefail
           sw_vers
           echo "processor: $(uname -m)"
-          zip="$(ls artefact/build-1/*_universal.zip)"
+          zips=(artefact/build-1/*_universal.zip)
+          [ "${#zips[@]}" -eq 1 ] && [[ "$(basename "${zips[0]}")" =~ ^[A-Za-z0-9._-]+$ ]] \
+            || { echo "expected one zip with a plain name"; exit 1; }
+          zip="${zips[0]}"
           want="$(awk -v n="$(basename "$zip")" '$2 == n { print $1 }' artefact/build-1/SHA256SUMS)"
           have="$(shasum -a 256 "$zip" | cut -d' ' -f1)"
           echo "$have  $(basename "$zip")"
