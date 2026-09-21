@@ -33,7 +33,7 @@ use serde::Serialize;
 use tauri::{Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
-use crate::notice::{self, Context, Held, Notice, Unit};
+use crate::notice::{self, Context, Held, Notice, NoticeKind, Unit};
 use crate::{AppState, CommandError, CommandResult};
 
 /// The preference that turns the alerts, and with them the watch, on.
@@ -51,7 +51,8 @@ const EVENT_STATUS: &str = "live://status";
 
 /// Notifications posted in one window of time, whatever the backend
 /// says. A server can make a wallet look busy; it cannot make the
-/// desktop ring without end.
+/// desktop ring without end. Payments no longer coming draw on a
+/// budget of the same size of their own.
 const BUDGET: u32 = 20;
 const BUDGET_WINDOW: Duration = Duration::from_secs(60);
 
@@ -170,18 +171,35 @@ impl Announcer {
     }
 }
 
+/// One budget per kind of notification: a burst of new transactions
+/// never silences a payment that is no longer coming.
+#[derive(Debug)]
+pub(crate) struct Budgets {
+    transactions: Budget,
+    dropped: Budget,
+}
+
+impl Budgets {
+    pub(crate) const fn new() -> Self {
+        Budgets {
+            transactions: Budget::new(),
+            dropped: Budget::new(),
+        }
+    }
+}
+
 /// The running watch, as the app holds it.
 pub(crate) struct LiveAlerts {
     /// The task reading the events; present while the watch runs.
     task: tokio::sync::Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
-    budget: std::sync::Mutex<Budget>,
+    budgets: std::sync::Mutex<Budgets>,
 }
 
 impl Default for LiveAlerts {
     fn default() -> Self {
         LiveAlerts {
             task: tokio::sync::Mutex::new(None),
-            budget: std::sync::Mutex::new(Budget::new()),
+            budgets: std::sync::Mutex::new(Budgets::new()),
         }
     }
 }
@@ -219,20 +237,31 @@ async fn context(state: &AppState) -> Context {
     }
 }
 
-/// The notices the budget lets through, the last of them replaced by a
-/// line saying more is waiting.
+/// The notices the budgets let through, the last one of each kind
+/// replaced by a line saying more is waiting.
 pub(crate) fn within_budget(
-    budget: &mut Budget,
+    budgets: &mut Budgets,
     notices: Vec<Notice>,
     now: Instant,
 ) -> Vec<Notice> {
     let mut out = Vec::new();
     for notice in notices {
+        let (budget, last_call) = match notice.kind {
+            NoticeKind::Transaction => (
+                &mut budgets.transactions,
+                "More transactions are coming in. Open Gerfaut to see them.",
+            ),
+            NoticeKind::Dropped => (
+                &mut budgets.dropped,
+                "More pending payments are no longer coming. Open Gerfaut to see them.",
+            ),
+        };
         match budget.allow(now) {
             Allowance::Post => out.push(notice),
             Allowance::LastCall => out.push(Notice {
                 title: notice::APP_TITLE.to_owned(),
-                body: "More transactions are coming in. Open Gerfaut to see them.".to_owned(),
+                body: last_call.to_owned(),
+                kind: notice.kind,
             }),
             Allowance::Silent => {}
         }
@@ -256,12 +285,12 @@ async fn announce(app: &tauri::AppHandle, wallet_id: &str, held: &Held) {
     let context = context(&state).await;
     let notices = notice::compose(wallet_id, held, &context);
     let notices = {
-        let mut budget = state
+        let mut budgets = state
             .live
-            .budget
+            .budgets
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        within_budget(&mut budget, notices, Instant::now())
+        within_budget(&mut budgets, notices, Instant::now())
     };
     for notice in &notices {
         let _ = post(app, notice);
@@ -419,15 +448,17 @@ pub async fn live_status(state: tauri::State<'_, AppState>) -> CommandResult<Liv
 /// whether the system shows them at all. The desktop platforms report
 /// every permission as granted; this is the only honest check. It is
 /// the one way the window has to make the system ring, so it draws on
-/// the same budget as the alerts: a page gone wrong cannot flood with it.
+/// the budget of the transaction alerts: a page gone wrong cannot flood
+/// with it.
 #[tauri::command]
 pub async fn send_test_notification(app: tauri::AppHandle) -> CommandResult<()> {
     let allowance = app
         .state::<AppState>()
         .live
-        .budget
+        .budgets
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .transactions
         .allow(Instant::now());
     if allowance != Allowance::Post {
         return Err(CommandError {
@@ -440,6 +471,7 @@ pub async fn send_test_notification(app: tauri::AppHandle) -> CommandResult<()> 
         &Notice {
             title: notice::APP_TITLE.to_owned(),
             body: "This is a test. Alerts about your wallets appear like this one.".to_owned(),
+            kind: NoticeKind::Transaction,
         },
     )
     .map_err(|message| CommandError {
@@ -576,16 +608,21 @@ mod tests {
         }
     }
 
-    #[test]
-    fn the_budget_caps_a_minute_and_says_more_is_waiting() {
-        let mut budget = Budget::new();
-        let start = Instant::now();
-        let notices: Vec<Notice> = (0..50)
+    fn notices(kind: NoticeKind, count: usize) -> Vec<Notice> {
+        (0..count)
             .map(|i| Notice {
                 title: "w".to_owned(),
                 body: format!("n{i}"),
+                kind,
             })
-            .collect();
+            .collect()
+    }
+
+    #[test]
+    fn the_budget_caps_a_minute_and_says_more_is_waiting() {
+        let mut budget = Budgets::new();
+        let start = Instant::now();
+        let notices = notices(NoticeKind::Transaction, 50);
         let posted = within_budget(&mut budget, notices.clone(), start);
         assert_eq!(posted.len(), BUDGET as usize);
         assert_eq!(posted[0].body, "n0");
@@ -606,50 +643,80 @@ mod tests {
         assert_eq!(later.len(), BUDGET as usize);
     }
 
-    /// The watch and a sync asked for by hand can both hold the same
-    /// report. Whoever claims first announces; the other gets nothing,
-    /// now and after a restart. The confirmation is a second, separate
-    /// announcement, made once too.
+    /// A minute spent on new transactions leaves the payments no longer
+    /// coming untouched, and their own flood line says what they are.
     #[test]
-    fn a_transaction_is_claimed_once_per_stage_whoever_asks() {
+    fn a_burst_of_transactions_never_silences_a_payment_no_longer_coming() {
+        let mut budgets = Budgets::new();
+        let start = Instant::now();
+        let mut all = notices(NoticeKind::Transaction, 50);
+        all.push(Notice {
+            title: "Cold storage".to_owned(),
+            body: "A pending payment is no longer coming".to_owned(),
+            kind: NoticeKind::Dropped,
+        });
+        let posted = within_budget(&mut budgets, all, start);
+        assert_eq!(posted.len(), BUDGET as usize + 1);
+        assert_eq!(
+            posted.last().map(|notice| notice.body.as_str()),
+            Some("A pending payment is no longer coming")
+        );
+
+        let flood = within_budget(&mut budgets, notices(NoticeKind::Dropped, 50), start);
+        assert_eq!(flood.len(), BUDGET as usize - 1);
+        assert_eq!(
+            flood.last().map(|notice| notice.body.as_str()),
+            Some("More pending payments are no longer coming. Open Gerfaut to see them.")
+        );
+    }
+
+    /// A payment no longer coming is held with the rest of its sync and
+    /// said with it, never counted into the line of the others.
+    #[test]
+    fn a_payment_no_longer_coming_is_held_and_said_with_its_sync() {
+        let mut announcer = Announcer::default();
+        for i in 0..5 {
+            announcer.on_event(LiveEvent::Transaction(tx(
+                "w1",
+                &format!("a{i}"),
+                TxStage::Mempool,
+            )));
+        }
+        announcer.on_event(LiveEvent::Transaction(tx("w1", "gone", TxStage::Dropped)));
+        let outcome = announcer.on_event(LiveEvent::WalletSynced {
+            report: report("w1", vec![], vec![]),
+        });
+        let (_, held) = outcome.announce.expect("w1 has something to say");
+        assert_eq!(held.first.len(), 3);
+        assert_eq!(held.more, 2);
+        assert_eq!(held.dropped.len(), 1);
+        assert_eq!(held.dropped[0].txid, "gone");
+
+        // A sync that found only that still speaks.
+        announcer.on_event(LiveEvent::Transaction(tx("w2", "gone", TxStage::Dropped)));
+        let outcome = announcer.on_event(LiveEvent::WalletSynced {
+            report: report("w2", vec![], vec![]),
+        });
+        assert!(outcome.announce.is_some());
+    }
+
+    /// What a claim hands out is what a sync recorded in the vault, not
+    /// what a report lists: a report nobody's sync produced claims
+    /// nothing, however many transactions it names.
+    #[test]
+    fn a_claim_hands_out_only_what_a_sync_recorded() {
         let dir = tempfile::tempdir().unwrap();
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let manager = WalletManager::open(dir.path(), VaultKey::Raw([7u8; 32])).unwrap();
-        let seen = report("w1", vec![new_tx("aa", false), new_tx("bb", true)], vec![]);
-
-        let first = runtime
-            .block_on(manager.claim_announcements(&seen))
-            .unwrap();
-        assert_eq!(first.len(), 2);
-        assert_eq!(first[0].stage, TxStage::Mempool);
-        assert_eq!(first[1].stage, TxStage::Confirmed);
-        let second = runtime
-            .block_on(manager.claim_announcements(&seen))
-            .unwrap();
-        assert!(second.is_empty(), "{second:?}");
-
-        let confirmed = report("w1", vec![], vec![new_tx("aa", true)]);
-        let once = runtime
-            .block_on(manager.claim_announcements(&confirmed))
-            .unwrap();
-        assert_eq!(once.len(), 1);
-        assert_eq!(once[0].stage, TxStage::Confirmed);
-        assert!(
-            runtime
-                .block_on(manager.claim_announcements(&confirmed))
-                .unwrap()
-                .is_empty()
+        let forged = report(
+            "w1",
+            vec![new_tx("aa", false), new_tx("bb", true)],
+            vec![new_tx("cc", true)],
         );
-
-        // The record is in the vault: a restart changes nothing.
-        drop(manager);
-        let reopened = WalletManager::open(dir.path(), VaultKey::Raw([7u8; 32])).unwrap();
-        assert!(
-            runtime
-                .block_on(reopened.claim_announcements(&seen))
-                .unwrap()
-                .is_empty()
-        );
+        let claimed = runtime
+            .block_on(manager.claim_announcements(&forged))
+            .unwrap();
+        assert!(claimed.is_empty(), "{claimed:?}");
     }
 
     #[test]
