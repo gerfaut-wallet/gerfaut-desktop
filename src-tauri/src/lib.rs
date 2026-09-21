@@ -1018,7 +1018,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
+            // The window is gone: stop the watch, and leave within
+            // `live::EXIT_GRACE` whatever is still in flight.
+            if matches!(
+                event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+            ) {
                 live::shutdown(app);
             }
         });

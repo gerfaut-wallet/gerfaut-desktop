@@ -22,7 +22,7 @@
 //! here, and the reports of a sync asked for by hand.
 
 use std::collections::HashMap;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use gerfaut_core::WalletManager;
@@ -418,15 +418,36 @@ pub(crate) async fn apply(app: &tauri::AppHandle) {
     }
 }
 
-/// How long quitting waits for the watch to close its connection.
-const SHUTDOWN_BUDGET: Duration = Duration::from_secs(3);
+/// The longest the process lives once it is asked to exit, whatever
+/// is still in flight: a sync waiting on a server that does not answer,
+/// a name lookup, a notification the system is slow to take.
+pub(crate) const EXIT_GRACE: Duration = Duration::from_secs(2);
+/// How long quitting waits for the watch to let go. The core returns
+/// at once; this only bounds a surprise.
+const STOP_BUDGET: Duration = Duration::from_millis(500);
 
-/// Closes the connection on the way out. Bounded: a clean goodbye to
-/// the server is a courtesy, and quitting never waits on one.
+/// Set once the process is on its way out.
+static EXITING: AtomicBool = AtomicBool::new(false);
+
+/// Stops the watch on the way out, and makes sure the way out takes at
+/// most [`EXIT_GRACE`]. Called when the last window closes and again
+/// as the event loop ends; the second call finds nothing left to do.
+///
+/// The watch closes its connection and abandons its syncs at once. The
+/// watchdog is for everything else: the process leaves with exit code
+/// 0 when the grace is over, and the vault loses nothing to it, since
+/// every write lands whole or not at all.
 pub(crate) fn shutdown(app: &tauri::AppHandle) {
+    if !EXITING.swap(true, Ordering::SeqCst) {
+        std::thread::spawn(|| {
+            std::thread::sleep(EXIT_GRACE);
+            eprintln!("gerfaut: still running {EXIT_GRACE:?} after the exit request, ending now");
+            std::process::exit(0);
+        });
+    }
     if let Some(state) = app.try_state::<AppState>() {
         tauri::async_runtime::block_on(async {
-            let _ = tokio::time::timeout(SHUTDOWN_BUDGET, state.manager.live_stop()).await;
+            let _ = tokio::time::timeout(STOP_BUDGET, state.manager.live_stop()).await;
         });
     }
 }
