@@ -366,6 +366,9 @@ jobs:
   # Gatekeeper assesses a downloaded copy. It compiles nothing.
   macos-smoke:
     needs: macos
+    # Stated, because the default would also skip this job when the SDK
+    # came from the cache and the job that makes it was skipped.
+    if: ${{ !cancelled() && needs.macos.result == 'success' }}
     permissions:
       contents: read
     strategy:
@@ -458,7 +461,7 @@ jobs:
   # loads and what it targets. Run it when Tauri is upgraded.
   macos-reference:
     needs: macos
-    if: inputs.macos-reference
+    if: ${{ !cancelled() && needs.macos.result == 'success' && inputs.macos-reference }}
     permissions:
       contents: read
     runs-on: macos-15
