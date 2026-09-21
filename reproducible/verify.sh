@@ -65,6 +65,7 @@ echo "==> working in $work"
 # carries, not the one this script sits next to.
 git -c advice.detachedHead=false clone --quiet --branch "$tag" "$desktop_url" "$work/gerfaut-desktop"
 core_rev="$(tr -d ' \t\r\n' < "$work/gerfaut-desktop/.github/gerfaut-core.rev")"
+[[ "$core_rev" =~ ^[0-9a-f]{40}$ ]] || { echo "$tag pins no full gerfaut-core commit: $core_rev" >&2; exit 1; }
 echo "==> $tag pins gerfaut-core $core_rev"
 git clone --quiet "$core_url" "$work/gerfaut-core"
 git -C "$work/gerfaut-core" -c advice.detachedHead=false checkout --quiet "$core_rev"
@@ -77,11 +78,23 @@ if [ -z "$published" ]; then
     mkdir -p "$published"
     echo "==> downloading the published files"
     # The names come from the rebuild, the bytes from the releases page.
+    # A file larger than its rebuild cannot match, so curl stops there
+    # rather than fill the disk.
     while read -r _ name; do
         name="${name#\*}"
+        case "$name" in
+            ""|.*|*/*) echo "unexpected name in the rebuilt SHA256SUMS: $name" >&2; exit 1 ;;
+        esac
+        size="$(wc -c < "$work/rebuilt/$name" | tr -d ' ')"
+        status=0
         curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location --retry 3 \
-            --output "$published/$name" "$release_url/$tag/$name" \
-            || { echo "could not download $name from the $tag release" >&2; exit 1; }
+            --max-filesize "$size" --output "$published/$name" "$release_url/$tag/$name" \
+            || status=$?
+        case "$status" in
+            0) ;;
+            63) echo "==> NOT VERIFIED: the published $name is larger than the rebuild" >&2; exit 1 ;;
+            *) echo "could not download $name from the $tag release" >&2; exit 1 ;;
+        esac
     done < "$work/rebuilt/SHA256SUMS"
 fi
 
