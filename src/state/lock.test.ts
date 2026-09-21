@@ -102,12 +102,51 @@ describe("the app lock", () => {
     });
     useLock.getState().syncFromSettings(PIN);
     useLock.setState({ locked: false });
+    await Promise.resolve();
+    called.length = 0;
 
     useLock.getState().lockNow();
 
     expect(useLock.getState().locked).toBe(true);
     await Promise.resolve();
     expect(called).toEqual(["lock_app"]);
+  });
+
+  it("shuts the vault too when the first read puts the screen up", async () => {
+    // A reload of the webview reads the settings for the first time
+    // again, with the lock set earlier in the session, while the core
+    // may still be open. The screen alone would be a curtain over a
+    // vault that answers, and the Rust side would post alerts that
+    // name the wallet and the amount over the lock screen.
+    const called: string[] = [];
+    mockIPC((cmd) => {
+      called.push(cmd);
+      if (cmd === "lock_app") return undefined;
+      throw new Error(`unexpected command ${cmd}`);
+    });
+    useLock.getState().syncFromSettings(PIN);
+    expect(useLock.getState().locked).toBe(true);
+    await Promise.resolve();
+    expect(called).toEqual(["lock_app"]);
+
+    // Later reads leave both alone, whatever they carry.
+    useLock.setState({ locked: false });
+    useLock.getState().syncFromSettings(PIN);
+    useLock.getState().syncFromSettings(null);
+    await Promise.resolve();
+    expect(called).toEqual(["lock_app"]);
+    expect(useLock.getState().locked).toBe(false);
+  });
+
+  it("asks nothing of the core when the vault holds no lock", async () => {
+    const called: string[] = [];
+    mockIPC((cmd) => {
+      called.push(cmd);
+      return undefined;
+    });
+    useLock.getState().syncFromSettings(null);
+    await Promise.resolve();
+    expect(called).toEqual([]);
   });
 
   it("a refused secret leaves the screen up", async () => {

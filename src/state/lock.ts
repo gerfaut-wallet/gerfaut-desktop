@@ -83,6 +83,12 @@ export const useLock = create<LockState>((set, get) => ({
   syncFromSettings: (lock) => {
     const first = !get().seen;
     set({ lock, seen: true, locked: first ? lock !== null : get().locked });
+    // The screen and the vault come up shut together. At launch the
+    // core is shut already, and this changes nothing. After a reload
+    // of the webview it may still be open while this screen goes up:
+    // everything behind the curtain would answer, and the alerts the
+    // Rust side posts would name the wallet and the amount over it.
+    if (first && lock !== null) void ipc.lockApp().catch(() => {});
   },
 
   unlock: async (secret) => {
