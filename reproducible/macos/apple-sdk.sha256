@@ -1,8 +1,8 @@
 # The Apple SDK the macOS application is linked against. It is not free
 # software: it is in no repository and in no image, and the build never
-# downloads it. Whoever builds makes it from Xcode, with the two scripts
-# below, and the build refuses a file whose hash is not this one. See
-# docs/REPRODUCIBLE-BUILDS.md.
+# downloads it. Whoever builds makes it from Xcode, with the scripts
+# below, and the build refuses a file whose hash is not the one here.
+# See docs/REPRODUCIBLE-BUILDS.md.
 #
 # Xcode 26.1.1 (build 17B100), from Apple, with an Apple ID:
 #   https://developer.apple.com/download/all/?q=Xcode%2026.1.1
@@ -11,6 +11,10 @@ f4c65b01e2807372b61553c71036dbfef492d7c79d4c380a5afb61aa1018e555  Xcode_26.1.1_A
 # every date zeroed, every owner root. The same file Bitcoin Core builds
 # its releases with.
 9600fa93644df674ee916b5e2c8a6ba8dacf631996a65dc922d003b98b5ea3b1  Xcode-26.1.1-17B100-extracted-SDK-with-libcxx-headers.tar
+# What gen-sdk-cryptexes.py makes of it: WebKit, JavaScriptCore and the
+# other frameworks the SDK keeps under System/Cryptexes, which the file
+# above only links to. Written the same way, into the same tree.
+fb8a938117fc12e5982d77c241f3168bdab9441cecacff51d5de277e66f337f3  Xcode-26.1.1-17B100-extracted-SDK-cryptexes.tar
 #
 # The two scripts, copied byte for byte from the Bitcoin Core project
 # (MIT licence, see COPYING in this directory):
