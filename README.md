@@ -51,6 +51,8 @@ npm run tauri dev      # run it
 npm run tauri build    # installers, under src-tauri/target/release/bundle
 ```
 
+To build the Linux packages or the Windows installer in a pinned container, where two builds of the same commit give the same bytes, see [docs/REPRODUCIBLE-BUILDS.md](docs/REPRODUCIBLE-BUILDS.md).
+
 ## Releases
 
 Installers for Windows, macOS, and Linux are built by CI from every `v*` tag and published on the [releases page](https://github.com/gerfaut-wallet/gerfaut-desktop/releases). Each release ships a `SHA256SUMS` manifest signed with the author's [minisign](https://jedisct1.github.io/minisign/) key:
