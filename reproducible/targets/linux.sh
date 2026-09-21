@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Linux target: .deb, .rpm and .AppImage for x86_64. Sourced by
 # entrypoint.sh, which calls target_fetch with the network and
 # target_build without it.

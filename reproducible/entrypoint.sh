@@ -9,6 +9,7 @@
 # an artefact without having gone through one of those checks.
 #
 # Run it through reproducible/build.sh rather than by hand.
+# shellcheck source-path=SCRIPTDIR
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,6 +23,7 @@ case "$target" in
 esac
 [ -f "$here/targets/$target.sh" ] || die "no recipe for $target in this revision"
 # Defines target_fetch and target_build.
+# shellcheck source=targets/linux.sh
 . "$here/targets/$target.sh"
 
 repro_env

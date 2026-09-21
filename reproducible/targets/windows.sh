@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Windows target: the NSIS installer for x86_64, cross-built on Linux.
 # Sourced by entrypoint.sh, which calls target_fetch with the network and
 # target_build without it.
@@ -145,7 +146,7 @@ target_build() {
 
     log "bundling"
     (
-        cd "$APP"
+        cd "$APP" || exit 1
         npm run tauri -- bundle --ci --target "$TRIPLE" --bundles nsis \
             --config '{"bundle":{"windows":{"nsis":{"installerHooks":"../reproducible/windows/hooks.nsh"}}}}'
     )

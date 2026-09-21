@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared by every target. Sourced inside the container by entrypoint.sh,
 # never run on its own.
 #
@@ -132,7 +133,7 @@ use_pinned() {
 build_frontend() {
     log "frontend: npm ci, tsc, vite build"
     (
-        cd "$APP"
+        cd "$APP" || exit 1
         npm ci --offline --no-progress
         npm run build
     )
@@ -146,7 +147,7 @@ build_frontend() {
 # plain `npm run tauri build` would use. The frontend is already built.
 tauri_build() {
     (
-        cd "$APP"
+        cd "$APP" || exit 1
         npm run tauri -- build --ci \
             --config '{"build":{"beforeBuildCommand":""}}' "$@" -- --locked --offline
     )
@@ -170,13 +171,11 @@ write_sources() {
 
 # Every artefact at the top of /out, sorted by name.
 write_sums() {
-    (
-        cd "$OUT"
-        rm -f SHA256SUMS
-        find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%P\0' \
-            | sort -z | xargs -0 sha256sum > SHA256SUMS
-        cat SHA256SUMS
-    )
+    local sums
+    sums="$(cd "$OUT" && find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%P\0' \
+        | sort -z | xargs -0 sha256sum)"
+    printf '%s\n' "$sums" > "$OUT/SHA256SUMS"
+    cat "$OUT/SHA256SUMS"
 }
 
 # Leave the output owned by whoever owns the mount, not by root.

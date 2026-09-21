@@ -10,6 +10,7 @@
 # checkout location and the host toolchain have no say in the result. It
 # needs git and docker or podman, nothing else. Read
 # docs/REPRODUCIBLE-BUILDS.md before trusting it.
+# shellcheck source-path=SCRIPTDIR
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

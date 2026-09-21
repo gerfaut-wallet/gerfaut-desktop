@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared by the scripts that run on the host (build.sh, compare.sh,
 # verify.sh): which container engine, and how to hand it a path.
 

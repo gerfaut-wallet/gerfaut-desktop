@@ -8,6 +8,7 @@
 # When the two sets differ, it builds the `tools` stage of the Dockerfile
 # and runs the comparison again with diffoscope; the reports land in a
 # `diffoscope` directory inside the second directory.
+# shellcheck source-path=SCRIPTDIR
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
