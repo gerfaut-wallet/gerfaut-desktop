@@ -278,21 +278,30 @@ fn post(app: &tauri::AppHandle, notice: &Notice) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// What one wallet's news amounts to, as it may be posted now. Nothing
+/// once the alerts are off: a watch being stopped still hands out what
+/// it held, and that is dropped rather than said to someone who just
+/// turned them off. Otherwise the text is read against the vault and
+/// the lock as they are at this moment, within the budgets.
+async fn notices_for(state: &AppState, wallet_id: &str, held: &Held) -> Vec<Notice> {
+    if !enabled(&state.manager).await {
+        return Vec::new();
+    }
+    let context = context(state).await;
+    let notices = notice::compose(wallet_id, held, &context);
+    let mut budgets = state
+        .live
+        .budgets
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    within_budget(&mut budgets, notices, Instant::now())
+}
+
 /// Posts what one wallet's sync amounts to. A notification that cannot
 /// be posted is not a failed sync: it is dropped, quietly.
 async fn announce(app: &tauri::AppHandle, wallet_id: &str, held: &Held) {
     let state = app.state::<AppState>();
-    let context = context(&state).await;
-    let notices = notice::compose(wallet_id, held, &context);
-    let notices = {
-        let mut budgets = state
-            .live
-            .budgets
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        within_budget(&mut budgets, notices, Instant::now())
-    };
-    for notice in &notices {
+    for notice in &notices_for(&state, wallet_id, held).await {
         let _ = post(app, notice);
     }
 }
@@ -345,7 +354,7 @@ async fn claim_and_announce(app: &tauri::AppHandle, report: &SyncReport) -> bool
             return false;
         }
     };
-    if !claimed.is_empty() && enabled(&state.manager).await {
+    if !claimed.is_empty() {
         let held: Held = claimed.into_iter().collect();
         announce(app, &report.wallet_id, &held).await;
     }
@@ -768,6 +777,81 @@ mod tests {
             .block_on(manager.claim_announcements(&forged))
             .unwrap();
         assert!(claimed.is_empty(), "{claimed:?}");
+    }
+
+    /// What is posted is decided when it is posted: nothing with the
+    /// alerts off, even for news a stopped watch still held; the name
+    /// and the amount while unlocked; neither behind the lock.
+    #[test]
+    fn what_is_posted_follows_the_alerts_and_the_lock() {
+        use gerfaut_core::input::ImportOptions;
+        use gerfaut_core::network::Network;
+
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let state = AppState {
+            manager: WalletManager::open(dir.path(), VaultKey::Raw([7u8; 32])).unwrap(),
+            locked: AtomicBool::new(false),
+            live: LiveAlerts::default(),
+        };
+        // The BIP 173 example address: public, and valid on signet.
+        let parsed = gerfaut_core::input::parse_input_with_options(
+            "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
+            &ImportOptions {
+                script: None,
+                derivation: None,
+            },
+        )
+        .unwrap();
+        let wallet = runtime
+            .block_on(
+                state
+                    .manager
+                    .add_wallet("Cold storage", &parsed, Network::Signet),
+            )
+            .unwrap();
+        let held: Held = [tx(&wallet.id, "a", TxStage::Mempool)]
+            .into_iter()
+            .collect();
+        let posted = || runtime.block_on(notices_for(&state, &wallet.id, &held));
+
+        assert_eq!(posted(), vec![]);
+
+        runtime
+            .block_on(
+                state
+                    .manager
+                    .set_app_pref(NOTIFY_PREF.to_owned(), "1".to_owned()),
+            )
+            .unwrap();
+        assert_eq!(
+            posted(),
+            vec![Notice {
+                title: "Cold storage".to_owned(),
+                body: "Received 0.00001000 BTC · pending".to_owned(),
+                kind: NoticeKind::Transaction,
+            }]
+        );
+
+        state.locked.store(true, Ordering::SeqCst);
+        assert_eq!(
+            posted(),
+            vec![Notice {
+                title: "Gerfaut".to_owned(),
+                body: "New transaction · pending".to_owned(),
+                kind: NoticeKind::Transaction,
+            }]
+        );
+
+        state.locked.store(false, Ordering::SeqCst);
+        runtime
+            .block_on(
+                state
+                    .manager
+                    .set_app_pref(NOTIFY_PREF.to_owned(), "0".to_owned()),
+            )
+            .unwrap();
+        assert_eq!(posted(), vec![]);
     }
 
     #[test]
