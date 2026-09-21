@@ -11,8 +11,9 @@
 #   - every apt package by a dated snapshot of the Ubuntu archive, so the
 #     same recipe installs the same versions next year;
 #   - rustup by the hash of its installer, the Rust toolchain by the hash
-#     of its release manifest, which in turn lists the hash of every
-#     component rustup downloads;
+#     of its release manifest, which in turn gives the hash of every
+#     package it is made of; rustup installs those packages from a local
+#     copy checked against it, and downloads nothing itself;
 #   - Node by the hash of its tarball.
 #
 # The image holds the toolchain and nothing else. The recipe that runs in
@@ -69,18 +70,62 @@ RUN for pocket in jammy jammy-updates jammy-security; do \
       build-essential curl file git pkg-config python3 xz-utils \
  && rm -rf /var/lib/apt/lists/*
 
-# rustup, then the toolchain. The manifest is checked first: it is the
-# file rustup reads the component hashes from.
-RUN curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/rustup-init \
+# The Rust toolchain, without letting rustup download it. Left alone,
+# rustup fetches the release manifest again after any check made here,
+# and trusts whatever it gets the second time. So the manifest is
+# fetched once, into /opt/rust-dist, and checked against the hash above.
+# `rust-dist <target> <package>...` then fetches each package from the
+# address that manifest gives and checks it against the hash it gives,
+# and rustup installs from that local copy, through a file:// address.
+# Its proxy points at a closed port, so it could not reach the network
+# if it tried. The manifest stays in the image for the stages that add
+# a target; the packages are deleted once installed.
+RUN printf '%s\n' \
+      '#!/bin/bash' \
+      'set -euo pipefail' \
+      'manifest=(/opt/rust-dist/dist/channel-rust-*.toml)' \
+      '[ "${#manifest[@]}" -eq 1 ] && [ -f "${manifest[0]}" ] || { echo "rust-dist: no checked manifest" >&2; exit 1; }' \
+      'target="$1"' \
+      'shift' \
+      'for package in "$@"; do' \
+      '    url=""; hash=""; inside=0' \
+      '    while read -r key _ value; do' \
+      '        case "$key" in' \
+      '            "[pkg.$package.target.$target]") inside=1 ;;' \
+      '            "["*) inside=0 ;;' \
+      '            xz_url) [ "$inside" -eq 0 ] || url="${value//\"/}" ;;' \
+      '            xz_hash) [ "$inside" -eq 0 ] || hash="${value//\"/}" ;;' \
+      '        esac' \
+      '    done < "${manifest[0]}"' \
+      '    case "$url" in' \
+      '        https://static.rust-lang.org/dist/*) ;;' \
+      '        *) echo "rust-dist: no $package for $target in the manifest" >&2; exit 1 ;;' \
+      '    esac' \
+      '    [ "${#hash}" -eq 64 ] || { echo "rust-dist: no hash for $package" >&2; exit 1; }' \
+      '    file="/opt/rust-dist/dist/${url#https://static.rust-lang.org/dist/}"' \
+      '    mkdir -p "$(dirname "$file")"' \
+      '    curl --proto =https --tlsv1.2 -fsSL -o "$file" "$url"' \
+      '    echo "$hash  $file" | sha256sum -c -' \
+      'done' \
+      > /usr/local/bin/rust-dist \
+ && chmod 0755 /usr/local/bin/rust-dist \
+ && curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/rustup-init \
       "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init" \
  && echo "${RUSTUP_INIT_SHA256}  /tmp/rustup-init" | sha256sum -c - \
- && curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/channel.toml \
+ && mkdir -p /opt/rust-dist/dist \
+ && curl --proto '=https' --tlsv1.2 -fsSL -o "/opt/rust-dist/dist/channel-rust-${RUST_VERSION}.toml" \
       "https://static.rust-lang.org/dist/channel-rust-${RUST_VERSION}.toml" \
- && echo "${RUST_MANIFEST_SHA256}  /tmp/channel.toml" | sha256sum -c - \
+ && echo "${RUST_MANIFEST_SHA256}  /opt/rust-dist/dist/channel-rust-${RUST_VERSION}.toml" | sha256sum -c - \
+ && echo "${RUST_MANIFEST_SHA256}  channel-rust-${RUST_VERSION}.toml" \
+      > "/opt/rust-dist/dist/channel-rust-${RUST_VERSION}.toml.sha256" \
+ && rust-dist x86_64-unknown-linux-gnu rustc rust-std cargo rustfmt-preview clippy-preview \
  && chmod +x /tmp/rustup-init \
- && CARGO_HOME=/opt/cargo /tmp/rustup-init -y --no-modify-path --profile minimal \
+ && CARGO_HOME=/opt/cargo RUSTUP_DIST_SERVER=file:///opt/rust-dist \
+    all_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 http_proxy=http://127.0.0.1:9 \
+    /tmp/rustup-init -y --no-modify-path --profile minimal \
       --default-toolchain "${RUST_VERSION}" --component rustfmt --component clippy \
- && rm /tmp/rustup-init /tmp/channel.toml \
+ && rm /tmp/rustup-init \
+ && find /opt/rust-dist/dist -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + \
  && rustc --version | grep -qF "rustc ${RUST_VERSION} "
 
 RUN curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/node.tar.xz \
@@ -157,10 +202,14 @@ RUN apt-get update \
  && clang-cl --version | grep -qF 'clang version 15.' \
  && dpkg-query -W -f '${Package} ${Version} ${Architecture}\n' | sort > /etc/gerfaut-image-packages
 
-# The standard library for Windows. rustup reads its hash from the
-# release manifest of the toolchain the base stage installed, the same
-# file that lists the compiler itself.
-RUN CARGO_HOME=/opt/cargo rustup target add x86_64-pc-windows-msvc \
+# The standard library for Windows, from the same checked manifest as
+# the compiler and in the same way: fetched and checked by rust-dist,
+# installed by rustup from the local copy.
+RUN rust-dist x86_64-pc-windows-msvc rust-std \
+ && CARGO_HOME=/opt/cargo RUSTUP_DIST_SERVER=file:///opt/rust-dist \
+    all_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 http_proxy=http://127.0.0.1:9 \
+    rustup target add x86_64-pc-windows-msvc \
+ && find /opt/rust-dist/dist -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + \
  && test -d "$(rustc --print target-libdir --target x86_64-pc-windows-msvc)"
 
 RUN curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/xwin.tar.gz \

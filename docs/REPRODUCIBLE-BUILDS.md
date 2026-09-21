@@ -109,7 +109,7 @@ The second one has no network at all (`--network none`). It installs the npm pac
 | Base image | Ubuntu 22.04, by sha256 digest | `reproducible/Dockerfile` |
 | System packages (GTK, WebKitGTK, compilers, dpkg, rpm) | a dated snapshot of the Ubuntu archive, `snapshot.ubuntu.com` | `reproducible/Dockerfile` |
 | rustup | 1.29.1, by sha256 of the installer | `reproducible/Dockerfile` |
-| Rust | 1.97.0, by sha256 of its release manifest, which lists the hash of every component | `rust-toolchain.toml`, `reproducible/Dockerfile` |
+| Rust | 1.97.0, by sha256 of its release manifest. rustup installs each package from a local copy checked against the hash in that manifest, and downloads nothing itself | `rust-toolchain.toml`, `reproducible/Dockerfile` |
 | Node | 24.19.0, by sha256 of the tarball | `reproducible/Dockerfile` |
 | npm packages, Tauri CLI included | resolved versions and their hashes | `package-lock.json` |
 | Rust crates | resolved versions and their hashes, plus a git revision for the one patched crate | `src-tauri/Cargo.lock` |
