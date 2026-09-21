@@ -196,6 +196,8 @@ The release profile is Cargo's default: optimised, 16 codegen units, no LTO, deb
 
 `compare.sh` does not stop at "different". It opens both files and reports where they differ: which member of the `.deb` and which field of which entry, which header tag of the `.rpm`, the runtime or the payload of the AppImage, and for the Windows installer the stub, the script or the packed file, down to the section of the program inside it. If both sides have a `build-info` directory, it also tells you whether the toolchain, the frontend or the binary already differed, or whether the difference comes from packaging alone. Then it builds a second image that has [diffoscope](https://diffoscope.org/) and writes a full report for each file into `diffoscope/`, inside the second directory.
 
+A downloaded file is treated as hostile until its hash matches. The comparison runs in a container with no network, both directories are mounted read-only, and the report directory is the only place it can write to. The verdict rests on the hashes alone. The explanation stops at fixed limits, so a crafted file cannot make it hang or fill the memory, and control characters are escaped before anything is printed.
+
 The usual causes, most likely first:
 
 - The release was not built with this recipe. See "Scope" above.
