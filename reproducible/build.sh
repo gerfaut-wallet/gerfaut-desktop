@@ -5,6 +5,7 @@
 #   reproducible/build.sh linux            build once into reproducible/out/linux
 #   reproducible/build.sh linux --twice    build twice and compare the hashes
 #   reproducible/build.sh windows --accept-microsoft-license
+#   reproducible/build.sh macos --macos-sdk <directory of the Apple SDK tarballs>
 #
 # The script exports both source trees from git, so the working tree, the
 # checkout location and the host toolchain have no say in the result. It
@@ -17,7 +18,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
 
 usage() {
-    sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     cat <<'USAGE'
 
 Options:
@@ -35,6 +36,11 @@ Options:
                   the Microsoft C runtime and Windows SDK, which the build
                   downloads from Microsoft to this machine
                   (https://go.microsoft.com/fwlink/?LinkId=2086102)
+  --macos-sdk DIR  macos only: the directory that holds the Apple SDK
+                  tarballs you made from Xcode, see
+                  docs/REPRODUCIBLE-BUILDS.md; the build refuses a file
+                  whose sha256 is not the one in
+                  reproducible/macos/apple-sdk.sha256
 
 Environment:
   GERFAUT_ENGINE      docker or podman (default: the first one found)
@@ -61,6 +67,7 @@ use_cache=1
 any_core=0
 jobs=""
 microsoft_license=""
+macos_sdk=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -74,6 +81,7 @@ while [ $# -gt 0 ]; do
         --no-cache) use_cache=0; shift ;;
         --any-core) any_core=1; shift ;;
         --accept-microsoft-license) microsoft_license=1; shift ;;
+        --macos-sdk) macos_sdk="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
@@ -104,6 +112,40 @@ else
         echo "gerfaut-core $core_rev is not in $core: fetch it first" >&2
         exit 1
     }
+fi
+
+# The Apple SDK is not free software: it only ever comes from whoever
+# builds, and only the files the commit being built names are accepted.
+# They are mounted read-only into the container that builds, never into
+# the one that has the network.
+sdk_mount=()
+if [ "$target" = macos ]; then
+    [ -n "$macos_sdk" ] || { echo "the macOS build needs the Apple SDK: --macos-sdk DIR" >&2; exit 2; }
+    [ -d "$macos_sdk" ] || { echo "not a directory: $macos_sdk" >&2; exit 2; }
+    macos_sdk="$(cd "$macos_sdk" && pwd)"
+    sdk_files=0
+    while read -r sdk_want sdk_name; do
+        [[ "$sdk_want" =~ ^[0-9a-f]{64}$ ]] && [[ "$sdk_name" =~ ^[A-Za-z0-9._-]+[.]tar$ ]] \
+            || { echo "unexpected line in reproducible/macos/apple-sdk.sha256: $sdk_name" >&2; exit 1; }
+        [ -f "$macos_sdk/$sdk_name" ] || { echo "$sdk_name is not in $macos_sdk" >&2; exit 1; }
+        if command -v sha256sum > /dev/null 2>&1; then
+            sdk_have="$(sha256sum < "$macos_sdk/$sdk_name" | cut -d' ' -f1)"
+        else
+            sdk_have="$(shasum -a 256 < "$macos_sdk/$sdk_name" | cut -d' ' -f1)"
+        fi
+        [ "$sdk_have" = "$sdk_want" ] || {
+            echo "$macos_sdk/$sdk_name is not the file this recipe pins:" >&2
+            echo "  its sha256 is   $sdk_have" >&2
+            echo "  the build wants $sdk_want" >&2
+            exit 1
+        }
+        sdk_mount+=(-v "$(hostpath "$macos_sdk/$sdk_name"):/sdk/$sdk_name:ro")
+        sdk_files=$((sdk_files + 1))
+    done < <(git -C "$repo" show "$commit:reproducible/macos/apple-sdk.sha256" | awk '!/^#/ && $2 ~ /[.]tar$/')
+    [ "$sdk_files" -gt 0 ] || { echo "no SDK named in reproducible/macos/apple-sdk.sha256 at $commit" >&2; exit 1; }
+elif [ -n "$macos_sdk" ]; then
+    echo "--macos-sdk only applies to the macos target" >&2
+    exit 2
 fi
 
 # The commit date of what is being built, not the wall clock.
@@ -171,6 +213,7 @@ run_build() {
         -v "$cache:/cache:ro" \
         -v "$(hostpath "$stage"):/src:ro" \
         -v "$(hostpath "$dest"):/out" \
+        "${sdk_mount[@]}" \
         ${GERFAUT_RUN_ARGS:-} \
         "$image" build "$target"
 }
