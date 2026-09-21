@@ -23,7 +23,7 @@ You need no Rust, no Node and no Python on the host. Everything runs in the cont
 
 The Windows installer needs a little less: 2.4 GB for its image, 2 GB of downloads, and 8 to 10 minutes per build. It also needs you to accept a licence from Microsoft, see "Verify the Windows installer" below.
 
-The macOS application needs 2.7 GB for its image, which downloads 1.9 GB of LLVM once while it is built, then 0.65 GB of downloads and 25 minutes per build, since the application is compiled twice. It also needs the Apple SDK, which you make yourself from Xcode, see "Verify the macOS application" below.
+The macOS application needs 2.7 GB for its image, which downloads 1.9 GB of LLVM once while it is built, then 0.65 GB of downloads and about 20 minutes per build, since the application is compiled twice. It also needs the Apple SDK, which you make yourself from Xcode, see "Verify the macOS application" below.
 
 ## Verify a published release
 
