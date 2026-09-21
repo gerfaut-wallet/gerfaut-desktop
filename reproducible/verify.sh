@@ -4,6 +4,7 @@
 #
 #   reproducible/verify.sh v<version>
 #   reproducible/verify.sh v<version> --target windows --accept-microsoft-license
+#   reproducible/verify.sh v<version> --target macos --macos-sdk <Apple SDK directory>
 #
 # It clones both repositories at the tag into a fresh directory, builds
 # with the recipe of that tag, downloads the published files and prints a
@@ -12,7 +13,7 @@
 set -euo pipefail
 
 usage() {
-    sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     cat <<'USAGE'
 
 Options:
@@ -27,6 +28,8 @@ Options:
                       of the Microsoft C runtime and Windows SDK, which the
                       build downloads from Microsoft to this machine
                       (https://go.microsoft.com/fwlink/?LinkId=2086102)
+  --macos-sdk DIR     macos only: the directory of the Apple SDK tarballs
+                      you made from Xcode, see docs/REPRODUCIBLE-BUILDS.md
 USAGE
 }
 
@@ -39,6 +42,7 @@ core_url=https://github.com/gerfaut-wallet/gerfaut-core
 release_url=https://github.com/gerfaut-wallet/gerfaut-desktop/releases/download
 jobs=()
 license=()
+sdk=()
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -49,6 +53,9 @@ while [ $# -gt 0 ]; do
         --core-url) core_url="$2"; shift 2 ;;
         --jobs) jobs=(--jobs "$2"); shift 2 ;;
         --accept-microsoft-license) license=(--accept-microsoft-license); shift ;;
+        --macos-sdk)
+            [ -d "$2" ] || { echo "not a directory: $2" >&2; exit 2; }
+            sdk=(--macos-sdk "$(cd "$2" && pwd)"); shift 2 ;;
         -h|--help) usage; exit 0 ;;
         -*) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
         *) [ -z "$tag" ] || { usage >&2; exit 2; }; tag="$1"; shift ;;
@@ -71,7 +78,7 @@ git clone --quiet "$core_url" "$work/gerfaut-core"
 git -C "$work/gerfaut-core" -c advice.detachedHead=false checkout --quiet "$core_rev"
 
 "$work/gerfaut-desktop/reproducible/build.sh" "$target" \
-    --core "$work/gerfaut-core" --out "$work/rebuilt" "${jobs[@]}" "${license[@]}"
+    --core "$work/gerfaut-core" --out "$work/rebuilt" "${jobs[@]}" "${license[@]}" "${sdk[@]}"
 
 if [ -z "$published" ]; then
     published="$work/published"
