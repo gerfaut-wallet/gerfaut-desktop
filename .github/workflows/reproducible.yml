@@ -1,25 +1,41 @@
-# Proof that the Linux packages and the Windows installer are
-# reproducible: the same commit is built twice, in two separate
-# containers of the same pinned image, and the job fails if a single
-# byte of the .deb, the .rpm, the .AppImage or the setup .exe differs.
-# When it does fail, the diffoscope reports are attached to the run. The
-# Windows installer is then installed, started and removed on a Windows
-# runner. See docs/REPRODUCIBLE-BUILDS.md.
+# Proof that the Linux packages, the Windows installer and the macOS
+# application are reproducible: the same commit is built twice, in two
+# separate containers of the same pinned image, and the job fails if a
+# single byte of the .deb, the .rpm, the .AppImage, the setup .exe or
+# the macOS zip differs. When it does fail, the diffoscope reports are
+# attached to the run. The Windows installer is then installed, started
+# and removed on a Windows runner, and the macOS application checked and
+# started on an Apple silicon and an Intel Mac. See
+# docs/REPRODUCIBLE-BUILDS.md.
 #
 # Started by hand: Actions, Reproducible build, Run workflow. It builds
 # the application twice from nothing, so it is not something to run on
-# every push.
+# every push. `target` picks one platform: a macOS runner costs ten
+# times a Linux one, and the other targets need none.
 
 name: Reproducible build
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: What to build twice and test
+        type: choice
+        options: [all, linux, windows, macos]
+        default: all
+      macos-reference:
+        description: >-
+          macOS: also build the app on a Mac with Tauri's own bundler and
+          compare the two bundles (half an hour of a macOS runner)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   linux:
+    if: inputs.target == 'all' || inputs.target == 'linux'
     permissions:
       contents: read
     # Named, never `-latest`, like the release workflow. The runner only
@@ -71,6 +87,7 @@ jobs:
   # the runner. They are never uploaded: the artefact holds the
   # installer and the build log, nothing else.
   windows:
+    if: inputs.target == 'all' || inputs.target == 'windows'
     permissions:
       contents: read
     runs-on: ubuntu-24.04
@@ -194,3 +211,320 @@ jobs:
           $still = $left | Where-Object { Test-Path $_ }
           if ($still) { throw "left behind: $($still -join ', ')" }
           'nothing left behind'
+
+  # --- macOS ---------------------------------------------------------------
+  #
+  # The macOS build needs the Apple SDK, which is not free software: it is
+  # never committed, never put in an image, never uploaded as an artifact.
+  # A macOS runner, which ships Xcode, makes its two tarballs with the
+  # committed scripts and checks them against the committed hashes. They
+  # reach the Linux job through the Actions cache of this repository,
+  # keyed by those hashes: a cache can only be read from inside a
+  # workflow run. A Linux runner looks the cache up first, so the macOS
+  # runner only starts when the SDK is not there yet.
+  apple-sdk-lookup:
+    if: inputs.target == 'all' || inputs.target == 'macos'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      key: ${{ steps.sdk.outputs.key }}
+      found: ${{ steps.lookup.outputs.cache-hit }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          sparse-checkout: reproducible/macos
+
+      - name: Read the pinned SDK
+        id: sdk
+        run: |
+          set -euo pipefail
+          hash="$(awk '!/^#/ && $2 ~ /[.]tar$/' reproducible/macos/apple-sdk.sha256 | sha256sum | cut -c1-32)"
+          echo "key=apple-sdk-$hash" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        id: lookup
+        with:
+          path: apple-sdk
+          key: ${{ steps.sdk.outputs.key }}
+          lookup-only: true
+
+  apple-sdk:
+    needs: apple-sdk-lookup
+    if: needs.apple-sdk-lookup.outputs.found != 'true'
+    permissions:
+      contents: read
+    # The image that ships Xcode 26.1.1, the version the hash is for.
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          sparse-checkout: reproducible/macos
+
+      - name: Make the SDK from the runner's Xcode
+        run: |
+          set -euo pipefail
+          xcode=/Applications/Xcode_26.1.1.app
+          version="$(plutil -extract CFBundleShortVersionString raw "$xcode/Contents/version.plist")"
+          build="$(plutil -extract ProductBuildVersion raw "$xcode/Contents/version.plist")"
+          echo "Xcode $version ($build), $(python3 --version)"
+          [ "$version ($build)" = "26.1.1 (17B100)" ]
+          mkdir apple-sdk
+          python3 reproducible/macos/gen-sdk.py "$xcode" \
+            -o apple-sdk/Xcode-26.1.1-17B100-extracted-SDK-with-libcxx-headers.tar > /dev/null
+          python3 reproducible/macos/gen-sdk-cryptexes.py "$xcode" \
+            -o apple-sdk/Xcode-26.1.1-17B100-extracted-SDK-cryptexes.tar
+          cd apple-sdk
+          awk '!/^#/ && $2 ~ /[.]tar$/' ../reproducible/macos/apple-sdk.sha256 | shasum -a 256 -c -
+
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: apple-sdk
+          key: ${{ needs.apple-sdk-lookup.outputs.key }}
+
+  macos:
+    needs: [apple-sdk-lookup, apple-sdk]
+    if: >-
+      !cancelled() && needs.apple-sdk-lookup.result == 'success'
+      && (needs.apple-sdk.result == 'success' || needs.apple-sdk.result == 'skipped')
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: gerfaut-desktop
+          persist-credentials: false
+
+      - name: Read the pinned gerfaut-core revision
+        id: core
+        run: echo "rev=$(cat gerfaut-desktop/.github/gerfaut-core.rev)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: gerfaut-wallet/gerfaut-core
+          ref: ${{ steps.core.outputs.rev }}
+          ssh-key: ${{ secrets.CORE_DEPLOY_KEY }}
+          path: gerfaut-core
+          persist-credentials: false
+
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: apple-sdk
+          key: ${{ needs.apple-sdk-lookup.outputs.key }}
+          fail-on-cache-miss: true
+
+      # build.sh checks the SDK against the hashes again and mounts it
+      # read-only into the build container, which has no network.
+      - name: Build twice and compare
+        run: >
+          gerfaut-desktop/reproducible/build.sh macos --twice
+          --macos-sdk apple-sdk --out "$PWD/out"
+
+      - name: Remove the SDK
+        if: always()
+        run: rm -rf apple-sdk
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: reproducible-macos
+          if-no-files-found: warn
+          path: |
+            out/build-1/SHA256SUMS
+            out/build-1/*.zip
+            out/build-1/build-info/
+            out/build-2/SHA256SUMS
+            out/build-2/diffoscope/
+
+  # The application built on Linux, on a Mac of each kind: unpacked as
+  # Finder does, its signature checked, started, and assessed the way
+  # Gatekeeper assesses a downloaded copy. It compiles nothing.
+  macos-smoke:
+    needs: macos
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: reproducible-macos
+          path: artefact
+
+      - name: Check that the file is the one the Linux job built
+        run: |
+          set -euo pipefail
+          sw_vers
+          echo "processor: $(uname -m)"
+          zip="$(ls artefact/build-1/*_universal.zip)"
+          want="$(awk -v n="$(basename "$zip")" '$2 == n { print $1 }' artefact/build-1/SHA256SUMS)"
+          have="$(shasum -a 256 "$zip" | cut -d' ' -f1)"
+          echo "$have  $(basename "$zip")"
+          [ "$have" = "$want" ]
+          echo "ZIP=$PWD/$zip" >> "$GITHUB_ENV"
+
+      # Archive Utility, which Finder opens a zip with, unpacks the way
+      # ditto does.
+      - name: Unpack as Finder does
+        run: |
+          set -euo pipefail
+          ditto -x -k "$ZIP" unpacked
+          find unpacked -print0 | xargs -0 stat -f '%Sp %z %N'
+          echo "APP=$PWD/unpacked/Gerfaut.app" >> "$GITHUB_ENV"
+
+      - name: Check the signature
+        run: |
+          set -euo pipefail
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dv --verbose=4 "$APP" > signature.txt 2>&1
+          cat signature.txt
+          grep -q '^Identifier=com.gerfautwallet.gerfaut$' signature.txt
+          grep -q '^Signature=adhoc$' signature.txt
+          grep -Eq 'flags=0x10002\(adhoc,runtime\)' signature.txt
+          grep -q '^Sealed Resources version=2 ' signature.txt
+          archs="$(lipo -archs "$APP/Contents/MacOS/gerfaut-desktop")"
+          echo "lipo -archs: $archs"
+          [ "$archs" = "x86_64 arm64" ]
+
+      # No quarantine attribute here, so Gatekeeper stays out of it. The
+      # runner's login keychain is unlocked, and the application creates
+      # its vault in the runner's home.
+      - name: Start the application
+        run: |
+          set -euo pipefail
+          open -n --stdout "$PWD/app.log" --stderr "$PWD/app.log" "$APP"
+          sleep 10
+          pid="$(pgrep -x gerfaut-desktop)" || { cat app.log; echo "the application is not running after 10 seconds"; exit 1; }
+          ps -o pid=,etime=,command= -p "$pid"
+          echo "web content processes: $(pgrep -f com.apple.WebKit.WebContent | wc -l | tr -d ' ')"
+          kill "$pid"
+          cat app.log
+
+      # A copy marked as downloaded by Safari: Gatekeeper must refuse it
+      # for the ordinary reason, no notarisation, and never call it
+      # damaged or broken.
+      - name: Assess a downloaded copy
+        run: |
+          set -euo pipefail
+          ditto "$APP" quarantined/Gerfaut.app
+          xattr -w com.apple.quarantine "0083;$(printf %x "$(date +%s)");Safari;" quarantined/Gerfaut.app
+          status=0
+          spctl --assess --type execute -vvv quarantined/Gerfaut.app > spctl.txt 2>&1 || status=$?
+          cat spctl.txt
+          echo "spctl exit status: $status"
+          syspolicy_check distribution quarantined/Gerfaut.app 2>&1 || true
+          [ "$status" -ne 0 ] || { echo "Gatekeeper accepted an application that is not notarised"; exit 1; }
+          grep -q 'rejected' spctl.txt
+          if grep -Eiq 'no resources|damaged|invalid|modified|not signed' spctl.txt; then
+            echo "Gatekeeper sees a broken signature"
+            exit 1
+          fi
+
+  # Tauri's own bundle of the same commit, built on a Mac, next to the
+  # one the recipe lays out on Linux. Only text leaves the runner: the
+  # two Info.plist files, the two listings, the libraries each slice
+  # loads and what it targets. Run it when Tauri is upgraded.
+  macos-reference:
+    needs: macos
+    if: inputs.macos-reference
+    permissions:
+      contents: read
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: gerfaut-desktop
+          persist-credentials: false
+
+      - name: Read the pinned gerfaut-core revision
+        id: core
+        run: echo "rev=$(cat gerfaut-desktop/.github/gerfaut-core.rev)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: gerfaut-wallet/gerfaut-core
+          ref: ${{ steps.core.outputs.rev }}
+          ssh-key: ${{ secrets.CORE_DEPLOY_KEY }}
+          path: gerfaut-core
+          persist-credentials: false
+
+      - name: Install the pinned Rust toolchain
+        working-directory: gerfaut-desktop
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          rustc --version
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.19.0
+
+      - name: Build with Tauri's bundler
+        working-directory: gerfaut-desktop
+        run: |
+          npm ci
+          npm run tauri -- build --ci --target universal-apple-darwin --bundles app -- --locked
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: reproducible-macos
+          path: artefact
+
+      - name: Compare the two bundles
+        run: |
+          set -euo pipefail
+          native=gerfaut-desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/Gerfaut.app
+          ditto -x -k artefact/build-1/*_universal.zip cross
+          cross=cross/Gerfaut.app
+          mkdir reference
+          listing() { (cd "$1" && find . -print0 | LC_ALL=C sort -z | xargs -0 stat -f '%Sp %N'); }
+          failed=""
+          cp "$native/Contents/Info.plist" reference/native-Info.plist
+          cp "$cross/Contents/Info.plist" reference/cross-Info.plist
+          cmp reference/native-Info.plist reference/cross-Info.plist || failed="$failed Info.plist"
+          cmp "$native/Contents/Resources/icon.icns" "$cross/Contents/Resources/icon.icns" || failed="$failed icon"
+          listing "$native" > reference/native-listing.txt
+          listing "$cross" > reference/cross-listing.txt
+          # The one difference by design: Tauri signs nothing without an
+          # identity, the recipe signs ad hoc.
+          grep -v '/_CodeSignature' reference/cross-listing.txt > cross-unsigned.txt
+          cmp reference/native-listing.txt cross-unsigned.txt || failed="$failed listing"
+          grep -qx 'drwxr-xr-x ./Contents/_CodeSignature' reference/cross-listing.txt || failed="$failed signature"
+          grep -qx -- '-rw-r--r-- ./Contents/_CodeSignature/CodeResources' reference/cross-listing.txt || failed="$failed signature"
+          for arch in arm64 x86_64; do
+            for side in native cross; do
+              if [ "$side" = native ]; then app="$native"; else app="$cross"; fi
+              binary="$app/Contents/MacOS/gerfaut-desktop"
+              otool -arch "$arch" -L "$binary" | tail -n +2 > "reference/$side-$arch-libraries.txt"
+              otool -arch "$arch" -l "$binary" | grep -A5 -E 'LC_BUILD_VERSION|LC_VERSION_MIN_MACOSX' \
+                | grep -E '^ *(cmd|minos|version|sdk) ' > "reference/$side-$arch-build-version.txt"
+            done
+            cmp "reference/native-$arch-libraries.txt" "reference/cross-$arch-libraries.txt" || failed="$failed $arch-libraries"
+            cmp "reference/native-$arch-build-version.txt" "reference/cross-$arch-build-version.txt" || failed="$failed $arch-build-version"
+          done
+          # What Tauri's bundler writes when told to sign ad hoc, beside
+          # what rcodesign wrote.
+          codesign --force --sign - --options runtime "$native"
+          codesign -dv --verbose=4 "$native" > reference/native-adhoc-signature.txt 2>&1
+          codesign -dv --verbose=4 "$cross" > reference/cross-signature.txt 2>&1
+          for file in reference/*; do echo "== $file"; cat "$file"; echo; done
+          [ -z "$failed" ] || { echo "the bundles differ:$failed"; exit 1; }
+          echo "same Info.plist, icon, layout, libraries and targets"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: macos-reference
+          if-no-files-found: warn
+          path: reference/
