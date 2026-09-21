@@ -16,8 +16,10 @@ Two uses:
 On a mismatch the tool opens the two files and reports what differs:
 which member of a .deb, which header tag of an .rpm, the runtime or the
 payload of an AppImage, the stub, the header or the packed file of a
-Windows installer, and the build stage the difference comes from
-when both sides carry a build-info directory. With --diffoscope DIR it
+Windows installer, the entry of a macOS zip and, for the application
+inside it, the slice, load command, section or signed page, and the
+build stage the difference comes from when both sides carry a
+build-info directory. With --diffoscope DIR it
 also writes a full diffoscope report per file, when diffoscope is
 installed (the `tools` stage of reproducible/Dockerfile has it).
 
@@ -32,6 +34,7 @@ memory or write to the terminal.
 from __future__ import annotations
 
 import argparse
+import difflib
 import hashlib
 import io
 import lzma
@@ -41,6 +44,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import zipfile
 import zlib
 from pathlib import Path
 
@@ -56,6 +60,12 @@ MAX_UNPACKED = 512 << 20
 MAX_PE_SECTIONS = 96
 # An rpm header has a few dozen tags.
 MAX_RPM_TAGS = 1 << 16
+# Entries of a zip, slices of a universal binary, load commands of a
+# slice, blobs of a code signature: far above what a Gerfaut app holds.
+MAX_ZIP_ENTRIES = 4096
+MAX_SLICES = 8
+MAX_LOAD_COMMANDS = 1024
+MAX_BLOBS = 64
 # Explanation lines printed per file.
 MAX_LINES = 60
 # Seconds an external tool may run on one file.
@@ -65,7 +75,8 @@ CHUNK = 1 << 20
 # What a hostile file cannot make this tool survive, for any reason.
 BROKEN_FILE = (
     ValueError, IndexError, EOFError, OSError, struct.error, tarfile.TarError,
-    zlib.error, lzma.LZMAError, subprocess.SubprocessError,
+    zlib.error, lzma.LZMAError, subprocess.SubprocessError, zipfile.BadZipFile,
+    NotImplementedError,
 )
 
 
@@ -482,6 +493,233 @@ def explain_nsis(a: bytes, b: bytes) -> list[str]:
     return lines
 
 
+# --- macOS: the zip, the bundle and the Mach-O slices ---------------------
+
+
+def zip_entries(data: bytes) -> list[tuple]:
+    """Every entry with the fields zip stores for it, and its content."""
+    found, total = [], 0
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        infos = archive.infolist()
+        if len(infos) > MAX_ZIP_ENTRIES:
+            raise ValueError(f"{len(infos)} entries in the zip")
+        for info in infos:
+            total += info.file_size
+            if total > MAX_UNPACKED:
+                raise ValueError(f"the zip unpacks to more than {MAX_UNPACKED} bytes")
+            # zipfile stops at the declared size and checks the CRC.
+            content = b"" if info.is_dir() else archive.read(info)
+            found.append((
+                info.filename, info.date_time, oct(info.external_attr >> 16), info.create_system,
+                info.create_version, info.extract_version, info.flag_bits, info.compress_type,
+                info.internal_attr, info.extra.hex(), info.comment.hex(), content,
+            ))
+    return found
+
+
+ZIP_FIELDS = ("name", "date", "mode", "system", "made by", "needs", "flags", "method",
+              "text flag", "extra field", "comment")
+
+
+def explain_text(name: str, a: bytes, b: bytes) -> list[str]:
+    lines_a = a.decode("utf-8", "replace").expandtabs(4).splitlines()
+    lines_b = b.decode("utf-8", "replace").expandtabs(4).splitlines()
+    diff = list(difflib.unified_diff(lines_a, lines_b, "first", "second", lineterm="", n=1))
+    if not diff:
+        return [f"{name}: same lines, different line endings or last byte"]
+    return [f"{name} differs:"] + ["    " + line for line in diff[2:]]
+
+
+LOAD_COMMANDS = {
+    0x2: "LC_SYMTAB", 0xB: "LC_DYSYMTAB", 0xC: "LC_LOAD_DYLIB", 0xE: "LC_LOAD_DYLINKER",
+    0x19: "LC_SEGMENT_64", 0x1B: "LC_UUID", 0x1D: "LC_CODE_SIGNATURE", 0x26: "LC_FUNCTION_STARTS",
+    0x29: "LC_DATA_IN_CODE", 0x2A: "LC_SOURCE_VERSION", 0x32: "LC_BUILD_VERSION",
+    0x80000018: "LC_LOAD_WEAK_DYLIB", 0x8000001C: "LC_RPATH", 0x80000022: "LC_DYLD_INFO_ONLY",
+    0x80000028: "LC_MAIN", 0x80000033: "LC_DYLD_EXPORTS_TRIE", 0x80000034: "LC_DYLD_CHAINED_FIXUPS",
+}
+CPU_TYPES = {0x01000007: "x86_64", 0x0100000C: "arm64"}
+# The hashes a code directory keeps before the pages, by negative slot.
+SPECIAL_SLOTS = {1: "Info.plist", 2: "requirements", 3: "CodeResources", 4: "application data",
+                 5: "entitlements", 7: "DER entitlements"}
+MACHO_64 = b"\xcf\xfa\xed\xfe"
+UNIVERSAL = b"\xca\xfe\xba\xbe"
+
+
+def fat_slices(data: bytes) -> dict[str, bytes]:
+    """The slices of a universal binary by processor, or the one of a thin file."""
+    if data[:4] == MACHO_64:
+        cpu = struct.unpack_from("<I", data, 4)[0]
+        return {CPU_TYPES.get(cpu, hex(cpu)): data}
+    if data[:4] != UNIVERSAL:
+        raise ValueError("neither a Mach-O file nor a universal binary")
+    count = struct.unpack_from(">I", data, 4)[0]
+    if count > MAX_SLICES:
+        raise ValueError(f"{count} slices")
+    slices = {}
+    for i in range(count):
+        cpu, _, offset, size, _ = struct.unpack_from(">IIIII", data, 8 + 20 * i)
+        if offset + size > len(data):
+            raise ValueError("a slice runs past the end of the file")
+        slices[CPU_TYPES.get(cpu, hex(cpu))] = data[offset:offset + size]
+    return slices
+
+
+def macho_commands(data: bytes) -> list[tuple[int, bytes]]:
+    if data[:4] != MACHO_64:
+        raise ValueError("not a 64-bit Mach-O slice")
+    ncmds, sizeofcmds = struct.unpack_from("<II", data, 16)
+    if ncmds > MAX_LOAD_COMMANDS or 32 + sizeofcmds > len(data):
+        raise ValueError("the load commands run past the end of the slice")
+    commands, at = [], 32
+    for _ in range(ncmds):
+        cmd, size = struct.unpack_from("<II", data, at)
+        if size < 8 or at + size > 32 + sizeofcmds:
+            raise ValueError("a load command runs past the others")
+        commands.append((cmd, data[at:at + size]))
+        at += size
+    return commands
+
+
+def macho_parts(commands: list[tuple[int, bytes]]) -> list[tuple[str, int, int]]:
+    """(name, file offset, size) of each section a slice holds on disk, or
+    of the whole segment when it has none, as __LINKEDIT."""
+    found = []
+    for cmd, body in commands:
+        if cmd != 0x19:
+            continue
+        segment = body[8:24].rstrip(b"\0").decode("ascii", "replace")
+        fileoff, filesize = struct.unpack_from("<QQ", body, 40)
+        nsects = struct.unpack_from("<I", body, 64)[0]
+        sections = []
+        for i in range(nsects):
+            entry = 72 + 80 * i
+            name = body[entry:entry + 16].rstrip(b"\0").decode("ascii", "replace")
+            size = struct.unpack_from("<Q", body, entry + 40)[0]
+            offset = struct.unpack_from("<I", body, entry + 48)[0]
+            if offset and size:
+                sections.append((f"{segment},{name}", offset, size))
+        found.extend(sections or ([(segment, fileoff, filesize)] if filesize else []))
+    return found
+
+
+def signature_blobs(data: bytes, commands: list[tuple[int, bytes]]) -> dict[int, bytes]:
+    for cmd, body in commands:
+        if cmd != 0x1D:
+            continue
+        dataoff, datasize = struct.unpack_from("<II", body, 8)
+        blob = data[dataoff:dataoff + datasize]
+        magic, _, count = struct.unpack_from(">III", blob, 0)
+        if magic != 0xFADE0CC0 or count > MAX_BLOBS:
+            raise ValueError("the code signature is not a superblob")
+        blobs = {}
+        for i in range(count):
+            kind, offset = struct.unpack_from(">II", blob, 12 + 8 * i)
+            length = struct.unpack_from(">I", blob, offset + 4)[0]
+            blobs[kind] = blob[offset:offset + length]
+        return blobs
+    return {}
+
+
+def code_directory(blob: bytes) -> dict:
+    (_, _, version, flags, hash_offset, ident_offset, special, slots, limit, hash_size,
+     hash_type) = struct.unpack_from(">IIIIIIIIIBB", blob, 0)
+    ident = blob[ident_offset:blob.index(b"\0", ident_offset)].decode("utf-8", "replace")
+    hashes = {i: blob[hash_offset + i * hash_size:hash_offset + (i + 1) * hash_size]
+              for i in range(-special, slots)}
+    return {"version": hex(version), "flags": hex(flags), "identifier": ident, "code limit": limit,
+            "hash type": hash_type, "page size": 1 << blob[39], "hashes": hashes}
+
+
+def explain_signature(a: bytes, b: bytes, ca: list, cb: list, where: str) -> list[str]:
+    blobs_a, blobs_b = signature_blobs(a, ca), signature_blobs(b, cb)
+    if sorted(blobs_a) != sorted(blobs_b):
+        return [f"{where}: the signatures hold different blobs: {sorted(blobs_a)} and {sorted(blobs_b)}"]
+    lines = []
+    for kind in sorted(blobs_a):
+        if blobs_a[kind] == blobs_b[kind]:
+            continue
+        # 0: the code directory, 0x1000: an alternate one.
+        if kind not in (0, 0x1000):
+            lines.append(f"{where}: signature blob {kind:#x} differs")
+            continue
+        dir_a, dir_b = code_directory(blobs_a[kind]), code_directory(blobs_b[kind])
+        for key in ("version", "flags", "identifier", "code limit", "hash type", "page size"):
+            if dir_a[key] != dir_b[key]:
+                lines.append(f"{where}: code directory {key}: {dir_a[key]} and {dir_b[key]}")
+        for slot in sorted(set(dir_a["hashes"]) | set(dir_b["hashes"])):
+            if dir_a["hashes"].get(slot) == dir_b["hashes"].get(slot):
+                continue
+            if slot < 0:
+                lines.append(f"{where}: the sealed {SPECIAL_SLOTS.get(-slot, str(-slot))} differs")
+            else:
+                size = dir_a["page size"]
+                lines.append(f"{where}: signed pages differ from page {slot}, offset {slot * size:#x}")
+                break
+    return lines
+
+
+def explain_macho(a: bytes, b: bytes, what: str) -> list[str]:
+    slices_a, slices_b = fat_slices(a), fat_slices(b)
+    if list(slices_a) != list(slices_b):
+        return [f"{what}: slices differ: {list(slices_a)} and {list(slices_b)}"]
+    lines = []
+    for arch, slice_a in slices_a.items():
+        slice_b = slices_b[arch]
+        if slice_a == slice_b:
+            continue
+        where = f"{what} ({arch})"
+        ca, cb = macho_commands(slice_a), macho_commands(slice_b)
+        if [c for c, _ in ca] != [c for c, _ in cb]:
+            lines.append(f"{where}: the load commands differ in kind or order")
+            continue
+        found = []
+        for (cmd, body_a), (_, body_b) in zip(ca, cb):
+            if body_a != body_b:
+                name = LOAD_COMMANDS.get(cmd, hex(cmd))
+                if cmd == 0x19:
+                    name += " " + body_a[8:24].rstrip(b"\0").decode("ascii", "replace")
+                found.append(f"{where}: load command {name} differs")
+        for (name, off_a, size_a), (_, off_b, size_b) in zip(macho_parts(ca), macho_parts(cb)):
+            part_a, part_b = slice_a[off_a:off_a + size_a], slice_b[off_b:off_b + size_b]
+            if part_a != part_b:
+                found.extend(explain_bytes(part_a, part_b, f"{where}: {name}"))
+        found.extend(explain_signature(slice_a, slice_b, ca, cb, where))
+        lines.extend(found or explain_bytes(slice_a, slice_b, where))
+    return lines
+
+
+def explain_macos(a: bytes, b: bytes) -> list[str]:
+    ea, eb = zip_entries(a), zip_entries(b)
+    lines = []
+    names_a, names_b = [e[0] for e in ea], [e[0] for e in eb]
+    if names_a != names_b:
+        if sorted(names_a) == sorted(names_b):
+            lines.append("zip: same entries in a different order")
+        for only in sorted(set(names_a) - set(names_b)):
+            lines.append(f"zip: {only} only in the first")
+        for only in sorted(set(names_b) - set(names_a)):
+            lines.append(f"zip: {only} only in the second")
+    by_b = {e[0]: e for e in eb}
+    for entry in ea:
+        other = by_b.get(entry[0])
+        if other is None:
+            continue
+        fields = [f"{ZIP_FIELDS[i]} {entry[i]} -> {other[i]}"
+                  for i in range(1, len(ZIP_FIELDS)) if entry[i] != other[i]]
+        if fields:
+            lines.append(f"zip: {entry[0]}: " + ", ".join(fields))
+        content_a, content_b = entry[-1], other[-1]
+        if content_a == content_b:
+            continue
+        if entry[0].endswith(("Info.plist", "CodeResources")):
+            lines.extend(explain_text(entry[0], content_a, content_b))
+        elif content_a[:4] in (MACHO_64, UNIVERSAL):
+            lines.extend(explain_macho(content_a, content_b, entry[0]))
+        else:
+            lines.extend(explain_bytes(content_a, content_b, entry[0]))
+    return lines or ["zip: same entries, fields and contents: the compression or the zip headers differ"]
+
+
 # --- driver --------------------------------------------------------------
 
 
@@ -499,6 +737,8 @@ def explain(path_a: Path, path_b: Path) -> list[str]:
             return explain_appimage(a, b, path_a, path_b)
         if path_a.suffix == ".exe":
             return explain_nsis(a, b)
+        if path_a.suffix == ".zip":
+            return explain_macos(a, b)
     except BROKEN_FILE as error:
         return [f"could not open the file as a {path_a.suffix} ({error})"] + explain_bytes(a, b, path_a.name)
     return explain_bytes(a, b, path_a.name)
