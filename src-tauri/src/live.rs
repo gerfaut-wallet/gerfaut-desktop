@@ -407,8 +407,11 @@ struct FailureSignal {
 /// core follows the backend, the network, Tor and the wallet list.
 pub(crate) async fn apply(app: &tauri::AppHandle) {
     let state = app.state::<AppState>();
-    let wanted = enabled(&state.manager).await;
+    // The preference is read under the lock: two calls that race, the
+    // one at launch and a switch turned off, would otherwise leave the
+    // watch running on the older reading.
     let mut task = state.live.task.lock().await;
+    let wanted = enabled(&state.manager).await;
     match (wanted, task.is_some()) {
         (true, false) => {
             if let Ok(events) = state.manager.live_start().await {
