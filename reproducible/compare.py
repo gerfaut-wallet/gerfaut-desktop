@@ -61,11 +61,15 @@ MAX_PE_SECTIONS = 96
 # An rpm header has a few dozen tags.
 MAX_RPM_TAGS = 1 << 16
 # Entries of a zip, slices of a universal binary, load commands of a
-# slice, blobs of a code signature: far above what a Gerfaut app holds.
+# slice, blobs of a code signature, special slots of a code directory:
+# far above what a Gerfaut app holds.
 MAX_ZIP_ENTRIES = 4096
 MAX_SLICES = 8
 MAX_LOAD_COMMANDS = 1024
 MAX_BLOBS = 64
+MAX_SPECIAL_SLOTS = 16
+# A text file larger than this is compared as bytes, not line by line.
+MAX_TEXT = 1 << 20
 # Explanation lines printed per file.
 MAX_LINES = 60
 # Seconds an external tool may run on one file.
@@ -76,7 +80,7 @@ CHUNK = 1 << 20
 BROKEN_FILE = (
     ValueError, IndexError, EOFError, OSError, struct.error, tarfile.TarError,
     zlib.error, lzma.LZMAError, subprocess.SubprocessError, zipfile.BadZipFile,
-    NotImplementedError,
+    NotImplementedError, RuntimeError,
 )
 
 
@@ -498,17 +502,29 @@ def explain_nsis(a: bytes, b: bytes) -> list[str]:
 
 def zip_entries(data: bytes) -> list[tuple]:
     """Every entry with the fields zip stores for it, and its content."""
-    found, total = [], 0
+    found, left = [], MAX_UNPACKED
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         infos = archive.infolist()
         if len(infos) > MAX_ZIP_ENTRIES:
             raise ValueError(f"{len(infos)} entries in the zip")
         for info in infos:
-            total += info.file_size
-            if total > MAX_UNPACKED:
-                raise ValueError(f"the zip unpacks to more than {MAX_UNPACKED} bytes")
-            # zipfile stops at the declared size and checks the CRC.
-            content = b"" if info.is_dir() else archive.read(info)
+            # zip writes stored or deflated entries and nothing else. Other
+            # methods would decompress a whole entry at once, whatever its
+            # declared size, and an encrypted entry cannot be read at all.
+            if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED) or info.flag_bits & 1:
+                raise ValueError(f"{info.filename!r} is encrypted or compressed with method {info.compress_type}")
+            content = b""
+            if not info.is_dir():
+                # Read in chunks, whatever the entry declares, and stop at
+                # the limit. zipfile checks the CRC at the end.
+                parts = []
+                with archive.open(info) as entry:
+                    for block in iter(lambda: entry.read(CHUNK), b""):
+                        left -= len(block)
+                        if left < 0:
+                            raise ValueError(f"the zip unpacks to more than {MAX_UNPACKED} bytes")
+                        parts.append(block)
+                content = b"".join(parts)
             found.append((
                 info.filename, info.date_time, oct(info.external_attr >> 16), info.create_system,
                 info.create_version, info.extract_version, info.flag_bits, info.compress_type,
@@ -522,6 +538,8 @@ ZIP_FIELDS = ("name", "date", "mode", "system", "made by", "needs", "flags", "me
 
 
 def explain_text(name: str, a: bytes, b: bytes) -> list[str]:
+    if max(len(a), len(b)) > MAX_TEXT:
+        return explain_bytes(a, b, name)
     lines_a = a.decode("utf-8", "replace").expandtabs(4).splitlines()
     lines_b = b.decode("utf-8", "replace").expandtabs(4).splitlines()
     diff = list(difflib.unified_diff(lines_a, lines_b, "first", "second", lineterm="", n=1))
@@ -545,12 +563,14 @@ MACHO_64 = b"\xcf\xfa\xed\xfe"
 UNIVERSAL = b"\xca\xfe\xba\xbe"
 
 
-def fat_slices(data: bytes) -> dict[str, bytes]:
-    """The slices of a universal binary by processor, or the one of a thin file."""
-    if data[:4] == MACHO_64:
+def fat_slices(data: bytes) -> dict[str, memoryview]:
+    """The slices of a universal binary by processor, or the one of a thin
+    file, as views: a crafted file cannot make them copies of itself."""
+    data = memoryview(data)
+    if bytes(data[:4]) == MACHO_64:
         cpu = struct.unpack_from("<I", data, 4)[0]
         return {CPU_TYPES.get(cpu, hex(cpu)): data}
-    if data[:4] != UNIVERSAL:
+    if bytes(data[:4]) != UNIVERSAL:
         raise ValueError("neither a Mach-O file nor a universal binary")
     count = struct.unpack_from(">I", data, 4)[0]
     if count > MAX_SLICES:
@@ -564,8 +584,8 @@ def fat_slices(data: bytes) -> dict[str, bytes]:
     return slices
 
 
-def macho_commands(data: bytes) -> list[tuple[int, bytes]]:
-    if data[:4] != MACHO_64:
+def macho_commands(data: memoryview) -> list[tuple[int, bytes]]:
+    if bytes(data[:4]) != MACHO_64:
         raise ValueError("not a 64-bit Mach-O slice")
     ncmds, sizeofcmds = struct.unpack_from("<II", data, 16)
     if ncmds > MAX_LOAD_COMMANDS or 32 + sizeofcmds > len(data):
@@ -575,7 +595,7 @@ def macho_commands(data: bytes) -> list[tuple[int, bytes]]:
         cmd, size = struct.unpack_from("<II", data, at)
         if size < 8 or at + size > 32 + sizeofcmds:
             raise ValueError("a load command runs past the others")
-        commands.append((cmd, data[at:at + size]))
+        commands.append((cmd, bytes(data[at:at + size])))
         at += size
     return commands
 
@@ -607,7 +627,7 @@ def signature_blobs(data: bytes, commands: list[tuple[int, bytes]]) -> dict[int,
         if cmd != 0x1D:
             continue
         dataoff, datasize = struct.unpack_from("<II", body, 8)
-        blob = data[dataoff:dataoff + datasize]
+        blob = bytes(data[dataoff:dataoff + datasize])
         magic, _, count = struct.unpack_from(">III", blob, 0)
         if magic != 0xFADE0CC0 or count > MAX_BLOBS:
             raise ValueError("the code signature is not a superblob")
@@ -623,6 +643,11 @@ def signature_blobs(data: bytes, commands: list[tuple[int, bytes]]) -> dict[int,
 def code_directory(blob: bytes) -> dict:
     (_, _, version, flags, hash_offset, ident_offset, special, slots, limit, hash_size,
      hash_type) = struct.unpack_from(">IIIIIIIIIBB", blob, 0)
+    # Both counts come from the file: they must fit in the blob they
+    # describe before anything is built from them.
+    if special > MAX_SPECIAL_SLOTS or hash_size not in (20, 32, 48) \
+            or hash_offset < special * hash_size or hash_offset + slots * hash_size > len(blob):
+        raise ValueError("the code directory does not fit in its blob")
     ident = blob[ident_offset:blob.index(b"\0", ident_offset)].decode("utf-8", "replace")
     hashes = {i: blob[hash_offset + i * hash_size:hash_offset + (i + 1) * hash_size]
               for i in range(-special, slots)}
