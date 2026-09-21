@@ -297,33 +297,59 @@ async fn announce(app: &tauri::AppHandle, wallet_id: &str, held: &Held) {
     }
 }
 
-/// Announces what a sync asked for by hand found, through the record
-/// the watch uses, so that neither says what the other said. The claim
-/// is made even with the alerts off: what was seen with them off is
-/// not news the day they are turned on. `first_sync` is a wallet's
-/// import, whose whole history is "new" and none of it news.
-pub(crate) async fn announce_report(app: &tauri::AppHandle, report: &SyncReport, first_sync: bool) {
-    let state = app.state::<AppState>();
-    let Ok(claimed) = state.manager.claim_announcements(report).await else {
-        return;
-    };
-    if first_sync || claimed.is_empty() || !enabled(&state.manager).await {
+/// Claims what a sync asked for by hand found, and announces it. The
+/// record is the one the watch claims from, so neither says what the
+/// other said, and the core already leaves out a wallet's first sync,
+/// which is an import rather than news. The claim is made even with
+/// the alerts off, and what it hands out is then dropped on purpose:
+/// what was seen with them off is not news the day they are turned on.
+///
+/// A claim that fails takes nothing: the news stays in the vault for
+/// the next claim of that wallet. So it is said on stderr, and tried
+/// again a few times in the background rather than left to a sync that
+/// may not come before the core forgets it.
+pub(crate) async fn announce_report(app: &tauri::AppHandle, report: &SyncReport) {
+    if claim_and_announce(app, report).await {
         return;
     }
-    let held: Held = claimed.into_iter().collect();
-    announce(app, &report.wallet_id, &held).await;
+    let app = app.clone();
+    let report = report.clone();
+    tauri::async_runtime::spawn(async move {
+        for delay in CLAIM_RETRIES {
+            tokio::time::sleep(delay).await;
+            if claim_and_announce(&app, &report).await {
+                return;
+            }
+        }
+    });
 }
 
-/// The wallets that have never been synced: their next sync is an
-/// import. Read before a sync, which is what stamps them.
-pub(crate) async fn never_synced(manager: &WalletManager) -> Vec<String> {
-    manager
-        .list_wallets(None)
-        .await
-        .into_iter()
-        .filter(|meta| meta.last_sync.is_none())
-        .map(|meta| meta.id)
-        .collect()
+/// Waits before a failed claim is tried again.
+const CLAIM_RETRIES: [Duration; 3] = [
+    Duration::from_secs(30),
+    Duration::from_secs(120),
+    Duration::from_secs(600),
+];
+
+/// One claim of a wallet's news, announced when the alerts are on.
+/// False when the claim failed and the news is still waiting.
+async fn claim_and_announce(app: &tauri::AppHandle, report: &SyncReport) -> bool {
+    let state = app.state::<AppState>();
+    let claimed = match state.manager.claim_announcements(report).await {
+        Ok(claimed) => claimed,
+        Err(error) => {
+            eprintln!(
+                "gerfaut: what a sync found could not be claimed and waits in the vault \
+                 for the next claim: {error}"
+            );
+            return false;
+        }
+    };
+    if !claimed.is_empty() && enabled(&state.manager).await {
+        let held: Held = claimed.into_iter().collect();
+        announce(app, &report.wallet_id, &held).await;
+    }
+    true
 }
 
 /// Reads the events until the watch stops.

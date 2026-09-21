@@ -354,8 +354,9 @@ async fn receive_addresses(
     Ok(state.manager.receive_addresses(&id, lookahead).await?)
 }
 
-/// A sync asked for by hand. What it found is announced from here, and
-/// through the record the live watch uses, so nothing is said twice.
+/// A sync asked for by hand. What it found is claimed and announced
+/// from here, through the record the live watch uses, so nothing is
+/// said twice.
 #[tauri::command]
 async fn sync_wallet(
     app: tauri::AppHandle,
@@ -363,9 +364,8 @@ async fn sync_wallet(
     id: String,
 ) -> CommandResult<SyncReport> {
     state.unlocked()?;
-    let imports = live::never_synced(&state.manager).await;
     let report = state.manager.sync_wallet(&id).await?;
-    live::announce_report(&app, &report, imports.contains(&id)).await;
+    live::announce_report(&app, &report).await;
     Ok(report)
 }
 
@@ -378,9 +378,8 @@ async fn rescan_wallet(
     id: String,
 ) -> CommandResult<SyncReport> {
     state.unlocked()?;
-    let imports = live::never_synced(&state.manager).await;
     let report = state.manager.rescan_wallet(&id).await?;
-    live::announce_report(&app, &report, imports.contains(&id)).await;
+    live::announce_report(&app, &report).await;
     Ok(report)
 }
 
@@ -399,10 +398,9 @@ async fn sync_all(
     network: Option<Network>,
 ) -> CommandResult<SyncAllReport> {
     state.unlocked()?;
-    let imports = live::never_synced(&state.manager).await;
     let all = state.manager.sync_all(network).await;
     for report in &all.reports {
-        live::announce_report(&app, report, imports.contains(&report.wallet_id)).await;
+        live::announce_report(&app, report).await;
     }
     Ok(all)
 }
@@ -1377,6 +1375,37 @@ mod tests {
                 .block_on(state.manager.list_wallets(Some(Network::Mainnet)))
                 .is_empty()
         );
+    }
+
+    /// Every sync leaves what it found in the vault until someone claims
+    /// it, and whoever runs a sync is the one who claims. A command that
+    /// syncs and does not claim leaves a payment unsaid until the next
+    /// sync of that wallet, and this is the only thing that notices.
+    #[test]
+    fn every_command_that_syncs_claims_what_it_found() {
+        let source = include_str!("lib.rs");
+        let tests = source.find("#[cfg(test)]").unwrap_or(source.len());
+        let mut checked = 0;
+        for chunk in source[..tests].split("#[tauri::command]").skip(1) {
+            let body = chunk.split("\n}\n").next().unwrap_or_default();
+            let syncs = [".sync_wallet(", ".rescan_wallet(", ".sync_all("]
+                .iter()
+                .any(|call| body.contains(&format!("manager{call}")));
+            if !syncs {
+                continue;
+            }
+            checked += 1;
+            let name = body
+                .split("fn ")
+                .nth(1)
+                .and_then(|rest| rest.split('(').next())
+                .unwrap_or("?");
+            assert!(
+                body.contains("live::announce_report("),
+                "{name} runs a sync, so it claims after it with live::announce_report"
+            );
+        }
+        assert_eq!(checked, 3, "sync_wallet, rescan_wallet and sync_all");
     }
 
     /// The guard is one line at the top of a function: the day a command
