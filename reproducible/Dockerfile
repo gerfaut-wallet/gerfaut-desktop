@@ -3,8 +3,9 @@
 # One file, one stage per target. `base` holds what every target shares:
 # the operating system, the compiler and Node. `linux` adds what the
 # Linux packages need, `windows` what the cross-built Windows installer
-# needs. `tools` adds diffoscope and is only ever used to
-# explain a mismatch, never to build.
+# needs, `macos` what the cross-built macOS application needs. `tools`
+# adds diffoscope and is only ever used to explain a mismatch, never to
+# build.
 #
 # Everything that can reach an artefact is frozen:
 #   - the base image by digest;
@@ -225,6 +226,81 @@ RUN curl --proto '=https' --tlsv1.2 --retry 5 -fsSL -o /tmp/xwin.tar.gz \
       "xwin-${XWIN_VERSION}-x86_64-unknown-linux-musl/xwin" \
  && rm /tmp/xwin.tar.gz \
  && xwin --version | grep -qF "${XWIN_VERSION}"
+
+
+# --- macOS application: Gerfaut.app in a zip, cross-built ---------------
+FROM base AS macos
+
+# The Apple SDK is not in this image and never will be: build.sh mounts
+# the copy of whoever builds, read-only, into the build container only.
+#
+# clang compiles the C and Objective-C code some crates carry, llvm-ar
+# archives it, llvm-lipo joins the two slices of the universal binary
+# and llvm-objdump reads them back for the checks of the recipe. They
+# come from the official LLVM release, the same major version as the
+# LLVM inside rustc, and nothing else of the 1.9 GB archive is kept.
+#   https://github.com/llvm/llvm-project/releases/tag/llvmorg-<version>
+ARG LLVM_VERSION=22.1.8
+ARG LLVM_SHA256=df0e1ecf16caf3489a272a5eea4eec9b0d82878f6477fa309504f918a0006384
+# rcodesign writes the ad hoc signature of the bundle, without a Mac and
+# without a key: a signature made of hashes only.
+#   https://github.com/indygreg/apple-platform-rs/releases/tag/apple-codesign%2F<version>
+ARG RCODESIGN_VERSION=0.29.0
+ARG RCODESIGN_SHA256=dbe85cedd8ee4217b64e9a0e4c2aef92ab8bcaaa41f20bde99781ff02e600002
+
+ENV PATH=/opt/cargo/bin:/opt/node/bin:/opt/llvm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+RUN curl --proto '=https' --tlsv1.2 --retry 5 -fsSL -o /tmp/llvm.tar.xz \
+      "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/LLVM-${LLVM_VERSION}-Linux-X64.tar.xz" \
+ && echo "${LLVM_SHA256}  /tmp/llvm.tar.xz" | sha256sum -c - \
+ && mkdir /opt/llvm \
+ && top="LLVM-${LLVM_VERSION}-Linux-X64" major="${LLVM_VERSION%%.*}" \
+ && tar -xJf /tmp/llvm.tar.xz -C /opt/llvm --strip-components=1 --no-same-owner \
+      "$top/bin/clang-$major" "$top/bin/clang" "$top/bin/clang++" \
+      "$top/bin/llvm-ar" "$top/bin/llvm-ranlib" "$top/bin/llvm-lipo" \
+      "$top/bin/llvm-objdump" "$top/bin/llvm-otool" \
+      "$top/lib/clang/$major/include" \
+ && rm /tmp/llvm.tar.xz \
+ && clang --version | grep -qF "clang version ${LLVM_VERSION} "
+
+# The standard library for both Mac processors, fetched and checked by
+# rust-dist like the compiler. The linker is the rust-lld of the pinned
+# toolchain, as for Windows: clang finds it as ld64.lld next to itself.
+# rustc strips the debug information of an Apple binary with the
+# rust-objcopy of the toolchain, which 1.97.0 ships without a way to
+# find the LLVM library it is linked against: without the link below,
+# it fails, rustc only warns, and the binary keeps its debug map.
+RUN rust-dist aarch64-apple-darwin rust-std \
+ && rust-dist x86_64-apple-darwin rust-std \
+ && CARGO_HOME=/opt/cargo RUSTUP_DIST_SERVER=file:///opt/rust-dist \
+    all_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 http_proxy=http://127.0.0.1:9 \
+    rustup target add aarch64-apple-darwin x86_64-apple-darwin \
+ && find /opt/rust-dist/dist -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + \
+ && sysroot="$(rustc --print sysroot)" \
+ && tools="$sysroot/lib/rustlib/x86_64-unknown-linux-gnu" \
+ && ln -s "$tools/bin/gcc-ld/ld64.lld" /opt/llvm/bin/ld64.lld \
+ && for lib in "$sysroot"/lib/libLLVM.so.*; do \
+      [ -e "$tools/lib/$(basename "$lib")" ] || ln -s "$lib" "$tools/lib/"; \
+    done \
+ && "$tools/bin/rust-objcopy" --version | grep -qF 'LLVM version' \
+ && ld64.lld --version | grep -qF 'LLD ' \
+ && test -d "$(rustc --print target-libdir --target aarch64-apple-darwin)" \
+ && test -d "$(rustc --print target-libdir --target x86_64-apple-darwin)"
+
+RUN curl --proto '=https' --tlsv1.2 --retry 5 -fsSL -o /tmp/rcodesign.tar.gz \
+      "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F${RCODESIGN_VERSION}/apple-codesign-${RCODESIGN_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+ && echo "${RCODESIGN_SHA256}  /tmp/rcodesign.tar.gz" | sha256sum -c - \
+ && tar -xzf /tmp/rcodesign.tar.gz -C /usr/local/bin --strip-components=1 --no-same-owner \
+      "apple-codesign-${RCODESIGN_VERSION}-x86_64-unknown-linux-musl/rcodesign" \
+ && rm /tmp/rcodesign.tar.gz \
+ && rcodesign --version | grep -qF "${RCODESIGN_VERSION}"
+
+# zip writes the archive users download. cpio unpacks Xcode when the
+# SDK is made from the .xip on Linux (reproducible/make-apple-sdk.sh).
+RUN apt-get update --error-on=any \
+ && apt-get install -y --no-install-recommends cpio zip \
+ && rm -rf /var/lib/apt/lists/* \
+ && dpkg-query -W -f '${Package} ${Version} ${Architecture}\n' | sort > /etc/gerfaut-image-packages
 
 
 # --- Explaining a mismatch ----------------------------------------------
