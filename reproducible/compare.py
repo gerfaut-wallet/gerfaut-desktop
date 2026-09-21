@@ -22,12 +22,16 @@ also writes a full diffoscope report per file, when diffoscope is
 installed (the `tools` stage of reproducible/Dockerfile has it).
 
 Exit code 0 means every compared file is identical. Needs only Python 3.
+
+A published file comes from the network, so it is read as hostile: the
+verdict rests on the hashes alone, the tool extracts nothing to disk,
+and the limits below keep a crafted file from making it hang, fill the
+memory or write to the terminal.
 """
 
 from __future__ import annotations
 
 import argparse
-import gzip
 import hashlib
 import io
 import lzma
@@ -36,10 +40,33 @@ import struct
 import subprocess
 import sys
 import tarfile
+import tempfile
+import zlib
 from pathlib import Path
 
 NOT_ARTEFACTS = {"SHA256SUMS"}
 NOT_ARTEFACT_SUFFIXES = (".minisig", ".sig")
+
+# Well above what a Gerfaut package needs. A larger file is still
+# compared by hash, it is only not opened.
+MAX_OPEN = 512 << 20
+# What one decompression may produce.
+MAX_UNPACKED = 512 << 20
+# Windows loads no program with more sections than this.
+MAX_PE_SECTIONS = 96
+# An rpm header has a few dozen tags.
+MAX_RPM_TAGS = 1 << 16
+# Explanation lines printed per file.
+MAX_LINES = 60
+# Seconds an external tool may run on one file.
+TOOL_TIMEOUT = 1800
+CHUNK = 1 << 20
+
+# What a hostile file cannot make this tool survive, for any reason.
+BROKEN_FILE = (
+    ValueError, IndexError, EOFError, OSError, struct.error, tarfile.TarError,
+    zlib.error, lzma.LZMAError, subprocess.SubprocessError,
+)
 
 
 def sha256(data: bytes) -> str:
@@ -55,13 +82,26 @@ def file_sha256(path: Path) -> str:
 
 
 def artefacts(directory: Path) -> dict[str, Path]:
+    # A symbolic link is never an artefact, whatever it points at.
     return {
         p.name: p
         for p in sorted(directory.iterdir())
         if p.is_file()
+        and not p.is_symlink()
         and p.name not in NOT_ARTEFACTS
         and not p.name.endswith(NOT_ARTEFACT_SUFFIXES)
     }
+
+
+def printable(text: str) -> str:
+    """Names and messages from a hostile file, safe to print: a control
+    character could otherwise move the cursor or hide the verdict."""
+    return "".join(c if c.isprintable() else f"\\x{ord(c):02x}" for c in text)
+
+
+def head(path: Path, limit: int = 1 << 20) -> bytes:
+    with path.open("rb") as handle:
+        return handle.read(limit)
 
 
 # --- generic -------------------------------------------------------------
@@ -74,8 +114,18 @@ def explain_bytes(a: bytes, b: bytes, what: str) -> list[str]:
     if len(a) != len(b):
         lines.append(f"{what}: sizes differ, {len(a)} and {len(b)} bytes")
     shared = min(len(a), len(b))
-    first = next((i for i in range(shared) if a[i] != b[i]), shared)
-    count = sum(1 for i in range(shared) if a[i] != b[i])
+    first, count = shared, 0
+    view_a, view_b = memoryview(a), memoryview(b)
+    for start in range(0, shared, CHUNK):
+        end = min(start + CHUNK, shared)
+        if view_a[start:end] == view_b[start:end]:
+            continue
+        # The two chunks XORed: a zero byte wherever they agree.
+        xor = (int.from_bytes(view_a[start:end], "big") ^ int.from_bytes(view_b[start:end], "big")).to_bytes(
+            end - start, "big")
+        count += len(xor) - xor.count(0)
+        if first == shared:
+            first = start + len(xor) - len(xor.lstrip(b"\0"))
     lines.append(f"{what}: first difference at offset {first:#x}, {count} differing bytes in the shared length")
     return lines
 
@@ -83,23 +133,40 @@ def explain_bytes(a: bytes, b: bytes, what: str) -> list[str]:
 # --- tar, used by .deb ---------------------------------------------------
 
 
+def zstd_decompress(data: bytes) -> bytes:
+    with tempfile.TemporaryFile() as source:
+        source.write(data)
+        source.seek(0)
+        with subprocess.Popen(["zstd", "-dc"], stdin=source, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL) as zstd:
+            out = zstd.stdout.read(MAX_UNPACKED + 1)
+            zstd.kill()
+    return out
+
+
 def decompress(name: str, data: bytes) -> bytes:
     if name.endswith(".gz"):
-        return gzip.decompress(data)
-    if name.endswith(".xz"):
-        return lzma.decompress(data)
-    if name.endswith(".zst"):
-        done = subprocess.run(["zstd", "-dc"], input=data, capture_output=True, check=True)
-        return done.stdout
-    return data
+        out = zlib.decompressobj(16 + zlib.MAX_WBITS).decompress(data, MAX_UNPACKED + 1)
+    elif name.endswith(".xz"):
+        out = lzma.LZMADecompressor().decompress(data, max_length=MAX_UNPACKED + 1)
+    elif name.endswith(".zst"):
+        out = zstd_decompress(data)
+    else:
+        return data
+    if len(out) > MAX_UNPACKED:
+        raise ValueError(f"{name} unpacks to more than {MAX_UNPACKED} bytes")
+    return out
 
 
 def tar_entries(data: bytes) -> list[tuple]:
     found = []
-    with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+    # "r:" reads a plain tar: a second layer of compression is an error,
+    # not something to unpack without a limit.
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as tar:
         for info in tar:
             digest = ""
-            if info.isfile():
+            # A sparse entry declares a size its bytes do not hold.
+            if info.isfile() and not info.issparse():
                 digest = sha256(tar.extractfile(info).read())
             found.append(
                 (info.name, info.type, oct(info.mode), info.uid, info.gid,
@@ -157,6 +224,8 @@ def ar_members(data: bytes) -> list[tuple[str, dict, bytes]]:
             "mode": header[40:48].decode().strip(),
         }
         size = int(header[48:58].decode().strip())
+        if size < 0 or offset + 60 + size > len(data):
+            raise ValueError(f"ar member {name!r} runs past the end of the file")
         body = data[offset + 60:offset + 60 + size]
         members.append((name, meta, body))
         offset += 60 + size + (size & 1)
@@ -210,15 +279,19 @@ def rpm_header(data: bytes, offset: int) -> tuple[dict[int, bytes], int]:
         raise ValueError("bad rpm header magic")
     index = offset + 16
     store = index + 16 * count
+    if count > MAX_RPM_TAGS or store + size > len(data):
+        raise ValueError("rpm header runs past the end of the file")
     entries = []
     for i in range(count):
         tag, kind, where, number = struct.unpack(">IIII", data[index + 16 * i:index + 16 * i + 16])
+        if where > size:
+            raise ValueError(f"rpm tag {tag} points past its header")
         entries.append((tag, where))
     tags = {}
     bounds = sorted({where for _, where in entries} | {size})
+    following = dict(zip(bounds, bounds[1:]))
     for tag, where in entries:
-        end = bounds[bounds.index(where) + 1] if where != size else size
-        tags[tag] = data[store + where:store + end]
+        tags[tag] = data[store + where:store + following.get(where, size)]
     return tags, store + size
 
 
@@ -260,7 +333,7 @@ def squashfs_listing(path: Path, offset: int) -> list[str] | None:
         return None
     done = subprocess.run(
         ["unsquashfs", "-o", str(offset), "-lls", str(path)],
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, errors="replace", check=False, timeout=TOOL_TIMEOUT,
     )
     return done.stdout.splitlines()
 
@@ -298,6 +371,8 @@ def pe_layout(data: bytes) -> tuple[dict, list[tuple[str, int, int]]]:
     if data[pe:pe + 4] != b"PE\0\0":
         raise ValueError("bad PE signature")
     count, stamp = struct.unpack_from("<HI", data, pe + 6)
+    if count > MAX_PE_SECTIONS:
+        raise ValueError(f"{count} PE sections, more than Windows loads")
     optional_size = struct.unpack_from("<H", data, pe + 20)[0]
     optional = pe + 24
     fields = {
@@ -351,11 +426,18 @@ def nsis_parts(data: bytes) -> tuple[bytes, bytes, bytes]:
 def nsis_unpack(payload: bytes) -> bytes:
     """A solid LZMA payload: five bytes of properties, then the raw stream."""
     properties, dictionary = struct.unpack_from("<BI", payload, 0)
+    # The decoder allocates the whole dictionary up front.
+    if dictionary > MAX_UNPACKED:
+        raise ValueError(f"an LZMA dictionary of {dictionary} bytes")
     options = {
         "id": lzma.FILTER_LZMA1, "dict_size": dictionary,
         "lc": properties % 9, "lp": properties // 9 % 5, "pb": properties // 45,
     }
-    return lzma.LZMADecompressor(lzma.FORMAT_RAW, filters=[options]).decompress(payload[5:])
+    raw = lzma.LZMADecompressor(lzma.FORMAT_RAW, filters=[options]).decompress(
+        payload[5:], max_length=MAX_UNPACKED + 1)
+    if len(raw) > MAX_UNPACKED:
+        raise ValueError(f"the NSIS payload unpacks to more than {MAX_UNPACKED} bytes")
+    return raw
 
 
 def nsis_blocks(raw: bytes) -> list[bytes]:
@@ -381,7 +463,7 @@ def explain_nsis(a: bytes, b: bytes) -> list[str]:
         return lines
     try:
         raw_a, raw_b = nsis_unpack(pay_a), nsis_unpack(pay_b)
-    except (lzma.LZMAError, struct.error) as error:
+    except (lzma.LZMAError, EOFError, ValueError, struct.error) as error:
         return lines + [f"NSIS payload differs and could not be unpacked ({error})"]
     if raw_a == raw_b:
         return lines + ["NSIS payload: same content once unpacked, so the compressor differs"]
@@ -404,6 +486,9 @@ def explain_nsis(a: bytes, b: bytes) -> list[str]:
 
 
 def explain(path_a: Path, path_b: Path) -> list[str]:
+    size_a, size_b = path_a.stat().st_size, path_b.stat().st_size
+    if max(size_a, size_b) > MAX_OPEN:
+        return [f"{size_a} and {size_b} bytes: too large to open, compared by hash only"]
     a, b = path_a.read_bytes(), path_b.read_bytes()
     try:
         if path_a.suffix == ".deb":
@@ -414,7 +499,7 @@ def explain(path_a: Path, path_b: Path) -> list[str]:
             return explain_appimage(a, b, path_a, path_b)
         if path_a.suffix == ".exe":
             return explain_nsis(a, b)
-    except (ValueError, struct.error, tarfile.TarError, OSError) as error:
+    except BROKEN_FILE as error:
         return [f"could not open the file as a {path_a.suffix} ({error})"] + explain_bytes(a, b, path_a.name)
     return explain_bytes(a, b, path_a.name)
 
@@ -432,7 +517,7 @@ def explain_stage(dir_a: Path, dir_b: Path) -> list[str]:
         ("binary.sha256", "the compiled binary differs"),
     ):
         fa, fb = info_a / name, info_b / name
-        if fa.is_file() and fb.is_file() and fa.read_bytes() != fb.read_bytes():
+        if fa.is_file() and fb.is_file() and head(fa) != head(fb):
             lines.append(meaning)
     return lines or ["toolchain, frontend and binary are the same: the difference comes from packaging"]
 
@@ -442,10 +527,13 @@ def run_diffoscope(path_a: Path, path_b: Path, report_dir: Path) -> str | None:
         return None
     report_dir.mkdir(parents=True, exist_ok=True)
     report = report_dir / f"{path_a.name}.diffoscope.txt"
-    subprocess.run(
-        ["diffoscope", "--text", str(report), "--max-report-size", "2000000", str(path_a), str(path_b)],
-        check=False,
-    )
+    try:
+        subprocess.run(
+            ["diffoscope", "--text", str(report), "--max-report-size", "2000000", str(path_a), str(path_b)],
+            check=False, timeout=TOOL_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return f"{report} (cut short after {TOOL_TIMEOUT} seconds)"
     return str(report)
 
 
@@ -467,36 +555,40 @@ def main() -> int:
 
     failed = False
     for name in sorted(set(set_a) | set(set_b)):
+        shown = printable(name)
         if name not in set_b:
             if args.published:
-                print(f"  not rebuilt  {name}")
+                print(f"  not rebuilt  {shown}")
             else:
-                print(f"  MISSING      {name} (only in {args.first})")
+                print(f"  MISSING      {shown} (only in {args.first})")
                 failed = True
             continue
         if name not in set_a:
-            print(f"  MISSING      {name} (only in {args.second})")
+            print(f"  MISSING      {shown} (only in {args.second})")
             failed = True
             continue
         hash_a, hash_b = file_sha256(set_a[name]), file_sha256(set_b[name])
         if hash_a == hash_b:
-            print(f"  identical    {name}  {hash_a}")
+            print(f"  identical    {shown}  {hash_a}")
             continue
         failed = True
-        print(f"  DIFFERENT    {name}")
-        print(f"      {hash_a}  {set_a[name]}")
-        print(f"      {hash_b}  {set_b[name]}")
-        for line in explain(set_a[name], set_b[name]):
-            print(f"      {line}")
+        print(f"  DIFFERENT    {shown}")
+        print(f"      {hash_a}  {printable(str(set_a[name]))}")
+        print(f"      {hash_b}  {printable(str(set_b[name]))}")
+        lines = explain(set_a[name], set_b[name])
+        for line in lines[:MAX_LINES]:
+            print(f"      {printable(line)}")
+        if len(lines) > MAX_LINES:
+            print(f"      and {len(lines) - MAX_LINES} more lines")
         if args.diffoscope:
             report = run_diffoscope(set_a[name], set_b[name], args.diffoscope)
-            print(f"      full report: {report}" if report else "      diffoscope is not installed, no full report")
+            print(f"      full report: {printable(report)}" if report else "      diffoscope is not installed, no full report")
 
     # Said whatever the hashes are: two unpinned builds can match each
     # other and still be nothing a release should be compared with.
     for directory in (args.first, args.second):
         sources = directory / "build-info" / "sources"
-        if sources.is_file() and "NOT A RELEASE BUILD" in sources.read_text():
+        if sources.is_file() and b"NOT A RELEASE BUILD" in head(sources):
             print(f"  warning: {directory} was built against a core other than the pinned one")
 
     if failed:
