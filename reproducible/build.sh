@@ -81,7 +81,15 @@ done
 
 . "$here/engine.sh"
 
-pinned="$(tr -d ' \t\r\n' < "$repo/.github/gerfaut-core.rev")"
+# The commit being built, and the core revision that commit pins: read
+# from git, so neither the working tree nor another checkout of the file
+# can name a different one.
+commit="$(git -C "$repo" rev-parse "$ref^{commit}")"
+pinned="$(git -C "$repo" show "$commit:.github/gerfaut-core.rev" | tr -d ' \t\r\n')"
+[[ "$pinned" =~ ^[0-9a-f]{40}$ ]] || {
+    echo ".github/gerfaut-core.rev at $commit is not a full commit hash: $pinned" >&2
+    exit 1
+}
 [ -d "$core/.git" ] || [ -f "$core/.git" ] || {
     echo "not a gerfaut-core checkout: $core" >&2
     echo "clone https://github.com/gerfaut-wallet/gerfaut-core next to this repository" >&2
@@ -99,7 +107,6 @@ else
 fi
 
 # The commit date of what is being built, not the wall clock.
-commit="$(git -C "$repo" rev-parse "$ref^{commit}")"
 epoch="$(git -C "$repo" log -1 --format=%ct "$commit")"
 [ -z "$(git -C "$repo" status --porcelain)" ] || \
     echo "warning: uncommitted changes are not part of the build ($ref is)" >&2
