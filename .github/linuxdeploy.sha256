@@ -22,6 +22,11 @@
 #   linuxdeploy-plugin-gstreamer.sh       https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gstreamer/master/linuxdeploy-plugin-gstreamer.sh
 #   linuxdeploy-plugin-appimage.AppImage  https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
 #
+# The two scripts are fetched from the commit that holds the bytes below,
+# not from `master`, which has moved since these hashes were taken:
+#   linuxdeploy-plugin-gtk.sh        tauri-apps/linuxdeploy-plugin-gtk b5eb8d05b4c0ed40107fe2158c5d8527f94568ef
+#   linuxdeploy-plugin-gstreamer.sh  tauri-apps/linuxdeploy-plugin-gstreamer 2a2e67491c32995a3f279ad0ecbe77abd512b42a
+#
 # When @tauri-apps/cli moves, read that file again at the matching tag:
 # if a URL or a file name changed, update release.yml and this list. To
 # refresh a hash on purpose, download the file, compare it with the

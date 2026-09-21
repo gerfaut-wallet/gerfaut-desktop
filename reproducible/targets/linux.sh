@@ -28,10 +28,12 @@ target_fetch() {
         https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-x86_64
     fetch_pinned "$LINUXDEPLOY_SUMS" linuxdeploy-x86_64.AppImage \
         https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-x86_64.AppImage
+    # The two scripts come from the commit that holds the pinned bytes,
+    # not from the `master` branch the bundler names, which moves.
     fetch_pinned "$LINUXDEPLOY_SUMS" linuxdeploy-plugin-gtk.sh \
-        https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
+        https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gtk/b5eb8d05b4c0ed40107fe2158c5d8527f94568ef/linuxdeploy-plugin-gtk.sh
     fetch_pinned "$LINUXDEPLOY_SUMS" linuxdeploy-plugin-gstreamer.sh \
-        https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gstreamer/master/linuxdeploy-plugin-gstreamer.sh
+        https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gstreamer/2a2e67491c32995a3f279ad0ecbe77abd512b42a/linuxdeploy-plugin-gstreamer.sh
     fetch_pinned "$LINUXDEPLOY_SUMS" linuxdeploy-plugin-appimage.AppImage \
         https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
     # The sixth one, see linux/appimage-runtime.sha256.
