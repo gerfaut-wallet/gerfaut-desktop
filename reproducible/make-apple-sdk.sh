@@ -62,7 +62,7 @@ engine run --rm --network none --entrypoint bash \
     "$image" -euo pipefail -c '
         cd /tmp
         python3 /tools/extract_xcode.py -f "/in/$1" \
-            | cpio -d -i --quiet \
+            | cpio -d -i --quiet --no-absolute-filenames \
                 "Xcode.app/Contents/version.plist" "./Xcode.app/Contents/version.plist" \
                 "Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/*" \
                 "./Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/*"
