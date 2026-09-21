@@ -2,8 +2,8 @@
 # Rebuilds a published release from its tag and compares the result, byte
 # for byte, with the files on the releases page.
 #
-#   reproducible/verify.sh v0.1.0
-#   reproducible/verify.sh v0.1.0 --target windows --accept-microsoft-license
+#   reproducible/verify.sh v<version>
+#   reproducible/verify.sh v<version> --target windows --accept-microsoft-license
 #
 # It clones both repositories at the tag into a fresh directory, builds
 # with the recipe of that tag, downloads the published files and prints a

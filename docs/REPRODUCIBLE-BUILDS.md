@@ -8,7 +8,7 @@ Nothing has to be set aside for the comparison. A Linux package carries no signa
 
 ## Scope
 
-This page covers the three Linux packages and the Windows installer, all for x86_64. The Windows installer is built on Linux too, so you need no Windows machine to check it. There is no `.msi`: it can only be made on Windows, so it could not be held to this promise. A release built with this recipe says so in its notes. A release that does not say so was built on a hosted runner, outside the container, and its files will not match a rebuild.
+This page covers the three Linux packages and the Windows installer, all for x86_64. The Windows installer is built on Linux too, so you need no Windows machine to check it. There is no `.msi`: it can only be made on Windows, so it could not be held to this promise. A release built with this recipe says so in its notes. A release that does not say so was built on a hosted runner, outside the container, and its files will not match a rebuild. Its tag may not even carry the `reproducible` directory.
 
 ## What you need
 
@@ -27,10 +27,10 @@ The Windows installer needs a little less: 2.4 GB for its image, 2 GB of downloa
 
 ```sh
 git clone https://github.com/gerfaut-wallet/gerfaut-desktop
-gerfaut-desktop/reproducible/verify.sh v0.1.0
+gerfaut-desktop/reproducible/verify.sh v<version>
 ```
 
-The script works in a new temporary directory and does five things:
+Replace `v<version>` with the tag of a release whose notes say it was built with this recipe. The script works in a new temporary directory and does five things:
 
 1. It clones `gerfaut-desktop` at the tag. From there on, the recipe that runs is the one the tag carries.
 2. It reads `.github/gerfaut-core.rev`, the exact commit of the Rust core this tag was built against, and clones `gerfaut-core` at that commit.
@@ -41,11 +41,11 @@ The script works in a new temporary directory and does five things:
 A release that matches ends like this:
 
 ```
-  identical    Gerfaut-0.1.0-1.x86_64.rpm  <sha256>
-  identical    Gerfaut_0.1.0_amd64.AppImage  <sha256>
-  identical    Gerfaut_0.1.0_amd64.deb  <sha256>
+  identical    Gerfaut-<version>-1.x86_64.rpm  <sha256>
+  identical    Gerfaut_<version>_amd64.AppImage  <sha256>
+  identical    Gerfaut_<version>_amd64.deb  <sha256>
 RESULT: identical, byte for byte
-==> VERIFIED: the published linux files of v0.1.0 are the ones this source builds
+==> VERIFIED: the published linux files of v<version> are the ones this source builds
 ```
 
 With Podman, set `GERFAUT_ENGINE=podman` in front of the command. The script picks Docker first when both are installed. The scripts call nothing Docker-specific, but so far they have only been run with Docker. If Podman gives you a different result, please report it.
@@ -56,7 +56,7 @@ You can also do the last step by hand. The rebuilt files and their `SHA256SUMS` 
 
 ```sh
 git clone https://github.com/gerfaut-wallet/gerfaut-desktop
-gerfaut-desktop/reproducible/verify.sh v0.1.0 --target windows --accept-microsoft-license
+gerfaut-desktop/reproducible/verify.sh v<version> --target windows --accept-microsoft-license
 ```
 
 The steps are the same as above, on a Linux machine, with one file to compare: `Gerfaut_<version>_x64-setup.exe`.
