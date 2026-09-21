@@ -143,15 +143,34 @@ fn describe(tx: &LiveTx, context: &Context) -> String {
     }
 }
 
+/// Characters that draw nothing yet reorder or hide what is around
+/// them: the bidirectional overrides, embeddings, isolates and marks,
+/// and the zero-width space, word joiner and byte order mark. The two
+/// zero-width joiners stay: some scripts and emoji need them.
+fn invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{061C}'
+            | '\u{200B}'
+            | '\u{200E}'
+            | '\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'
+            | '\u{2066}'..='\u{2069}'
+            | '\u{FEFF}'
+    )
+}
+
 /// A wallet name as a notification may carry it. The name is the one
 /// piece of free text that reaches the system: it comes from the
 /// person, or from a backup someone handed them. Control characters
-/// go, runs of blanks become one space, and the length is held.
+/// and the invisible ones that turn text around go, runs of blanks
+/// become one space, and the length is held.
 pub(crate) fn safe_title(name: &str) -> String {
     let cleaned: String = name
         .chars()
         .map(|c| if c.is_whitespace() { ' ' } else { c })
-        .filter(|c| !c.is_control())
+        .filter(|&c| !c.is_control() && !invisible(c))
         .collect();
     let joined =
         cleaned
@@ -461,6 +480,22 @@ mod tests {
         assert_eq!(safe_title("  a \t\n  b  "), "a b");
         assert_eq!(safe_title(&"x".repeat(500)).chars().count(), 64);
         assert_eq!(safe_title("\u{7}\n"), "Gerfaut");
+        // An override would draw the rest of the line backwards, and an
+        // isolate or a mark would move it around: none of them stays.
+        assert_eq!(
+            safe_title("Savings \u{202E}CTB 5 devieceR\u{202C}"),
+            "Savings CTB 5 devieceR"
+        );
+        assert_eq!(
+            safe_title("\u{2067}a\u{2069}\u{200F}b\u{200B}c\u{FEFF}\u{2060}d\u{061C}"),
+            "abcd"
+        );
+        assert_eq!(safe_title("\u{202E}\u{200B}"), "Gerfaut");
+        // What joins letters or emoji is kept.
+        assert_eq!(
+            safe_title("\u{1F468}\u{200D}\u{1F469}\u{200C}"),
+            "\u{1F468}\u{200D}\u{1F469}\u{200C}"
+        );
         // Markup is text: the platform layer escapes it, and it stays
         // one line either way.
         assert_eq!(
