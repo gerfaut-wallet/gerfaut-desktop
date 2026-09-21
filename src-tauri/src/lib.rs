@@ -1463,11 +1463,26 @@ mod tests {
                     continue;
                 };
                 let body = index + offset;
-                // A command handed no state never reaches the vault.
+                // A command handed no state never reaches the vault, and
+                // it may not reach it through its app handle either: that
+                // would pass this scan with no guard at all. One that
+                // needs the state takes it as a parameter, and is checked.
                 if !lines[index..=body]
                     .iter()
                     .any(|line| line.contains("tauri::State<'_, AppState>"))
                 {
+                    let end = lines[body..]
+                        .iter()
+                        .position(|line| *line == "}")
+                        .map_or(lines.len(), |close| body + close);
+                    assert!(
+                        !lines[body..end]
+                            .iter()
+                            .any(|line| line.contains("state::<AppState>")),
+                        "{file}: {name} reaches the state through its handle; \
+                         take `state: tauri::State<'_, AppState>` and begin with \
+                         `state.unlocked()?;`"
+                    );
                     continue;
                 }
                 checked += 1;

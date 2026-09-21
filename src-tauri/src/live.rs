@@ -496,11 +496,15 @@ pub async fn live_status(state: tauri::State<'_, AppState>) -> CommandResult<Liv
 /// every permission as granted; this is the only honest check. It is
 /// the one way the window has to make the system ring, so it draws on
 /// the budget of the transaction alerts: a page gone wrong cannot flood
-/// with it.
+/// with it. Behind the lock it posts nothing, like every other command
+/// that reaches the state.
 #[tauri::command]
-pub async fn send_test_notification(app: tauri::AppHandle) -> CommandResult<()> {
-    let allowance = app
-        .state::<AppState>()
+pub async fn send_test_notification(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> CommandResult<()> {
+    state.unlocked()?;
+    let allowance = state
         .live
         .budgets
         .lock()
