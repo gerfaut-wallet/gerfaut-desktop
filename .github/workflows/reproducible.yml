@@ -492,9 +492,18 @@ jobs:
         with:
           node-version: 24.19.0
 
+      # With the inputs of the build on Linux. The Xcode whose SDK the
+      # recipe links against, where the runner defaults to an older one.
+      # And no pkg-config: the runner's Homebrew has an xz, and liblzma-sys
+      # would link the Apple silicon half against that copy, a library
+      # no user has, where the recipe builds liblzma into the program.
       - name: Build with Tauri's bundler
         working-directory: gerfaut-desktop
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_26.1.1.app/Contents/Developer
+          PKG_CONFIG: /usr/bin/false
         run: |
+          xcrun --show-sdk-version
           npm ci
           npm run tauri -- build --ci --target universal-apple-darwin --bundles app -- --locked
 
@@ -524,11 +533,12 @@ jobs:
           cmp reference/native-listing.txt cross-unsigned.txt || failed="$failed listing"
           grep -qx 'drwxr-xr-x ./Contents/_CodeSignature' reference/cross-listing.txt || failed="$failed signature"
           grep -qx -- '-rw-r--r-- ./Contents/_CodeSignature/CodeResources' reference/cross-listing.txt || failed="$failed signature"
+          # Apple's linker and lld list the libraries in their own order.
           for arch in arm64 x86_64; do
             for side in native cross; do
               if [ "$side" = native ]; then app="$native"; else app="$cross"; fi
               binary="$app/Contents/MacOS/gerfaut-desktop"
-              otool -arch "$arch" -L "$binary" | tail -n +2 > "reference/$side-$arch-libraries.txt"
+              otool -arch "$arch" -L "$binary" | tail -n +2 | LC_ALL=C sort > "reference/$side-$arch-libraries.txt"
               otool -arch "$arch" -l "$binary" | grep -A5 -E 'LC_BUILD_VERSION|LC_VERSION_MIN_MACOSX' \
                 | grep -E '^ *(cmd|minos|version|sdk) ' > "reference/$side-$arch-build-version.txt"
             done
@@ -536,10 +546,12 @@ jobs:
             cmp "reference/native-$arch-build-version.txt" "reference/cross-$arch-build-version.txt" || failed="$failed $arch-build-version"
           done
           # What Tauri's bundler writes when told to sign ad hoc, beside
-          # what rcodesign wrote.
+          # what rcodesign wrote, and what Apple's checks make of each.
           codesign --force --sign - --options runtime "$native"
           codesign -dv --verbose=4 "$native" > reference/native-adhoc-signature.txt 2>&1
           codesign -dv --verbose=4 "$cross" > reference/cross-signature.txt 2>&1
+          syspolicy_check distribution "$native" > reference/native-syspolicy.txt 2>&1 || true
+          syspolicy_check distribution "$cross" > reference/cross-syspolicy.txt 2>&1 || true
           for file in reference/*; do echo "== $file"; cat "$file"; echo; done
           [ -z "$failed" ] || { echo "the bundles differ:$failed"; exit 1; }
           echo "same Info.plist, icon, layout, libraries and targets"
