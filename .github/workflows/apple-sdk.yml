@@ -5,20 +5,19 @@
 # reach the Linux jobs of the same run through the Actions cache of this
 # repository.
 #
-# Every run makes its own, in under a minute, under a key no other run
-# can work out: the id of the run and a random part. The cache is shared
-# by every run of the repository, and any job that runs a build script
-# or an npm install script on a runner can write to it. Under a key
-# known in advance, such a job could leave an entry for a later release
-# to restore, and actions/cache unpacks an entry, wherever its paths
-# point, before build.sh gets to check the hashes of the tarballs.
+# Sealed first, with .github/apple-sdk-cache.py: encrypted and
+# authenticated under the repository secret APPLE_SDK_CACHE_KEY. Anyone
+# who can start a workflow run can read the cache, and in a public
+# repository that includes a pull request from a fork, whose run never
+# gets the secret. Without it, this job refuses to run.
 #
-# A cache can only be read from inside a workflow run, but in a public
-# repository that includes the run of a pull request from a fork, whose
-# workflow the fork writes. So this job refuses to run in a public
-# repository: the SDK caches have to be deleted, and sealed with a
-# secret the runs of forks do not get, before this repository is made
-# public.
+# Every run makes its own, in under a minute, under a key no other run
+# can work out: the id of the key, the id of the run and a random part.
+# Any job that runs a build script or an npm install script on a runner
+# can write to the cache. Under a key known in advance, such a job could
+# leave an entry for a later release to restore, and actions/cache
+# unpacks an entry, wherever its paths point, before anything can check
+# it. Changing the secret retires every entry sealed under the old one.
 #
 # Called by reproducible.yml and release.yml, which pass the key it
 # returns to container-build.yml.
@@ -29,8 +28,12 @@ on:
   workflow_call:
     outputs:
       key:
-        description: The key of the Actions cache that holds the two SDK tarballs
+        description: The key of the Actions cache that holds the two sealed SDK tarballs
         value: ${{ jobs.make.outputs.key }}
+    secrets:
+      apple-sdk-cache-key:
+        description: APPLE_SDK_CACHE_KEY, 64 hexadecimal digits
+        required: true
 
 permissions:
   contents: read
@@ -41,18 +44,21 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 20
     outputs:
-      key: ${{ steps.key.outputs.key }}
+      key: ${{ steps.seal.outputs.key }}
     steps:
-      - name: Refuse a public repository
+      - name: Refuse to run without the key of the cache
         env:
-          PRIVATE: ${{ github.event.repository.private }}
+          APPLE_SDK_CACHE_KEY: ${{ secrets.apple-sdk-cache-key }}
         run: |
-          [ "$PRIVATE" = true ] || { echo "::error::the Apple SDK is only cached in a private repository"; exit 1; }
+          [[ "$APPLE_SDK_CACHE_KEY" =~ ^[0-9a-fA-F]{64}$ ]] \
+            || { echo "::error::no APPLE_SDK_CACHE_KEY secret: the Apple SDK only goes into the cache sealed"; exit 1; }
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-          sparse-checkout: reproducible/macos
+          sparse-checkout: |
+            .github
+            reproducible/macos
 
       - name: Make the SDK from the runner's Xcode
         run: |
@@ -60,7 +66,7 @@ jobs:
           xcode=/Applications/Xcode_26.1.1.app
           version="$(plutil -extract CFBundleShortVersionString raw "$xcode/Contents/version.plist")"
           build="$(plutil -extract ProductBuildVersion raw "$xcode/Contents/version.plist")"
-          echo "Xcode $version ($build), $(python3 --version)"
+          echo "Xcode $version ($build), $(python3 --version), $(openssl version)"
           [ "$version ($build)" = "26.1.1 (17B100)" ]
           mkdir apple-sdk
           python3 reproducible/macos/gen-sdk.py "$xcode" \
@@ -70,15 +76,20 @@ jobs:
           cd apple-sdk
           awk '!/^#/ && $2 ~ /[.]tar$/' ../reproducible/macos/apple-sdk.sha256 | shasum -a 256 -c -
 
-      - name: Pick a key of this run
-        id: key
+      - name: Seal it for the cache
+        id: seal
+        env:
+          APPLE_SDK_CACHE_KEY: ${{ secrets.apple-sdk-cache-key }}
         run: |
           set -euo pipefail
+          python3 .github/apple-sdk-cache.py seal apple-sdk
+          ls -l apple-sdk
+          id="$(python3 .github/apple-sdk-cache.py key-id)"
           random="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
-          [[ "$random" =~ ^[0-9a-f]{32}$ ]]
-          echo "key=apple-sdk-$GITHUB_RUN_ID-$random" >> "$GITHUB_OUTPUT"
+          [[ "$id" =~ ^[0-9a-f]{16}$ && "$random" =~ ^[0-9a-f]{32}$ ]]
+          echo "key=apple-sdk-$id-$GITHUB_RUN_ID-$random" >> "$GITHUB_OUTPUT"
 
       - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: apple-sdk
-          key: ${{ steps.key.outputs.key }}
+          key: ${{ steps.seal.outputs.key }}

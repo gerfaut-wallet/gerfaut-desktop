@@ -99,6 +99,8 @@ jobs:
   apple-sdk:
     if: inputs.target == 'all' || inputs.target == 'macos'
     uses: ./.github/workflows/apple-sdk.yml
+    secrets:
+      apple-sdk-cache-key: ${{ secrets.APPLE_SDK_CACHE_KEY }}
 
   macos-1:
     needs: apple-sdk
@@ -110,6 +112,7 @@ jobs:
       apple-sdk-key: ${{ needs.apple-sdk.outputs.key }}
     secrets:
       core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
+      apple-sdk-cache-key: ${{ secrets.APPLE_SDK_CACHE_KEY }}
 
   macos-2:
     needs: apple-sdk
@@ -121,6 +124,7 @@ jobs:
       apple-sdk-key: ${{ needs.apple-sdk.outputs.key }}
     secrets:
       core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
+      apple-sdk-cache-key: ${{ secrets.APPLE_SDK_CACHE_KEY }}
 
   macos-compare:
     needs: [macos-1, macos-2]

@@ -6,8 +6,9 @@
 # Called twice per target by reproducible.yml and release.yml, on two
 # runners, and compare-builds.yml compares the two artifacts. The job
 # holds no token and no secret but the read-only deploy key of
-# gerfaut-core, and the build itself runs in a container with no
-# network. See docs/REPRODUCIBLE-BUILDS.md.
+# gerfaut-core and, for macOS, the key that opens the Apple SDK in the
+# cache, each in the one step that needs it. The build itself runs in a
+# container with no network. See docs/REPRODUCIBLE-BUILDS.md.
 
 name: Container build
 
@@ -37,6 +38,9 @@ on:
     secrets:
       core-deploy-key:
         required: true
+      apple-sdk-cache-key:
+        description: macos only, APPLE_SDK_CACHE_KEY, which opens what apple-sdk.yml sealed
+        required: false
 
 permissions:
   contents: read
@@ -47,8 +51,8 @@ jobs:
     timeout-minutes: 240
     steps:
       # macOS: the Apple SDK, before the code is checked out, so that
-      # nothing a cache holds can land on top of it. The two tarballs
-      # are all it may hold, and build.sh checks their hashes.
+      # nothing a cache holds can land on top of it. The two sealed
+      # tarballs are all it may hold.
       - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         if: inputs.target == 'macos'
         with:
@@ -61,13 +65,26 @@ jobs:
         run: |
           set -euo pipefail
           have="$(find . -mindepth 1 -printf '%P\n' | LC_ALL=C sort | tr '\n' ' ')"
-          want="apple-sdk apple-sdk/Xcode-26.1.1-17B100-extracted-SDK-cryptexes.tar apple-sdk/Xcode-26.1.1-17B100-extracted-SDK-with-libcxx-headers.tar "
+          want="apple-sdk apple-sdk/Xcode-26.1.1-17B100-extracted-SDK-cryptexes.tar.sealed apple-sdk/Xcode-26.1.1-17B100-extracted-SDK-with-libcxx-headers.tar.sealed "
           [ "$have" = "$want" ] || { echo "unexpected files from the cache: $have"; exit 1; }
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           path: gerfaut-desktop
           persist-credentials: false
+
+      # Refused unless sealed under the secret and unchanged since, then
+      # checked against the hashes this commit pins. build.sh checks them
+      # again before it mounts them.
+      - name: Open the SDK
+        if: inputs.target == 'macos'
+        env:
+          APPLE_SDK_CACHE_KEY: ${{ secrets.apple-sdk-cache-key }}
+        run: |
+          set -euo pipefail
+          python3 gerfaut-desktop/.github/apple-sdk-cache.py open apple-sdk
+          cd apple-sdk
+          awk '!/^#/ && $2 ~ /[.]tar$/' ../gerfaut-desktop/reproducible/macos/apple-sdk.sha256 | sha256sum --check --strict
 
       - name: Read the pinned gerfaut-core revision
         id: core
