@@ -8,7 +8,9 @@ Nothing has to be set aside for the comparison. A Linux package carries no signa
 
 ## Scope
 
-This page covers the three Linux packages and the Windows installer, all for x86_64, and the macOS application, for Apple silicon and Intel. The Windows installer and the macOS application are built on Linux too, so you need no Windows machine and no Mac to check them. There is no `.msi`: it can only be made on Windows, so it could not be held to this promise. There is no `.dmg` either, see "The zip" below. A release built with this recipe says so in its notes. A release that does not say so was built on a hosted runner, outside the container, and its files will not match a rebuild. Its tag may not even carry the `reproducible` directory.
+This page covers the three Linux packages and the Windows installer, all for x86_64, and the macOS application, for Apple silicon and Intel. The Windows installer and the macOS application are built on Linux too, so you need no Windows machine and no Mac to check them. There is no `.msi`: it can only be made on Windows, so it could not be held to this promise. There is no `.dmg` either, see "The zip" below.
+
+The `Release` workflow builds the files of every release with this recipe, twice, and publishes nothing unless the two builds match, so the files on the releases page are the ones this page tells you to rebuild. A release built this way says so in its notes, under "Rebuild it yourself". A release that does not say so was built on a hosted runner, outside the container, and its files will not match a rebuild. Its tag may not even carry the `reproducible` directory.
 
 ## What you need
 
@@ -138,7 +140,7 @@ reproducible/build.sh windows --twice --accept-microsoft-license
 reproducible/build.sh macos --twice --macos-sdk apple-sdk
 ```
 
-It builds twice, in two separate containers, and fails if a single byte differs. This is what the `Reproducible build` workflow runs.
+It builds twice, in two separate containers, and fails if a single byte differs. The `Reproducible build` and `Release` workflows go one step further: they build each target on two separate runners and compare the two.
 
 To compare two sets of files you already have:
 
@@ -246,7 +248,7 @@ This holds as long as the installer has no Authenticode signature, which is the 
 
 ### What is tested, and where
 
-A matching hash says nothing about whether the program runs. The `Reproducible build` workflow therefore takes the installer built on Linux to a Windows runner. It checks that the hash is the one the Linux job printed, installs it silently, reads the version information of the installed program, starts it for 10 seconds, checks that it opened a WebView2 window, then uninstalls it and checks that nothing is left.
+A matching hash says nothing about whether the program runs. The `Reproducible build` and `Release` workflows therefore take the installer built on Linux to a Windows runner. It checks that the hash is the one the Linux job printed, installs it silently, reads the version information of the installed program, starts it for 10 seconds, checks that it opened a WebView2 window, then uninstalls it and checks that nothing is left.
 
 ## The macOS application
 
@@ -305,7 +307,7 @@ This holds as long as the application is signed ad hoc and not notarised, which 
 
 ### What is tested, and where
 
-A matching hash says nothing about whether the program runs on a Mac. The `Reproducible build` workflow therefore takes the zip built on Linux to two macOS runners, one with Apple silicon and one with Intel. On each, it checks the hash, unpacks the zip with `ditto`, which is what Finder uses, and checks the signature with `codesign --verify --deep --strict`: ad hoc, with sealed resources and the hardened runtime. It checks that the program holds both halves, starts the application and checks that it still runs 10 seconds later. Then it marks a copy as downloaded by Safari and checks that Gatekeeper refuses it for the ordinary reason, and does not call it damaged.
+A matching hash says nothing about whether the program runs on a Mac. The `Reproducible build` and `Release` workflows therefore take the zip built on Linux to two macOS runners, one with Apple silicon and one with Intel. On each, it checks the hash, unpacks the zip with `ditto`, which is what Finder uses, and checks the signature with `codesign --verify --deep --strict`: ad hoc, with sealed resources and the hardened runtime. It checks that the program holds both halves, starts the application and checks that it still runs 10 seconds later. Then it marks a copy as downloaded by Safari and checks that Gatekeeper refuses it for the ordinary reason, and does not call it damaged.
 
 In the workflow, the Apple SDK comes from the Xcode 26.1.1 of a macOS runner, made with the same two scripts and checked against the same hashes. It reaches the Linux job through the Actions cache of the repository, which cannot be read from outside a workflow run, and it is never uploaded as an artifact.
 
@@ -350,7 +352,7 @@ With rootless Podman on a system with SELinux, bind mounts need a label. Set `GE
 
 ## What the CI proves, and what it does not
 
-The `Reproducible build` workflow builds the same commit twice in the pinned image and fails if any hash differs. That catches what varies from one build to the next on a single machine: dates, file order, parallelism, leftover state.
+The `Reproducible build` workflow builds each target twice in the pinned image, on two separate runners, and fails if any hash differs. That catches what varies from one build to the next: dates, file order, parallelism, leftover state, the machine itself. The `Release` workflow runs the same builds, comparisons and tests on every tag, and drafts the release only when all of them pass: the files you download were built twice with the same bytes before anyone could download them.
 
 It does not prove that a build on your machine matches. Only your own rebuild does that, and this page exists for that reason.
 

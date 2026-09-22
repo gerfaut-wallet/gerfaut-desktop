@@ -55,7 +55,7 @@ To build the Linux packages, the Windows installer or the macOS application in a
 
 ## Releases
 
-Installers for Windows, macOS, and Linux are built by CI from every `v*` tag and published on the [releases page](https://github.com/gerfaut-wallet/gerfaut-desktop/releases). Each release ships a `SHA256SUMS` manifest signed with the author's [minisign](https://jedisct1.github.io/minisign/) key:
+Every `v*` tag is built by CI in the pinned container of `reproducible/`, twice, and published on the [releases page](https://github.com/gerfaut-wallet/gerfaut-desktop/releases) only if both builds give the same bytes: `Gerfaut_<version>_amd64.AppImage`, `Gerfaut_<version>_amd64.deb`, `Gerfaut-<version>-1.x86_64.rpm`, `Gerfaut_<version>_x64-setup.exe` and `Gerfaut_<version>_universal.zip`. You can rebuild any of them and compare, see [docs/REPRODUCIBLE-BUILDS.md](docs/REPRODUCIBLE-BUILDS.md). Each release ships a `SHA256SUMS` manifest signed with the author's [minisign](https://jedisct1.github.io/minisign/) key:
 
 ```
 RWTz3c4gUmglCX5Uvjthigz1ts3TS3ZSdhRNpFgOJRW/Wr4XjGlqTR3O
