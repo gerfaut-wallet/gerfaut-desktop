@@ -193,8 +193,3 @@ jobs:
             echo "Gatekeeper sees a broken signature"
             exit 1
           fi
-
-  # Tauri's own bundle of the same commit, built on a Mac, next to the
-  # one the recipe lays out on Linux. Only text leaves the runner: the
-  # two Info.plist files, the two listings, the libraries each slice
-  # loads and what it targets. Run it when Tauri is upgraded.
