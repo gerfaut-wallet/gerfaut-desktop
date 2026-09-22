@@ -539,17 +539,19 @@ jobs:
           # Each half against its native twin: the same libraries, the
           # same oldest macOS, the same SDK. The libraries are compared as
           # sets, since the two linkers list them in their own order. The
-          # kinds of load commands are only printed: Apple's linker writes
-          # an LC_SOURCE_VERSION of 0 that lld leaves out, and a program
-          # loads the same way without it.
+          # rest is only printed: each linker names itself and its version
+          # in LC_BUILD_VERSION, Apple's writes an LC_SOURCE_VERSION of 0
+          # that lld leaves out, and Tauri leaves the Intel half unsigned
+          # where the recipe signs both.
           for arch in arm64 x86_64; do
             for side in native cross; do
               if [ "$side" = native ]; then app="$native"; else app="$cross"; fi
               binary="$app/Contents/MacOS/gerfaut-desktop"
               otool -arch "$arch" -L "$binary" | tail -n +2 | LC_ALL=C sort > "reference/$side-$arch-libraries.txt"
               otool -arch "$arch" -l "$binary" > "$side-$arch-commands.txt"
-              awk '$1 == "cmd" { cmd = $2 }
-                cmd ~ /^LC_(BUILD_VERSION|VERSION_MIN_MACOSX)$/ && $1 ~ /^(cmd|minos|version|sdk)$/ { print $1, $2 }' \
+              awk '$1 == "cmd" { cmd = $2; if (cmd ~ /^LC_(BUILD_VERSION|VERSION_MIN_MACOSX)$/) print $1, $2 }
+                cmd == "LC_BUILD_VERSION" && $1 ~ /^(minos|sdk)$/ { print $1, $2 }
+                cmd == "LC_VERSION_MIN_MACOSX" && $1 ~ /^(version|sdk)$/ { print $1, $2 }' \
                 "$side-$arch-commands.txt" > "reference/$side-$arch-build-version.txt"
               awk '$1 == "cmd" { print $2 }' "$side-$arch-commands.txt" | LC_ALL=C sort | uniq -c \
                 > "reference/$side-$arch-load-commands.txt"
