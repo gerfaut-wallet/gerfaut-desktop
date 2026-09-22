@@ -536,18 +536,33 @@ jobs:
           cmp reference/native-listing.txt cross-unsigned.txt || failed="$failed listing"
           grep -qx 'drwxr-xr-x ./Contents/_CodeSignature' reference/cross-listing.txt || failed="$failed signature"
           grep -qx -- '-rw-r--r-- ./Contents/_CodeSignature/CodeResources' reference/cross-listing.txt || failed="$failed signature"
-          # Apple's linker and lld list the libraries in their own order.
+          # Each half against its native twin: the same libraries, the
+          # same oldest macOS, the same SDK. The libraries are compared as
+          # sets, since the two linkers list them in their own order. The
+          # kinds of load commands are only printed: Apple's linker writes
+          # an LC_SOURCE_VERSION of 0 that lld leaves out, and a program
+          # loads the same way without it.
           for arch in arm64 x86_64; do
             for side in native cross; do
               if [ "$side" = native ]; then app="$native"; else app="$cross"; fi
               binary="$app/Contents/MacOS/gerfaut-desktop"
               otool -arch "$arch" -L "$binary" | tail -n +2 | LC_ALL=C sort > "reference/$side-$arch-libraries.txt"
-              otool -arch "$arch" -l "$binary" | grep -A5 -E 'LC_BUILD_VERSION|LC_VERSION_MIN_MACOSX' \
-                | grep -E '^ *(cmd|minos|version|sdk) ' > "reference/$side-$arch-build-version.txt"
+              otool -arch "$arch" -l "$binary" > "$side-$arch-commands.txt"
+              awk '$1 == "cmd" { cmd = $2 }
+                cmd ~ /^LC_(BUILD_VERSION|VERSION_MIN_MACOSX)$/ && $1 ~ /^(cmd|minos|version|sdk)$/ { print $1, $2 }' \
+                "$side-$arch-commands.txt" > "reference/$side-$arch-build-version.txt"
+              awk '$1 == "cmd" { print $2 }' "$side-$arch-commands.txt" | LC_ALL=C sort | uniq -c \
+                > "reference/$side-$arch-load-commands.txt"
             done
             cmp "reference/native-$arch-libraries.txt" "reference/cross-$arch-libraries.txt" || failed="$failed $arch-libraries"
             cmp "reference/native-$arch-build-version.txt" "reference/cross-$arch-build-version.txt" || failed="$failed $arch-build-version"
+            diff "reference/native-$arch-load-commands.txt" "reference/cross-$arch-load-commands.txt" || true
           done
+          # The Intel half targets the macOS Info.plist declares. Apple
+          # silicon starts at 11.0, whatever the plist says.
+          minimum="$(plutil -extract LSMinimumSystemVersion raw "$cross/Contents/Info.plist")"
+          grep -qx "version $minimum" reference/cross-x86_64-build-version.txt || failed="$failed x86_64-minimum"
+          grep -qx "minos 11.0" reference/cross-arm64-build-version.txt || failed="$failed arm64-minimum"
           # What Tauri's bundler writes when told to sign ad hoc, beside
           # what rcodesign wrote, and what Apple's checks make of each.
           codesign --force --sign - --options runtime "$native"
