@@ -309,7 +309,7 @@ This holds as long as the application is signed ad hoc and not notarised, which 
 
 A matching hash says nothing about whether the program runs on a Mac. The `Reproducible build` and `Release` workflows therefore take the zip built on Linux to two macOS runners, one with Apple silicon and one with Intel. On each, it checks the hash, unpacks the zip with `ditto`, which is what Finder uses, and checks the signature with `codesign --verify --deep --strict`: ad hoc, with sealed resources and the hardened runtime. It checks that the program holds both halves, starts the application and checks that it still runs 10 seconds later. Then it marks a copy as downloaded by Safari and checks that Gatekeeper refuses it for the ordinary reason, and does not call it damaged.
 
-In the workflow, the Apple SDK comes from the Xcode 26.1.1 of a macOS runner, made with the same two scripts and checked against the same hashes. It reaches the Linux job through the Actions cache of the repository, which cannot be read from outside a workflow run, and it is never uploaded as an artifact.
+In the workflow, the Apple SDK comes from the Xcode 26.1.1 of a macOS runner, made with the same two scripts and checked against the same hashes. It reaches the Linux jobs through the Actions cache of the repository, encrypted with a key that pull requests from forks never get, and it is never uploaded as an artifact.
 
 ## The binary
 
