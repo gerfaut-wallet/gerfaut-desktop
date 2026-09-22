@@ -212,7 +212,11 @@ Tauri builds the package with the `rpm-rs` library, which writes the wall clock 
 
 ### .AppImage
 
-The AppImage needs no rewriting. Two things make it stable. The `mksquashfs` inside `appimagetool` honours `SOURCE_DATE_EPOCH`. And the recipe gives `appimagetool` a runtime file pinned by hash, through `LDAI_RUNTIME_FILE`. Without it, `appimagetool` downloads the runtime at build time from a release named `continuous`, which changes without notice, and that file ends up at the head of every AppImage. The build checks that the finished AppImage starts with the pinned runtime. Only the 16 bytes of the `.digest_md5` section may differ: that is where `appimagetool` writes the checksum of the payload.
+Three things make the AppImage stable. The `mksquashfs` inside `appimagetool` honours `SOURCE_DATE_EPOCH`. The recipe fixes one symbolic link that would otherwise depend on the machine. And it gives `appimagetool` a runtime file pinned by hash, through `LDAI_RUNTIME_FILE`.
+
+The link is `gerfaut-desktop.png`, the icon at the root of the AppDir, next to the desktop entry that names it. linuxdeploy points it at one of the icons of `usr/share/icons/hicolor`, and the version Tauri pins takes the first one it finds while it reads the directory. That order depends on the file system the build runs on: two GitHub runners once linked it to the 32x32 icon on one and to the 64x64 icon on the other, and nothing else differed. Newer releases of linuxdeploy choose by size instead, the closer to 64x64 the better. The recipe applies that rule, so the link always points at the 64x64 icon, then writes the AppImage again from the same AppDir with the same pinned `linuxdeploy-plugin-appimage`, runtime and date: the last step of Tauri's bundler, repeated. The rest of the AppDir is untouched.
+
+The runtime matters as much. Without the pinned file, `appimagetool` downloads the runtime at build time from a release named `continuous`, which changes without notice, and that file ends up at the head of every AppImage. The build checks that the finished AppImage starts with the pinned runtime. Only the 16 bytes of the `.digest_md5` section may differ: that is where `appimagetool` writes the checksum of the payload.
 
 The libraries inside the AppImage (WebKitGTK, GTK and what they need) are copied from the image by linuxdeploy. They come from the dated Ubuntu snapshot, which is why the snapshot is part of the promise.
 
