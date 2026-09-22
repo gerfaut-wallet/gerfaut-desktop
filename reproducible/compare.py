@@ -38,6 +38,7 @@ import difflib
 import hashlib
 import io
 import lzma
+import re
 import shutil
 import struct
 import subprocess
@@ -347,6 +348,50 @@ def elf_size(data: bytes) -> int:
     return shoff + shentsize * shnum
 
 
+def elf_section(data: bytes, wanted: bytes) -> tuple[int, int] | None:
+    """(offset, size) of the named section of a 64-bit ELF file, if any."""
+    shoff = struct.unpack_from("<Q", data, 0x28)[0]
+    shentsize, shnum, shstrndx = struct.unpack_from("<HHH", data, 0x3A)
+    if shentsize != 64 or shnum > MAX_PE_SECTIONS or shstrndx >= shnum or shoff + 64 * shnum > len(data):
+        raise ValueError("unexpected ELF section table")
+    strings = struct.unpack_from("<Q", data, shoff + 64 * shstrndx + 0x18)[0]
+    for index in range(shnum):
+        header = shoff + 64 * index
+        name = struct.unpack_from("<I", data, header)[0]
+        offset, size = struct.unpack_from("<QQ", data, header + 0x18)
+        if data[strings + name:strings + name + len(wanted) + 1] == wanted + b"\0":
+            return offset, size
+    return None
+
+
+def explain_runtime(a: bytes, b: bytes) -> list[str]:
+    """Two AppImage runtimes: the same file but for the MD5 of the payload
+    that appimagetool writes into it, or really two runtimes."""
+    if len(a) == len(b):
+        section = elf_section(a, b".digest_md5")
+        if section and section == elf_section(b, b".digest_md5"):
+            start, size = section
+            if a[:start] == b[:start] and a[start + size:] == b[start + size:]:
+                return ["AppImage runtime: the same file, but for the MD5 of the payload in its "
+                        ".digest_md5 section, which follows from the payload"]
+    return [f"AppImage runtime differs: {sha256(a)} and {sha256(b)}"]
+
+
+# The icon linuxdeploy links at the root of the AppDir, named after the
+# Icon= key of the desktop entry.
+ROOT_ICON = re.compile(r"squashfs-root/[^/]+\.(png|svg|xpm) -> (.*)$")
+
+
+def explain_root_icon(changed: list[str]) -> list[str]:
+    targets = sorted({m.group(2) for m in (ROOT_ICON.search(line) for line in changed) if m})
+    if len(targets) < 2:
+        return []
+    return ["the icon at the root of the AppDir points to different files: " + " and ".join(targets),
+            "    linuxdeploy links it to the first icon its directory walk finds, and that order "
+            "depends on the file system; reproducible/targets/linux.sh fixes the link before "
+            "the AppImage is written, check that step"]
+
+
 def squashfs_listing(path: Path, offset: int) -> list[str] | None:
     if shutil.which("unsquashfs") is None:
         return None
@@ -361,7 +406,7 @@ def explain_appimage(a: bytes, b: bytes, path_a: Path, path_b: Path) -> list[str
     lines = []
     size_a, size_b = elf_size(a), elf_size(b)
     if a[:size_a] != b[:size_b]:
-        lines.append(f"AppImage runtime differs: {sha256(a[:size_a])} and {sha256(b[:size_b])}")
+        lines.extend(explain_runtime(a[:size_a], b[:size_b]))
     pay_a, pay_b = a[size_a:], b[size_b:]
     if pay_a != pay_b:
         time_a, time_b = struct.unpack_from("<I", pay_a, 8)[0], struct.unpack_from("<I", pay_b, 8)[0]
@@ -372,6 +417,7 @@ def explain_appimage(a: bytes, b: bytes, path_a: Path, path_b: Path) -> list[str
             lines.append("squashfs payload differs (install squashfs-tools for a listing)")
         elif list_a != list_b:
             changed = sorted(set(list_a) ^ set(list_b))
+            lines.extend(explain_root_icon(changed))
             lines.append(f"squashfs listing differs on {len(changed)} lines, first ones:")
             lines.extend("    " + line for line in changed[:20])
         else:
