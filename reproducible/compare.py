@@ -68,6 +68,10 @@ MAX_SLICES = 8
 MAX_LOAD_COMMANDS = 1024
 MAX_BLOBS = 64
 MAX_SPECIAL_SLOTS = 16
+# A Mach-O file numbers its sections with one byte.
+MAX_SECTIONS = 255
+# One hash per page of at least 4 KiB of what one zip entry unpacks to.
+MAX_CODE_SLOTS = (MAX_UNPACKED >> 12) + 1
 # A text file larger than this is compared as bytes, not line by line.
 MAX_TEXT = 1 << 20
 # Explanation lines printed per file.
@@ -610,6 +614,8 @@ def macho_parts(commands: list[tuple[int, bytes]]) -> list[tuple[str, int, int]]
         segment = body[8:24].rstrip(b"\0").decode("ascii", "replace")
         fileoff, filesize = struct.unpack_from("<QQ", body, 40)
         nsects = struct.unpack_from("<I", body, 64)[0]
+        if nsects > MAX_SECTIONS:
+            raise ValueError(f"{nsects} sections in segment {segment}")
         sections = []
         for i in range(nsects):
             entry = 72 + 80 * i
@@ -645,7 +651,7 @@ def code_directory(blob: bytes) -> dict:
      hash_type) = struct.unpack_from(">IIIIIIIIIBB", blob, 0)
     # Both counts come from the file: they must fit in the blob they
     # describe before anything is built from them.
-    if special > MAX_SPECIAL_SLOTS or hash_size not in (20, 32, 48) \
+    if special > MAX_SPECIAL_SLOTS or slots > MAX_CODE_SLOTS or hash_size not in (20, 32, 48) \
             or hash_offset < special * hash_size or hash_offset + slots * hash_size > len(blob):
         raise ValueError("the code directory does not fit in its blob")
     ident = blob[ident_offset:blob.index(b"\0", ident_offset)].decode("utf-8", "replace")
