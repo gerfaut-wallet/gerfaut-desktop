@@ -1,4 +1,4 @@
-/* Toundra design tokens — single source: gerfaut-meta/DESIGN.md.
+/* Toundra design tokens: the only place colours, fonts and spacing are set.
    Light theme is the default; [data-theme="dark"] flips the ramp; the
    .shell-rail class is a self-contained dark island in either theme. */
 

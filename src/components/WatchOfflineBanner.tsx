@@ -6,7 +6,7 @@ import { usePulse } from "../state/premium";
 import { useAcknowledgeOffline } from "../state/premiumQueries";
 import { useSettings } from "../state/queries";
 
-/** The alert banner of B-60: the server's heartbeat has failed twice in
+/** The alert banner shown when the server's heartbeat has failed twice in
     a row, so whatever the app watches from there is not being watched
     right now. It stays until someone acknowledges it or the heartbeat
     verifies again; it never times out on its own, and it never says

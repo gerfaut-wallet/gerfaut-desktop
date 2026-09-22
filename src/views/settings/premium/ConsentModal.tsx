@@ -3,7 +3,7 @@ import { Modal } from "../../../components/Modal";
 import { Notice } from "../../../components/Notice";
 
 /** The question asked once per wallet before its descriptor leaves the
-    device. Red, because privacy is what is at stake (D-20): the server
+    device. Red, because privacy is what is at stake: the server
     will know every address of the wallet from then on. What goes is
     listed in full, and the yes repeats the consequence. A wallet that
     is a single address sends that address, and the words say so. */

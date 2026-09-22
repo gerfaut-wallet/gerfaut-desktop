@@ -105,7 +105,7 @@ export function premiumFailure(error: unknown): { message: string; retry: boolea
         return { message: `The server asks to wait. ${error.message}`, retry: true };
       case "tor":
         // The server is a clearnet address, but an onion backend sends
-        // everything through Tor, this included (D-36). Raw, this read
+        // everything through Tor, this included. Raw, this read
         // "tor: no proxy answers on 127.0.0.1:9050".
         return {
           message:
