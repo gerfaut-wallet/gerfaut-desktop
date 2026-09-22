@@ -100,6 +100,14 @@ deployment_target() {
 # which a clang built for Linux does not read as "link for a Mac": the
 # target is given again. -platform_version records the SDK version in
 # the slice, as Xcode's linker does; clang would write 0.0 without it.
+#
+# -lframework=Foundation puts Foundation ahead of every other library.
+# Some symbols, the NSHTTPCookie keys WebKit's cookies use, are exported
+# by Foundation and by CFNetwork, which Carbon brings in through
+# CoreServices before Foundation on rustc's command line. lld binds a
+# symbol to the first library that has it, Xcode's linker to Foundation:
+# without the flag the slice would load CFNetwork for them, which Xcode's
+# does not, and would expect them there on every macOS it runs on.
 link_flags() {
     local triple="$1" minos="$2" us=$'\x1f' llvm
     case "$triple" in
@@ -108,7 +116,8 @@ link_flags() {
     esac
     printf '%s' "${BASE_RUSTFLAGS}${us}-Clink-arg=--target=$llvm${us}-Clink-arg=-fuse-ld=lld" \
         "${us}-Clink-arg=-Wl,-no_adhoc_codesign" \
-        "${us}-Clink-arg=-Wl,-platform_version,macos,$minos,$SDK_VERSION"
+        "${us}-Clink-arg=-Wl,-platform_version,macos,$minos,$SDK_VERSION" \
+        "${us}-lframework=Foundation"
 }
 
 target_build() {
@@ -203,6 +212,8 @@ check_slice() {
         cmd ~ /^LC_(BUILD_VERSION|VERSION_MIN_MACOSX)$/ && $1 == "sdk" { print $2; exit }' <<< "$headers")"
     [ "$minos" = "$want" ] || die "$triple: the slice targets macOS $minos, not $want"
     [ "$sdk" = "$SDK_VERSION" ] || die "$triple: the slice records SDK $sdk"
+    ! llvm-objdump --macho --dylibs-used "$file" | grep -q '/CFNetwork.framework/' \
+        || die "$triple: the slice loads CFNetwork, which Xcode's linker leaves out"
     ! grep -q 'cmd LC_CODE_SIGNATURE' <<< "$headers" || die "$triple: the linker signed the slice"
     check_paths "$file"
 }
