@@ -12,11 +12,10 @@
 #   .deb       unpacked and written again by dpkg-deb, which honours
 #              SOURCE_DATE_EPOCH and sorts the archive members
 #   .rpm       the two time tags overwritten in place (rpm-normalise.py)
-#   .AppImage  the icon linuxdeploy links at the root of the AppDir set
-#              by a fixed rule, then the AppImage written again from the
-#              same AppDir with the same pinned tools; appimagetool is
-#              given a pinned runtime and SOURCE_DATE_EPOCH, which its
-#              mksquashfs honours
+#   .AppImage  the AppDir the bundler leaves behind fixed in two ways,
+#              the icon linuxdeploy links at its root and the date of
+#              every file, then the AppImage written again from it with
+#              the same pinned plugin and runtime
 
 TRIPLE=x86_64-unknown-linux-gnu
 LINUXDEPLOY_SUMS="$APP/.github/linuxdeploy.sha256"
@@ -71,7 +70,7 @@ target_build() {
 
     canonical_deb "$bundle/deb/Gerfaut_${version}_amd64.deb" "$OUT/Gerfaut_${version}_amd64.deb"
     canonical_rpm "$bundle/rpm/Gerfaut-${version}-1.x86_64.rpm" "$OUT/Gerfaut-${version}-1.x86_64.rpm"
-    fix_appimage_icon "$bundle/appimage/Gerfaut_${version}_amd64.AppImage"
+    rewrite_appimage "$bundle/appimage/Gerfaut_${version}_amd64.AppImage"
     canonical_appimage "$bundle/appimage/Gerfaut_${version}_amd64.AppImage" "$OUT/Gerfaut_${version}_amd64.AppImage"
 }
 
@@ -110,18 +109,28 @@ canonical_rpm() {
     rpm --checksig "$to" > /dev/null || die "the normalised rpm fails its own digests"
 }
 
-# linuxdeploy links an icon at the root of the AppDir, named after the
+# Two things in the AppDir the bundler leaves behind depend on the
+# machine, and the recipe fixes both before it writes the AppImage again
+# from that AppDir, with the plugin, the runtime and the environment the
+# bundler used: the bundler's last step, repeated. The contents of the
+# files are left as they are.
+#
+# The icon linuxdeploy links at the root of the AppDir, named after the
 # Icon= key of the desktop entry. The linuxdeploy Tauri pins takes the
 # first matching icon its directory walk finds, and that order depends
-# on the file system the build runs on: two runners gave 32x32 and
-# 64x64. linuxdeploy has since chosen by size (appdir_root_setup.cpp):
-# the closer to 64x64 the better, the larger on a tie. The recipe applies
-# that rule to the AppDir the bundler leaves behind, with the path as the
-# last tie-breaker, and writes the AppImage again from it, with the
-# plugin, the runtime and the SOURCE_DATE_EPOCH the bundler used: the
-# bundler's last step, repeated with a link that no longer depends on
-# the machine. Everything else in the AppDir is left as it is.
-fix_appimage_icon() {
+# on the file system: two runners gave 32x32 and 64x64. linuxdeploy has
+# since chosen by size (appdir_root_setup.cpp): the closer to 64x64 the
+# better, the larger on a tie. The recipe applies that rule, with the
+# path as the last tie-breaker.
+#
+# The dates. The mksquashfs inside appimagetool only brings a date later
+# than SOURCE_DATE_EPOCH down to it, and leaves an earlier one alone.
+# Some directories of the AppDir, such as the gtk-3.0 one the gtk plugin
+# copies from the image, carry the date the image was built: a build
+# with an image older than the commit kept that date, a build with a
+# newer image did not. Every file and directory is dated
+# SOURCE_DATE_EPOCH first.
+rewrite_appimage() {
     local appimage="$1" appdir name link best icon size preference
     appdir="$(find "$(dirname "$appimage")" -mindepth 1 -maxdepth 1 -type d -name '*.AppDir')"
     [ -n "$appdir" ] && [ "$(printf '%s\n' "$appdir" | wc -l)" -eq 1 ] || die "not one AppDir next to $appimage"
@@ -141,6 +150,7 @@ fix_appimage_icon() {
     [ -n "$best" ] || die "no $name.png under usr/share/icons/hicolor in the AppDir"
     log "AppImage: the icon at the root of the AppDir is $best (linuxdeploy linked $(readlink "$link"))"
     ln -sfn "$best" "$link"
+    find "$appdir" -exec touch --no-dereference --date="@$SOURCE_DATE_EPOCH" {} +
     rm "$appimage"
     (
         cd "$APP" || exit 1
