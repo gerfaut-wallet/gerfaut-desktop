@@ -1,0 +1,92 @@
+# The macOS build needs the Apple SDK, which is not free software: it is
+# never committed, never put in an image, never uploaded as an artifact.
+# A macOS runner, which ships Xcode, makes its two tarballs with the
+# committed scripts and checks them against the committed hashes. They
+# reach the Linux job through the Actions cache of this repository,
+# keyed by those hashes. A Linux runner looks the cache up first, so the
+# macOS runner only starts when the SDK is not there yet.
+#
+# A cache can only be read from inside a workflow run, but in a public
+# repository that includes the run of a pull request from a fork, whose
+# workflow the fork writes. So these jobs refuse to run in a public
+# repository: the SDK caches have to be deleted, and sealed with a
+# secret the runs of forks do not get, before this repository is made
+# public.
+#
+# Called by reproducible.yml and release.yml, which pass the key it
+# returns to container-build.yml.
+
+name: Apple SDK
+
+on:
+  workflow_call:
+    outputs:
+      key:
+        description: The key of the Actions cache that holds the two SDK tarballs
+        value: ${{ jobs.lookup.outputs.key }}
+
+permissions:
+  contents: read
+
+jobs:
+  lookup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      key: ${{ steps.sdk.outputs.key }}
+      found: ${{ steps.lookup.outputs.cache-hit }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          sparse-checkout: reproducible/macos
+
+      - name: Read the pinned SDK
+        id: sdk
+        env:
+          PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          set -euo pipefail
+          [ "$PRIVATE" = true ] || { echo "::error::the Apple SDK is only cached in a private repository"; exit 1; }
+          hash="$(awk '!/^#/ && $2 ~ /[.]tar$/' reproducible/macos/apple-sdk.sha256 | sha256sum | cut -c1-32)"
+          echo "key=apple-sdk-$hash" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        id: lookup
+        with:
+          path: apple-sdk
+          key: ${{ steps.sdk.outputs.key }}
+          lookup-only: true
+
+  make:
+    needs: lookup
+    if: needs.lookup.outputs.found != 'true'
+    # The image that ships Xcode 26.1.1, the version the hash is for.
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          sparse-checkout: reproducible/macos
+
+      - name: Make the SDK from the runner's Xcode
+        run: |
+          set -euo pipefail
+          xcode=/Applications/Xcode_26.1.1.app
+          version="$(plutil -extract CFBundleShortVersionString raw "$xcode/Contents/version.plist")"
+          build="$(plutil -extract ProductBuildVersion raw "$xcode/Contents/version.plist")"
+          echo "Xcode $version ($build), $(python3 --version)"
+          [ "$version ($build)" = "26.1.1 (17B100)" ]
+          mkdir apple-sdk
+          python3 reproducible/macos/gen-sdk.py "$xcode" \
+            -o apple-sdk/Xcode-26.1.1-17B100-extracted-SDK-with-libcxx-headers.tar > /dev/null
+          python3 reproducible/macos/gen-sdk-cryptexes.py "$xcode" \
+            -o apple-sdk/Xcode-26.1.1-17B100-extracted-SDK-cryptexes.tar
+          cd apple-sdk
+          awk '!/^#/ && $2 ~ /[.]tar$/' ../reproducible/macos/apple-sdk.sha256 | shasum -a 256 -c -
+
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: apple-sdk
+          key: ${{ needs.lookup.outputs.key }}

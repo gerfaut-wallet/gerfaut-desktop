@@ -1,0 +1,56 @@
+# The two builds of one target, file by file. The job fails on the first
+# byte that differs, then says where: which member, header field or
+# section, and a diffoscope report per file, attached to the run.
+#
+# Called by reproducible.yml and release.yml once both builds are done.
+
+name: Compare builds
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: linux, windows or macos
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ inputs.target }}-1
+          path: build-1
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ inputs.target }}-2
+          path: build-2
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: gerfaut-desktop
+          persist-credentials: false
+
+      # compare.py needs Python and nothing else.
+      - name: Compare
+        id: compare
+        run: python3 gerfaut-desktop/reproducible/compare.py build-1 build-2
+
+      # On a mismatch only: the same comparison in the pinned image, then
+      # with diffoscope in the tools image. Building them takes minutes.
+      - name: Explain the difference
+        if: failure() && steps.compare.outcome == 'failure'
+        run: gerfaut-desktop/reproducible/compare.sh build-1 build-2 || true
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure() && steps.compare.outcome == 'failure'
+        with:
+          name: ${{ inputs.target }}-diffoscope
+          if-no-files-found: warn
+          path: build-2/diffoscope/

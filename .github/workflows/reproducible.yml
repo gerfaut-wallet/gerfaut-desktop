@@ -1,12 +1,17 @@
 # Proof that the Linux packages, the Windows installer and the macOS
-# application are reproducible: the same commit is built twice, in two
-# separate containers of the same pinned image, and the job fails if a
-# single byte of the .deb, the .rpm, the .AppImage, the setup .exe or
-# the macOS zip differs. When it does fail, the diffoscope reports are
-# attached to the run. The Windows installer is then installed, started
-# and removed on a Windows runner, and the macOS application checked and
-# started on an Apple silicon and an Intel Mac. See
+# application are reproducible: each target is built twice, on two
+# runners, in the same pinned image, and the run fails if a single byte
+# of the .deb, the .rpm, the .AppImage, the setup .exe or the macOS zip
+# differs. When it does fail, the diffoscope reports are attached to the
+# run. The Windows installer is then installed, started and removed on a
+# Windows runner, and the macOS application checked and started on an
+# Apple silicon and an Intel Mac. release.yml runs the same jobs on every
+# tag, and publishes nothing unless they pass. See
 # docs/REPRODUCIBLE-BUILDS.md.
+#
+# The jobs live in reusable workflows: container-build.yml (one build),
+# compare-builds.yml (the two builds of a target), smoke.yml (on
+# Windows or a Mac) and apple-sdk.yml (the SDK the macOS build needs).
 #
 # Started by hand: Actions, Reproducible build, Run workflow. It builds
 # the application twice from nothing, so it is not something to run on
@@ -34,434 +39,109 @@ permissions:
   contents: read
 
 jobs:
-  linux:
+  linux-1:
     if: inputs.target == 'all' || inputs.target == 'linux'
-    permissions:
-      contents: read
-    # Named, never `-latest`, like the release workflow. The runner only
-    # hosts the container engine: nothing of it reaches the artefacts.
-    runs-on: ubuntu-24.04
-    timeout-minutes: 240
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          path: gerfaut-desktop
-          persist-credentials: false
+    uses: ./.github/workflows/container-build.yml
+    with:
+      target: linux
+      build: '1'
+    secrets:
+      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
 
-      - name: Read the pinned gerfaut-core revision
-        id: core
-        run: echo "rev=$(cat gerfaut-desktop/.github/gerfaut-core.rev)" >> "$GITHUB_OUTPUT"
+  linux-2:
+    if: inputs.target == 'all' || inputs.target == 'linux'
+    uses: ./.github/workflows/container-build.yml
+    with:
+      target: linux
+      build: '2'
+    secrets:
+      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
 
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          repository: gerfaut-wallet/gerfaut-core
-          ref: ${{ steps.core.outputs.rev }}
-          ssh-key: ${{ secrets.CORE_DEPLOY_KEY }}
-          path: gerfaut-core
-          persist-credentials: false
+  linux-compare:
+    needs: [linux-1, linux-2]
+    uses: ./.github/workflows/compare-builds.yml
+    with:
+      target: linux
 
-      # No token, no secret and no write permission from here on. The
-      # script builds the pinned image, then runs each build in a
-      # container that has no network.
-      - name: Build twice and compare
-        run: gerfaut-desktop/reproducible/build.sh linux --twice --out "$PWD/out"
-
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: always()
-        with:
-          name: reproducible-linux
-          if-no-files-found: warn
-          path: |
-            out/build-1/SHA256SUMS
-            out/build-1/*.deb
-            out/build-1/*.rpm
-            out/build-1/*.AppImage
-            out/build-1/build-info/
-            out/build-2/SHA256SUMS
-            out/build-2/diffoscope/
-
-  # The Windows installer, cross-built in the same kind of container.
-  # The job passes --accept-microsoft-license: the build downloads the
-  # Microsoft C runtime and Windows SDK from Microsoft to the runner,
-  # checks them against the committed hashes and throws them away with
-  # the runner. They are never uploaded: the artefact holds the
-  # installer and the build log, nothing else.
-  windows:
+  windows-1:
     if: inputs.target == 'all' || inputs.target == 'windows'
-    permissions:
-      contents: read
-    runs-on: ubuntu-24.04
-    timeout-minutes: 240
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          path: gerfaut-desktop
-          persist-credentials: false
+    uses: ./.github/workflows/container-build.yml
+    with:
+      target: windows
+      build: '1'
+      accept-microsoft-license: true
+    secrets:
+      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
 
-      - name: Read the pinned gerfaut-core revision
-        id: core
-        run: echo "rev=$(cat gerfaut-desktop/.github/gerfaut-core.rev)" >> "$GITHUB_OUTPUT"
+  windows-2:
+    if: inputs.target == 'all' || inputs.target == 'windows'
+    uses: ./.github/workflows/container-build.yml
+    with:
+      target: windows
+      build: '2'
+      accept-microsoft-license: true
+    secrets:
+      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
 
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          repository: gerfaut-wallet/gerfaut-core
-          ref: ${{ steps.core.outputs.rev }}
-          ssh-key: ${{ secrets.CORE_DEPLOY_KEY }}
-          path: gerfaut-core
-          persist-credentials: false
+  windows-compare:
+    needs: [windows-1, windows-2]
+    uses: ./.github/workflows/compare-builds.yml
+    with:
+      target: windows
 
-      - name: Build twice and compare
-        run: >
-          gerfaut-desktop/reproducible/build.sh windows --twice
-          --accept-microsoft-license --out "$PWD/out"
-
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: always()
-        with:
-          name: reproducible-windows
-          if-no-files-found: warn
-          path: |
-            out/build-1/SHA256SUMS
-            out/build-1/*.exe
-            out/build-1/build-info/
-            out/build-2/SHA256SUMS
-            out/build-2/diffoscope/
-
-  # The installer built on Linux, run on Windows. A matching hash says
-  # nothing about whether the program starts: this job installs it,
-  # starts it and removes it again. It compiles nothing.
   windows-smoke:
-    needs: windows
-    permissions:
-      contents: read
-    runs-on: windows-2025
-    timeout-minutes: 20
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: reproducible-windows
-          path: artefact
-
-      - name: Check that the file is the one the Linux job built
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $setup = Get-ChildItem artefact/build-1/Gerfaut_*_x64-setup.exe
-          $line = Get-Content artefact/build-1/SHA256SUMS | Where-Object { $_ -like "*$($setup.Name)" }
-          $want = ($line -split '\s+')[0]
-          $have = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
-          "$have  $($setup.Name)"
-          if ($have -ne $want) { throw "the hash differs from the one in SHA256SUMS ($want)" }
-          # Unsigned today. The day this changes, the page about
-          # reproducible builds has to say how a signature is set aside.
-          $signature = (Get-AuthenticodeSignature $setup).Status
-          if ($signature -ne 'NotSigned') { throw "unexpected Authenticode status: $signature" }
-          "SETUP=$($setup.FullName)" >> $env:GITHUB_ENV
-
-      - name: Install silently
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $done = Start-Process $env:SETUP -ArgumentList '/S' -Wait -PassThru
-          if ($done.ExitCode -ne 0) { throw "the installer exited with $($done.ExitCode)" }
-          $app = Join-Path $env:LOCALAPPDATA 'Gerfaut\gerfaut-desktop.exe'
-          if (-not (Test-Path $app)) { throw "not installed: $app" }
-          $info = (Get-Item $app).VersionInfo
-          $info | Format-List ProductName, FileDescription, FileVersion, ProductVersion, LegalCopyright
-          $version = $env:SETUP -replace '.*Gerfaut_(.+)_x64-setup\.exe$', '$1'
-          if ($info.ProductName -ne 'Gerfaut') { throw "product name: $($info.ProductName)" }
-          if ($info.ProductVersion -ne $version) { throw "product version: $($info.ProductVersion), expected $version" }
-          $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Gerfaut'
-          if ((Get-ItemProperty $key).DisplayVersion -ne $version) { throw 'the uninstall entry does not carry the version' }
-          if (-not (Test-Path (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Gerfaut.lnk'))) { throw 'no Start Menu entry' }
-
-      - name: Start the application
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $app = Join-Path $env:LOCALAPPDATA 'Gerfaut\gerfaut-desktop.exe'
-          $process = Start-Process $app -PassThru
-          Start-Sleep -Seconds 10
-          if ($process.HasExited) { throw "the application exited with $($process.ExitCode)" }
-          # The window is a WebView2: no child process means no window.
-          $children = Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" |
-            Where-Object { $_.CommandLine -like '*gerfaut*' }
-          "WebView2 processes: $(@($children).Count)"
-          if (-not $children) { throw 'the application started no WebView2 process' }
-          Stop-Process -Id $process.Id -Force
-          Wait-Process -Id $process.Id -Timeout 30 -ErrorAction SilentlyContinue
-
-      - name: Uninstall silently
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $dir = Join-Path $env:LOCALAPPDATA 'Gerfaut'
-          # The uninstaller copies itself to a temporary directory and
-          # returns at once, so the result is waited for, not the process.
-          Start-Process (Join-Path $dir 'uninstall.exe') -ArgumentList '/S' -Wait
-          $left = @(
-            $dir,
-            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Gerfaut',
-            (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Gerfaut.lnk'),
-            (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Gerfaut.lnk')
-          )
-          foreach ($attempt in 1..30) {
-            if (-not ($left | Where-Object { Test-Path $_ })) { break }
-            Start-Sleep -Seconds 2
-          }
-          $still = $left | Where-Object { Test-Path $_ }
-          if ($still) { throw "left behind: $($still -join ', ')" }
-          'nothing left behind'
-
-  # --- macOS ---------------------------------------------------------------
-  #
-  # The macOS build needs the Apple SDK, which is not free software: it is
-  # never committed, never put in an image, never uploaded as an artifact.
-  # A macOS runner, which ships Xcode, makes its two tarballs with the
-  # committed scripts and checks them against the committed hashes. They
-  # reach the Linux job through the Actions cache of this repository,
-  # keyed by those hashes. A Linux runner looks the cache up first, so the
-  # macOS runner only starts when the SDK is not there yet.
-  #
-  # A cache can only be read from inside a workflow run, but in a public
-  # repository that includes the run of a pull request from a fork, whose
-  # workflow the fork writes. So these jobs refuse to run in a public
-  # repository: the SDK caches have to be deleted, and sealed with a
-  # secret the runs of forks do not get, before this repository is made
-  # public.
-  apple-sdk-lookup:
-    if: inputs.target == 'all' || inputs.target == 'macos'
-    permissions:
-      contents: read
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    outputs:
-      key: ${{ steps.sdk.outputs.key }}
-      found: ${{ steps.lookup.outputs.cache-hit }}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-          sparse-checkout: reproducible/macos
-
-      - name: Read the pinned SDK
-        id: sdk
-        env:
-          PRIVATE: ${{ github.event.repository.private }}
-        run: |
-          set -euo pipefail
-          [ "$PRIVATE" = true ] || { echo "::error::the Apple SDK is only cached in a private repository"; exit 1; }
-          hash="$(awk '!/^#/ && $2 ~ /[.]tar$/' reproducible/macos/apple-sdk.sha256 | sha256sum | cut -c1-32)"
-          echo "key=apple-sdk-$hash" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        id: lookup
-        with:
-          path: apple-sdk
-          key: ${{ steps.sdk.outputs.key }}
-          lookup-only: true
+    needs: windows-compare
+    uses: ./.github/workflows/smoke.yml
+    with:
+      target: windows
+      artifact: windows-1
 
   apple-sdk:
-    needs: apple-sdk-lookup
-    if: needs.apple-sdk-lookup.outputs.found != 'true'
-    permissions:
-      contents: read
-    # The image that ships Xcode 26.1.1, the version the hash is for.
-    runs-on: macos-15
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-          sparse-checkout: reproducible/macos
+    if: inputs.target == 'all' || inputs.target == 'macos'
+    uses: ./.github/workflows/apple-sdk.yml
 
-      - name: Make the SDK from the runner's Xcode
-        run: |
-          set -euo pipefail
-          xcode=/Applications/Xcode_26.1.1.app
-          version="$(plutil -extract CFBundleShortVersionString raw "$xcode/Contents/version.plist")"
-          build="$(plutil -extract ProductBuildVersion raw "$xcode/Contents/version.plist")"
-          echo "Xcode $version ($build), $(python3 --version)"
-          [ "$version ($build)" = "26.1.1 (17B100)" ]
-          mkdir apple-sdk
-          python3 reproducible/macos/gen-sdk.py "$xcode" \
-            -o apple-sdk/Xcode-26.1.1-17B100-extracted-SDK-with-libcxx-headers.tar > /dev/null
-          python3 reproducible/macos/gen-sdk-cryptexes.py "$xcode" \
-            -o apple-sdk/Xcode-26.1.1-17B100-extracted-SDK-cryptexes.tar
-          cd apple-sdk
-          awk '!/^#/ && $2 ~ /[.]tar$/' ../reproducible/macos/apple-sdk.sha256 | shasum -a 256 -c -
+  macos-1:
+    needs: apple-sdk
+    if: inputs.target == 'all' || inputs.target == 'macos'
+    uses: ./.github/workflows/container-build.yml
+    with:
+      target: macos
+      build: '1'
+      apple-sdk-key: ${{ needs.apple-sdk.outputs.key }}
+    secrets:
+      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
 
-      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: apple-sdk
-          key: ${{ needs.apple-sdk-lookup.outputs.key }}
+  macos-2:
+    needs: apple-sdk
+    if: inputs.target == 'all' || inputs.target == 'macos'
+    uses: ./.github/workflows/container-build.yml
+    with:
+      target: macos
+      build: '2'
+      apple-sdk-key: ${{ needs.apple-sdk.outputs.key }}
+    secrets:
+      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
 
-  macos:
-    needs: [apple-sdk-lookup, apple-sdk]
-    if: >-
-      !cancelled() && needs.apple-sdk-lookup.result == 'success'
-      && (needs.apple-sdk.result == 'success' || needs.apple-sdk.result == 'skipped')
-    permissions:
-      contents: read
-    runs-on: ubuntu-24.04
-    timeout-minutes: 240
-    steps:
-      # Before the code is checked out, so that nothing a cache holds can
-      # land on top of it. The two tarballs are all it may hold, and
-      # build.sh checks their hashes.
-      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: apple-sdk
-          key: ${{ needs.apple-sdk-lookup.outputs.key }}
-          fail-on-cache-miss: true
+  macos-compare:
+    needs: [macos-1, macos-2]
+    uses: ./.github/workflows/compare-builds.yml
+    with:
+      target: macos
 
-      - name: Check what the cache held
-        run: |
-          set -euo pipefail
-          have="$(find . -mindepth 1 -printf '%P\n' | LC_ALL=C sort | tr '\n' ' ')"
-          want="apple-sdk apple-sdk/Xcode-26.1.1-17B100-extracted-SDK-cryptexes.tar apple-sdk/Xcode-26.1.1-17B100-extracted-SDK-with-libcxx-headers.tar "
-          [ "$have" = "$want" ] || { echo "unexpected files from the cache: $have"; exit 1; }
-
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          path: gerfaut-desktop
-          persist-credentials: false
-
-      - name: Read the pinned gerfaut-core revision
-        id: core
-        run: echo "rev=$(cat gerfaut-desktop/.github/gerfaut-core.rev)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          repository: gerfaut-wallet/gerfaut-core
-          ref: ${{ steps.core.outputs.rev }}
-          ssh-key: ${{ secrets.CORE_DEPLOY_KEY }}
-          path: gerfaut-core
-          persist-credentials: false
-
-      # build.sh checks the SDK against the hashes again and mounts it
-      # read-only into the build container, which has no network.
-      - name: Build twice and compare
-        run: >
-          gerfaut-desktop/reproducible/build.sh macos --twice
-          --macos-sdk apple-sdk --out "$PWD/out"
-
-      - name: Remove the SDK
-        if: always()
-        run: rm -rf apple-sdk
-
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: always()
-        with:
-          name: reproducible-macos
-          if-no-files-found: warn
-          path: |
-            out/build-1/SHA256SUMS
-            out/build-1/*.zip
-            out/build-1/build-info/
-            out/build-2/SHA256SUMS
-            out/build-2/diffoscope/
-
-  # The application built on Linux, on a Mac of each kind: unpacked as
-  # Finder does, its signature checked, started, and assessed the way
-  # Gatekeeper assesses a downloaded copy. It compiles nothing.
   macos-smoke:
-    needs: macos
-    # Stated, because the default would also skip this job when the SDK
-    # came from the cache and the job that makes it was skipped.
-    if: ${{ !cancelled() && needs.macos.result == 'success' }}
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [macos-15, macos-15-intel]
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
-    steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: reproducible-macos
-          path: artefact
-
-      - name: Check that the file is the one the Linux job built
-        run: |
-          set -euo pipefail
-          sw_vers
-          echo "processor: $(uname -m)"
-          zips=(artefact/build-1/*_universal.zip)
-          [ "${#zips[@]}" -eq 1 ] && [[ "$(basename "${zips[0]}")" =~ ^[A-Za-z0-9._-]+$ ]] \
-            || { echo "expected one zip with a plain name"; exit 1; }
-          zip="${zips[0]}"
-          want="$(awk -v n="$(basename "$zip")" '$2 == n { print $1 }' artefact/build-1/SHA256SUMS)"
-          have="$(shasum -a 256 "$zip" | cut -d' ' -f1)"
-          echo "$have  $(basename "$zip")"
-          [ "$have" = "$want" ]
-          echo "ZIP=$PWD/$zip" >> "$GITHUB_ENV"
-
-      # Archive Utility, which Finder opens a zip with, unpacks the way
-      # ditto does.
-      - name: Unpack as Finder does
-        run: |
-          set -euo pipefail
-          ditto -x -k "$ZIP" unpacked
-          find unpacked -print0 | xargs -0 stat -f '%Sp %z %N'
-          echo "APP=$PWD/unpacked/Gerfaut.app" >> "$GITHUB_ENV"
-
-      - name: Check the signature
-        run: |
-          set -euo pipefail
-          codesign --verify --deep --strict --verbose=2 "$APP"
-          codesign -dv --verbose=4 "$APP" > signature.txt 2>&1
-          cat signature.txt
-          grep -q '^Identifier=com.gerfautwallet.gerfaut$' signature.txt
-          grep -q '^Signature=adhoc$' signature.txt
-          grep -Eq 'flags=0x10002\(adhoc,runtime\)' signature.txt
-          grep -q '^Sealed Resources version=2 ' signature.txt
-          archs="$(lipo -archs "$APP/Contents/MacOS/gerfaut-desktop")"
-          echo "lipo -archs: $archs"
-          [ "$archs" = "x86_64 arm64" ]
-
-      # No quarantine attribute here, so Gatekeeper stays out of it. The
-      # runner's login keychain is unlocked, and the application creates
-      # its vault in the runner's home.
-      - name: Start the application
-        run: |
-          set -euo pipefail
-          open -n --stdout "$PWD/app.log" --stderr "$PWD/app.log" "$APP"
-          sleep 10
-          pid="$(pgrep -x gerfaut-desktop)" || { cat app.log; echo "the application is not running after 10 seconds"; exit 1; }
-          ps -o pid=,etime=,command= -p "$pid"
-          echo "web content processes: $(pgrep -f com.apple.WebKit.WebContent | wc -l | tr -d ' ')"
-          kill "$pid"
-          cat app.log
-
-      # A copy marked as downloaded by Safari: Gatekeeper must refuse it
-      # for the ordinary reason, no notarisation, and never call it
-      # damaged or broken.
-      - name: Assess a downloaded copy
-        run: |
-          set -euo pipefail
-          ditto "$APP" quarantined/Gerfaut.app
-          xattr -w com.apple.quarantine "0083;$(printf %x "$(date +%s)");Safari;" quarantined/Gerfaut.app
-          status=0
-          spctl --assess --type execute -vvv quarantined/Gerfaut.app > spctl.txt 2>&1 || status=$?
-          cat spctl.txt
-          echo "spctl exit status: $status"
-          syspolicy_check distribution quarantined/Gerfaut.app 2>&1 || true
-          [ "$status" -ne 0 ] || { echo "Gatekeeper accepted an application that is not notarised"; exit 1; }
-          grep -q 'rejected' spctl.txt
-          if grep -Eiq 'no resources|damaged|invalid|modified|not signed' spctl.txt; then
-            echo "Gatekeeper sees a broken signature"
-            exit 1
-          fi
+    needs: macos-compare
+    uses: ./.github/workflows/smoke.yml
+    with:
+      target: macos
+      artifact: macos-1
 
   # Tauri's own bundle of the same commit, built on a Mac, next to the
   # one the recipe lays out on Linux. Only text leaves the runner: the
   # two Info.plist files, the two listings, the libraries each slice
   # loads and what it targets. Run it when Tauri is upgraded.
   macos-reference:
-    needs: macos
-    if: ${{ !cancelled() && needs.macos.result == 'success' && inputs.macos-reference }}
+    needs: macos-compare
+    if: inputs.macos-reference
     permissions:
       contents: read
     runs-on: macos-15
@@ -512,14 +192,14 @@ jobs:
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: reproducible-macos
+          name: macos-1
           path: artefact
 
       - name: Compare the two bundles
         run: |
           set -euo pipefail
           native=gerfaut-desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/Gerfaut.app
-          ditto -x -k artefact/build-1/*_universal.zip cross
+          ditto -x -k artefact/*_universal.zip cross
           cross=cross/Gerfaut.app
           mkdir reference
           listing() { (cd "$1" && find . -print0 | LC_ALL=C sort -z | xargs -0 stat -f '%Sp %N'); }

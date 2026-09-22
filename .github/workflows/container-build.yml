@@ -1,0 +1,120 @@
+# One build of one target in the pinned container, on a runner of its
+# own: reproducible/build.sh on the sources of this commit and the
+# gerfaut-core commit it pins. The artefacts, their SHA256SUMS and the
+# build-info directory leave as the artifact <target>-<build>.
+#
+# Called twice per target by reproducible.yml and release.yml, on two
+# runners, and compare-builds.yml compares the two artifacts. The job
+# holds no token and no secret but the read-only deploy key of
+# gerfaut-core, and the build itself runs in a container with no
+# network. See docs/REPRODUCIBLE-BUILDS.md.
+
+name: Container build
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: linux, windows or macos
+        type: string
+        required: true
+      build:
+        description: Which of the two builds of the target this is, 1 or 2
+        type: string
+        required: true
+      apple-sdk-key:
+        description: macos only, the cache key apple-sdk.yml returns
+        type: string
+        default: ''
+      accept-microsoft-license:
+        description: >-
+          windows only: the project accepts the licence of the Microsoft C
+          runtime and Windows SDK, which the build downloads from Microsoft
+          to the runner and throws away with it
+          (https://go.microsoft.com/fwlink/?LinkId=2086102)
+        type: boolean
+        default: false
+    secrets:
+      core-deploy-key:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      # macOS: the Apple SDK, before the code is checked out, so that
+      # nothing a cache holds can land on top of it. The two tarballs
+      # are all it may hold, and build.sh checks their hashes.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: inputs.target == 'macos'
+        with:
+          path: apple-sdk
+          key: ${{ inputs.apple-sdk-key }}
+          fail-on-cache-miss: true
+
+      - name: Check what the cache held
+        if: inputs.target == 'macos'
+        run: |
+          set -euo pipefail
+          have="$(find . -mindepth 1 -printf '%P\n' | LC_ALL=C sort | tr '\n' ' ')"
+          want="apple-sdk apple-sdk/Xcode-26.1.1-17B100-extracted-SDK-cryptexes.tar apple-sdk/Xcode-26.1.1-17B100-extracted-SDK-with-libcxx-headers.tar "
+          [ "$have" = "$want" ] || { echo "unexpected files from the cache: $have"; exit 1; }
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: gerfaut-desktop
+          persist-credentials: false
+
+      - name: Read the pinned gerfaut-core revision
+        id: core
+        run: echo "rev=$(cat gerfaut-desktop/.github/gerfaut-core.rev)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: gerfaut-wallet/gerfaut-core
+          ref: ${{ steps.core.outputs.rev }}
+          ssh-key: ${{ secrets.core-deploy-key }}
+          path: gerfaut-core
+          persist-credentials: false
+
+      # build.sh builds the pinned image, fetches with the network, then
+      # builds in a container that has none. For Windows it downloads the
+      # Microsoft C runtime and Windows SDK, only with the licence flag;
+      # for macOS it checks the SDK against the committed hashes again
+      # and mounts it read-only into the build container.
+      - name: Build
+        env:
+          TARGET: ${{ inputs.target }}
+          BUILD: ${{ inputs.build }}
+          MICROSOFT_LICENSE: ${{ inputs.accept-microsoft-license }}
+        run: |
+          set -euo pipefail
+          case "$BUILD" in 1|2) ;; *) echo "::error::build must be 1 or 2"; exit 1 ;; esac
+          options=()
+          case "$TARGET" in
+            linux) ;;
+            windows)
+              [ "$MICROSOFT_LICENSE" = true ] || { echo "::error::the Windows build needs accept-microsoft-license"; exit 1; }
+              options+=(--accept-microsoft-license) ;;
+            macos) options+=(--macos-sdk apple-sdk) ;;
+            *) echo "::error::unknown target: $TARGET"; exit 1 ;;
+          esac
+          gerfaut-desktop/reproducible/build.sh "$TARGET" "${options[@]}" --out "$PWD/out"
+
+      - name: Remove the SDK
+        if: always() && inputs.target == 'macos'
+        run: rm -rf apple-sdk
+
+      # The artefacts, SHA256SUMS and build-info, nothing else: the
+      # Microsoft files stay in the cache volume and the Apple SDK was
+      # never in out/.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: ${{ inputs.target }}-${{ inputs.build }}
+          if-no-files-found: warn
+          path: out/
