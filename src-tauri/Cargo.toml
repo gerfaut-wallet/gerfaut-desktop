@@ -31,6 +31,12 @@ rand = "0.9"
 hex = "0.4"
 data-encoding = "2"
 
+# The library the notification plugin posts with, called directly on
+# Linux: the plugin drops a notification's id on the desktop, and the id
+# is what lets a confirmation take the place of its pending notice.
+[target.'cfg(target_os = "linux")'.dependencies]
+notify-rust = "4.11"
+
 [dev-dependencies]
 # The tests sign the licences they then read back; the app itself never
 # signs anything.

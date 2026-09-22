@@ -62,12 +62,43 @@ pub(crate) enum NoticeKind {
     Dropped,
 }
 
+/// Which payment a notification is about: the id the core asks a host
+/// to post it under, `replaces.unwrap_or(txid)`, for the wallet it is
+/// posted for. A fee bump confirms under a txid of its own and names in
+/// `replaces` the one first announced, so its confirmation shares the
+/// id of the pending notice. The wallet is part of the id because a
+/// payment between two watched wallets is announced for each of them,
+/// and one must not take the other's place.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct NoticeId {
+    pub wallet_id: String,
+    pub txid: String,
+}
+
+impl NoticeId {
+    pub(crate) fn of(tx: &LiveTx) -> Self {
+        NoticeId {
+            wallet_id: tx.wallet_id.clone(),
+            txid: payment(tx).to_owned(),
+        }
+    }
+}
+
+/// The txid a transaction's payment was first announced under.
+fn payment(tx: &LiveTx) -> &str {
+    tx.replaces.as_deref().unwrap_or(&tx.txid)
+}
+
 /// One notification, ready to post.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Notice {
     pub title: String,
     pub body: String,
     pub kind: NoticeKind,
+    /// The payment it is about. A later notice with the same id takes
+    /// its place where the system lets one notification replace
+    /// another. `None` for a line that counts the rest or sums up.
+    pub id: Option<NoticeId>,
 }
 
 /// What one sync of one wallet has to announce: the first few
@@ -83,6 +114,27 @@ pub(crate) struct Held {
 
 impl Held {
     pub(crate) fn push(&mut self, tx: LiveTx) {
+        // A payment held as pending is said once. What comes next for it
+        // in the same sync takes the place of the pending notice rather
+        // than showing beside it: its confirmation, a fee bump's
+        // included, stands where it stood. A payment no longer coming
+        // has nothing to take back from a notice never posted, so
+        // neither is said, as the core does with news still waiting.
+        let pending = self.first.iter().position(|held| {
+            held.stage == TxStage::Mempool
+                && held.wallet_id == tx.wallet_id
+                && payment(held) == payment(&tx)
+        });
+        if let Some(at) = pending {
+            match tx.stage {
+                TxStage::Mempool => {}
+                TxStage::Confirmed => self.first[at] = tx,
+                TxStage::Dropped => {
+                    self.first.remove(at);
+                }
+            }
+            return;
+        }
         if tx.stage == TxStage::Dropped {
             if self.dropped.len() < MAX_DROPPED_HELD {
                 self.dropped.push(tx);
@@ -97,7 +149,7 @@ impl Held {
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        self.first.is_empty() && self.dropped.is_empty()
+        self.first.is_empty() && self.more == 0 && self.dropped.is_empty()
     }
 }
 
@@ -216,6 +268,7 @@ pub(crate) fn compose(wallet_id: &str, held: &Held, context: &Context) -> Vec<No
             title: title.clone(),
             body: describe(tx, context),
             kind: NoticeKind::Transaction,
+            id: Some(NoticeId::of(tx)),
         })
         .collect();
     if held.more > 0 {
@@ -223,12 +276,14 @@ pub(crate) fn compose(wallet_id: &str, held: &Held, context: &Context) -> Vec<No
             title: title.clone(),
             body: plural(held.more, "more transaction"),
             kind: NoticeKind::Transaction,
+            id: None,
         });
     }
     notices.extend(held.dropped.iter().map(|tx| Notice {
         title: title.clone(),
         body: describe(tx, context),
         kind: NoticeKind::Dropped,
+        id: Some(NoticeId::of(tx)),
     }));
     if held.dropped_more > 0 {
         let count = held.dropped_more;
@@ -239,6 +294,7 @@ pub(crate) fn compose(wallet_id: &str, held: &Held, context: &Context) -> Vec<No
                 if count == 1 { " is" } else { "s are" }
             ),
             kind: NoticeKind::Dropped,
+            id: None,
         });
     }
     notices
@@ -258,6 +314,13 @@ mod tests {
         }
     }
 
+    fn id(txid: &str) -> Option<NoticeId> {
+        Some(NoticeId {
+            wallet_id: "w1".to_owned(),
+            txid: txid.to_owned(),
+        })
+    }
+
     fn context() -> Context {
         Context {
             names: HashMap::from([("w1".to_owned(), "Cold storage".to_owned())]),
@@ -270,7 +333,7 @@ mod tests {
         let held: Held = [
             tx("a", 150_000, TxStage::Mempool),
             tx("b", -2_100_000_000, TxStage::Mempool),
-            tx("a", 150_000, TxStage::Confirmed),
+            tx("c", 150_000, TxStage::Confirmed),
         ]
         .into_iter()
         .collect();
@@ -326,7 +389,7 @@ mod tests {
         let held: Held = [
             tx("a", 150_000, TxStage::Mempool),
             tx("b", -150_000, TxStage::Mempool),
-            tx("a", 150_000, TxStage::Confirmed),
+            tx("c", 150_000, TxStage::Confirmed),
             tx("d", 9, TxStage::Mempool),
             tx("e", 9, TxStage::Mempool),
         ]
@@ -344,21 +407,25 @@ mod tests {
                     title: "Gerfaut".to_owned(),
                     body: "New transaction · pending".to_owned(),
                     kind: NoticeKind::Transaction,
+                    id: id("a"),
                 },
                 Notice {
                     title: "Gerfaut".to_owned(),
                     body: "New outgoing transaction · pending".to_owned(),
                     kind: NoticeKind::Transaction,
+                    id: id("b"),
                 },
                 Notice {
                     title: "Gerfaut".to_owned(),
                     body: "Transaction confirmed".to_owned(),
                     kind: NoticeKind::Transaction,
+                    id: id("c"),
                 },
                 Notice {
                     title: "Gerfaut".to_owned(),
                     body: "2 more transactions".to_owned(),
                     kind: NoticeKind::Transaction,
+                    id: None,
                 },
             ]
         );
@@ -382,6 +449,7 @@ mod tests {
                 title: "Cold storage".to_owned(),
                 body: "A pending payment of 0.00150000 BTC is no longer coming".to_owned(),
                 kind: NoticeKind::Dropped,
+                id: id("a"),
             }]
         );
 
@@ -450,6 +518,79 @@ mod tests {
         );
     }
 
+    /// A fee bump confirms under a txid of its own and names the first
+    /// one: its notice carries the id of the pending notice, so it can
+    /// take that notice's place. A payment that was not bumped keeps its
+    /// own txid, and the same payment in another wallet an id of its own.
+    #[test]
+    fn a_bumps_confirmation_uses_the_first_txids_id() {
+        let pending: Held = [tx("a", 50_000, TxStage::Mempool)].into_iter().collect();
+        let bump = LiveTx {
+            replaces: Some("a".to_owned()),
+            ..tx("c", 49_600, TxStage::Confirmed)
+        };
+        let confirmed: Held = [bump.clone()].into_iter().collect();
+        assert_eq!(compose("w1", &pending, &context())[0].id, id("a"));
+        let said = compose("w1", &confirmed, &context());
+        assert_eq!(said[0].id, id("a"));
+        assert_eq!(said[0].body, "Received 0.00049600 BTC · confirmed");
+
+        let plain: Held = [tx("b", 1, TxStage::Confirmed)].into_iter().collect();
+        assert_eq!(compose("w1", &plain, &context())[0].id, id("b"));
+
+        let elsewhere = LiveTx {
+            wallet_id: "w2".to_owned(),
+            ..bump
+        };
+        assert_eq!(
+            NoticeId::of(&elsewhere),
+            NoticeId {
+                wallet_id: "w2".to_owned(),
+                txid: "a".to_owned(),
+            }
+        );
+    }
+
+    /// What a sync says next about a payment it holds as pending takes
+    /// the place of the pending notice: none is left beside its own
+    /// confirmation, a bump's included, a second arrival adds nothing,
+    /// and a payment gone before its notice was posted is not said.
+    #[test]
+    fn a_held_pending_notice_gives_way_to_what_follows_it() {
+        let bump = LiveTx {
+            replaces: Some("a".to_owned()),
+            ..tx("c", 49_600, TxStage::Confirmed)
+        };
+        let held: Held = [
+            tx("a", 50_000, TxStage::Mempool),
+            tx("b", 1, TxStage::Mempool),
+            tx("a", 50_000, TxStage::Mempool),
+            bump.clone(),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(held.first, vec![bump, tx("b", 1, TxStage::Mempool)]);
+        assert_eq!(held.more, 0);
+
+        let gone: Held = [
+            tx("a", 50_000, TxStage::Mempool),
+            tx("a", 50_000, TxStage::Dropped),
+        ]
+        .into_iter()
+        .collect();
+        assert!(gone.is_empty());
+
+        // The same txid in another wallet is another notice.
+        let elsewhere = LiveTx {
+            wallet_id: "w2".to_owned(),
+            ..tx("a", 1, TxStage::Confirmed)
+        };
+        let both: Held = [tx("a", 1, TxStage::Mempool), elsewhere]
+            .into_iter()
+            .collect();
+        assert_eq!(both.first.len(), 2);
+    }
+
     #[test]
     fn three_are_said_and_the_rest_counted() {
         let held: Held = (0..7)
@@ -460,6 +601,7 @@ mod tests {
         let notices = compose("w1", &held, &context());
         assert_eq!(notices.len(), 4);
         assert_eq!(notices[3].body, "4 more transactions");
+        assert_eq!(notices[3].id, None);
 
         let one_more: Held = (0..4)
             .map(|i| tx(&format!("t{i}"), 1_000, TxStage::Mempool))

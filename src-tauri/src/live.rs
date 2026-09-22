@@ -31,8 +31,11 @@ use gerfaut_core::wallet::snapshot::SyncReport;
 use gerfaut_core::watch::WatchStatus;
 use serde::Serialize;
 use tauri::{Emitter, Manager};
+#[cfg(not(target_os = "linux"))]
 use tauri_plugin_notification::NotificationExt;
 
+#[cfg(target_os = "linux")]
+use crate::notice::NoticeId;
 use crate::notice::{self, Context, Held, Notice, NoticeKind, Unit};
 use crate::{AppState, CommandError, CommandResult};
 
@@ -193,6 +196,8 @@ pub(crate) struct LiveAlerts {
     /// The task reading the events; present while the watch runs.
     task: tokio::sync::Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     budgets: std::sync::Mutex<Budgets>,
+    #[cfg(target_os = "linux")]
+    shown: std::sync::Mutex<Shown>,
 }
 
 impl Default for LiveAlerts {
@@ -200,7 +205,37 @@ impl Default for LiveAlerts {
         LiveAlerts {
             task: tokio::sync::Mutex::new(None),
             budgets: std::sync::Mutex::new(Budgets::new()),
+            #[cfg(target_os = "linux")]
+            shown: std::sync::Mutex::new(Shown::default()),
         }
+    }
+}
+
+/// Payments whose notice the notification server may still show, with
+/// the id the server gave it: the next notice of the same payment asks
+/// the server to replace that one. Far above what a wallet has pending
+/// at once; past it everything is forgotten, which only costs a notice
+/// shown beside the one it would have replaced.
+#[cfg(target_os = "linux")]
+const MAX_SHOWN: usize = 256;
+
+#[cfg(target_os = "linux")]
+#[derive(Debug, Default)]
+pub(crate) struct Shown {
+    ids: HashMap<NoticeId, u32>,
+}
+
+#[cfg(target_os = "linux")]
+impl Shown {
+    fn server_id(&self, id: &NoticeId) -> Option<u32> {
+        self.ids.get(id).copied()
+    }
+
+    fn remember(&mut self, id: NoticeId, server_id: u32) {
+        if self.ids.len() >= MAX_SHOWN && !self.ids.contains_key(&id) {
+            self.ids.clear();
+        }
+        self.ids.insert(id, server_id);
     }
 }
 
@@ -262,6 +297,7 @@ pub(crate) fn within_budget(
                 title: notice::APP_TITLE.to_owned(),
                 body: last_call.to_owned(),
                 kind: notice.kind,
+                id: None,
             }),
             Allowance::Silent => {}
         }
@@ -269,6 +305,12 @@ pub(crate) fn within_budget(
     out
 }
 
+/// Posts through the notification plugin. On Windows and macOS nothing
+/// posted from here replaces a notification: the plugin drops the id on
+/// the desktop, and neither the toast library under it nor the macOS one
+/// takes an id or a tag. The pending notice of a payment stays in the
+/// system's list beside its confirmation there.
+#[cfg(not(target_os = "linux"))]
 fn post(app: &tauri::AppHandle, notice: &Notice) -> Result<(), String> {
     app.notification()
         .builder()
@@ -276,6 +318,41 @@ fn post(app: &tauri::AppHandle, notice: &Notice) -> Result<(), String> {
         .body(&notice.body)
         .show()
         .map_err(|e| e.to_string())
+}
+
+/// Posts to the notification server directly, through notify-rust, the
+/// library the plugin posts with on Linux: the plugin drops the id. A
+/// notice about a payment the server may still show carries the id the
+/// server gave that one, and the server replaces it in place. The server
+/// is waited for on a thread of its own, never by the caller, and a
+/// notice it refuses is dropped, as the plugin does.
+#[cfg(target_os = "linux")]
+fn post(app: &tauri::AppHandle, notice: &Notice) -> Result<(), String> {
+    let app = app.clone();
+    let notice = notice.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let shown = || {
+            state
+                .live
+                .shown
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+        };
+        let replaces = notice.id.as_ref().and_then(|id| shown().server_id(id));
+        let mut notification = notify_rust::Notification::new();
+        notification
+            .summary(&notice.title)
+            .body(&notice.body)
+            .auto_icon();
+        if let Some(server_id) = replaces {
+            notification.id(server_id);
+        }
+        if let (Ok(handle), Some(id)) = (notification.show(), notice.id) {
+            shown().remember(id, handle.id());
+        }
+    });
+    Ok(())
 }
 
 /// What one wallet's news amounts to, as it may be posted now. Nothing
@@ -535,6 +612,7 @@ pub async fn send_test_notification(
             title: notice::APP_TITLE.to_owned(),
             body: "This is a test. Alerts about your wallets appear like this one.".to_owned(),
             kind: NoticeKind::Transaction,
+            id: None,
         },
     )
     .map_err(|message| CommandError {
@@ -678,6 +756,10 @@ mod tests {
                 title: "w".to_owned(),
                 body: format!("n{i}"),
                 kind,
+                id: Some(notice::NoticeId {
+                    wallet_id: "w".to_owned(),
+                    txid: format!("t{i}"),
+                }),
             })
             .collect()
     }
@@ -694,6 +776,8 @@ mod tests {
             posted.last().map(|notice| notice.body.as_str()),
             Some("More transactions are coming in. Open Gerfaut to see them.")
         );
+        // That line is about no payment: it must not take one's place.
+        assert_eq!(posted.last().and_then(|notice| notice.id.clone()), None);
         // Nothing more inside the window, everything again after it.
         assert!(
             within_budget(
@@ -718,6 +802,7 @@ mod tests {
             title: "Cold storage".to_owned(),
             body: "A pending payment is no longer coming".to_owned(),
             kind: NoticeKind::Dropped,
+            id: None,
         });
         let posted = within_budget(&mut budgets, all, start);
         assert_eq!(posted.len(), BUDGET as usize + 1);
@@ -818,6 +903,10 @@ mod tests {
             .into_iter()
             .collect();
         let posted = || runtime.block_on(notices_for(&state, &wallet.id, &held));
+        let id = notice::NoticeId {
+            wallet_id: wallet.id.clone(),
+            txid: "a".to_owned(),
+        };
 
         assert_eq!(posted(), vec![]);
 
@@ -834,6 +923,7 @@ mod tests {
                 title: "Cold storage".to_owned(),
                 body: "Received 0.00001000 BTC · pending".to_owned(),
                 kind: NoticeKind::Transaction,
+                id: Some(id.clone()),
             }]
         );
 
@@ -844,6 +934,7 @@ mod tests {
                 title: "Gerfaut".to_owned(),
                 body: "New transaction · pending".to_owned(),
                 kind: NoticeKind::Transaction,
+                id: Some(id.clone()),
             }]
         );
 
@@ -856,6 +947,27 @@ mod tests {
             )
             .unwrap();
         assert_eq!(posted(), vec![]);
+    }
+
+    /// The id the server gave a payment's notice is kept for the next
+    /// notice of that payment, and what is kept stays bounded.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_payment_keeps_the_server_id_of_its_notice() {
+        let id = |i: usize| NoticeId {
+            wallet_id: "w".to_owned(),
+            txid: format!("t{i}"),
+        };
+        let mut shown = Shown::default();
+        assert_eq!(shown.server_id(&id(0)), None);
+        shown.remember(id(0), 7);
+        assert_eq!(shown.server_id(&id(0)), Some(7));
+        shown.remember(id(0), 9);
+        assert_eq!(shown.server_id(&id(0)), Some(9));
+        for i in 1..(MAX_SHOWN * 3) {
+            shown.remember(id(i), 1);
+            assert!(shown.ids.len() <= MAX_SHOWN);
+        }
     }
 
     #[test]
