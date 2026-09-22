@@ -556,6 +556,7 @@ mod tests {
             txid: txid.to_owned(),
             net_sats: 1_000,
             stage,
+            replaces: None,
         }
     }
 
