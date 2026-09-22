@@ -1,16 +1,26 @@
-# Builds native installers for Windows, macOS and Linux on every `v*` tag
-# and attaches them to a draft GitHub Release (review, sign with
-# scripts/sign-release.ps1, then click Publish).
-# Manual runs build the same installers and upload them as workflow
-# artifacts only.
-#
-# Two jobs, on purpose. The build runs code this repository does not
-# control (the Tauri CLI, npm packages, the linuxdeploy tools the AppImage
-# bundler fetches) and holds nothing but a read-only token while it does.
-# The token that can write to the repository exists only in the last job,
-# which runs `gh` on the files the build handed over and nothing else.
+# Builds every file of a release on each `v*` tag, the way
+# docs/REPRODUCIBLE-BUILDS.md tells anyone to rebuild them, and attaches
+# them to a draft GitHub Release: review it, sign it with
+# scripts/sign-release.ps1, then click Publish.
 #
 #   git tag v0.1.0 && git push origin v0.1.0
+#
+# Each target is built twice, on two runners, in the pinned container of
+# reproducible/ (container-build.yml), and the two builds are compared
+# byte for byte (compare-builds.yml). The Windows installer and the macOS
+# application are installed or unpacked and started on the systems they
+# are for (smoke.yml). Nothing is drafted unless all of it passed: what
+# ships was built twice with the same bytes, and was seen running.
+#
+# A manual run (Actions, Release, Run workflow) is the dress rehearsal:
+# the same jobs, and the files of the release as a workflow artifact,
+# gerfaut-desktop-release. It touches no tag and no release.
+#
+# The split of privileges holds throughout. Every build, comparison and
+# test runs with a read-only token. The token that can write to the
+# repository exists only in the last job, `draft`, which runs `gh` on
+# the files handed over and nothing else: no checkout, no build tool, no
+# third-party code.
 
 name: Release
 
@@ -23,195 +33,208 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Runner images are named, never `-latest`: those labels move to
-          # a new OS on GitHub's schedule, and two tags of the same app
-          # must not be built against a different SDK by surprise.
-          - platform: macos-15            # .dmg + .app (universal: Apple Silicon + Intel)
-            args: --target universal-apple-darwin
-          # The oldest image still maintained, on purpose: packages built
-          # against its glibc 2.35 run on the distributions released since,
-          # and packages built on a newer one do not run here.
-          - platform: ubuntu-22.04        # .AppImage + .deb + .rpm
-            args: ''
-          - platform: windows-2025        # NSIS setup.exe + .msi
-            args: ''
+  linux-1:
+    uses: ./.github/workflows/container-build.yml
+    with:
+      target: linux
+      build: '1'
+    secrets:
+      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
 
-    runs-on: ${{ matrix.platform }}
+  linux-2:
+    uses: ./.github/workflows/container-build.yml
+    with:
+      target: linux
+      build: '2'
+    secrets:
+      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
 
+  linux-compare:
+    needs: [linux-1, linux-2]
+    uses: ./.github/workflows/compare-builds.yml
+    with:
+      target: linux
+
+  windows-1:
+    uses: ./.github/workflows/container-build.yml
+    with:
+      target: windows
+      build: '1'
+      accept-microsoft-license: true
+    secrets:
+      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
+
+  windows-2:
+    uses: ./.github/workflows/container-build.yml
+    with:
+      target: windows
+      build: '2'
+      accept-microsoft-license: true
+    secrets:
+      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
+
+  windows-compare:
+    needs: [windows-1, windows-2]
+    uses: ./.github/workflows/compare-builds.yml
+    with:
+      target: windows
+
+  windows-smoke:
+    needs: windows-compare
+    uses: ./.github/workflows/smoke.yml
+    with:
+      target: windows
+      artifact: windows-1
+
+  apple-sdk:
+    uses: ./.github/workflows/apple-sdk.yml
+
+  macos-1:
+    needs: apple-sdk
+    uses: ./.github/workflows/container-build.yml
+    with:
+      target: macos
+      build: '1'
+      apple-sdk-key: ${{ needs.apple-sdk.outputs.key }}
+    secrets:
+      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
+
+  macos-2:
+    needs: apple-sdk
+    uses: ./.github/workflows/container-build.yml
+    with:
+      target: macos
+      build: '2'
+      apple-sdk-key: ${{ needs.apple-sdk.outputs.key }}
+    secrets:
+      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
+
+  macos-compare:
+    needs: [macos-1, macos-2]
+    uses: ./.github/workflows/compare-builds.yml
+    with:
+      target: macos
+
+  macos-smoke:
+    needs: macos-compare
+    uses: ./.github/workflows/smoke.yml
+    with:
+      target: macos
+      artifact: macos-1
+
+  # The gate. Both builds of every target gave the same files with the
+  # same bytes, both come from this commit and the pinned core, and the
+  # set is exactly the five files of a release, named after the version
+  # the tag carries. The release is gathered here, with its SHA256SUMS,
+  # still with a read-only token.
+  assemble:
+    needs: [linux-compare, windows-compare, macos-compare, windows-smoke, macos-smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      # No credentials left in .git/config: nothing after a checkout talks
-      # to GitHub, and a token cached on disk would outlive the step that
-      # needed it.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          path: gerfaut-desktop
-          persist-credentials: false
+          pattern: '*-[12]'
+          path: builds
 
-      # The Tauri crate depends on the sibling gerfaut-core checkout, and
-      # a path dependency records no revision: without this pin, a tag
-      # would build against whatever `main` happened to be that minute,
-      # and re-running it a week later would ship different code under
-      # the same version. Bump the file before tagging.
-      - name: Read the pinned gerfaut-core revision
-        id: core
-        run: echo "rev=$(cat gerfaut-desktop/.github/gerfaut-core.rev)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          repository: gerfaut-wallet/gerfaut-core
-          ref: ${{ steps.core.outputs.rev }}
-          ssh-key: ${{ secrets.CORE_DEPLOY_KEY }}
-          path: gerfaut-core
-          persist-credentials: false
-
-      # The same list README.md gives, so a contributor on a bare system
-      # installs what CI installs. webkit2gtk is the webview and pulls GTK
-      # in with it, librsvg turns the icon into the one the desktop entry
-      # points at, patchelf and wget are how the AppImage bundler rewrites
-      # the rpath and fetches linuxdeploy, and libdbus is what the
-      # credential store talks to. The built-in Tor adds nothing here:
-      # arti is rustls throughout and links its own SQLite.
-      - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+      - name: Check both builds and gather the release
+        env:
+          REF_TYPE: ${{ github.ref_type }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config curl wget file libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libdbus-1-dev xdg-utils
+          set -euo pipefail
+          mkdir release
+          : > sums
+          for target in linux windows macos; do
+            one="builds/$target-1" two="builds/$target-2"
+            [ -s "$one/SHA256SUMS" ] && [ -s "$two/SHA256SUMS" ] || { echo "::error::$target: a build is missing"; exit 1; }
+            cmp "$one/SHA256SUMS" "$two/SHA256SUMS" || { echo "::error::$target: the two builds differ"; exit 1; }
+            (cd "$one" && sha256sum --check --strict SHA256SUMS)
+            (cd "$two" && sha256sum --check --strict SHA256SUMS)
+            for build in "$one" "$two"; do
+              grep -qx "gerfaut-desktop $GITHUB_SHA" "$build/build-info/sources" \
+                || { echo "::error::$build was not built from $GITHUB_SHA"; exit 1; }
+              ! grep -q 'NOT A RELEASE BUILD' "$build/build-info/sources" \
+                || { echo "::error::$build was built against a core other than the pinned one"; exit 1; }
+            done
+            cat "$one/SHA256SUMS" >> sums
+          done
+          version="$(sed -n 's/^[0-9a-f]\{64\}  Gerfaut_\([0-9]*\.[0-9]*\.[0-9]*\)_x64-setup\.exe$/\1/p' sums)"
+          [ -n "$version" ] || { echo "::error::no installer named after a version"; exit 1; }
+          expected="$(printf '%s\n' "Gerfaut-$version-1.x86_64.rpm" "Gerfaut_${version}_amd64.AppImage" \
+            "Gerfaut_${version}_amd64.deb" "Gerfaut_${version}_universal.zip" "Gerfaut_${version}_x64-setup.exe")"
+          have="$(awk '{ print $2 }' sums | LC_ALL=C sort)"
+          [ "$have" = "$expected" ] || { echo "::error::not the files of a release: $have"; exit 1; }
+          if [ "$REF_TYPE" = tag ]; then
+            [ "$GITHUB_REF_NAME" = "v$version" ] || { echo "::error::the tag $GITHUB_REF_NAME does not name version $version"; exit 1; }
+          fi
+          while read -r _ name; do
+            cp "builds/$(case "$name" in *.exe) echo windows ;; *.zip) echo macos ;; *) echo linux ;; esac)-1/$name" release/
+          done < sums
+          LC_ALL=C sort -k2 sums > release/SHA256SUMS
+          (cd release && sha256sum --check --strict SHA256SUMS)
+          [ "$(find release -type f | wc -l)" -eq 6 ]
+          cat release/SHA256SUMS
 
-      # rust-toolchain.toml names the compiler and rustup installs what
-      # it names. No step here picks a version of its own.
-      - name: Install the pinned Rust toolchain
-        working-directory: gerfaut-desktop
-        run: |
-          rustup toolchain install
-          rustc --version
-
-      - name: Add the Apple targets
-        if: matrix.platform == 'macos-15'
-        working-directory: gerfaut-desktop
-        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: gerfaut-desktop/src-tauri
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 24.19.0
-
-      - name: Install frontend dependencies
-        working-directory: gerfaut-desktop
-        run: npm ci
-
-      # The AppImage bundler fetches five helper tools from references
-      # that move (release assets that can be re-uploaded, a `master`
-      # branch, a `continuous` release), verifies none of them, runs three
-      # of them here and ships AppRun and the gtk hook inside the AppImage
-      # itself. It does skip a download when the file already sits in its
-      # cache, so the files are fetched here first and checked against the
-      # hashes committed in .github/linuxdeploy.sha256 before the bundler
-      # sees them. The check has to come before the build: the bundler
-      # overwrites three bytes of linuxdeploy once it has it.
-      - name: Stage the linuxdeploy tools and check their hashes
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          tools="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
-          mkdir -p "$tools"
-          cd "$tools"
-          fetch() { curl --fail --silent --show-error --location --retry 3 --output "$1" "$2"; }
-          fetch AppRun-x86_64 https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-x86_64
-          fetch linuxdeploy-x86_64.AppImage https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-x86_64.AppImage
-          fetch linuxdeploy-plugin-gtk.sh https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gtk/b5eb8d05b4c0ed40107fe2158c5d8527f94568ef/linuxdeploy-plugin-gtk.sh
-          fetch linuxdeploy-plugin-gstreamer.sh https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gstreamer/2a2e67491c32995a3f279ad0ecbe77abd512b42a/linuxdeploy-plugin-gstreamer.sh
-          fetch linuxdeploy-plugin-appimage.AppImage https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
-          sha256sum --check --strict "$GITHUB_WORKSPACE/gerfaut-desktop/.github/linuxdeploy.sha256"
-          # The bundler only marks executable what it downloads itself.
-          chmod +x AppRun-x86_64 linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh linuxdeploy-plugin-gstreamer.sh linuxdeploy-plugin-appimage.AppImage
-
-      # Build only: with no tag name the action leaves the tag space and
-      # the releases page alone, and it is given no token to touch them
-      # with.
-      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # action-v0.6.2
-        with:
-          projectPath: gerfaut-desktop
-          args: ${{ matrix.args }}
-
-      # The installers leave the runner as a workflow artifact: what a
-      # manual run is for, and what the draft job below picks up on a
-      # tag. `error` on no match is the point, since these paths are the
-      # only thing tying this step to where Tauri writes. The
-      # `.app.tar.gz` Tauri also writes on macOS is the updater's archive,
-      # and Gerfaut has no updater, so it stays behind.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: gerfaut-${{ matrix.platform }}
+          name: gerfaut-desktop-release
           if-no-files-found: error
-          path: |
-            gerfaut-desktop/src-tauri/target/release/bundle/**/*.AppImage
-            gerfaut-desktop/src-tauri/target/release/bundle/**/*.deb
-            gerfaut-desktop/src-tauri/target/release/bundle/**/*.rpm
-            gerfaut-desktop/src-tauri/target/release/bundle/**/*.exe
-            gerfaut-desktop/src-tauri/target/release/bundle/**/*.msi
-            gerfaut-desktop/src-tauri/target/universal-apple-darwin/release/bundle/**/*.dmg
+          path: release/
 
   # The only job that can write to the repository, and it runs nothing
-  # but `gh` on the files the build produced: no checkout, no build tool,
-  # no third-party code.
+  # but `gh` on the files the gate handed over. Only on a pushed tag: a
+  # manual run, even from a tag, stops at the artifact.
   draft:
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: assemble
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          path: installers
-          merge-multiple: true
+          name: gerfaut-desktop-release
+          path: release
 
-      # One installer of each kind, or nothing: a draft missing a platform
-      # would be signed and published as if it were complete.
-      - name: Check the set of installers
+      # Five files and their SHA256SUMS, or nothing: a draft missing a
+      # platform would be signed and published as if it were complete.
+      - name: Check the files
         run: |
-          find installers -type f | sort
-          for ext in exe msi dmg AppImage deb rpm; do
-            n=$(find installers -type f -name "*.$ext" | wc -l)
-            [ "$n" -eq 1 ] || { echo "expected one .$ext, found $n" >&2; exit 1; }
-          done
+          set -euo pipefail
+          [ "$(find release -type f | wc -l)" -eq 6 ] || { echo "::error::expected five files and SHA256SUMS"; exit 1; }
+          (cd release && sha256sum --check --strict SHA256SUMS)
 
-      # `--verify-tag` refuses to invent a tag. A draft that already exists
-      # (a re-run) gets its assets replaced; a published release is never
-      # touched, `gh release create` fails on it.
+      # `--verify-tag` refuses to invent a tag. A draft that already
+      # exists (a re-run) gets its assets replaced; a published release
+      # is never touched, `gh release create` fails on it.
       - name: Draft the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NOTES: |
             ### Downloads
-            - **Windows**: `*-setup.exe` (installer) or `.msi`
-            - **macOS**: `.dmg`
-            - **Linux**: `.AppImage` (portable, `chmod +x` then run), `.deb` or `.rpm`
 
-            These builds carry no code-signing certificate, so both systems
-            hold them at arm's length on a first launch. Windows shows a
-            SmartScreen notice: "More info", then "Run anyway". macOS refuses
-            outright, and you allow it once in System Settings, under Privacy
-            & Security, with the "Open Anyway" button that appears there after
-            the refusal. Check the hashes below before you do either.
+            - **Linux**: `Gerfaut_@VERSION@_amd64.AppImage` (any distribution: `chmod +x`, then run it), `Gerfaut_@VERSION@_amd64.deb` (Debian, Ubuntu) or `Gerfaut-@VERSION@-1.x86_64.rpm` (Fedora)
+            - **Windows**: `Gerfaut_@VERSION@_x64-setup.exe`
+            - **macOS**: `Gerfaut_@VERSION@_universal.zip`, for Apple silicon and Intel: unzip it, then move Gerfaut to Applications
+
+            These builds carry no certificate from Microsoft or Apple, so both
+            systems hold them at arm's length on a first launch. Windows shows a
+            SmartScreen notice: click "More info", then "Run anyway". macOS
+            refuses the app the first time: open System Settings, then Privacy &
+            Security, and click "Open Anyway", which appears there after the
+            refusal. Since macOS Sequoia, right-click and Open no longer gets past
+            it. Check the hashes below before you do either.
 
             ### Verify your download (optional)
+
             `SHA256SUMS` lists the hash of every file above and is signed with the author's [minisign](https://jedisct1.github.io/minisign/) key:
 
             ```
             RWTz3c4gUmglCX5Uvjthigz1ts3TS3ZSdhRNpFgOJRW/Wr4XjGlqTR3O
             ```
 
-            Download `SHA256SUMS` and `SHA256SUMS.minisig` next to your installer, then:
+            Download `SHA256SUMS` and `SHA256SUMS.minisig` next to your file, then:
 
             1. The signature proves the hash list comes from the author:
                `minisign -Vm SHA256SUMS -P RWTz3c4gUmglCX5Uvjthigz1ts3TS3ZSdhRNpFgOJRW/Wr4XjGlqTR3O`
@@ -219,14 +242,35 @@ jobs:
                - Linux: `sha256sum --check SHA256SUMS --ignore-missing`
                - macOS: `shasum -a 256 --check SHA256SUMS --ignore-missing`
                - Windows: `(Get-FileHash .\<file>).Hash` must match the file's line in `SHA256SUMS`
+
+            ### Rebuild it yourself
+
+            Every file above was built from this tag in the pinned Linux container
+            of `reproducible/`, twice, on two machines, with the same bytes both
+            times. You can rebuild any of them on your own Linux machine and
+            compare them byte for byte with the files of this release:
+
+            ```
+            git clone https://github.com/gerfaut-wallet/gerfaut-desktop
+            gerfaut-desktop/reproducible/verify.sh @TAG@
+            ```
+
+            Add `--target windows --accept-microsoft-license` for the Windows
+            installer, or `--target macos --macos-sdk <dir>` for the macOS app.
+            [REPRODUCIBLE-BUILDS.md](https://github.com/gerfaut-wallet/gerfaut-desktop/blob/@TAG@/docs/REPRODUCIBLE-BUILDS.md)
+            explains each step, and what you download yourself.
         run: |
-          mapfile -t files < <(find installers -type f | sort)
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::not a release tag: $GITHUB_REF_NAME"; exit 1; }
+          notes="${NOTES//@TAG@/$GITHUB_REF_NAME}"
+          notes="${notes//@VERSION@/${GITHUB_REF_NAME#v}}"
+          mapfile -t files < <(find release -type f | LC_ALL=C sort)
           if [ "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)" = true ]; then
             gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}"
           else
             gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
               --draft --verify-tag \
               --title "Gerfaut $GITHUB_REF_NAME" \
-              --notes "$NOTES" \
+              --notes "$notes" \
               "${files[@]}"
           fi
