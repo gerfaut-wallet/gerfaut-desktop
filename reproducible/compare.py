@@ -392,6 +392,21 @@ def explain_root_icon(changed: list[str]) -> list[str]:
             "the AppImage is written, check that step"]
 
 
+def explain_dates(changed: list[str]) -> list[str]:
+    """Entries of the two listings that differ by their date alone."""
+    seen: dict[tuple, set] = {}
+    for line in changed:
+        fields = line.split(None, 5)
+        if len(fields) == 6:
+            seen.setdefault((fields[0], fields[1], fields[2], fields[5]), set()).add((fields[3], fields[4]))
+    dated = sorted(key[3] for key, dates in seen.items() if len(dates) > 1)
+    if not dated:
+        return []
+    return [f"{len(dated)} entries differ by their date alone, first: {dated[0]}",
+            "    reproducible/targets/linux.sh dates every file of the AppDir SOURCE_DATE_EPOCH "
+            "before the AppImage is written, check that step"]
+
+
 def squashfs_listing(path: Path, offset: int) -> list[str] | None:
     if shutil.which("unsquashfs") is None:
         return None
@@ -418,6 +433,7 @@ def explain_appimage(a: bytes, b: bytes, path_a: Path, path_b: Path) -> list[str
         elif list_a != list_b:
             changed = sorted(set(list_a) ^ set(list_b))
             lines.extend(explain_root_icon(changed))
+            lines.extend(explain_dates(changed))
             lines.append(f"squashfs listing differs on {len(changed)} lines, first ones:")
             lines.extend("    " + line for line in changed[:20])
         else:
