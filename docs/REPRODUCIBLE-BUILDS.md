@@ -258,6 +258,8 @@ The application is compiled twice through the Tauri CLI, once for `aarch64-apple
 
 The oldest macOS each half runs on is the one a Mac build gets: 10.13 on Intel, the `LSMinimumSystemVersion` Tauri writes, and 11.0 on Apple silicon, the first macOS that ran on it. The linker records the SDK version, 26.1, in each half, as Xcode's linker does. The build checks both values after linking.
 
+The two linkers pick a library for each symbol in a different way. A few symbols, the keys WebKit uses for cookies, are exported by two libraries, Foundation and CFNetwork, and CFNetwork comes first on the command line. `rust-lld` takes the first library that has a symbol, Xcode's linker takes Foundation. The recipe puts Foundation first (`-lframework=Foundation`), so both halves load the same libraries as a build made on a Mac, and the build stops if CFNetwork shows up again.
+
 aws-lc-sys builds aws-lc with its `cc`-based build, the one it picks on a Mac too. The recipe sets `AWS_LC_SYS_CMAKE_BUILDER=0` so that it never tries CMake, whose Apple branch only runs on a Mac.
 
 rustc strips the debug information of an Apple program with `rust-objcopy`, a tool of the Rust toolchain. In Rust 1.97.0 for Linux, that tool cannot find the LLVM library it is linked against: rustc then prints a warning and leaves the debug map in the program, with the paths of the build in it. The image adds the link the tool looks for, so the program is stripped as on a Mac.
