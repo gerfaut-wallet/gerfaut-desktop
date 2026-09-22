@@ -12,8 +12,11 @@
 #   .deb       unpacked and written again by dpkg-deb, which honours
 #              SOURCE_DATE_EPOCH and sorts the archive members
 #   .rpm       the two time tags overwritten in place (rpm-normalise.py)
-#   .AppImage  nothing to fix once appimagetool is given a pinned runtime
-#              and SOURCE_DATE_EPOCH, which its mksquashfs honours
+#   .AppImage  the icon linuxdeploy links at the root of the AppDir set
+#              by a fixed rule, then the AppImage written again from the
+#              same AppDir with the same pinned tools; appimagetool is
+#              given a pinned runtime and SOURCE_DATE_EPOCH, which its
+#              mksquashfs honours
 
 TRIPLE=x86_64-unknown-linux-gnu
 LINUXDEPLOY_SUMS="$APP/.github/linuxdeploy.sha256"
@@ -68,6 +71,7 @@ target_build() {
 
     canonical_deb "$bundle/deb/Gerfaut_${version}_amd64.deb" "$OUT/Gerfaut_${version}_amd64.deb"
     canonical_rpm "$bundle/rpm/Gerfaut-${version}-1.x86_64.rpm" "$OUT/Gerfaut-${version}-1.x86_64.rpm"
+    fix_appimage_icon "$bundle/appimage/Gerfaut_${version}_amd64.AppImage"
     canonical_appimage "$bundle/appimage/Gerfaut_${version}_amd64.AppImage" "$OUT/Gerfaut_${version}_amd64.AppImage"
 }
 
@@ -104,6 +108,46 @@ canonical_rpm() {
     python3 "$APP/reproducible/linux/rpm-normalise.py" "$to" "$SOURCE_DATE_EPOCH"
     # rpm checks the digests the tool has just recomputed.
     rpm --checksig "$to" > /dev/null || die "the normalised rpm fails its own digests"
+}
+
+# linuxdeploy links an icon at the root of the AppDir, named after the
+# Icon= key of the desktop entry. The linuxdeploy Tauri pins takes the
+# first matching icon its directory walk finds, and that order depends
+# on the file system the build runs on: two runners gave 32x32 and
+# 64x64. linuxdeploy has since chosen by size (appdir_root_setup.cpp):
+# the closer to 64x64 the better, the larger on a tie. The recipe applies
+# that rule to the AppDir the bundler leaves behind, with the path as the
+# last tie-breaker, and writes the AppImage again from it, with the
+# plugin, the runtime and the SOURCE_DATE_EPOCH the bundler used: the
+# bundler's last step, repeated with a link that no longer depends on
+# the machine. Everything else in the AppDir is left as it is.
+fix_appimage_icon() {
+    local appimage="$1" appdir name link best icon size preference
+    appdir="$(find "$(dirname "$appimage")" -mindepth 1 -maxdepth 1 -type d -name '*.AppDir')"
+    [ -n "$appdir" ] && [ "$(printf '%s\n' "$appdir" | wc -l)" -eq 1 ] || die "not one AppDir next to $appimage"
+    name="$(sed -n 's/^Icon=//p' "$appdir"/usr/share/applications/*.desktop)"
+    [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || die "no single Icon= key in the desktop entry of the AppDir"
+    link="$appdir/$name.png"
+    [ -L "$link" ] || die "linuxdeploy left no icon link at $link"
+    best="$(
+        for icon in "$appdir"/usr/share/icons/hicolor/*/apps/"$name".png; do
+            size="${icon#"$appdir"/usr/share/icons/hicolor/}"
+            size="${size%%x*}"
+            [[ "$size" =~ ^[0-9]+$ ]] || continue
+            if [ "$size" -lt 64 ]; then preference=$(( 100 * size / 65 )); else preference=$(( 6400 / size )); fi
+            printf '%s %s %s\n' "$preference" "$size" "${icon#"$appdir"/}"
+        done | LC_ALL=C sort -k1,1nr -k2,2nr -k3,3 | head -n 1 | cut -d' ' -f3
+    )"
+    [ -n "$best" ] || die "no $name.png under usr/share/icons/hicolor in the AppDir"
+    log "AppImage: the icon at the root of the AppDir is $best (linuxdeploy linked $(readlink "$link"))"
+    ln -sfn "$best" "$link"
+    rm "$appimage"
+    (
+        cd "$APP" || exit 1
+        OUTPUT="$appimage" ARCH=x86_64 "$XDG_CACHE_HOME/tauri/linuxdeploy-plugin-appimage.AppImage" \
+            --appdir "$appdir" > "$WORK/appimage-plugin.log" 2>&1
+    ) || { cat "$WORK/appimage-plugin.log" >&2; die "linuxdeploy-plugin-appimage failed"; }
+    [ -f "$appimage" ] || die "linuxdeploy-plugin-appimage wrote no $appimage"
 }
 
 # Nothing to rewrite. What is checked is that the file starts with the
