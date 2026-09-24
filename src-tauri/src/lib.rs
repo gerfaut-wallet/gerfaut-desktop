@@ -69,6 +69,9 @@ fn premium_kind(error: &PremiumError) -> &'static str {
         PremiumError::DevicePending { .. } => "premium_device_pending",
         PremiumError::DeviceDisconnected => "premium_device_disconnected",
         PremiumError::TooManyDevices(_) => "premium_too_many_devices",
+        // A key change sent and not answered: what was asked would lose
+        // the new key. The screen says to finish the change first.
+        PremiumError::KeyChangePending => "premium_key_change_pending",
         PremiumError::NoPaidTime => "premium_no_paid_time",
         PremiumError::Rejected(_) => "premium_rejected",
         // Nothing under that id on the server: the screen shows it as
@@ -1072,6 +1075,10 @@ mod tests {
         assert_eq!(kind(PremiumError::UnknownKey), "premium_unknown_key");
         assert_eq!(kind(PremiumError::NoPaidTime), "premium_no_paid_time");
         assert_eq!(kind(PremiumError::NoKey), "premium_no_key");
+        assert_eq!(
+            kind(PremiumError::KeyChangePending),
+            "premium_key_change_pending"
+        );
         assert_eq!(
             kind(PremiumError::Unreachable("timed out".to_owned())),
             "premium_unreachable"

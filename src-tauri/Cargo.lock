@@ -2582,6 +2582,7 @@ dependencies = [
  "data-encoding",
  "flate2",
  "futures-util",
+ "log",
  "rand 0.9.5",
  "reqwest 0.12.28",
  "ring",

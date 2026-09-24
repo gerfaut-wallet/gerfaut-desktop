@@ -81,6 +81,13 @@ pub(crate) fn stub_server(status: u16, body: &str) -> (String, mpsc::Receiver<St
     stub_answers(vec![(status, body.to_owned())])
 }
 
+/// A field of the JSON body a request carried.
+pub(crate) fn sent_field(request: &str, field: &str) -> String {
+    let body = request.split("\r\n\r\n").nth(1).unwrap_or_default();
+    let json: serde_json::Value = serde_json::from_str(body).unwrap();
+    json[field].as_str().unwrap_or_default().to_owned()
+}
+
 /// The platform this build connects as, the way the server spells it.
 pub(crate) fn platform_word() -> String {
     serde_json::to_value(DevicePlatform::current().unwrap())

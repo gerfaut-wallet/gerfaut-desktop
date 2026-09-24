@@ -901,7 +901,7 @@ mod tests {
     use gerfaut_core::WalletManager;
     use gerfaut_core::store::VaultKey;
 
-    use crate::testkit::{DEVICE_ID, TOKEN, platform_word, stub_server};
+    use crate::testkit::{DEVICE_ID, TOKEN, platform_word, sent_field, stub_server};
 
     fn app_state(manager: WalletManager) -> AppState {
         AppState {
@@ -920,9 +920,11 @@ mod tests {
         (app_state(manager), connection)
     }
 
-    /// The key goes with the connection and with nothing else; every
-    /// later request carries the token the server handed back, and the
-    /// screen learns which device this is, never its token.
+    /// The key goes with the connection and with nothing else, along
+    /// with a token this device drew for itself, so that the same
+    /// request can be sent again if its answer is lost. Every later
+    /// request carries the token the server settled on, and the screen
+    /// learns which device this is, never its token.
     #[test]
     fn a_device_connects_with_the_key_and_speaks_with_its_token_after() {
         let dir = tempfile::tempdir().unwrap();
@@ -935,9 +937,11 @@ mod tests {
             connection.contains("Bearer abcdefghijkmnpqr"),
             "{connection}"
         );
+        assert_eq!(sent_field(&connection, "platform"), platform_word());
+        let drawn = sent_field(&connection, "token");
         assert!(
-            connection.ends_with(&format!(r#"{{"platform":"{}"}}"#, platform_word())),
-            "{connection}"
+            drawn.starts_with("gdt1_") && drawn.len() == "gdt1_".len() + 43,
+            "{drawn}"
         );
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
