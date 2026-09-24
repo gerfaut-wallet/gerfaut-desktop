@@ -4,6 +4,7 @@ import { isCommandError } from "../../lib/ipc";
 import { isDeviceDisconnected, isDevicePending, serverNetwork } from "../../lib/premium";
 import { useLock } from "../../state/lock";
 import {
+  useForgetDevicesWhenDisconnected,
   usePremiumAccount,
   usePremiumChannels,
   usePremiumDevice,
@@ -32,6 +33,7 @@ import { WatchedWalletsCard } from "./premium/WatchedWalletsCard";
     so the first card never waits on the network. */
 export function PremiumSection({ wallets: allWallets }: { wallets: WalletMeta[] }) {
   const status = usePremiumStatus();
+  useForgetDevicesWhenDisconnected(status.data);
   const lock = useLock((state) => state.lock);
   const hasKey = status.data?.key != null;
   const connected = hasKey && status.data?.disconnected === false;

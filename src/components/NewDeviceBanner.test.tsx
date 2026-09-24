@@ -81,6 +81,8 @@ beforeEach(() => {
   useUi.setState({ view: "home", settingsSection: "general", settingsTarget: null });
 });
 
+const WORDS = /A new device asks for access to your Premium account/;
+
 afterEach(() => {
   clearMocks();
   TIMING.devicesFocusMs = 60_000;
@@ -172,6 +174,43 @@ describe("the new device banner", () => {
     status = { ...STATUS, device: null, disconnected: true };
     await act(() => emit("premium://changed", null));
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
+  it("goes the moment the server disowns this device, whatever the list held", async () => {
+    let status = STATUS;
+    let answer: () => unknown = () => [THIS, STRANGER];
+    const calls = mock({
+      premium_status: () => status,
+      premium_device: () => THIS,
+      premium_devices: () => answer(),
+    });
+    TIMING.devicesFocusMs = 0;
+    renderBanner();
+    expect(await screen.findByText(WORDS)).toBeInTheDocument();
+
+    // The window comes back to the front; the server no longer knows
+    // this device, and the core has dropped its token on the way.
+    answer = () => {
+      status = { ...STATUS, device: null, disconnected: true };
+      return Promise.reject({
+        kind: "premium_device_disconnected",
+        message: "this device was disconnected from the Premium account",
+      });
+    };
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(screen.queryByText(WORDS)).not.toBeInTheDocument());
+    // The vault was read again, and nothing is asked of a device that
+    // has no connection any more.
+    await waitFor(() =>
+      expect(calls.filter((cmd) => cmd === "premium_status").length).toBeGreaterThanOrEqual(2),
+    );
+    const asked = calls.length;
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(calls.slice(asked).filter((cmd) => cmd !== "premium_status")).toEqual([]);
   });
 
   it("asks again when the window comes back to the front after a while", async () => {

@@ -2,7 +2,12 @@ import { clsx } from "clsx";
 import { ShieldAlert } from "lucide-react";
 import { Button } from "./Button";
 import { pendingDevices } from "../lib/premium";
-import { usePremiumDevice, usePremiumDevices, usePremiumStatus } from "../state/premiumQueries";
+import {
+  useForgetDevicesWhenDisconnected,
+  usePremiumDevice,
+  usePremiumDevices,
+  usePremiumStatus,
+} from "../state/premiumQueries";
 import { useUi } from "../state/store";
 
 /** The alert banner shown while a device waits for approval on the
@@ -14,10 +19,13 @@ import { useUi } from "../state/store";
     could do nothing about another. */
 export function NewDeviceBanner({ className }: { className?: string }) {
   const status = usePremiumStatus();
+  useForgetDevicesWhenDisconnected(status.data);
   const connected = status.data?.key != null && status.data.disconnected === false;
   const device = usePremiumDevice(connected);
-  const devices = usePremiumDevices(connected && device.data?.access === "full");
-  if (pendingDevices(devices.data).length === 0) return null;
+  const full = connected && device.data?.access === "full";
+  const devices = usePremiumDevices(full);
+  const waiting = full ? pendingDevices(devices.data) : [];
+  if (waiting.length === 0) return null;
 
   return (
     <div

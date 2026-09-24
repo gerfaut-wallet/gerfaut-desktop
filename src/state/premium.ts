@@ -16,7 +16,7 @@ import { create } from "zustand";
 import type { Device } from "../lib/ipc";
 import { ipc } from "../lib/ipc";
 import { TIMING } from "../lib/premium";
-import { premiumKeys } from "./premiumQueries";
+import { forgetDevices, premiumKeys } from "./premiumQueries";
 import { keys } from "./queries";
 
 /** Failures in a row before the watch counts as offline. */
@@ -140,7 +140,15 @@ export function useDeviceWatch(enabled: boolean): void {
       if (Array.isArray(payload)) client.setQueryData<Device[]>(premiumKeys.devices, payload);
     });
     on(PREMIUM_CHANGED, () => {
-      void client.invalidateQueries({ queryKey: ["premium"] });
+      // What was known of the devices belonged to the connection as it
+      // was; it is read again from scratch, never shown in between.
+      forgetDevices(client);
+      void client.invalidateQueries({
+        predicate: (query) =>
+          query.queryKey[0] === "premium" &&
+          query.queryKey[1] !== "device" &&
+          query.queryKey[1] !== "devices",
+      });
       void client.invalidateQueries({ queryKey: keys.settings });
     });
     const stale = (key: readonly unknown[]) => {

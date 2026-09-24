@@ -572,6 +572,41 @@ describe("a disconnected device", () => {
     expect(screen.queryByText("This key no longer works. Enter the new one.")).not.toBeInTheDocument();
   });
 
+  it("shows nothing of the old account's devices once another key is entered", async () => {
+    let status = DISCONNECTED;
+    let release: (devices: Device[]) => void = () => {};
+    mockPremium({
+      premium_status: () => status,
+      premium_reconnect: () =>
+        Promise.reject({ kind: "premium_unknown_key", message: "unknown key" }) as never,
+      premium_activate: () => {
+        status = { ...STATUS, device: { id: "d-new", connected_at: NOW } };
+        return status;
+      },
+      premium_device: () => ({ ...THIS, id: "d-new", connected_at: NOW }),
+      premium_devices: () =>
+        new Promise<Device[]>((resolve) => {
+          release = resolve;
+        }),
+    });
+    const client = renderSection();
+    // What the cache still holds from the account before.
+    act(() => client.setQueryData(["premium", "devices"], [THIS, PHONE, STRANGER]));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Connect again" }));
+    await user.type(await screen.findByLabelText("Account key"), "23456789abcdefgh");
+    await user.click(screen.getByRole("button", { name: "Activate" }));
+
+    // The new account's list is still on its way: the old one is gone.
+    await screen.findByRole("heading", { name: "Devices" });
+    expect(screen.queryByText("Android phone")).not.toBeInTheDocument();
+    expect(screen.queryByText("Mac")).not.toBeInTheDocument();
+    expect(card("Devices").getByText("Loading…")).toBeInTheDocument();
+    act(() => release([{ ...THIS, id: "d-new", connected_at: NOW }]));
+    expect(await screen.findByText("Windows computer")).toBeInTheDocument();
+    expect(screen.queryByText("Android phone")).not.toBeInTheDocument();
+  });
+
   it("reads the vault again when the server disowns the device mid-visit", async () => {
     let status = STATUS;
     const calls = mockPremium({
@@ -660,6 +695,37 @@ describe("changing the key", () => {
     await user.click(done);
     await waitFor(() => expect(of("premium_set_key_saved", calls)).toEqual([{ saved: true }]));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("drops the devices the old key connected, rather than show them until the list is back", async () => {
+    let changed = false;
+    let release: (devices: Device[]) => void = () => {};
+    mockPremium({
+      premium_change_key: () => {
+        changed = true;
+        return "wxyz-2345-6789-abcd";
+      },
+      premium_devices: () =>
+        changed
+          ? new Promise<Device[]>((resolve) => {
+              release = resolve;
+            })
+          : [THIS, PHONE, STRANGER],
+    });
+    renderSection();
+    const user = userEvent.setup();
+    expect(await screen.findByText("Android phone")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Change key" }));
+    const dialog = screen.getByRole("dialog", { name: "Change your Premium key" });
+    await user.click(within(dialog).getByRole("button", { name: "Change key" }));
+    await confirmIdentity(user, "Change key");
+    await within(dialog).findByText("wxyz-2345-6789-abcd");
+
+    await waitFor(() => expect(screen.queryByText("Android phone")).not.toBeInTheDocument());
+    expect(screen.queryByText("Mac")).not.toBeInTheDocument();
+    act(() => release([THIS]));
+    expect(await screen.findByText("Windows computer")).toBeInTheDocument();
+    expect(screen.queryByText("Android phone")).not.toBeInTheDocument();
   });
 
   it("keeps the question and says why when the server refuses", async () => {

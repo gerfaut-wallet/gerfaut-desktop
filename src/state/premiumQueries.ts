@@ -3,9 +3,9 @@
 // until a key is set.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef } from "react";
-import type { ChannelKind, Device } from "../lib/ipc";
-import { ipc } from "../lib/ipc";
+import { useEffect, useRef } from "react";
+import type { ChannelKind, Device, PremiumStatus } from "../lib/ipc";
+import { ipc, isCommandError } from "../lib/ipc";
 import { TIMING } from "../lib/premium";
 import { keys } from "./queries";
 
@@ -24,13 +24,57 @@ export function usePremiumStatus(enabled = true) {
   return useQuery({ queryKey: premiumKeys.status, queryFn: ipc.premiumStatus, enabled });
 }
 
+/** Drops what the cache knows of this device and the account's
+    devices: it belonged to a connection that changed or is gone. A
+    query still wanted asks again from nothing, and none of the old
+    answer shows in between. */
+export function forgetDevices(client: ReturnType<typeof useQueryClient>): void {
+  void client.resetQueries({ queryKey: premiumKeys.device, exact: true });
+  void client.resetQueries({ queryKey: premiumKeys.devices, exact: true });
+}
+
+/** Reads again what the vault says of the account: the status, and the
+    settings that carry the same state. After a connection that failed,
+    the core may have kept it to send again, or left this device
+    disconnected with the server's reason. */
+function readVaultAgain(client: ReturnType<typeof useQueryClient>): void {
+  void client.invalidateQueries({ queryKey: premiumKeys.status });
+  void client.invalidateQueries({ queryKey: keys.settings });
+}
+
+/** The failures after which this device holds no connection: the
+    server disowned it, never had it, or refused to connect it again
+    with the key it kept. */
+const DISCONNECTING = new Set([
+  "premium_device_disconnected",
+  "premium_no_device",
+  "premium_unknown_key",
+  "premium_too_many_devices",
+]);
+
+/** Wraps a device call so that a failure leaving this device without a
+    connection has the vault read again: the core recorded it on the
+    way, the status then says so, and the devices go with it (see
+    `useForgetDevicesWhenDisconnected`). */
+function watchingForDisconnection<T>(
+  client: ReturnType<typeof useQueryClient>,
+  call: () => Promise<T>,
+): () => Promise<T> {
+  return () =>
+    call().catch((error: unknown) => {
+      if (isCommandError(error) && DISCONNECTING.has(error.kind)) readVaultAgain(client);
+      throw error;
+    });
+}
+
 /** This device as the server sees it: whether it has full access or
     waits for approval, and until when. Connecting a vault written
     before devices existed happens on the way, on the Rust side. */
 export function usePremiumDevice(enabled: boolean) {
+  const client = useQueryClient();
   return useQuery({
     queryKey: premiumKeys.device,
-    queryFn: ipc.premiumDevice,
+    queryFn: watchingForDisconnection(client, ipc.premiumDevice),
     enabled,
     retry: false,
     staleTime: TIMING.devicesFocusMs,
@@ -42,13 +86,24 @@ export function usePremiumDevice(enabled: boolean) {
     posts the notification for a newly pending one on the way, and asks
     again on its own every five minutes. */
 export function usePremiumDevices(enabled: boolean) {
+  const client = useQueryClient();
   return useQuery({
     queryKey: premiumKeys.devices,
-    queryFn: ipc.premiumDevices,
+    queryFn: watchingForDisconnection(client, ipc.premiumDevices),
     enabled,
     retry: false,
     staleTime: TIMING.devicesFocusMs,
   });
+}
+
+/** Drops the devices from the cache whenever the vault says this
+    device holds no connection: no key, or disconnected. */
+export function useForgetDevicesWhenDisconnected(status: PremiumStatus | undefined): void {
+  const client = useQueryClient();
+  const gone = status !== undefined && (status.key === null || status.disconnected);
+  useEffect(() => {
+    if (gone) forgetDevices(client);
+  }, [gone, client]);
 }
 
 /** The account from the server, refreshing the certificate on the way. */
@@ -139,19 +194,26 @@ function useInvalidatePremium() {
   };
 }
 
+/** Connects this device with a key just typed. Whatever the cache held
+    of an account before belongs to another key, or to this device
+    before it was disconnected: it goes, so none of it shows for a
+    moment under the new one. */
 export function useActivatePremium() {
+  const client = useQueryClient();
   const invalidate = useInvalidatePremium();
   return useMutation({
     mutationFn: (key: string) => ipc.premiumActivate(key),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      forgetServerState(client);
+      invalidate();
+    },
   });
 }
 
 /** Everything the old key was worth showing, dropped: what the server
     said about it is not ours to show once it is not ours. */
 function forgetServerState(client: ReturnType<typeof useQueryClient>) {
-  client.removeQueries({ queryKey: premiumKeys.device });
-  client.removeQueries({ queryKey: premiumKeys.devices });
+  forgetDevices(client);
   client.removeQueries({ queryKey: premiumKeys.account });
   client.removeQueries({ queryKey: premiumKeys.wallets });
   client.removeQueries({ queryKey: premiumKeys.channels });
@@ -303,11 +365,17 @@ export function useRemoveDevice() {
 
 /** Replaces the key: the old one stops working everywhere and every
     other device is disconnected. Answers the new key as it is shown. */
+/** Replaces the account key. Every other device is gone with the old
+    key: the list is read again from nothing, never shown as it was. */
 export function useChangeKey() {
+  const client = useQueryClient();
   const invalidate = useInvalidatePremium();
   return useMutation({
     mutationFn: (secret: string) => ipc.premiumChangeKey(secret),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      void client.resetQueries({ queryKey: premiumKeys.devices, exact: true });
+      invalidate();
+    },
   });
 }
 
