@@ -144,7 +144,9 @@ function Step({
         </span>
         <span className="max-w-xl font-ui text-xs text-muted">{hint}</span>
       </span>
-      {!done && children && <span className="ml-auto flex items-center gap-1">{children}</span>}
+      {!done && children && (
+        <span className="ml-auto flex items-center gap-1 self-center">{children}</span>
+      )}
     </li>
   );
 }
