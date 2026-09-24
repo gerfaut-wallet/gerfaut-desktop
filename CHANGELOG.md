@@ -4,6 +4,25 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Premium devices. The account key now connects this computer to the account, and in return the server hands it a token of its own, which the encrypted vault keeps and never shows. Every request after that carries the token, not the key. The first device an account ever has gets full access at once. Any other device waits 10 days, or until a device with full access approves it, and in the meantime it sees nothing and changes nothing. A key entered before this version connects on its own, once.
+- A Devices card in Settings › Premium lists every device that entered the key, with its platform, the day it connected, and either full access or the number of days it still has to wait. From there, you approve or refuse a waiting device, or disconnect another one.
+- While a device waits for approval, a red banner at the top of the Overview says so, and its Review button opens the Devices card. The banner goes away on its own once nothing waits. When notifications are on, a system notification also announces each new device, once, and names neither the device nor the account while Gerfaut is locked. Gerfaut checks the list when the window opens or comes back to the front, and every 5 minutes while it runs, minimised and locked included.
+- A device waiting for approval sees a single card in place of the account: the day it connected, the day it gets full access without approval, and a Check again button. It also checks its own standing every 5 minutes, and opens up as soon as another device approves it.
+- Change key replaces the account key. The old key stops working at once, on the website too, and the server disconnects every other device. The new key is shown once, with a Copy button, and the dialog stays open until you tick "I saved my new key".
+- A device the server disconnected says so under the Licence card, in the server's own words when it gave some, with a Connect again button. If the key itself was changed on another device, the key field comes back so you can enter the new one.
+- After the first connection, a Protect your Premium account card suggests 3 things: connect a second device, turn on the app lock, and save the key in a password manager. Each step ticks itself when Gerfaut can tell it is done, and you can hide the card.
+- Before approving, refusing or disconnecting a device, changing the key, deleting the account, taking a wallet off the server, removing a wallet the server watches or removing a channel, Gerfaut asks for the app lock's PIN or password, and checks it the way the lock screen does. It also asks before you forget the key on a device with full access, or add a channel while the app lock is on. Without an app lock, these actions say one is needed and lead to Settings › Security.
+- A lost answer from the Gerfaut server costs neither the key nor a device. In practice, when a connection or a key change never gets its answer back, Gerfaut sends the exact same request again, in the background or with the next request. While a key change is unfinished, the Licence card says "The key change did not finish. Try again to complete it." with a Try again button, and does not offer the key for copying. When you forget the key while the server is out of reach, Gerfaut disconnects this device on the server at the next chance.
+
+### Changed
+
+- Forget this key now also disconnects this computer from the account on the server. Connecting it again takes a new approval, or 10 days.
+- The Licence card offers Copy key until you mark the key as saved. When the clipboard refuses a copy, an amber note under the button says so, never a toast.
+
 ## [0.1.0] - 2026-09-12
 
 First public release. Windows, macOS and Linux.
