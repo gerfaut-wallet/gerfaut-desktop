@@ -9,11 +9,13 @@
 //! runs — minimised and locked included, which is when a window's own
 //! timers stop being worth anything.
 //!
-//! Only a device with full access asks: one that waits is refused the
-//! list, and could do nothing about another anyway. What was announced
-//! is recorded in the vault by the core, so a device is announced once
-//! whichever path saw it first. Behind the lock the notification takes
-//! the generic form, and the window is told nothing.
+//! Only a device with full access asks for the list: one that waits is
+//! refused it, and could do nothing about another anyway. It asks about
+//! itself instead, on the same clock, and the window learns the moment
+//! it gets full access. What was announced is recorded in the vault by
+//! the core, so a device is announced once whichever path saw it first.
+//! Behind the lock the notification takes the generic form, and the
+//! window is told nothing.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -29,10 +31,11 @@ use crate::{AppState, live};
 
 /// The list the background check fetched, for the window.
 const EVENT_DEVICES: &str = "premium://devices";
-/// This device's connection moved on this side: the server disowned it.
+/// This device's connection moved on this side: the server disowned
+/// it, or it got full access. The window reads everything again.
 const EVENT_CHANGED: &str = "premium://changed";
 
-/// How often the list is asked for while the app runs.
+/// How often the server is asked while the app runs.
 const EVERY: Duration = Duration::from_secs(5 * 60);
 /// How often the background task looks at the clock. A check made by
 /// the window in between counts, so the server is asked no more than
@@ -49,10 +52,10 @@ const MAX_ANNOUNCED: usize = 10;
 /// What this side remembers between two checks.
 #[derive(Debug, Default)]
 pub(crate) struct DeviceWatch {
-    /// When the list was last asked for, by either side.
+    /// When the server was last asked, by either side.
     last: Mutex<Option<Instant>>,
-    /// The server last said this device waits for approval: the list is
-    /// not asked for until it says otherwise.
+    /// The server last said this device waits for approval: it asks
+    /// about itself rather than for the list.
     waiting: AtomicBool,
 }
 
@@ -60,6 +63,11 @@ impl DeviceWatch {
     /// The server described this device.
     pub(crate) fn saw(&self, device: &Device) {
         self.waiting.store(waits(device), Ordering::SeqCst);
+    }
+
+    /// Whether the server last said this device waits.
+    pub(crate) fn waiting(&self) -> bool {
+        self.waiting.load(Ordering::SeqCst)
     }
 
     /// This device left the account: nothing is known of it any more.
@@ -80,10 +88,8 @@ impl DeviceWatch {
 
     /// Whether the background check is due at `now`.
     pub(crate) fn due(&self, now: Instant) -> bool {
-        !self.waiting.load(Ordering::SeqCst)
-            && self
-                .slot()
-                .is_none_or(|last| now.duration_since(last) >= EVERY)
+        self.slot()
+            .is_none_or(|last| now.duration_since(last) >= EVERY)
     }
 }
 
@@ -149,28 +155,93 @@ pub(crate) async fn fetch(
     Ok((devices, notices))
 }
 
-/// One background check: the list, when this device is connected, has
-/// full access as far as is known, and nobody asked for a while. What
-/// came back goes to the window while it is unlocked.
+/// What one background round found.
+#[derive(Debug)]
+pub(crate) enum Round {
+    /// Nothing was asked: no device connected, or asked a moment ago.
+    Idle,
+    /// The list, for a device with full access, and what it announces.
+    Devices {
+        devices: Vec<Device>,
+        notices: Vec<Notice>,
+    },
+    /// This device still waits for approval.
+    Waiting,
+    /// This device has full access now: approved, or its wait is over.
+    GotFullAccess,
+    /// The server no longer knows this device.
+    Disowned,
+    /// The server could not be reached, or refused for another reason:
+    /// the next round asks again.
+    Failed,
+}
+
+/// One round of the background check, at `now`: the list for a device
+/// with full access, this device's own standing for one that waits.
+pub(crate) async fn round(state: &AppState, base_url: &str, now: Instant) -> Round {
+    if !state.devices.due(now) || !premium::connected(state).await {
+        return Round::Idle;
+    }
+    if state.devices.waiting() {
+        state.devices.touch(now);
+        return match state.manager.premium_device(base_url).await {
+            Ok(device) => {
+                state.devices.saw(&device);
+                if waits(&device) {
+                    Round::Waiting
+                } else {
+                    Round::GotFullAccess
+                }
+            }
+            Err(CoreError::Premium(PremiumError::DeviceDisconnected)) => Round::Disowned,
+            Err(_) => Round::Failed,
+        };
+    }
+    match fetch(state, base_url).await {
+        Ok((devices, notices)) => Round::Devices { devices, notices },
+        Err(CoreError::Premium(PremiumError::DevicePending { .. })) => Round::Waiting,
+        Err(CoreError::Premium(PremiumError::DeviceDisconnected)) => Round::Disowned,
+        Err(_) => Round::Failed,
+    }
+}
+
+/// What the window is told after a round.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Signal {
+    Devices(Vec<Device>),
+    Changed,
+}
+
+/// What a round amounts to: the notices to post, already written for
+/// the lock, and what the window is told, which is nothing behind the
+/// lock. The window reads everything again at the unlock.
+pub(crate) fn deliver(round: Round, locked: bool) -> (Vec<Notice>, Option<Signal>) {
+    let (notices, signal) = match round {
+        Round::Devices { devices, notices } => (notices, Some(Signal::Devices(devices))),
+        Round::GotFullAccess | Round::Disowned => (Vec::new(), Some(Signal::Changed)),
+        Round::Idle | Round::Waiting | Round::Failed => (Vec::new(), None),
+    };
+    (notices, if locked { None } else { signal })
+}
+
+/// One background check, and what follows from it.
 async fn tick(app: &tauri::AppHandle) {
     let Some(state) = app.try_state::<AppState>() else {
         return;
     };
-    if !state.devices.due(Instant::now()) || !premium::connected(&state).await {
-        return;
+    let round = round(&state, &premium::base_url(), Instant::now()).await;
+    let (notices, signal) = deliver(round, locked(&state));
+    for notice in &notices {
+        let _ = live::post(app, notice);
     }
-    let result = check(app, &state, &premium::base_url()).await;
-    if locked(&state) {
-        return;
-    }
-    match result {
-        Ok(devices) => {
+    match signal {
+        Some(Signal::Devices(devices)) => {
             let _ = app.emit(EVENT_DEVICES, devices);
         }
-        Err(CoreError::Premium(PremiumError::DeviceDisconnected)) => {
+        Some(Signal::Changed) => {
             let _ = app.emit(EVENT_CHANGED, ());
         }
-        Err(_) => {}
+        None => {}
     }
 }
 
@@ -229,19 +300,54 @@ mod tests {
     }
 
     #[test]
-    fn a_device_that_waits_asks_for_no_list() {
+    fn what_the_server_said_of_this_device_is_kept_until_it_leaves() {
         let watch = DeviceWatch::default();
         let now = Instant::now();
+        assert!(!watch.waiting(), "not known: taken as full access");
         watch.saw(&device("mine", DeviceAccess::Pending, true));
-        assert!(!watch.due(now));
-        assert!(!watch.due(now + EVERY * 10));
-        // Approved: the checks start.
+        assert!(watch.waiting());
         watch.saw(&device("mine", DeviceAccess::Full, true));
-        assert!(watch.due(now));
+        assert!(!watch.waiting());
         // Logged out: nothing is remembered.
         watch.touch(now);
         watch.saw(&device("mine", DeviceAccess::Pending, true));
         watch.forget();
+        assert!(!watch.waiting());
         assert!(watch.due(now));
+    }
+
+    fn notice() -> Notice {
+        notice::new_device(DevicePlatform::Macos, false)
+    }
+
+    /// The window is told what a round found while the app is open, and
+    /// nothing behind the lock; the notices go out either way, already
+    /// written for the lock.
+    #[test]
+    fn a_round_tells_the_window_nothing_behind_the_lock() {
+        let list = || vec![device("mine", DeviceAccess::Full, true)];
+        let found = || Round::Devices {
+            devices: list(),
+            notices: vec![notice()],
+        };
+        let (notices, signal) = deliver(found(), false);
+        assert_eq!(notices, vec![notice()]);
+        assert_eq!(signal, Some(Signal::Devices(list())));
+
+        let (notices, signal) = deliver(found(), true);
+        assert_eq!(
+            notices.len(),
+            1,
+            "the notice still goes, in its locked form"
+        );
+        assert_eq!(signal, None);
+
+        for round in [Round::GotFullAccess, Round::Disowned] {
+            assert_eq!(deliver(round, false), (Vec::new(), Some(Signal::Changed)));
+        }
+        assert_eq!(deliver(Round::Disowned, true), (Vec::new(), None));
+        for round in [Round::Idle, Round::Waiting, Round::Failed] {
+            assert_eq!(deliver(round, false), (Vec::new(), None));
+        }
     }
 }

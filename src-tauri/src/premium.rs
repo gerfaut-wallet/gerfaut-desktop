@@ -1075,6 +1075,106 @@ mod tests {
         assert!(!notices[0].body.contains("Mac"), "{}", notices[0].body);
     }
 
+    /// This device as the server describes it.
+    fn this_device(access: &str) -> String {
+        let until = if access == "pending" {
+            "1790864000"
+        } else {
+            "null"
+        };
+        format!(
+            r#"{{"id":"{DEVICE_ID}","platform":"windows","connected_at":{NOW},"access":"{access}","pending_until":{until},"this_device":true}}"#
+        )
+    }
+
+    /// `GET /v1/devices/me`.
+    fn me(access: &str) -> &'static str {
+        Box::leak(format!(r#"{{"device":{}}}"#, this_device(access)).into_boxed_str())
+    }
+
+    /// The server said this device waits.
+    fn seen_waiting(state: &AppState) {
+        state
+            .devices
+            .saw(&serde_json::from_str::<Device>(&this_device("pending")).unwrap());
+    }
+
+    /// The background round: a device that waits asks about itself,
+    /// and the window hears when it gets full access; one with full
+    /// access asks for the list; a device the server disowned is said
+    /// once; and nothing is asked twice within five minutes.
+    #[test]
+    fn a_round_asks_what_this_device_may_ask() {
+        use crate::devices::{Round, round};
+        use std::time::{Duration, Instant};
+
+        let dir = tempfile::tempdir().unwrap();
+        let (state, _) = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let mut now = Instant::now();
+        let mut later = || {
+            now += Duration::from_secs(301);
+            now
+        };
+
+        // Waiting: its own standing, and the list is not asked for.
+        seen_waiting(&state);
+        let (base_url, requests) = stub_server(200, me("pending"));
+        let at = later();
+        assert!(matches!(
+            runtime.block_on(round(&state, &base_url, at)),
+            Round::Waiting
+        ));
+        let request = requests.recv().unwrap();
+        assert!(
+            request.starts_with("GET /v1/devices/me HTTP/1.1"),
+            "{request}"
+        );
+        // Asked a moment ago: nothing.
+        assert!(matches!(
+            runtime.block_on(round(&state, &base_url, at + Duration::from_secs(60))),
+            Round::Idle
+        ));
+        assert!(requests.try_recv().is_err());
+
+        // Approved elsewhere: full access, said once.
+        let (base_url, _) = stub_server(200, me("full"));
+        assert!(matches!(
+            runtime.block_on(round(&state, &base_url, later())),
+            Round::GotFullAccess
+        ));
+        assert!(!state.devices.waiting());
+
+        // Full access: the list.
+        let (base_url, requests) = stub_server(200, device_list(""));
+        assert!(matches!(
+            runtime.block_on(round(&state, &base_url, later())),
+            Round::Devices { .. }
+        ));
+        assert!(
+            requests
+                .recv()
+                .unwrap()
+                .starts_with("GET /v1/devices HTTP/1.1")
+        );
+
+        // Disowned: said, and after that there is no device to ask about.
+        let (base_url, _) = stub_server(
+            401,
+            r#"{"error":"this device was disconnected from the Premium account","code":"device_disconnected"}"#,
+        );
+        assert!(matches!(
+            runtime.block_on(round(&state, &base_url, later())),
+            Round::Disowned
+        ));
+        let (base_url, requests) = stub_server(200, device_list(""));
+        assert!(matches!(
+            runtime.block_on(round(&state, &base_url, later())),
+            Round::Idle
+        ));
+        assert!(requests.try_recv().is_err());
+    }
+
     /// The secret is the lock screen's: without a lock the answer says
     /// one is needed, a wrong secret is refused with the wait the lock
     /// screen would show, and the failures are one count for both.
