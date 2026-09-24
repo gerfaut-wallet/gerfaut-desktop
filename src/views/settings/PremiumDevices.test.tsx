@@ -776,6 +776,35 @@ describe("a disconnected device", () => {
       }),
     ).toBeInTheDocument();
   });
+
+  it("drops what Connect again met once the device is connected again", async () => {
+    let status = DISCONNECTED;
+    mockPremium({
+      premium_status: () => status,
+      premium_reconnect: () =>
+        Promise.reject({
+          kind: "premium_unreachable",
+          message: "the premium server is unreachable: timed out",
+        }) as never,
+    });
+    const client = renderSection();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Connect again" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not reach the Gerfaut server.",
+    );
+    // The background round connected it meanwhile.
+    status = STATUS;
+    await act(() => client.invalidateQueries({ queryKey: ["premium", "status"] }));
+    await waitFor(() =>
+      expect(screen.queryByText("Could not reach the Gerfaut server.")).not.toBeInTheDocument(),
+    );
+    // Disowned again later: the old failure does not come back with it.
+    status = DISCONNECTED;
+    await act(() => client.invalidateQueries({ queryKey: ["premium", "status"] }));
+    expect(await screen.findByRole("button", { name: "Connect again" })).toBeInTheDocument();
+    expect(screen.queryByText("Could not reach the Gerfaut server.")).not.toBeInTheDocument();
+  });
 });
 
 // --- change key ---------------------------------------------------------------

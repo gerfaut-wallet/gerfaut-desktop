@@ -68,6 +68,15 @@ export function LicenceCard({
       vault until a new one works. */
   const [keyChanged, setKeyChanged] = useState(false);
   const [reconnectFailure, setReconnectFailure] = useState<unknown>(undefined);
+  // What "Connect again" met belongs to the connection it was pressed
+  // for: once this device connects, forgets the key or holds another,
+  // it goes, rather than turn up under the next disconnection.
+  const connection = `${status.key ?? ""}|${status.disconnected}`;
+  const [failedFor, setFailedFor] = useState(connection);
+  if (failedFor !== connection) {
+    setFailedFor(connection);
+    setReconnectFailure(undefined);
+  }
   const ready = isWellFormedKey(key);
   const asking = status.key === null || keyChanged;
 
