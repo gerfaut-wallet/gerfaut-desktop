@@ -87,6 +87,16 @@ fn premium_kind(error: &PremiumError) -> &'static str {
     }
 }
 
+/// A wait in the unit a person reads it in: the hourly connection
+/// ceiling answers with nearly an hour, which "3528 s" hides.
+fn wait_words(seconds: u64) -> String {
+    match seconds {
+        0..60 => format!("{seconds} s"),
+        60..3600 => format!("{} min", seconds.div_ceil(60)),
+        _ => format!("{} h", seconds.div_ceil(3600)),
+    }
+}
+
 impl From<CoreError> for CommandError {
     fn from(error: CoreError) -> Self {
         // A refusal is shown in the server's own sentence, without the
@@ -100,7 +110,7 @@ impl From<CoreError> for CommandError {
             return CommandError::new(
                 "premium_rate_limited",
                 match retry_after {
-                    Some(seconds) => format!("Try again in {seconds} s."),
+                    Some(seconds) => format!("Try again in {}.", wait_words(*seconds)),
                     None => "Try again in a moment.".to_owned(),
                 },
             );
@@ -1072,7 +1082,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{CommandError, bare_file_name};
+    use super::{CommandError, bare_file_name, wait_words};
     use gerfaut_core::error::{CoreError, PremiumError};
 
     #[test]
@@ -1128,6 +1138,17 @@ mod tests {
             retry_after: None,
         }));
         assert_eq!(open.message, "Try again in a moment.");
+    }
+
+    /// A long wait is said in minutes or hours, rounded up.
+    #[test]
+    fn a_long_wait_reads_in_minutes_or_hours() {
+        assert_eq!(wait_words(59), "59 s");
+        assert_eq!(wait_words(60), "1 min");
+        assert_eq!(wait_words(3528), "59 min");
+        assert_eq!(wait_words(3599), "60 min");
+        assert_eq!(wait_words(3600), "1 h");
+        assert_eq!(wait_words(86_399), "24 h");
     }
 
     /// A wrong backup password has a kind of its own, so the screen can
