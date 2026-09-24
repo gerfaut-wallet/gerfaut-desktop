@@ -5,7 +5,12 @@ import { Button } from "../../../components/Button";
 import { Notice } from "../../../components/Notice";
 import { Pill } from "../../../components/StatusPill";
 import type { Device } from "../../../lib/ipc";
-import { dayMonthYear, platformLabel, waitingWords } from "../../../lib/premium";
+import {
+  PENDING_DAYS,
+  dayMonthYear,
+  platformLabel,
+  waitingWords,
+} from "../../../lib/premium";
 import { useApproveDevice, useRemoveDevice } from "../../../state/premiumQueries";
 import { useUi } from "../../../state/store";
 import { SectionCard } from "../primitives";
@@ -171,12 +176,14 @@ export function DevicesCard({
                       </span>
                     </span>
                     <span className="ml-auto flex items-center gap-2">
-                      {pending && device.pending_until !== null ? (
+                      {pending ? (
                         <Pill
                           tone="pending"
                           icon={<Clock size={12} strokeWidth={2} aria-hidden className="shrink-0" />}
                         >
-                          {waitingWords(device.pending_until)}
+                          {waitingWords(
+                            device.pending_until ?? device.connected_at + PENDING_DAYS * 86_400,
+                          )}
                         </Pill>
                       ) : (
                         <Pill

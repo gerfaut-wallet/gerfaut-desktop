@@ -51,7 +51,9 @@ export function Modal({
     const node = ref.current;
     // Initial focus goes to the content, never the header close button.
     const target =
-      node?.querySelector<HTMLElement>("textarea, input, select") ??
+      node?.querySelector<HTMLElement>(
+        "textarea:not(:disabled), input:not(:disabled), select:not(:disabled)",
+      ) ??
       node?.querySelector<HTMLElement>('button:not([aria-label="Close"])') ??
       node;
     target?.focus();
@@ -65,7 +67,7 @@ export function Modal({
       if (event.key === "Tab" && node) {
         const focusables = [
           ...node.querySelectorAll<HTMLElement>(
-            'a, button:not(:disabled), input, textarea, select, [tabindex]:not([tabindex="-1"])',
+            'a, button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
           ),
         ].filter((el) => el.offsetParent !== null);
         if (focusables.length === 0) return;

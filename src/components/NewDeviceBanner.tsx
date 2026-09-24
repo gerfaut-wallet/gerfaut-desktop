@@ -1,5 +1,6 @@
 import { clsx } from "clsx";
 import { ShieldAlert } from "lucide-react";
+import { useEffect } from "react";
 import { Button } from "./Button";
 import { pendingDevices } from "../lib/premium";
 import {
@@ -9,6 +10,15 @@ import {
   usePremiumStatus,
 } from "../state/premiumQueries";
 import { useUi } from "../state/store";
+
+/** The waiting devices the banner last announced, by id: the ones a
+    screen reader has already been told of in this session. */
+let lastAnnounced = "";
+
+/** Forgets what was announced; for the tests, which start fresh. */
+export function resetBannerAnnouncement(): void {
+  lastAnnounced = "";
+}
 
 /** The alert banner shown while a device waits for approval on the
     account. Someone connected with the key: if it was not the owner,
@@ -25,11 +35,22 @@ export function NewDeviceBanner({ className }: { className?: string }) {
   const full = connected && device.data?.access === "full";
   const devices = usePremiumDevices(full);
   const waiting = full ? pendingDevices(devices.data) : [];
+  const which = waiting.map((entry) => entry.id).join(" ");
+  // Said out loud once for a given set of waiting devices, not again
+  // each time the Overview opens: the banner stays, the alarm does not
+  // repeat itself.
+  const fresh = which !== "" && which !== lastAnnounced;
+  useEffect(() => {
+    if (which !== "") lastAnnounced = which;
+  }, [which]);
   if (waiting.length === 0) return null;
 
+  // Keyed on the set: another device joining the wait arrives as a new
+  // alert, which is what a screen reader announces.
   return (
     <div
-      role="alert"
+      key={which}
+      role={fresh ? "alert" : undefined}
       className={clsx(
         "flex flex-wrap items-center gap-3 rounded-md border border-alert/25 bg-alert-surface px-4 py-3 text-alert",
         className,

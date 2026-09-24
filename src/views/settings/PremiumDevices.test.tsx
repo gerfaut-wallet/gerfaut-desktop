@@ -434,6 +434,49 @@ describe("the devices card", () => {
     await waitFor(() => expect(heading).toHaveFocus());
     expect(useUi.getState().settingsTarget).toBeNull();
   });
+
+  it("drops the errand when this device turns out to have no Devices card", async () => {
+    mockPremium({
+      premium_device: () => ({ ...THIS, access: "pending", pending_until: NOW + DAY }),
+    });
+    act(() => useUi.getState().openSettings("premium", "devices"));
+    renderSection();
+    await screen.findByRole("heading", { name: "Waiting for approval" });
+    await waitFor(() => expect(useUi.getState().settingsTarget).toBeNull());
+  });
+
+  it("never says full access for a device that waits without a date", async () => {
+    mockPremium({
+      premium_devices: () => [
+        THIS,
+        { ...STRANGER, pending_until: null, connected_at: NOW - 3 * DAY },
+      ],
+    });
+    renderSection();
+    const mac = await rowOf("Mac");
+    expect(within(mac).queryByText("Full access")).not.toBeInTheDocument();
+    expect(within(mac).getByText("Waiting · 7 days left")).toBeInTheDocument();
+  });
+
+  it("reads the list again when the device it acted on is already gone", async () => {
+    let devices = [THIS, STRANGER];
+    const calls = mockPremium({
+      premium_devices: () => devices,
+      premium_approve_device: () => {
+        devices = [THIS];
+        return Promise.reject({ kind: "premium_rejected", message: "no such device" }) as never;
+      },
+    });
+    renderSection();
+    const user = userEvent.setup();
+    const mac = await rowOf("Mac");
+    await user.click(within(mac).getByRole("button", { name: /^Approve/ }));
+    await user.click(within(within(mac).getByRole("status")).getByRole("button", { name: "Approve" }));
+    await confirmIdentity(user, "Approve");
+    expect(await screen.findByRole("alert")).toHaveTextContent("No such device.");
+    await waitFor(() => expect(of("premium_devices", calls).length).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(screen.queryByText("Mac")).not.toBeInTheDocument());
+  });
 });
 
 // --- a device waiting for approval -------------------------------------------

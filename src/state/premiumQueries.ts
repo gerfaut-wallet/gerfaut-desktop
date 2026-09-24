@@ -344,6 +344,9 @@ export function useApproveDevice() {
       );
       void client.invalidateQueries({ queryKey: premiumKeys.devices });
     },
+    // A device already gone, or already approved elsewhere: the list
+    // on screen is out of date either way.
+    onError: () => void client.invalidateQueries({ queryKey: premiumKeys.devices }),
   });
 }
 
@@ -360,6 +363,7 @@ export function useRemoveDevice() {
       );
       void client.invalidateQueries({ queryKey: premiumKeys.devices });
     },
+    onError: () => void client.invalidateQueries({ queryKey: premiumKeys.devices }),
   });
 }
 

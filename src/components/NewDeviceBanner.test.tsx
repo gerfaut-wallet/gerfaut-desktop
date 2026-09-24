@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { act, configure, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, configure, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Device, PremiumStatus } from "../lib/ipc";
@@ -9,7 +9,7 @@ import { TIMING } from "../lib/premium";
 import { useDeviceWatch } from "../state/premium";
 import { premiumKeys } from "../state/premiumQueries";
 import { useUi } from "../state/store";
-import { NewDeviceBanner } from "./NewDeviceBanner";
+import { NewDeviceBanner, resetBannerAnnouncement } from "./NewDeviceBanner";
 
 // The first render of a file pays for its imports, which a loaded
 // machine running every file at once can stretch past the default wait.
@@ -79,6 +79,7 @@ function renderBanner() {
 
 beforeEach(() => {
   useUi.setState({ view: "home", settingsSection: "general", settingsTarget: null });
+  resetBannerAnnouncement();
 });
 
 const WORDS = /A new device asks for access to your Premium account/;
@@ -119,9 +120,9 @@ describe("the new device banner", () => {
       premium_devices: () => [THIS, STRANGER],
     });
     const client = renderBanner();
-    await screen.findByRole("alert");
+    await screen.findByText(WORDS);
     act(() => client.setQueryData(premiumKeys.devices, [THIS]));
-    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText(WORDS)).not.toBeInTheDocument());
   });
 
   it("says nothing and asks nothing without a key, or on a device that waits itself", async () => {
@@ -129,7 +130,7 @@ describe("the new device banner", () => {
     renderBanner();
     await waitFor(() => expect(calls).toContain("premium_status"));
     expect(calls).toEqual(["premium_status"]);
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText(WORDS)).not.toBeInTheDocument();
 
     act(() => clearMocks());
     calls = mock({
@@ -139,7 +140,7 @@ describe("the new device banner", () => {
     renderBanner();
     await waitFor(() => expect(calls).toContain("premium_device"));
     expect(calls).not.toContain("premium_devices");
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText(WORDS)).not.toBeInTheDocument();
   });
 
   it("says nothing for a disconnected device", async () => {
@@ -147,7 +148,7 @@ describe("the new device banner", () => {
     renderBanner();
     await waitFor(() => expect(calls).toContain("premium_status"));
     expect(calls).toEqual(["premium_status"]);
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText(WORDS)).not.toBeInTheDocument();
   });
 
   it("takes the list the Rust side handed over, and reads everything again on a change", async () => {
@@ -159,21 +160,21 @@ describe("the new device banner", () => {
     });
     renderBanner();
     await waitFor(() => expect(calls).toContain("premium_devices"));
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText(WORDS)).not.toBeInTheDocument();
 
     // Five minutes on, the Rust side asked on its own: the list comes
     // with the event, and nothing is asked again for it.
     await act(() => emit("premium://devices", [THIS, STRANGER]));
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(await screen.findByText(WORDS)).toBeInTheDocument();
     expect(calls.filter((cmd) => cmd === "premium_devices")).toHaveLength(1);
     // Something that is not a list is not taken for one.
     await act(() => emit("premium://devices", { devices: [] }));
-    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.getByText(WORDS)).toBeInTheDocument();
 
     // The server disowned this device: the vault is read again.
     status = { ...STATUS, device: null, disconnected: true };
     await act(() => emit("premium://changed", null));
-    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText(WORDS)).not.toBeInTheDocument());
   });
 
   it("goes the moment the server disowns this device, whatever the list held", async () => {
@@ -213,6 +214,30 @@ describe("the new device banner", () => {
     expect(calls.slice(asked).filter((cmd) => cmd !== "premium_status")).toEqual([]);
   });
 
+  it("raises the alarm once per set of waiting devices, not at every visit", async () => {
+    mock({
+      premium_status: () => STATUS,
+      premium_device: () => THIS,
+      premium_devices: () => [THIS, STRANGER],
+    });
+    const first = renderBanner();
+    expect(await screen.findByRole("alert")).toHaveTextContent(WORDS);
+    cleanup();
+    first.clear();
+
+    // Back on the Overview: the banner is there, the alarm is not
+    // raised again for the same device.
+    const client = renderBanner();
+    expect(await screen.findByText(WORDS)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    // Another device joins the wait: that is news again.
+    act(() =>
+      client.setQueryData(premiumKeys.devices, [THIS, STRANGER, { ...STRANGER, id: "d-other" }]),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(WORDS);
+  });
+
   it("asks again when the window comes back to the front after a while", async () => {
     let devices = [THIS];
     const calls = mock({
@@ -222,7 +247,7 @@ describe("the new device banner", () => {
     });
     renderBanner();
     await waitFor(() => expect(calls).toContain("premium_devices"));
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText(WORDS)).not.toBeInTheDocument();
 
     // Fresh: the focus asks nothing.
     act(() => {
@@ -236,6 +261,6 @@ describe("the new device banner", () => {
     act(() => {
       window.dispatchEvent(new Event("focus"));
     });
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(await screen.findByText(WORDS)).toBeInTheDocument();
   });
 });

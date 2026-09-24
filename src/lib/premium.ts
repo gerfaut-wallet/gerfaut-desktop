@@ -229,6 +229,9 @@ export function dayMonthYear(unixSeconds: number): string {
 
 const DAY_SECONDS = 86_400;
 
+/** How long a new device waits without an approval. */
+export const PENDING_DAYS = 10;
+
 /** Whole days until `until`, counting a day begun as one: a device with
     three hours left still has "1 day left", never "0". */
 export function daysLeft(until: number, nowMs = Date.now()): number {

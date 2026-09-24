@@ -14,6 +14,7 @@ import {
   usePremiumWallets,
 } from "../../state/premiumQueries";
 import { useWallets } from "../../state/queries";
+import { useUi } from "../../state/store";
 import { ChannelsCard } from "./premium/ChannelsCard";
 import { DevicesCard } from "./premium/DevicesCard";
 import { LicenceCard } from "./premium/LicenceCard";
@@ -67,6 +68,18 @@ export function PremiumSection({ wallets: allWallets }: { wallets: WalletMeta[] 
       void refetchStatus();
     }
   }, [device.error, account.error, refetchStatus]);
+
+  // "Review" sent Settings here for the Devices card; when this device
+  // turns out to have no such card — waiting, disconnected, no key, or
+  // the server out of reach — the errand is over rather than left to
+  // fire later.
+  const target = useUi((state) => state.settingsTarget);
+  const clearTarget = useUi((state) => state.clearSettingsTarget);
+  const devicesCardComing = connected && (full || device.isPending);
+  const settled = !status.isPending;
+  useEffect(() => {
+    if (target === "devices" && settled && !devicesCardComing) clearTarget();
+  }, [target, settled, devicesCardComing, clearTarget]);
 
   if (status.isPending) {
     return <p className="px-1 font-ui text-sm text-muted">Loading…</p>;

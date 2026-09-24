@@ -2,7 +2,7 @@ import { Hourglass } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../../../components/Button";
 import type { Device } from "../../../lib/ipc";
-import { dayMonthYear } from "../../../lib/premium";
+import { PENDING_DAYS, dayMonthYear } from "../../../lib/premium";
 import { SectionCard } from "../primitives";
 import { ForgetKey } from "./ForgetKey";
 import { FailureNote } from "./shared";
@@ -29,7 +29,8 @@ export function WaitingCard({
   onCheck: () => void;
 }) {
   const [forgetting, setForgetting] = useState(false);
-  const until = device.pending_until ?? device.connected_at;
+  // The server always says until when; failing that, the rule does.
+  const until = device.pending_until ?? device.connected_at + PENDING_DAYS * 86_400;
 
   return (
     <>
