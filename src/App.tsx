@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "./components/Button";
 import { EmptyState } from "./components/EmptyState";
+import { NewDeviceBanner } from "./components/NewDeviceBanner";
 import { Toast } from "./components/Toast";
 import { UpdateNotice } from "./components/UpdateNotice";
 import { Sidebar } from "./shell/Sidebar";
@@ -210,18 +211,25 @@ export default function App() {
               {view === "settings" ? (
                 <SettingsView settings={settings.data} wallets={walletList} />
               ) : walletList.length === 0 ? (
-                <EmptyState
-                  title="No wallets watched yet"
-                  hint="Add a descriptor, an extended public key, or an address. Gerfaut watches it and never touches a private key."
-                  action={
-                    <Button
-                      variant="primary"
-                      onClick={() => useUi.getState().setAddWalletOpen(true)}
-                    >
-                      Add a wallet
-                    </Button>
-                  }
-                />
+                // With no wallet there is no Overview, and a stranger's
+                // device asking into the account is still said first.
+                <div className="flex h-full flex-col">
+                  <NewDeviceBanner className="mb-4 mt-2" />
+                  <div className="min-h-0 flex-1">
+                    <EmptyState
+                      title="No wallets watched yet"
+                      hint="Add a descriptor, an extended public key, or an address. Gerfaut watches it and never touches a private key."
+                      action={
+                        <Button
+                          variant="primary"
+                          onClick={() => useUi.getState().setAddWalletOpen(true)}
+                        >
+                          Add a wallet
+                        </Button>
+                      }
+                    />
+                  </div>
+                </div>
               ) : activeWallet ? (
                 <>
                   {view === "home" && <HomeView walletId={activeWallet.id} />}
