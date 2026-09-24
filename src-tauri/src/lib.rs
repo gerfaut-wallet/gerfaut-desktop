@@ -446,14 +446,20 @@ async fn remove_wallet(
     secret: Option<String>,
 ) -> CommandResult<()> {
     state.unlocked()?;
-    if premium::watched_by_server(&state, &id).await {
-        premium::confirm_identity_given(&state, secret.as_deref()).await?;
-    }
-    state.manager.remove_wallet(&id).await?;
+    remove_checked(&state, &id, secret.as_deref()).await?;
     tauri::async_runtime::spawn(async move {
         premium::flush_unwatch(&app.state::<AppState>()).await;
     });
     Ok(())
+}
+
+/// The removal itself, behind the secret when the server watches the
+/// wallet.
+async fn remove_checked(state: &AppState, id: &str, secret: Option<&str>) -> CommandResult<()> {
+    if premium::watched_by_server(state, id).await {
+        premium::confirm_identity_given(state, secret).await?;
+    }
+    Ok(state.manager.remove_wallet(id).await?)
 }
 
 #[tauri::command]
@@ -1427,6 +1433,73 @@ mod tests {
                 .block_on(state.manager.list_wallets(Some(Network::Mainnet)))
                 .is_empty()
         );
+    }
+
+    /// Removing a wallet the server watches ends that watch, which is
+    /// what unwatching asks the secret for: the removal asks it too, and
+    /// a wallet the server never had goes without it.
+    #[test]
+    fn removing_a_wallet_the_server_watches_takes_the_secret() {
+        use gerfaut_core::input::ImportOptions;
+
+        let dir = tempfile::tempdir().unwrap();
+        let (state, runtime) = locked_state(dir.path());
+        runtime
+            .block_on(super::verify_lock(&state, "246813"))
+            .unwrap();
+        crate::testkit::connect(&state.manager);
+        let add = |address: &str, name: &str| {
+            let parsed = gerfaut_core::input::parse_input_with_options(
+                address,
+                &ImportOptions {
+                    script: None,
+                    derivation: None,
+                },
+            )
+            .unwrap();
+            runtime
+                .block_on(state.manager.add_wallet(name, &parsed, Network::Signet))
+                .unwrap()
+                .id
+        };
+        // The BIP 173 example address and the P2WSH one: public, valid
+        // on signet.
+        let watched = add("tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx", "Cold");
+        let local = add(
+            "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7",
+            "Spending",
+        );
+        let mut premium = runtime.block_on(state.manager.premium_state());
+        premium.consent(&watched, 1_790_000_000);
+        runtime
+            .block_on(state.manager.set_premium_state(premium))
+            .unwrap();
+        let ids = || -> Vec<String> {
+            runtime
+                .block_on(state.manager.list_wallets(None))
+                .into_iter()
+                .map(|wallet| wallet.id)
+                .collect()
+        };
+
+        // Not watched: no secret asked.
+        runtime
+            .block_on(super::remove_checked(&state, &local, None))
+            .unwrap();
+        assert_eq!(ids(), vec![watched.clone()]);
+
+        // Watched: none given, then a wrong one, and the wallet stays.
+        for secret in [None, Some("000000")] {
+            let refused = runtime
+                .block_on(super::remove_checked(&state, &watched, secret))
+                .unwrap_err();
+            assert_eq!(refused.kind, "identity_refused");
+            assert_eq!(ids(), vec![watched.clone()]);
+        }
+        runtime
+            .block_on(super::remove_checked(&state, &watched, Some("246813")))
+            .unwrap();
+        assert!(ids().is_empty());
     }
 
     /// Every sync leaves what it found in the vault until someone claims

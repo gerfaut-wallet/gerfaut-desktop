@@ -315,6 +315,15 @@ pub async fn premium_activate(
             "a key is sixteen letters and digits",
         ));
     }
+    // Another key would move this device to another account and log it
+    // out of this one: what "Forget this key" does behind the secret.
+    // The screen offers the field only once the key is gone.
+    if full_access(&state).await && !holds_key(&state, &key).await {
+        return Err(CommandError::new(
+            "invalid_input",
+            "forget this key before entering another one",
+        ));
+    }
     let device = state
         .manager
         .premium_connect(&base_url(), &key, platform()?)
@@ -344,9 +353,20 @@ pub async fn premium_reconnect(state: tauri::State<'_, AppState>) -> CommandResu
 /// far as it can be reached, and the account and what it watches stay.
 /// The consents stay too, so a wallet already agreed to is not asked
 /// about twice.
+///
+/// A device with full access is one the account may depend on, and
+/// connecting it again means waiting for an approval: that takes the
+/// app lock's secret. One that waits, or that the server disowned,
+/// leaves without it.
 #[tauri::command]
-pub async fn premium_forget(state: tauri::State<'_, AppState>) -> CommandResult<PremiumStatus> {
+pub async fn premium_forget(
+    state: tauri::State<'_, AppState>,
+    secret: Option<String>,
+) -> CommandResult<PremiumStatus> {
     state.unlocked()?;
+    if full_access(&state).await {
+        confirm_identity_given(&state, secret.as_deref()).await?;
+    }
     state.manager.premium_log_out(&base_url()).await?;
     state.devices.forget();
     Ok(status(&state).await)
@@ -527,15 +547,25 @@ pub async fn premium_channels(
 
 /// Adds a channel. An ntfy topic is drawn here, long and random, and
 /// returned once as the URL to subscribe to; Telegram takes no target
-/// and comes back with the code to send the bot.
+/// and comes back with the code to send the bot. `secret` is a
+/// webhook's own.
+///
+/// A channel receives every alert, so with an app lock on, adding one
+/// takes the lock's secret, `identity`: someone at the unlocked app
+/// would otherwise have the alerts sent to them. Without a lock it goes
+/// through as it always did.
 #[tauri::command]
 pub async fn premium_add_channel(
     state: tauri::State<'_, AppState>,
     kind: ChannelKind,
     target: Option<String>,
     secret: Option<String>,
+    identity: Option<String>,
 ) -> CommandResult<NewChannel> {
     state.unlocked()?;
+    if state.manager.app_lock().await.is_some() {
+        confirm_identity_given(&state, identity.as_deref()).await?;
+    }
     let client = client(&state).await?;
     let (target, subscribe_url) = match kind {
         ChannelKind::Ntfy => {
@@ -688,6 +718,23 @@ pub(crate) fn waits(device: &Device) -> bool {
 pub(crate) async fn connected(state: &AppState) -> bool {
     let premium = state.manager.premium_state().await;
     premium.key.is_some() && premium.device.is_some() && !premium.disconnected
+}
+
+/// Whether this device is connected and, as far as the server last
+/// said, has full access. Not known yet counts as full: the secret is
+/// asked rather than skipped.
+pub(crate) async fn full_access(state: &AppState) -> bool {
+    connected(state).await && !state.devices.waiting()
+}
+
+/// Whether `key` is the one the vault holds, however it was typed.
+async fn holds_key(state: &AppState, key: &str) -> bool {
+    state
+        .manager
+        .premium_state()
+        .await
+        .key
+        .is_some_and(|held| licence::normalize_key(&held) == licence::normalize_key(key))
 }
 
 /// Whether the app is locked right now.
@@ -1210,6 +1257,68 @@ mod tests {
             Round::Idle
         ));
         assert!(requests.try_recv().is_err());
+    }
+
+    /// Forgetting the key on a device with full access disconnects it
+    /// on the server, and connecting it again waits for an approval: it
+    /// takes the secret. On a device that waits, it does not. Another
+    /// key cannot stand in for the forgetting either.
+    #[test]
+    fn leaving_the_account_from_full_access_takes_the_secret() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, _) = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime
+            .block_on(
+                state
+                    .manager
+                    .set_app_lock(gerfaut_core::lock::LockKind::Pin, "2468", None),
+            )
+            .unwrap();
+        assert!(runtime.block_on(full_access(&state)));
+        assert!(!runtime.block_on(holds_key(&state, "2345-6789-abcd-efgh")));
+        assert!(runtime.block_on(holds_key(&state, "ABCDEFGHIJKMNPQR")));
+
+        // Waiting: no secret needed.
+        seen_waiting(&state);
+        assert!(!runtime.block_on(full_access(&state)));
+    }
+
+    /// The commands that ask for the secret only in some cases say so
+    /// through the one helper, before anything else: forgetting the key
+    /// with full access, adding a channel under a lock, removing a
+    /// wallet the server watches.
+    #[test]
+    fn the_conditional_secrets_are_asked_first() {
+        let premium = include_str!("premium.rs");
+        let lib = include_str!("lib.rs");
+        for (source, name, guard) in [
+            (premium, "premium_forget", "if full_access(&state).await {"),
+            (
+                premium,
+                "premium_add_channel",
+                "if state.manager.app_lock().await.is_some() {",
+            ),
+            (
+                lib,
+                "remove_wallet",
+                "remove_checked(&state, &id, secret.as_deref()).await?;",
+            ),
+        ] {
+            let source = &source[..source.find("#[cfg(test)]").unwrap_or(source.len())];
+            let start = source
+                .find(&format!("fn {name}("))
+                .unwrap_or_else(|| panic!("{name} is gone"));
+            let lines: Vec<&str> = source[start..]
+                .lines()
+                .map(str::trim)
+                .skip_while(|line| !line.ends_with('{'))
+                .skip(1)
+                .take(3)
+                .collect();
+            assert_eq!(lines.first(), Some(&"state.unlocked()?;"), "{name}");
+            assert_eq!(lines.get(1), Some(&guard), "{name}");
+        }
     }
 
     /// The secret is the lock screen's: without a lock the answer says

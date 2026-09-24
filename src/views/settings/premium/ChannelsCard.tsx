@@ -28,6 +28,7 @@ import {
   useDeleteChannel,
   useTestChannel,
 } from "../../../state/premiumQueries";
+import { useLock } from "../../../state/lock";
 import { useUi } from "../../../state/store";
 import { FieldLabel, SectionCard } from "../primitives";
 import { IdentityModal } from "./IdentityModal";
@@ -469,6 +470,9 @@ function RemoveNote({
   );
 }
 
+/** What a channel is added with, besides its kind. */
+type ChannelFields = { target?: string; secret?: string };
+
 type Step =
   | { kind: "pick" }
   | { kind: "email" }
@@ -498,27 +502,36 @@ function AddChannelModal({
   const [copied, setCopied] = useState(false);
   const first = channels.length === 0;
 
-  const create = (kind: ChannelKind, fields?: { target?: string; secret?: string }) => {
+  const lock = useLock((state) => state.lock);
+  /** The channel about to be added while the app lock's secret is
+      asked: with a lock on, whoever sits at the unlocked app must not
+      be able to have the alerts sent to them. */
+  const [identity, setIdentity] = useState<{ kind: ChannelKind; fields?: ChannelFields } | null>(
+    null,
+  );
+
+  const send = (kind: ChannelKind, fields?: ChannelFields, pin?: string) =>
+    add.mutateAsync({ kind, ...fields, identity: pin }).then((created) => {
+      onCreated(created, first);
+      if (kind === "ntfy" || kind === "telegram") {
+        setStep({ kind, created });
+      } else if (kind === "email") {
+        // Created, but silent: the server wrote once, to send the
+        // code, and writes nothing else until it comes back.
+        setStep({ kind: "code", created, address: fields?.target ?? "" });
+      } else {
+        showToast("Channel added");
+        onClose();
+      }
+    });
+
+  const create = (kind: ChannelKind, fields?: ChannelFields) => {
     setFailure(undefined);
-    add.mutate(
-      { kind, ...fields },
-      {
-        onSuccess: (created) => {
-          onCreated(created, first);
-          if (kind === "ntfy" || kind === "telegram") {
-            setStep({ kind, created });
-          } else if (kind === "email") {
-            // Created, but silent: the server wrote once, to send the
-            // code, and writes nothing else until it comes back.
-            setStep({ kind: "code", created, address: fields?.target ?? "" });
-          } else {
-            showToast("Channel added");
-            onClose();
-          }
-        },
-        onError: (problem) => setFailure(problem),
-      },
-    );
+    if (lock !== null) {
+      setIdentity({ kind, fields });
+      return;
+    }
+    send(kind, fields).catch((problem: unknown) => setFailure(problem));
   };
 
   const submit = (event: FormEvent) => {
@@ -565,175 +578,194 @@ function AddChannelModal({
   const webhookValid = /^https:\/\/\S+$/.test(target.trim());
 
   return (
-    <Modal open onClose={onClose} centered width={520} title={title}>
-      <div className="flex flex-col gap-4">
-        {step.kind === "pick" && (
-          <ul className="-mx-2 flex flex-col gap-1">
-            {KINDS.map(({ kind, icon: Icon, label, hint }) => (
-              <li key={kind}>
-                <button
-                  type="button"
-                  disabled={add.isPending}
-                  aria-busy={add.isPending && add.variables?.kind === kind ? true : undefined}
-                  onClick={() => {
-                    setTarget("");
-                    setSecret("");
-                    if (kind === "email" || kind === "webhook") setStep({ kind });
-                    else create(kind);
-                  }}
-                  className="flex min-h-14 w-full cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-left transition-colors duration-100 hover:bg-sunken/70 disabled:cursor-default disabled:opacity-60"
-                >
-                  <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-md bg-sunken text-text">
-                    <Icon size={18} strokeWidth={1.5} aria-hidden />
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="font-ui text-sm font-medium text-text">{label}</span>
-                    <span className="font-ui text-xs text-muted">{hint}</span>
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+    <>
+      <Modal open onClose={onClose} centered width={520} title={title}>
+        <div className="flex flex-col gap-4">
+          {step.kind === "pick" && (
+            <ul className="-mx-2 flex flex-col gap-1">
+              {KINDS.map(({ kind, icon: Icon, label, hint }) => (
+                <li key={kind}>
+                  <button
+                    type="button"
+                    disabled={add.isPending}
+                    aria-busy={add.isPending && add.variables?.kind === kind ? true : undefined}
+                    onClick={() => {
+                      setTarget("");
+                      setSecret("");
+                      if (kind === "email" || kind === "webhook") setStep({ kind });
+                      else create(kind);
+                    }}
+                    className="flex min-h-14 w-full cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-left transition-colors duration-100 hover:bg-sunken/70 disabled:cursor-default disabled:opacity-60"
+                  >
+                    <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-md bg-sunken text-text">
+                      <Icon size={18} strokeWidth={1.5} aria-hidden />
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="font-ui text-sm font-medium text-text">{label}</span>
+                      <span className="font-ui text-xs text-muted">{hint}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
 
-        {(step.kind === "email" || step.kind === "webhook") && (
-          <form onSubmit={submit} className="flex flex-col gap-4">
-            <div>
-              <FieldLabel htmlFor="channel-target">
-                {step.kind === "email" ? "E-mail address" : "URL"}
-              </FieldLabel>
-              <input
-                id="channel-target"
-                type={step.kind === "email" ? "email" : "url"}
-                value={target}
-                onChange={(event) => {
-                  setFailure(undefined);
-                  setTarget(event.target.value);
-                }}
-                placeholder={step.kind === "email" ? "you@example.org" : "https://"}
-                autoComplete="off"
-                spellCheck={false}
-                className={clsx(
-                  "field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 text-text",
-                  step.kind === "webhook" ? "font-data text-[13px]" : "font-ui text-sm",
-                )}
-              />
-            </div>
-            {step.kind === "webhook" && (
+          {(step.kind === "email" || step.kind === "webhook") && (
+            <form onSubmit={submit} className="flex flex-col gap-4">
               <div>
-                <FieldLabel htmlFor="channel-secret">Secret (optional)</FieldLabel>
+                <FieldLabel htmlFor="channel-target">
+                  {step.kind === "email" ? "E-mail address" : "URL"}
+                </FieldLabel>
                 <input
-                  id="channel-secret"
-                  type="password"
-                  value={secret}
-                  onChange={(event) => setSecret(event.target.value)}
+                  id="channel-target"
+                  type={step.kind === "email" ? "email" : "url"}
+                  value={target}
+                  onChange={(event) => {
+                    setFailure(undefined);
+                    setTarget(event.target.value);
+                  }}
+                  placeholder={step.kind === "email" ? "you@example.org" : "https://"}
                   autoComplete="off"
-                  className="field-focus h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text"
+                  spellCheck={false}
+                  className={clsx(
+                    "field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 text-text",
+                    step.kind === "webhook" ? "font-data text-[13px]" : "font-ui text-sm",
+                  )}
                 />
               </div>
-            )}
-            <p className="font-ui text-xs text-muted">
-              {step.kind === "email"
-                ? "Alerts say which wallet moved, never an address or an amount."
-                : "Signed with HMAC-SHA256. See the docs."}
-            </p>
-            <div className="mt-1 flex items-center justify-end gap-3">
-              <Button variant="ghost" onClick={() => setStep({ kind: "pick" })} disabled={add.isPending}>
-                Back
-              </Button>
-              <Button
-                type="submit"
-                variant="premium"
-                disabled={add.isPending || (step.kind === "email" ? !emailValid : !webhookValid)}
-                aria-busy={add.isPending || undefined}
-              >
-                {add.isPending ? "Adding…" : "Add channel"}
-              </Button>
-            </div>
-          </form>
-        )}
-
-        {step.kind === "code" && (
-          <CodeForm
-            channel={step.created.channel}
-            sentTo={step.address}
-            onDone={onClose}
-          />
-        )}
-
-        {step.kind === "ntfy" && step.created.subscribe_url && (
-          <>
-            <p className="font-ui text-sm text-text">
-              Add this address as a subscription in the ntfy app. Anyone who has it can read
-              the alerts, so keep it to yourself.
-            </p>
-            <p className="selectable break-all rounded-sm bg-sunken px-3 py-2 font-data text-[13px] leading-6 text-text">
-              {step.created.subscribe_url}
-            </p>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <Button variant="secondary" onClick={() => void copy(step.created.subscribe_url!)}>
-                {copied ? (
-                  <Check size={14} strokeWidth={2} aria-hidden />
-                ) : (
-                  <Copy size={14} strokeWidth={1.5} aria-hidden />
-                )}
-                {copied ? "Copied" : "Copy"}
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() =>
-                  void openUrl(step.created.subscribe_url!.replace(/^https?:\/\//, "ntfy://"))
-                }
-              >
-                <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
-                Open in ntfy
-              </Button>
-              <Button variant="premium" onClick={onClose}>
-                Done
-              </Button>
-            </div>
-          </>
-        )}
-
-        {step.kind === "telegram" && (
-          <>
-            <p className="font-ui text-sm text-text">
-              Send this to <span className="font-medium">@GerfautAlertsBot</span>, or open
-              Telegram with the code already in place.
-            </p>
-            <p className="selectable rounded-sm bg-sunken px-3 py-3 text-center font-data text-[22px] tracking-[0.12em] text-text">
-              {step.created.channel.link_code ?? "—"}
-            </p>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              {linked ? (
-                <Pill tone="neutral" icon={<Check size={12} strokeWidth={2} aria-hidden className="shrink-0" />}>
-                  Linked
-                </Pill>
-              ) : (
-                <p role="status" className="font-ui text-xs text-muted">
-                  Waiting for the bot…
-                </p>
+              {step.kind === "webhook" && (
+                <div>
+                  <FieldLabel htmlFor="channel-secret">Secret (optional)</FieldLabel>
+                  <input
+                    id="channel-secret"
+                    type="password"
+                    value={secret}
+                    onChange={(event) => setSecret(event.target.value)}
+                    autoComplete="off"
+                    className="field-focus h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text"
+                  />
+                </div>
               )}
-              <span className="flex items-center gap-2">
-                {!linked && step.created.channel.telegram_url && (
-                  <Button
-                    variant="secondary"
-                    onClick={() => void openUrl(step.created.channel.telegram_url!)}
-                  >
-                    <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
-                    Open Telegram
-                  </Button>
-                )}
+              <p className="font-ui text-xs text-muted">
+                {step.kind === "email"
+                  ? "Alerts say which wallet moved, never an address or an amount."
+                  : "Signed with HMAC-SHA256. See the docs."}
+              </p>
+              <div className="mt-1 flex items-center justify-end gap-3">
+                <Button variant="ghost" onClick={() => setStep({ kind: "pick" })} disabled={add.isPending}>
+                  Back
+                </Button>
+                <Button
+                  type="submit"
+                  variant="premium"
+                  disabled={add.isPending || (step.kind === "email" ? !emailValid : !webhookValid)}
+                  aria-busy={add.isPending || undefined}
+                >
+                  {add.isPending ? "Adding…" : "Add channel"}
+                </Button>
+              </div>
+            </form>
+          )}
+
+          {step.kind === "code" && (
+            <CodeForm
+              channel={step.created.channel}
+              sentTo={step.address}
+              onDone={onClose}
+            />
+          )}
+
+          {step.kind === "ntfy" && step.created.subscribe_url && (
+            <>
+              <p className="font-ui text-sm text-text">
+                Add this address as a subscription in the ntfy app. Anyone who has it can read
+                the alerts, so keep it to yourself.
+              </p>
+              <p className="selectable break-all rounded-sm bg-sunken px-3 py-2 font-data text-[13px] leading-6 text-text">
+                {step.created.subscribe_url}
+              </p>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Button variant="secondary" onClick={() => void copy(step.created.subscribe_url!)}>
+                  {copied ? (
+                    <Check size={14} strokeWidth={2} aria-hidden />
+                  ) : (
+                    <Copy size={14} strokeWidth={1.5} aria-hidden />
+                  )}
+                  {copied ? "Copied" : "Copy"}
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() =>
+                    void openUrl(step.created.subscribe_url!.replace(/^https?:\/\//, "ntfy://"))
+                  }
+                >
+                  <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
+                  Open in ntfy
+                </Button>
                 <Button variant="premium" onClick={onClose}>
                   Done
                 </Button>
-              </span>
-            </div>
-          </>
-        )}
+              </div>
+            </>
+          )}
 
-        {failure !== undefined && <FailureNote error={failure} />}
-      </div>
-    </Modal>
+          {step.kind === "telegram" && (
+            <>
+              <p className="font-ui text-sm text-text">
+                Send this to <span className="font-medium">@GerfautAlertsBot</span>, or open
+                Telegram with the code already in place.
+              </p>
+              <p className="selectable rounded-sm bg-sunken px-3 py-3 text-center font-data text-[22px] tracking-[0.12em] text-text">
+                {step.created.channel.link_code ?? "—"}
+              </p>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                {linked ? (
+                  <Pill tone="neutral" icon={<Check size={12} strokeWidth={2} aria-hidden className="shrink-0" />}>
+                    Linked
+                  </Pill>
+                ) : (
+                  <p role="status" className="font-ui text-xs text-muted">
+                    Waiting for the bot…
+                  </p>
+                )}
+                <span className="flex items-center gap-2">
+                  {!linked && step.created.channel.telegram_url && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => void openUrl(step.created.channel.telegram_url!)}
+                    >
+                      <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
+                      Open Telegram
+                    </Button>
+                  )}
+                  <Button variant="premium" onClick={onClose}>
+                    Done
+                  </Button>
+                </span>
+              </div>
+            </>
+          )}
+
+          {failure !== undefined && <FailureNote error={failure} />}
+        </div>
+      </Modal>
+      {/* Beside the dialog, not inside it: a fixed layer inside a moving
+          one would be placed by it. */}
+      {identity !== null && (
+        <IdentityModal
+          action="Add channel"
+          busyLabel="Adding…"
+          tone="premium"
+          z={60}
+          run={(pin) => send(identity.kind, identity.fields, pin)}
+          onDone={() => setIdentity(null)}
+          onFailure={(problem) => {
+            setIdentity(null);
+            setFailure(problem);
+          }}
+          onCancel={() => setIdentity(null)}
+        />
+      )}
+    </>
   );
 }

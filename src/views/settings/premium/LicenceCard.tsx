@@ -224,7 +224,8 @@ function KeyInPlace({ status, access }: { status: PremiumStatus; access: DeviceA
   const [forgetting, setForgetting] = useState(false);
   const key = status.key ?? "";
   const licence = status.licence;
-  const full = access === "full" && !status.disconnected;
+  const connected = status.device !== null && !status.disconnected;
+  const full = access === "full" && connected;
 
   // The key goes to the clipboard, not into the address: see RENEW_URL.
   // The page opens either way — someone who has the key in hand can
@@ -281,7 +282,11 @@ function KeyInPlace({ status, access }: { status: PremiumStatus; access: DeviceA
         )}
       </div>
       {forgetting && access !== "pending" && (
-        <ForgetKey allowDelete={full} onClose={() => setForgetting(false)} />
+        <ForgetKey
+          allowDelete={full}
+          confirm={connected}
+          onClose={() => setForgetting(false)}
+        />
       )}
       {changing && <ChangeKeyModal onClose={() => setChanging(false)} />}
     </div>

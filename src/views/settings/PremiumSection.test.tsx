@@ -415,13 +415,19 @@ describe("the licence card", () => {
     await user.click(screen.getByRole("button", { name: "Forget this key" }));
     expect(of("premium_forget", calls)).toEqual([]);
     const confirmation = screen.getByRole("status");
-    expect(confirmation).toHaveTextContent(/stops the watch on this device, not on the server/);
+    expect(confirmation).toHaveTextContent(
+      "Forgetting the key disconnects this device from your Premium account. To use Premium here again, enter the key, then approve this device from another one or wait 10 days.",
+    );
     await user.click(within(confirmation).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
 
+    // A device with full access leaves behind the app lock's secret:
+    // coming back takes an approval or ten days.
     await user.click(screen.getByRole("button", { name: "Forget this key" }));
     await user.click(within(screen.getByRole("status")).getByRole("button", { name: "Forget the key" }));
-    await waitFor(() => expect(of("premium_forget", calls)).toHaveLength(1));
+    expect(of("premium_forget", calls)).toEqual([]);
+    await confirmIdentity(user, "Forget the key");
+    await waitFor(() => expect(of("premium_forget", calls)).toEqual([{ secret: PIN }]));
     expect(await screen.findByLabelText("Account key")).toBeInTheDocument();
   });
 
@@ -449,7 +455,7 @@ describe("the licence card", () => {
     // the same place, and the default is the harmless half.
     expect(box).not.toBeChecked();
     expect(screen.getByRole("status")).toHaveTextContent(
-      /stops the watch on this device, not on the server/,
+      /disconnects this device from your Premium account/,
     );
     const forgetButton = screen.getByRole("button", { name: "Forget the key" });
     expect(forgetButton).toBeInTheDocument();
@@ -887,9 +893,15 @@ describe("the channels card", () => {
       expect(choice).toHaveTextContent(hint);
     }
 
+    // With the app lock on, a channel is added once the secret is
+    // given: whoever holds the unlocked app would get every alert.
     await user.click(within(dialog).getByRole("button", { name: /^ntfy/ }));
+    expect(of("premium_add_channel", calls)).toEqual([]);
+    await confirmIdentity(user, "Add channel");
     await waitFor(() =>
-      expect(of("premium_add_channel", calls)).toEqual([{ kind: "ntfy", target: null, secret: null }]),
+      expect(of("premium_add_channel", calls)).toEqual([
+        { kind: "ntfy", target: null, secret: null, identity: PIN },
+      ]),
     );
     const done = await screen.findByRole("dialog", { name: "Subscribe to this topic in the ntfy app" });
     expect(done).toHaveTextContent("https://ntfy.gerfaut-wallet.com/abcdefghijkmnpqrstuvwxyz");
@@ -914,12 +926,16 @@ describe("the channels card", () => {
       },
     });
     TIMING.telegramPollMs = 20;
+    // No app lock: a channel is added as it always was, no secret asked
+    // and no push to set a lock.
+    useLock.setState({ lock: null });
     renderSection();
     const user = userEvent.setup();
     await screen.findByText("abc…xyz");
 
     await user.click(screen.getByRole("button", { name: "Add a channel" }));
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Telegram/ }));
+    expect(screen.queryByRole("dialog", { name: "Confirm it's you" })).not.toBeInTheDocument();
     const dialog = await screen.findByRole("dialog", { name: "Link Telegram" });
     expect(dialog).toHaveTextContent("0123456789ab");
     expect(dialog).toHaveTextContent("@GerfautAlertsBot");
@@ -939,6 +955,7 @@ describe("the channels card", () => {
   });
 
   it("takes an e-mail address and a webhook with its secret, and repeats a refusal in the server's words", async () => {
+    useLock.setState({ lock: null });
     let refuse = false;
     const calls = mockPremium({
       premium_channels: () => [NTFY],
@@ -965,7 +982,7 @@ describe("the channels card", () => {
     await user.click(add);
     await waitFor(() =>
       expect(of("premium_add_channel", calls)).toEqual([
-        { kind: "email", target: "loic@example.org", secret: null },
+        { kind: "email", target: "loic@example.org", secret: null, identity: null },
       ]),
     );
     // Created and silent: the server wrote once, to send the code.
@@ -990,6 +1007,7 @@ describe("the channels card", () => {
       kind: "webhook",
       target: "https://example.invalid/hook",
       secret: "s3cret",
+      identity: null,
     });
   });
 

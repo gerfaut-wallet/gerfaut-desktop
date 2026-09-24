@@ -178,7 +178,7 @@ export function useForgetPremium() {
   const client = useQueryClient();
   const invalidate = useInvalidatePremium();
   return useMutation({
-    mutationFn: () => ipc.premiumForget(),
+    mutationFn: (secret?: string) => ipc.premiumForget(secret),
     onSuccess: () => {
       forgetServerState(client);
       invalidate();
@@ -212,8 +212,12 @@ export function useUnwatchWallet() {
 export function useAddChannel() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (args: { kind: ChannelKind; target?: string; secret?: string }) =>
-      ipc.premiumAddChannel(args.kind, args.target, args.secret),
+    mutationFn: (args: {
+      kind: ChannelKind;
+      target?: string;
+      secret?: string;
+      identity?: string;
+    }) => ipc.premiumAddChannel(args.kind, args.target, args.secret, args.identity),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: premiumKeys.channels });
       void client.invalidateQueries({ queryKey: premiumKeys.account });

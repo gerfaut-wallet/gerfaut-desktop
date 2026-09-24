@@ -506,10 +506,12 @@ describe("a device waiting for approval", () => {
       within(waiting.closest("section")!).getByRole("button", { name: "Forget this key" }),
     );
     const question = screen.getByRole("status");
-    expect(question).toHaveTextContent(/stops the watch on this device, not on the server/);
+    expect(question).toHaveTextContent(/disconnects this device from your Premium account/);
     expect(screen.queryByLabelText("Also delete everything on the server")).not.toBeInTheDocument();
+    // Waiting, the device leaves without the secret: nothing depends on it.
     await user.click(within(question).getByRole("button", { name: "Forget the key" }));
-    await waitFor(() => expect(of("premium_forget", calls)).toHaveLength(1));
+    await waitFor(() => expect(of("premium_forget", calls)).toEqual([{ secret: null }]));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
 

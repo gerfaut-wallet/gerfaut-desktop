@@ -72,7 +72,7 @@ export function WaitingCard({
         </div>
         {forgetting && (
           <div className="mt-4">
-            <ForgetKey allowDelete={false} onClose={() => setForgetting(false)} />
+            <ForgetKey allowDelete={false} confirm={false} onClose={() => setForgetting(false)} />
           </div>
         )}
       </SectionCard>

@@ -1099,8 +1099,10 @@ export const ipc = {
   premiumActivate: (key: string) => invoke<PremiumStatus>("premium_activate", { key }),
   /** Connects this device again with the key the vault keeps. */
   premiumReconnect: () => invoke<PremiumStatus>("premium_reconnect"),
-  /** Disconnects this device and forgets the key here. */
-  premiumForget: () => invoke<PremiumStatus>("premium_forget"),
+  /** Disconnects this device and forgets the key here; with full
+      access it takes the app lock's secret. */
+  premiumForget: (secret?: string) =>
+    invoke<PremiumStatus>("premium_forget", { secret: secret ?? null }),
   /** This device as the server sees it. */
   premiumDevice: () => invoke<Device>("premium_device"),
   /** Every device of the account, oldest first; full access only. */
@@ -1122,11 +1124,14 @@ export const ipc = {
   premiumUnwatchWallet: (id: string, secret: string) =>
     invoke<void>("premium_unwatch_wallet", { id, secret }),
   premiumChannels: () => invoke<Channel[]>("premium_channels"),
-  premiumAddChannel: (kind: ChannelKind, target?: string, secret?: string) =>
+  /** `secret` is a webhook's own; `identity`, the app lock's, needed
+      while a lock is on. */
+  premiumAddChannel: (kind: ChannelKind, target?: string, secret?: string, identity?: string) =>
     invoke<NewChannel>("premium_add_channel", {
       kind,
       target: target ?? null,
       secret: secret ?? null,
+      identity: identity ?? null,
     }),
   premiumDeleteChannel: (id: string, secret: string) =>
     invoke<void>("premium_delete_channel", { id, secret }),

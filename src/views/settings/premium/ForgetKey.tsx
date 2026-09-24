@@ -11,16 +11,21 @@ import { FailureNote, GHOST_ON_TINT } from "./shared";
  *  server as well.
  *
  *  Forgetting disconnects this device and drops the key here; the
- *  account and what it watches stay. Deleting it is the one half that
- *  cannot be undone: the note stays amber — nothing here can lose
- *  funds — the button turns `danger`, and the secret of the app lock
- *  is asked before it goes. */
+ *  account and what it watches stay. A device with full access asks the
+ *  app lock's secret first: coming back takes an approval or ten days.
+ *  Deleting the account is the one half that cannot be undone: the
+ *  note stays amber — nothing here can lose funds — the button turns
+ *  `danger`, and the secret is asked before it goes. */
 export function ForgetKey({
   allowDelete,
+  confirm,
   onClose,
 }: {
   /** Whether this device may delete the account: full access only. */
   allowDelete: boolean;
+  /** Whether forgetting asks the secret: a device the account may
+      depend on, full access or not known to wait. */
+  confirm: boolean;
   onClose: () => void;
 }) {
   const forget = useForgetPremium();
@@ -30,7 +35,8 @@ export function ForgetKey({
       device. Off every time the question opens: nobody deletes an
       account by clicking twice in the same place. */
   const [alsoServer, setAlsoServer] = useState(false);
-  const [identity, setIdentity] = useState(false);
+  /** Which half waits for the secret. */
+  const [identity, setIdentity] = useState<"forget" | "delete" | null>(null);
   const [failure, setFailure] = useState<unknown>(undefined);
   const busy = forget.isPending || erase.isPending;
   const deleting = allowDelete && alsoServer;
@@ -41,7 +47,11 @@ export function ForgetKey({
   const go = () => {
     setFailure(undefined);
     if (deleting) {
-      setIdentity(true);
+      setIdentity("delete");
+      return;
+    }
+    if (confirm) {
+      setIdentity("forget");
       return;
     }
     forget.mutate(undefined, {
@@ -85,7 +95,7 @@ export function ForgetKey({
       >
         {deleting
           ? "Deleting the account removes from the server the wallets it watches, the channels it tells and its alert log, and the key stops working everywhere. This cannot be undone, and whatever paid time the key had left is not refunded."
-          : "Forgetting the key stops the watch on this device, not on the server: your wallets stay registered there until you remove them."}
+          : "Forgetting the key disconnects this device from your Premium account. To use Premium here again, enter the key, then approve this device from another one or wait 10 days."}
         {allowDelete && (
           <label className="mt-2.5 flex cursor-pointer items-center gap-2 font-ui text-sm">
             <input
@@ -103,22 +113,40 @@ export function ForgetKey({
         )}
       </Notice>
       {failure !== undefined && <FailureNote error={failure} />}
-      {identity && (
+      {identity === "delete" && (
         <IdentityModal
           action="Delete the account"
           busyLabel="Deleting…"
           tone="danger"
           run={(secret) => erase.mutateAsync(secret)}
           onDone={() => {
-            setIdentity(false);
+            setIdentity(null);
             onClose();
             showToast("Account deleted");
           }}
           onFailure={(problem) => {
-            setIdentity(false);
+            setIdentity(null);
             setFailure(problem);
           }}
-          onCancel={() => setIdentity(false)}
+          onCancel={() => setIdentity(null)}
+        />
+      )}
+      {identity === "forget" && (
+        <IdentityModal
+          action="Forget the key"
+          busyLabel="Forgetting…"
+          tone="premium"
+          run={(secret) => forget.mutateAsync(secret)}
+          onDone={() => {
+            setIdentity(null);
+            onClose();
+            showToast("Key forgotten");
+          }}
+          onFailure={(problem) => {
+            setIdentity(null);
+            setFailure(problem);
+          }}
+          onCancel={() => setIdentity(null)}
         />
       )}
     </>
