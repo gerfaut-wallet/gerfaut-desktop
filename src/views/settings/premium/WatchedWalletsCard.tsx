@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
 import { Eye } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "../../../components/Button";
 import { Notice } from "../../../components/Notice";
 import { WatchedPill } from "../../../components/PremiumPill";
@@ -10,7 +10,8 @@ import { walletGlyph } from "../../../lib/walletIcons";
 import { useUnwatchWallet, useWatchWallet } from "../../../state/premiumQueries";
 import { SectionCard, Toggle } from "../primitives";
 import { ConsentModal } from "./ConsentModal";
-import { FailureNote, GHOST_ON_TINT, GLYPH_CHIP } from "./shared";
+import { IdentityModal } from "./IdentityModal";
+import { FailureNote, GHOST_ON_TINT, GLYPH_CHIP, useFocusAfterRender } from "./shared";
 
 /** The wallets of the server's network, each with the switch that sends
     it there or takes it back. Both directions ask first: "on" before
@@ -45,18 +46,14 @@ export function WatchedWalletsCard({
   const [asking, setAsking] = useState<WalletMeta | null>(null);
   /** The wallet whose unwatch waits for a yes, by id. */
   const [leaving, setLeaving] = useState<string | null>(null);
-  /** The same, as the last render left it: a server's answer arrives
-      long after the click it followed, and asks which question is
-      open now, not which was open then. */
-  const leavingNow = useRef(leaving);
-  useEffect(() => {
-    leavingNow.current = leaving;
-  }, [leaving]);
   const [pending, setPending] = useState<string | null>(null);
+  /** The wallet whose unwatch waits for the secret, by id. */
+  const [identity, setIdentity] = useState<{ id: string; name: string } | null>(null);
   const [failure, setFailure] = useState<unknown>(undefined);
   /** The card's heading: where the focus lands once a question, and
       the button that answered it, are gone. */
   const heading = useRef<HTMLHeadingElement>(null);
+  const focusHeading = useFocusAfterRender(heading);
   /** The switch or button each question is asked from, by wallet id,
       so a Cancel can put the focus back on it. */
   const triggers = useRef(new Map<string, HTMLElement>());
@@ -85,23 +82,22 @@ export function WatchedWalletsCard({
     });
   };
 
-  /** Tells the server, once the yes is given. On a failure the question
-      stays up: the retry is one click, and what it would do is still in
-      front of the reader. On success this row's question goes, and with
-      it the button that answered: the heading takes the focus, so it is
-      not dropped on the body. A question opened on another row in the
-      meantime is not this answer's to close, and keeps the focus. */
-  const stop = (id: string) => {
+  /** The yes under the row was given: the secret is asked, and the
+      server told once it went through. On a failure the question
+      stays up: the retry is one click, and what it would do is still
+      in front of the reader. On success this row's question goes, and
+      with it the button that answered: the heading takes the focus, so
+      it is not dropped on the body. A question opened on another row in
+      the meantime is not this answer's to close, and keeps the focus. */
+  const stop = (id: string, secret: string) => {
     setFailure(undefined);
     setPending(id);
-    unwatch.mutate(id, {
-      onSuccess: () => {
+    return unwatch
+      .mutateAsync({ id, secret })
+      .then(() => {
         setLeaving((current) => (current === id ? null : current));
-        if (leavingNow.current === id) heading.current?.focus();
-      },
-      onError: (problem) => setFailure(problem),
-      onSettled: () => setPending(null),
-    });
+      })
+      .finally(() => setPending(null));
   };
 
   /** Closes the question and puts the focus back where it was asked. */
@@ -193,7 +189,7 @@ export function WatchedWalletsCard({
                       name={wallet.name}
                       local
                       busy={busy}
-                      onConfirm={() => stop(wallet.id)}
+                      onConfirm={() => setIdentity({ id: wallet.id, name: wallet.name })}
                       onCancel={() => cancel(wallet.id)}
                     />
                   )}
@@ -235,7 +231,7 @@ export function WatchedWalletsCard({
                       name={server.name}
                       local={false}
                       busy={busy}
-                      onConfirm={() => stop(server.id)}
+                      onConfirm={() => setIdentity({ id: server.id, name: server.name })}
                       onCancel={() => cancel(server.id)}
                     />
                   )}
@@ -253,6 +249,23 @@ export function WatchedWalletsCard({
             setFailure(undefined);
             onRetry?.();
           }}
+        />
+      )}
+      {identity !== null && (
+        <IdentityModal
+          action="Unwatch"
+          busyLabel="Unwatching…"
+          tone="danger"
+          run={(secret) => stop(identity.id, secret)}
+          onDone={() => {
+            setIdentity(null);
+            focusHeading();
+          }}
+          onFailure={(problem) => {
+            setIdentity(null);
+            setFailure(problem);
+          }}
+          onCancel={() => setIdentity(null)}
         />
       )}
       <ConsentModal

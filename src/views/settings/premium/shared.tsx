@@ -1,6 +1,8 @@
 // What the four premium cards share: the note a failure leaves under a
 // card, the ghost that survives a tinted surface, the date voice.
 
+import { useEffect, useState } from "react";
+import type { RefObject } from "react";
 import { Button } from "../../../components/Button";
 import { Notice } from "../../../components/Notice";
 import { LOCALE } from "../../../lib/format";
@@ -45,3 +47,15 @@ export function longDate(unixSeconds: number): string {
 /** The square chip a row's glyph sits in. */
 export const GLYPH_CHIP =
   "inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-sunken text-text";
+
+/** Moves the focus to `ref` once the next render is on screen. A
+    dialog that closes hands the focus back to what opened it on its
+    way out; when that was a question now gone, this lands it on the
+    card's heading instead of the body. */
+export function useFocusAfterRender(ref: RefObject<HTMLElement | null>): () => void {
+  const [requests, setRequests] = useState(0);
+  useEffect(() => {
+    if (requests > 0) ref.current?.focus();
+  }, [requests, ref]);
+  return () => setRequests((count) => count + 1);
+}

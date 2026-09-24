@@ -14,7 +14,7 @@ function Harness() {
   return (
     <>
       <p data-testid="consented">{(status.data?.consented ?? []).join(" ")}</p>
-      <button type="button" onClick={() => remove.mutate("w-1")}>
+      <button type="button" onClick={() => remove.mutate({ id: "w-1", secret: "2468" })}>
         Remove
       </button>
     </>
@@ -30,6 +30,10 @@ describe("useRemoveWallet", () => {
       licence: null,
       consented: ["w-1"],
       acknowledged_offline_until: null,
+      device: { id: "d-1", connected_at: 1_790_000_000 },
+      disconnected: false,
+      key_saved: false,
+      checklist_hidden: false,
     };
     const removed: string[] = [];
     mockIPC((cmd, args) => {
@@ -38,6 +42,7 @@ describe("useRemoveWallet", () => {
           return status;
         case "remove_wallet":
           removed.push((args as { id: string }).id);
+          expect((args as { secret: string }).secret).toBe("2468");
           status = { ...status, consented: [] };
           return undefined;
         default:

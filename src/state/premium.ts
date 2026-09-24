@@ -5,12 +5,18 @@
 // failure says nothing: a laptop wakes, a router blinks. Two in a row
 // is an outage, dated from the first, and the banner on the Overview
 // says so until someone acknowledges it or the heartbeat comes back.
+//
+// Beside it, the account's devices: a new one waiting for approval is
+// the other thing the Overview says before anything else.
 
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
+import type { Device } from "../lib/ipc";
 import { ipc } from "../lib/ipc";
 import { TIMING } from "../lib/premium";
+import { premiumKeys } from "./premiumQueries";
 import { keys } from "./queries";
 
 /** Failures in a row before the watch counts as offline. */
@@ -95,4 +101,62 @@ export function usePremiumWatch(enabled: boolean): void {
       clearInterval(timer);
     };
   }, [enabled]);
+}
+
+/** The Rust side has asked the server for the devices on its own, and
+    this is what it answered. Sent only while the app is unlocked. */
+export const PREMIUM_DEVICES = "premium://devices";
+/** Something about this device's connection moved on the Rust side:
+    the server disconnected it. Everything premium is read again. */
+export const PREMIUM_CHANGED = "premium://changed";
+
+/** Keeps the device list current while the app is open and unlocked.
+    The Rust side asks the server every five minutes and hands the
+    answer over here; the window coming back to the front asks again
+    when what it holds is more than a minute old. Nothing here keeps
+    time of its own. */
+export function useDeviceWatch(enabled: boolean): void {
+  const client = useQueryClient();
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    const stops: (() => void)[] = [];
+    const quietly = (stop: () => void) => {
+      void Promise.resolve()
+        .then(stop)
+        .catch(() => {});
+    };
+    const on = (event: string, handler: (payload: unknown) => void) => {
+      void listen(event, ({ payload }) => {
+        if (live) handler(payload);
+      })
+        .then((stop) => {
+          if (live) stops.push(stop);
+          else quietly(stop);
+        })
+        .catch(() => {});
+    };
+    on(PREMIUM_DEVICES, (payload) => {
+      if (Array.isArray(payload)) client.setQueryData<Device[]>(premiumKeys.devices, payload);
+    });
+    on(PREMIUM_CHANGED, () => {
+      void client.invalidateQueries({ queryKey: ["premium"] });
+      void client.invalidateQueries({ queryKey: keys.settings });
+    });
+    const stale = (key: readonly unknown[]) => {
+      const updated = client.getQueryState(key)?.dataUpdatedAt ?? 0;
+      return Date.now() - updated >= TIMING.devicesFocusMs;
+    };
+    const onFocus = () => {
+      for (const key of [premiumKeys.device, premiumKeys.devices]) {
+        if (stale(key)) void client.invalidateQueries({ queryKey: key, exact: true });
+      }
+    };
+    window.addEventListener("focus", onFocus);
+    return () => {
+      live = false;
+      window.removeEventListener("focus", onFocus);
+      for (const stop of stops) quietly(stop);
+    };
+  }, [enabled, client]);
 }

@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   Channel,
+  Device,
   PremiumAccountReport,
   PremiumEvent,
   PremiumStatus,
@@ -12,6 +13,7 @@ import type {
   WalletWatch,
 } from "../../lib/ipc";
 import { TIMING } from "../../lib/premium";
+import { useLock } from "../../state/lock";
 import { useUi } from "../../state/store";
 import { PremiumSection } from "./PremiumSection";
 
@@ -32,6 +34,10 @@ const NO_KEY: PremiumStatus = {
   licence: null,
   consented: [],
   acknowledged_offline_until: null,
+  device: null,
+  disconnected: false,
+  key_saved: false,
+  checklist_hidden: false,
 };
 
 const ACTIVE: PremiumStatus = {
@@ -39,7 +45,27 @@ const ACTIVE: PremiumStatus = {
   licence: { status: "active", until: 1_804_809_600 },
   consented: [],
   acknowledged_offline_until: null,
+  device: { id: "d-this", connected_at: NOW - 86_400 * 30 },
+  disconnected: false,
+  // Saved and put away, so the checklist stays out of the tests that
+  // are not about it.
+  key_saved: true,
+  checklist_hidden: true,
 };
+
+/** This computer, the account's first device: full access. */
+const THIS_DEVICE: Device = {
+  id: "d-this",
+  platform: "windows",
+  connected_at: NOW - 86_400 * 30,
+  access: "full",
+  pending_until: null,
+  approved_at: NOW - 86_400 * 30,
+  this_device: true,
+};
+
+/** The PIN of the app lock the tests set. */
+const PIN = "2468";
 
 const ACCOUNT: PremiumAccountReport = {
   account: { active: true, paid_until: 1_804_809_600, wallets: 0, channels: 0, network: "bitcoin" },
@@ -202,6 +228,8 @@ function mockPremium(overrides: Record<string, Answer> = {}) {
   const calls: { cmd: string; args: Record<string, unknown> }[] = [];
   const answers: Record<string, Answer> = {
     premium_status: () => ACTIVE,
+    premium_device: () => THIS_DEVICE,
+    premium_devices: () => [THIS_DEVICE],
     premium_account: () => ACCOUNT,
     list_wallets: () => [COLD, DONATION],
     premium_wallets: () => [],
@@ -241,9 +269,17 @@ function card(name: string) {
   return within(screen.getByRole("heading", { name }).closest("section")!);
 }
 
+/** Answers "Confirm it's you" with the PIN, and confirms with `action`. */
+async function confirmIdentity(user: ReturnType<typeof userEvent.setup>, action: string) {
+  const dialog = await screen.findByRole("dialog", { name: "Confirm it's you" });
+  await user.type(within(dialog).getByLabelText("PIN"), PIN);
+  await user.click(within(dialog).getByRole("button", { name: action }));
+}
+
 beforeEach(() => {
   opened.urls = [];
-  useUi.setState({ view: "settings", activeWalletId: null });
+  useUi.setState({ view: "settings", activeWalletId: null, settingsTarget: null });
+  useLock.setState({ lock: { kind: "pin", biometric: false } });
 });
 
 afterEach(() => {
@@ -436,14 +472,19 @@ describe("the licence card", () => {
     expect(erase).toHaveClass("bg-alert");
     expect(erase).not.toHaveClass("bg-premium");
 
-    // A call that fails leaves the key here: the core deletes on the
-    // server first and forgets afterwards.
+    // The app lock's secret is asked before anything goes. A call that
+    // fails leaves the key here: the core deletes on the server first
+    // and forgets afterwards.
     await user.click(screen.getByRole("button", { name: "Delete the account" }));
+    expect(of("premium_delete_account", calls)).toEqual([]);
+    await confirmIdentity(user, "Delete the account");
     expect(await screen.findByRole("alert")).toHaveTextContent(/Tor is not reachable/);
+    expect(of("premium_delete_account", calls)).toEqual([{ secret: PIN }]);
     expect(screen.getByText(/Active until/)).toBeInTheDocument();
 
     refuse = false;
     await user.click(screen.getByRole("button", { name: "Delete the account" }));
+    await confirmIdentity(user, "Delete the account");
     await waitFor(() => expect(of("premium_delete_account", calls)).toHaveLength(2));
     expect(await screen.findByLabelText("Account key")).toBeInTheDocument();
     expect(useUi.getState().toast).toBe("Account deleted");
@@ -596,7 +637,12 @@ describe("the watched wallets card", () => {
     // and the focus lands on the card's heading rather than nowhere.
     await user.click(cold);
     await user.click(within(row).getByRole("button", { name: "Unwatch" }));
-    await waitFor(() => expect(of("premium_unwatch_wallet", calls)).toEqual([{ id: "w-1" }]));
+    // Then the app lock's secret, which goes with the request.
+    expect(of("premium_unwatch_wallet", calls)).toEqual([]);
+    await confirmIdentity(user, "Unwatch");
+    await waitFor(() =>
+      expect(of("premium_unwatch_wallet", calls)).toEqual([{ id: "w-1", secret: PIN }]),
+    );
     await waitFor(() => expect(cold).toHaveAttribute("aria-checked", "false"));
     expect(within(row).queryByRole("status")).not.toBeInTheDocument();
     expect(screen.queryByText("Watched")).not.toBeInTheDocument();
@@ -758,8 +804,10 @@ describe("the watched wallets card", () => {
     // question — the retry is one click away.
     await user.click(unwatch);
     await user.click(within(row).getByRole("button", { name: "Unwatch" }));
+    await confirmIdentity(user, "Unwatch");
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not reach the Gerfaut server.");
-    expect(of("premium_unwatch_wallet", calls)).toEqual([{ id: "w-gone" }]);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(of("premium_unwatch_wallet", calls)).toEqual([{ id: "w-gone", secret: PIN }]);
     expect(screen.getByText("Old wallet")).toBeInTheDocument();
     const again = within(row).getByRole("button", { name: "Unwatch" });
     await waitFor(() => expect(again).toBeEnabled());
@@ -769,8 +817,12 @@ describe("the watched wallets card", () => {
     // the card's heading, not dropped on the body.
     reachable = true;
     await user.click(again);
+    await confirmIdentity(user, "Unwatch");
     await waitFor(() =>
-      expect(of("premium_unwatch_wallet", calls)).toEqual([{ id: "w-gone" }, { id: "w-gone" }]),
+      expect(of("premium_unwatch_wallet", calls)).toEqual([
+        { id: "w-gone", secret: PIN },
+        { id: "w-gone", secret: PIN },
+      ]),
     );
     await waitFor(() => expect(screen.queryByText("Old wallet")).not.toBeInTheDocument());
     expect(cold).toHaveAttribute("aria-checked", "true");
@@ -1074,10 +1126,37 @@ describe("the channels card", () => {
     await waitFor(() => expect(of("premium_test_channel", calls)).toEqual([{ id: "c-ntfy" }]));
     await waitFor(() => expect(useUi.getState().toast).toBe("Test sent"));
 
+    // Removing asks under the row first, in amber, then for the secret.
     await user.click(screen.getByRole("button", { name: /^More for ntfy/ }));
     await user.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Remove" }));
-    await waitFor(() => expect(of("premium_delete_channel", calls)).toEqual([{ id: "c-ntfy" }]));
+    const row = screen.getByText("abc…xyz").closest("li")!;
+    const question = within(row).getByRole("status");
+    expect(question).toHaveTextContent(
+      "Remove this channel? Gerfaut stops sending alerts to it at once.",
+    );
+    expect(question).toHaveClass("bg-pending-surface");
+    expect(within(question).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Cancel",
+      "Remove",
+    ]);
+    expect(within(question).getByRole("button", { name: "Remove" })).toHaveClass("bg-alert");
+    expect(of("premium_delete_channel", calls)).toEqual([]);
+
+    // Cancel: nothing went, the focus is back on the row's menu.
+    await user.click(within(question).getByRole("button", { name: "Cancel" }));
+    expect(within(row).queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^More for ntfy/ })).toHaveFocus();
+
+    await user.click(screen.getByRole("button", { name: /^More for ntfy/ }));
+    await user.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Remove" }));
+    await user.click(within(within(row).getByRole("status")).getByRole("button", { name: "Remove" }));
+    await confirmIdentity(user, "Remove");
+    await waitFor(() =>
+      expect(of("premium_delete_channel", calls)).toEqual([{ id: "c-ntfy", secret: PIN }]),
+    );
     expect(await screen.findByText(/No channels yet/)).toBeInTheDocument();
+    expect(useUi.getState().toast).toBe("Channel removed");
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Channels" })).toHaveFocus());
   });
 
   it("offers no test on a channel the server has no target for yet", async () => {

@@ -325,7 +325,7 @@ export function useRemoveWallet() {
   const invalidate = useInvalidateWallet();
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => ipc.removeWallet(id),
+    mutationFn: (args: { id: string; secret?: string }) => ipc.removeWallet(args.id, args.secret),
     onSuccess: () => {
       invalidate();
       void client.invalidateQueries({ queryKey: ["premium"] });

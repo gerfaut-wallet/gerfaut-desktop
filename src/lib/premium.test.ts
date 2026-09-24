@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest";
+import type { Device } from "./ipc";
 import {
   coinsWord,
+  dayMonthYear,
+  daysLeft,
   eventWords,
   formatKeyInput,
+  isDeviceDisconnected,
+  isDevicePending,
   isWellFormedKey,
   offlineSinceLabel,
+  pendingDevices,
+  platformLabel,
   premiumFailure,
   RENEW_URL,
   serverNetwork,
+  waitingWords,
 } from "./premium";
 
 describe("the key field", () => {
@@ -112,5 +120,87 @@ describe("what the server says", () => {
     const yesterday = new Date(2026, 8, 4, 23, 58).getTime() / 1000;
     expect(offlineSinceLabel(today, now)).toBe("14:02");
     expect(offlineSinceLabel(yesterday, now)).toBe("Sep 4, 23:58");
+  });
+});
+
+describe("the devices of the account", () => {
+  it("names each platform the way the alerts do, and nothing the server made up", () => {
+    expect(platformLabel("android")).toBe("Android phone");
+    expect(platformLabel("ios")).toBe("iPhone");
+    expect(platformLabel("windows")).toBe("Windows computer");
+    expect(platformLabel("macos")).toBe("Mac");
+    expect(platformLabel("linux")).toBe("Linux computer");
+    // A platform this build does not know gets a plain word, never the
+    // server's string.
+    expect(platformLabel("other")).toBe("device");
+    expect(platformLabel("<b>Free Bitcoin</b>")).toBe("device");
+  });
+
+  it("writes a day as D Mon YYYY", () => {
+    const day = Math.floor(new Date(2026, 8, 24, 13, 5).getTime() / 1000);
+    expect(dayMonthYear(day)).toBe("24 Sep 2026");
+    const first = Math.floor(new Date(2027, 0, 1, 0, 30).getTime() / 1000);
+    expect(dayMonthYear(first)).toBe("1 Jan 2027");
+  });
+
+  it("counts the days left of a wait, a day begun counting as one", () => {
+    const now = Date.UTC(2026, 8, 24, 12, 0);
+    const at = (hours: number) => Math.floor(now / 1000) + hours * 3600;
+    expect(daysLeft(at(24 * 10), now)).toBe(10);
+    expect(daysLeft(at(24 * 9 + 1), now)).toBe(10);
+    expect(daysLeft(at(3), now)).toBe(1);
+    // Past its end and not yet refreshed: never zero, never negative.
+    expect(daysLeft(at(-5), now)).toBe(1);
+    expect(waitingWords(at(24 * 3), now)).toBe("Waiting · 3 days left");
+    expect(waitingWords(at(2), now)).toBe("Waiting · 1 day left");
+  });
+
+  it("picks the devices that wait", () => {
+    const device = (id: string, access: Device["access"]): Device => ({
+      id,
+      platform: "linux",
+      connected_at: 1,
+      access,
+      pending_until: access === "pending" ? 2 : null,
+      approved_at: null,
+      this_device: false,
+    });
+    expect(
+      pendingDevices([device("a", "full"), device("b", "pending"), device("c", "pending")]).map(
+        (d) => d.id,
+      ),
+    ).toEqual(["b", "c"]);
+    expect(pendingDevices(undefined)).toEqual([]);
+  });
+
+  it("tells a waiting or disconnected device from a failure", () => {
+    expect(isDevicePending({ kind: "premium_device_pending", message: "x" })).toBe(true);
+    expect(isDevicePending({ kind: "premium_unreachable", message: "x" })).toBe(false);
+    expect(isDeviceDisconnected({ kind: "premium_device_disconnected", message: "x" })).toBe(true);
+    expect(isDeviceDisconnected(new Error("x"))).toBe(false);
+  });
+
+  it("says the device failures in the section's words", () => {
+    expect(premiumFailure({ kind: "premium_device_disconnected", message: "x" })).toEqual({
+      message: "This device was disconnected from your Premium account.",
+      retry: false,
+    });
+    expect(premiumFailure({ kind: "premium_no_device", message: "x" })).toEqual({
+      message: "Connect this device with the Premium key first.",
+      retry: false,
+    });
+    expect(
+      premiumFailure({
+        kind: "premium_too_many_devices",
+        message: "this key already has 10 devices; disconnect one from a device with full access",
+      }),
+    ).toEqual({
+      message:
+        "This key already has 10 devices; disconnect one from a device with full access.",
+      retry: false,
+    });
+    expect(premiumFailure({ kind: "app_lock_required", message: "x" }).message).toBe(
+      "Changing who can use your Premium account needs an app lock on this device, so that nobody holding it unlocked can do it.",
+    );
   });
 });

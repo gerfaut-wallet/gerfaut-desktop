@@ -2,7 +2,7 @@
 // how a key looks while it is typed, which network the server names,
 // how a failure reads. Nothing here verifies anything.
 
-import type { CommandError, EventKind, Network } from "./ipc";
+import type { CommandError, Device, DevicePlatform, EventKind, Network } from "./ipc";
 import { isCommandError } from "./ipc";
 import { MONTHS } from "./format";
 
@@ -99,6 +99,12 @@ export function premiumFailure(error: unknown): { message: string; retry: boolea
       }
       case "premium_no_key":
         return { message: "Enter an account key first.", retry: false };
+      case "premium_device_disconnected":
+        return { message: DISCONNECTED_WORDS, retry: false };
+      case "premium_no_device":
+        return { message: "Connect this device with the Premium key first.", retry: false };
+      case "app_lock_required":
+        return { message: LOCK_REQUIRED_WORDS, retry: false };
       case "premium_rate_limited":
         // Not a failure of what was asked: the Rust side words the
         // wait ("Try again in 42 s."), and the same request may pass.
@@ -186,4 +192,67 @@ export const TIMING = {
   telegramPollMs: 3_000,
   pollWindowMs: 120_000,
   heartbeatMs: 15 * 60_000,
+  /** How old the device list may be before the window coming back to
+      the front asks for it again. The Rust side asks every five
+      minutes on its own. */
+  devicesFocusMs: 60_000,
 };
+
+/** What the section says once the server stopped knowing this device. */
+export const DISCONNECTED_WORDS = "This device was disconnected from your Premium account.";
+
+/** Why a change to the account asks for an app lock first. */
+export const LOCK_REQUIRED_WORDS =
+  "Changing who can use your Premium account needs an app lock on this device, so that nobody holding it unlocked can do it.";
+
+/** How a platform is named, in a row and in a notification. The server
+    only ever sends one of these five: no name chosen by whoever
+    connected reaches the screen. */
+export const PLATFORM_LABEL: Record<DevicePlatform, string> = {
+  android: "Android phone",
+  ios: "iPhone",
+  windows: "Windows computer",
+  macos: "Mac",
+  linux: "Linux computer",
+};
+
+/** A platform's name, with a plain word for one this build does not know. */
+export function platformLabel(platform: string): string {
+  return PLATFORM_LABEL[platform as DevicePlatform] ?? "device";
+}
+
+/** "24 Sep 2026": the day a device connected, or will get full access. */
+export function dayMonthYear(unixSeconds: number): string {
+  const local = new Date(unixSeconds * 1000);
+  return `${local.getDate()} ${MONTHS[local.getMonth()]} ${local.getFullYear()}`;
+}
+
+const DAY_SECONDS = 86_400;
+
+/** Whole days until `until`, counting a day begun as one: a device with
+    three hours left still has "1 day left", never "0". */
+export function daysLeft(until: number, nowMs = Date.now()): number {
+  return Math.max(1, Math.ceil((until - nowMs / 1000) / DAY_SECONDS));
+}
+
+/** "Waiting · 3 days left". */
+export function waitingWords(until: number, nowMs = Date.now()): string {
+  const days = daysLeft(until, nowMs);
+  return `Waiting · ${days} ${days === 1 ? "day" : "days"} left`;
+}
+
+/** The devices still waiting for approval, oldest first. */
+export function pendingDevices(devices: Device[] | undefined): Device[] {
+  return (devices ?? []).filter((device) => device.access === "pending");
+}
+
+/** Whether a failure is the server saying this device waits for
+    approval: the section then shows the waiting card, not a note. */
+export function isDevicePending(error: unknown): boolean {
+  return isCommandError(error) && error.kind === "premium_device_pending";
+}
+
+/** Whether a failure is the server no longer knowing this device. */
+export function isDeviceDisconnected(error: unknown): boolean {
+  return isCommandError(error) && error.kind === "premium_device_disconnected";
+}

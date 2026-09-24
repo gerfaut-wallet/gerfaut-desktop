@@ -10,6 +10,7 @@ import type {
   WalletMeta,
   WalletWatch,
 } from "../lib/ipc";
+import { useLock } from "../state/lock";
 import { premiumKeys } from "../state/premiumQueries";
 import { useSettings, useWallets } from "../state/queries";
 import { useUi } from "../state/store";
@@ -351,7 +352,16 @@ function mockSettingsIpc(
       case "set_app_pref":
         return undefined;
       case "premium_status":
-        return { key: null, licence: null, consented: [], acknowledged_offline_until: null };
+        return {
+          key: null,
+          licence: null,
+          consented: [],
+          acknowledged_offline_until: null,
+          device: null,
+          disconnected: false,
+          key_saved: false,
+          checklist_hidden: false,
+        };
       default:
         throw new Error(`unexpected command ${cmd}`);
     }
@@ -592,9 +602,11 @@ describe("settings sections", () => {
     await user.click(within(row).getByRole("button", { name: "Remove wallet" }));
     await waitFor(() =>
       expect(calls.filter((call) => call.cmd === "remove_wallet").map((call) => call.args)).toEqual([
-        { id: "w-1" },
+        // The server never had it: no secret to ask.
+        { id: "w-1", secret: null },
       ]),
     );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("says the server forgets a watched wallet too, when removing it", async () => {
@@ -618,6 +630,59 @@ describe("settings sections", () => {
       "The server stops watching it too, and deletes its alert history.",
     );
     expect(calls.some((call) => call.cmd === "premium_wallets")).toBe(false);
+  });
+
+  it("asks the app lock's secret before a wallet the server watches goes", async () => {
+    // Removing the wallet ends the watch as unwatching it does: the
+    // same secret, or the one would be the way around the other.
+    let refuse = true;
+    const calls = mockSettingsIpc({
+      remove_wallet: () => {
+        if (refuse) {
+          refuse = false;
+          return Promise.reject({ kind: "vault", message: "vault i/o error: disk full" });
+        }
+        return undefined;
+      },
+    });
+    useLock.setState({ lock: { kind: "pin", biometric: false } });
+    act(() => useUi.getState().openSettings("wallets"));
+    renderSettings([WALLET], {
+      ...SETTINGS,
+      premium: {
+        ...SETTINGS.premium,
+        key: "abcdefghijkmnpqr",
+        watched: [{ wallet_id: "w-1", consented_at: 1_755_000_000 }],
+      },
+    });
+    const user = userEvent.setup();
+    const row = screen.getByText("Cold storage").closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Remove" }));
+    await user.click(within(row).getByRole("button", { name: "Remove wallet" }));
+    expect(calls.some((call) => call.cmd === "remove_wallet")).toBe(false);
+    let dialog = screen.getByRole("dialog", { name: "Confirm it's you" });
+    await user.type(within(dialog).getByLabelText("PIN"), "2468");
+    await user.click(within(dialog).getByRole("button", { name: "Remove wallet" }));
+
+    // A failure closes the dialog and says why under the row; the
+    // question stays for the retry.
+    expect(await within(row).findByRole("alert")).toHaveTextContent(
+      "Vault i/o error: disk full.",
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await user.click(within(row).getByRole("button", { name: "Remove wallet" }));
+    dialog = screen.getByRole("dialog", { name: "Confirm it's you" });
+    await user.type(within(dialog).getByLabelText("PIN"), "2468");
+    await user.click(within(dialog).getByRole("button", { name: "Remove wallet" }));
+    await waitFor(() =>
+      expect(calls.filter((call) => call.cmd === "remove_wallet").map((call) => call.args)).toEqual([
+        { id: "w-1", secret: "2468" },
+        { id: "w-1", secret: "2468" },
+      ]),
+    );
+    await waitFor(() => expect(useUi.getState().toast).toBe("Wallet removed"));
+    useLock.setState({ lock: null });
   });
 
   it("stops saying the server forgets a wallet once it was unwatched", async () => {
@@ -647,10 +712,25 @@ describe("settings sections", () => {
       licence: { status: "active", until: 1_804_809_600 },
       consented,
       acknowledged_offline_until: null,
+      device: { id: "d-1", connected_at: 1_755_000_000 },
+      disconnected: false,
+      key_saved: true,
+      checklist_hidden: true,
     });
+    const device = {
+      id: "d-1",
+      platform: "windows",
+      connected_at: 1_755_000_000,
+      access: "full",
+      pending_until: null,
+      approved_at: 1_755_000_000,
+      this_device: true,
+    };
     mockSettingsIpc({
       get_settings: () => ({ ...SETTINGS, premium }),
       premium_status: status,
+      premium_device: () => device,
+      premium_devices: () => [device],
       premium_account: () => ({
         account: { active: true, paid_until: 1_804_809_600, wallets: 1, channels: 0, network: "bitcoin" },
         status: status(),
@@ -666,6 +746,7 @@ describe("settings sections", () => {
       },
     });
     act(() => useUi.getState().openSettings("wallets"));
+    useLock.setState({ lock: { kind: "pin", biometric: false } });
     const client = renderVaultSettings();
     const user = userEvent.setup();
 
@@ -684,6 +765,9 @@ describe("settings sections", () => {
     await waitFor(() => expect(cold).toBeEnabled());
     await user.click(cold);
     await user.click(screen.getByRole("button", { name: "Unwatch" }));
+    const identity = await screen.findByRole("dialog", { name: "Confirm it's you" });
+    await user.type(within(identity).getByLabelText("PIN"), "2468");
+    await user.click(within(identity).getByRole("button", { name: "Unwatch" }));
     await waitFor(() => expect(cold).toHaveAttribute("aria-checked", "false"));
 
     // Time passes elsewhere and the server's list leaves the cache, as

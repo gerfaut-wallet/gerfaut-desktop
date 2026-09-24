@@ -516,14 +516,51 @@ export type LicenceState =
   | { status: "active"; until: number }
   | { status: "expired"; since: number };
 
+/** This device's connection to the account as the vault keeps it: its
+    id and when it connected. The token it talks to the server with
+    never leaves the Rust side. */
+export interface DeviceConnection {
+  id: string;
+  connected_at: number;
+}
+
 /** What the vault says about the account, readable without a network:
     the key as shown, the licence the stored certificate proves, the
-    wallets already agreed to. */
+    wallets already agreed to, and this device's own connection. */
 export interface PremiumStatus {
   key: string | null;
   licence: LicenceState | null;
   consented: string[];
   acknowledged_offline_until: number | null;
+  /** Null until this device is connected, and again once the server
+      disconnected it. */
+  device: DeviceConnection | null;
+  /** The key is set and the server refused this device's token: it
+      was disconnected from the account. "Connect again" uses the key
+      kept here. */
+  disconnected: boolean;
+  /** "I saved my key" was ticked, for the key in place. */
+  key_saved: boolean;
+  /** The "Protect your Premium account" card was hidden. */
+  checklist_hidden: boolean;
+}
+
+export type DevicePlatform = "android" | "ios" | "windows" | "macos" | "linux";
+
+/** A device connected to the account, as the server describes it. */
+export interface Device {
+  id: string;
+  platform: DevicePlatform;
+  /** Unix seconds. */
+  connected_at: number;
+  /** `pending` for ten days after it connected, or until a device with
+      full access approves it. */
+  access: "full" | "pending";
+  /** When a pending device gets full access without approval; null
+      once it has it. */
+  pending_until: number | null;
+  approved_at: number | null;
+  this_device: boolean;
 }
 
 /** `GET /v1/account`, as the server sees the key. */
@@ -932,10 +969,27 @@ export interface CommandError {
     | "premium_invalid"
     /** The premium server asks to wait; the message says how long. */
     | "premium_rate_limited"
+    /** This device waits for approval, and the route needs full access. */
+    | "premium_device_pending"
+    /** The server no longer knows this device's token. */
+    | "premium_device_disconnected"
+    /** This device has no connection to the account yet. */
+    | "premium_no_device"
+    /** The key already has ten devices; the message is the server's. */
+    | "premium_too_many_devices"
+    /** A sensitive action needs the app lock, and there is none. */
+    | "app_lock_required"
+    /** The secret given for a sensitive action did not verify; the core
+        counts it with the lock screen's failures. */
+    | "identity_refused"
     /** The system refused to post a notification. */
     | "notification"
     | "internal";
   message: string;
+  /** With `identity_refused`: seconds before the next secret is even
+      looked at, as the lock screen counts them; 0 when it can be tried
+      now. */
+  retry_after_secs?: number;
 }
 
 /** Type guard for errors thrown by commands. */
@@ -980,7 +1034,10 @@ export const ipc = {
   syncAll: (network?: Network) =>
     invoke<SyncAllReport>("sync_all", { network: network ?? null }),
   renameWallet: (id: string, name: string) => invoke<void>("rename_wallet", { id, name }),
-  removeWallet: (id: string) => invoke<void>("remove_wallet", { id }),
+  /** A wallet the server watches stops being watched with it: that
+      removal takes the app lock's secret, as unwatching does. */
+  removeWallet: (id: string, secret?: string) =>
+    invoke<void>("remove_wallet", { id, secret: secret ?? null }),
   setWalletIcon: (id: string, icon: WalletIconId) =>
     invoke<void>("set_wallet_icon", { id, icon }),
   /** The listed wallets take that order; unlisted ones keep their slots. */
@@ -1033,13 +1090,37 @@ export const ipc = {
   torConnect: () => invoke<TorRoute>("tor_connect"),
   // Premium: every request leaves from Rust, every signature is checked
   // there. The webview only shows what came back verified.
+  //
+  // The commands that change who can use the account, or what it
+  // watches and where it tells, take the app lock's secret: the Rust
+  // side checks it the way the lock screen does before anything leaves.
   premiumStatus: () => invoke<PremiumStatus>("premium_status"),
+  /** Connects this device with a key just typed. */
   premiumActivate: (key: string) => invoke<PremiumStatus>("premium_activate", { key }),
+  /** Connects this device again with the key the vault keeps. */
+  premiumReconnect: () => invoke<PremiumStatus>("premium_reconnect"),
+  /** Disconnects this device and forgets the key here. */
   premiumForget: () => invoke<PremiumStatus>("premium_forget"),
+  /** This device as the server sees it. */
+  premiumDevice: () => invoke<Device>("premium_device"),
+  /** Every device of the account, oldest first; full access only. */
+  premiumDevices: () => invoke<Device[]>("premium_devices"),
+  premiumApproveDevice: (id: string, secret: string) =>
+    invoke<Device>("premium_approve_device", { id, secret }),
+  /** Refuses a pending device, or disconnects one with full access. */
+  premiumRemoveDevice: (id: string, secret: string) =>
+    invoke<void>("premium_remove_device", { id, secret }),
+  /** A new key for the account, as it is shown; every other device is
+      disconnected. */
+  premiumChangeKey: (secret: string) => invoke<string>("premium_change_key", { secret }),
+  premiumSetKeySaved: (saved: boolean) =>
+    invoke<PremiumStatus>("premium_set_key_saved", { saved }),
+  premiumHideChecklist: () => invoke<PremiumStatus>("premium_hide_checklist"),
   premiumAccount: () => invoke<PremiumAccountReport>("premium_account"),
   premiumWallets: () => invoke<WalletWatch[]>("premium_wallets"),
   premiumWatchWallet: (id: string) => invoke<void>("premium_watch_wallet", { id }),
-  premiumUnwatchWallet: (id: string) => invoke<void>("premium_unwatch_wallet", { id }),
+  premiumUnwatchWallet: (id: string, secret: string) =>
+    invoke<void>("premium_unwatch_wallet", { id, secret }),
   premiumChannels: () => invoke<Channel[]>("premium_channels"),
   premiumAddChannel: (kind: ChannelKind, target?: string, secret?: string) =>
     invoke<NewChannel>("premium_add_channel", {
@@ -1047,10 +1128,12 @@ export const ipc = {
       target: target ?? null,
       secret: secret ?? null,
     }),
-  premiumDeleteChannel: (id: string) => invoke<void>("premium_delete_channel", { id }),
+  premiumDeleteChannel: (id: string, secret: string) =>
+    invoke<void>("premium_delete_channel", { id, secret }),
   premiumConfirmChannel: (id: string, code: string) =>
     invoke<Channel>("premium_confirm_channel", { id, code }),
-  premiumDeleteAccount: () => invoke<PremiumStatus>("premium_delete_account"),
+  premiumDeleteAccount: (secret: string) =>
+    invoke<PremiumStatus>("premium_delete_account", { secret }),
   premiumTestChannel: (id: string) => invoke<void>("premium_test_channel", { id }),
   premiumEvents: () => invoke<PremiumEvent[]>("premium_events"),
   premiumHeartbeat: () => invoke<HeartbeatReport>("premium_heartbeat"),

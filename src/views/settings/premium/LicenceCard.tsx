@@ -6,43 +6,88 @@ import { Button } from "../../../components/Button";
 import { Notice } from "../../../components/Notice";
 import { PremiumPill } from "../../../components/PremiumPill";
 import type { PremiumStatus } from "../../../lib/ipc";
-import { PREMIUM_URL, RENEW_URL, formatKeyInput, isWellFormedKey } from "../../../lib/premium";
+import { isCommandError } from "../../../lib/ipc";
 import {
-  useActivatePremium,
-  useDeleteAccount,
-  useForgetPremium,
-} from "../../../state/premiumQueries";
+  DISCONNECTED_WORDS,
+  PREMIUM_URL,
+  RENEW_URL,
+  formatKeyInput,
+  isWellFormedKey,
+} from "../../../lib/premium";
+import { useActivatePremium, useReconnectPremium } from "../../../state/premiumQueries";
 import { useUi } from "../../../state/store";
 import { FieldLabel, SectionCard } from "../primitives";
-import { FailureNote, GHOST_ON_TINT, longDate } from "./shared";
+import { ChangeKeyModal } from "./ChangeKeyModal";
+import { ForgetKey } from "./ForgetKey";
+import { FailureNote, longDate } from "./shared";
+
+/** What the server says about this device, once it has: full access,
+    waiting for approval, or not known yet — offline, say. */
+export type DeviceAccess = "full" | "pending" | null;
+
+/** The key a reconnection used is not one the server knows any more:
+    it was changed on another device. */
+const KEY_CHANGED_WORDS = "This key no longer works. Enter the new one.";
 
 /** The account key and what it is worth right now.
  *
- *  Without a key: the field, formatted as it is typed, and Activate.
- *  With one: the paid-until date read from the certificate the vault
- *  holds, verified offline by the core, so it shows the same with no
- *  network and never waits on the server. Nothing here sells: no price,
- *  no countdown, one link to the site. */
+ *  Without a key: the field, formatted as it is typed, and Activate,
+ *  which connects this device. With one: the paid-until date read from
+ *  the certificate the vault holds, verified offline by the core, so it
+ *  shows the same with no network and never waits on the server. A
+ *  device with full access can change the key; one the server
+ *  disconnected says so under the card and connects again with the key
+ *  it kept. Nothing here sells: no price, no countdown, one link to the
+ *  site. */
 export function LicenceCard({
   status,
+  access,
   accountError,
   onRetryAccount,
 }: {
   status: PremiumStatus;
+  access: DeviceAccess;
   /** What the account call left behind, shown here because this card
       is where the key lives. */
   accountError?: unknown;
   onRetryAccount?: () => void;
 }) {
   const activate = useActivatePremium();
+  const reconnect = useReconnectPremium();
   const [key, setKey] = useState("");
   const [failure, setFailure] = useState<unknown>(undefined);
+  /** "Connect again" was refused for the key itself: the field comes
+      back for the new one. Local to this visit; the key stays in the
+      vault until a new one works. */
+  const [keyChanged, setKeyChanged] = useState(false);
+  const [reconnectFailure, setReconnectFailure] = useState<unknown>(undefined);
   const ready = isWellFormedKey(key);
+  const asking = status.key === null || keyChanged;
 
   const run = () => {
     if (!ready || activate.isPending) return;
     setFailure(undefined);
-    activate.mutate(key, { onError: (error) => setFailure(error) });
+    activate.mutate(key, {
+      onSuccess: () => {
+        setKey("");
+        setKeyChanged(false);
+      },
+      onError: (error) => setFailure(error),
+    });
+  };
+
+  const connectAgain = () => {
+    if (reconnect.isPending) return;
+    setReconnectFailure(undefined);
+    reconnect.mutate(undefined, {
+      onError: (error) => {
+        if (isCommandError(error) && error.kind === "premium_unknown_key") {
+          setKeyChanged(true);
+        } else {
+          setReconnectFailure(error);
+        }
+      },
+    });
   };
 
   // A note never lives in the card it comments: what the server said
@@ -50,7 +95,7 @@ export function LicenceCard({
   return (
     <>
       <SectionCard icon={<KeyRound size={18} strokeWidth={1.5} />} title="Licence" premium>
-        {status.key === null ? (
+        {asking ? (
           <KeyForm
             value={key}
             ready={ready}
@@ -62,13 +107,38 @@ export function LicenceCard({
             onSubmit={run}
           />
         ) : (
-          <KeyInPlace status={status} />
+          <KeyInPlace status={status} access={access} />
         )}
       </SectionCard>
-      {status.key === null && failure !== undefined && (
-        <FailureNote error={failure} onRetry={run} />
+      {keyChanged && failure === undefined && (
+        <Notice tone="info" role="alert">
+          {KEY_CHANGED_WORDS}
+        </Notice>
       )}
-      {status.key !== null && accountError !== undefined && (
+      {asking && failure !== undefined && <FailureNote error={failure} onRetry={run} />}
+      {!asking && status.disconnected && (
+        <Notice
+          tone="info"
+          role="status"
+          action={
+            <Button
+              variant="premium"
+              className="h-9"
+              disabled={reconnect.isPending}
+              aria-busy={reconnect.isPending || undefined}
+              onClick={connectAgain}
+            >
+              {reconnect.isPending ? "Connecting…" : "Connect again"}
+            </Button>
+          }
+        >
+          {DISCONNECTED_WORDS}
+        </Notice>
+      )}
+      {!asking && reconnectFailure !== undefined && (
+        <FailureNote error={reconnectFailure} onRetry={connectAgain} />
+      )}
+      {!asking && !status.disconnected && accountError !== undefined && (
         <FailureNote error={accountError} onRetry={onRetryAccount} />
       )}
     </>
@@ -98,85 +168,57 @@ function KeyForm({
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
-        <div>
-          <FieldLabel htmlFor="premium-key">Account key</FieldLabel>
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              id="premium-key"
-              value={value}
-              onChange={(event) => onChange(formatKeyInput(event.target.value))}
-              placeholder="xxxx-xxxx-xxxx-xxxx"
-              autoComplete="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              inputMode="text"
-              aria-invalid={value.length > 0 && !ready ? true : undefined}
-              aria-describedby="premium-key-hint"
-              readOnly={pending}
-              className="field-focus selectable h-11 w-64 max-w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[15px] tracking-[0.04em] text-text placeholder:text-muted/60"
-            />
-            <Button
-              type="submit"
-              variant="premium"
-              disabled={!ready || pending}
-              aria-busy={pending || undefined}
-            >
-              {pending ? "Activating…" : "Activate"}
-            </Button>
-          </div>
-          <p id="premium-key-hint" className="mt-2 max-w-xl font-ui text-xs text-muted">
-            Bought on gerfaut-wallet.com. The key is shown once at purchase; there is no
-            account to recover it from.
-          </p>
-        </div>
-        <div>
-          <Button variant="premium-ghost" className="-ml-3" onClick={() => void openUrl(PREMIUM_URL)}>
-            <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
-            Get Premium
+      <div>
+        <FieldLabel htmlFor="premium-key">Account key</FieldLabel>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            id="premium-key"
+            value={value}
+            onChange={(event) => onChange(formatKeyInput(event.target.value))}
+            placeholder="xxxx-xxxx-xxxx-xxxx"
+            autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            inputMode="text"
+            aria-invalid={value.length > 0 && !ready ? true : undefined}
+            aria-describedby="premium-key-hint"
+            readOnly={pending}
+            className="field-focus selectable h-11 w-64 max-w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[15px] tracking-[0.04em] text-text placeholder:text-muted/60"
+          />
+          <Button
+            type="submit"
+            variant="premium"
+            disabled={!ready || pending}
+            aria-busy={pending || undefined}
+          >
+            {pending ? "Activating…" : "Activate"}
           </Button>
         </div>
+        <p id="premium-key-hint" className="mt-2 max-w-xl font-ui text-xs text-muted">
+          Bought on gerfaut-wallet.com. The key is shown once at purchase; there is no
+          account to recover it from.
+        </p>
+      </div>
+      <div>
+        <Button variant="premium-ghost" className="-ml-3" onClick={() => void openUrl(PREMIUM_URL)}>
+          <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
+          Get Premium
+        </Button>
+      </div>
     </form>
   );
 }
 
-/** The key is set: what the certificate says, and the two ways out of
-    it. Forgetting is confirmed in amber under the card: nothing is at
-    risk, but the consequence is worth reading first. */
-function KeyInPlace({ status }: { status: PremiumStatus }) {
-  const forget = useForgetPremium();
-  const erase = useDeleteAccount();
+/** The key is set: what the certificate says, and what can be done
+    with it from here. Changing it takes full access; forgetting it
+    lives in the waiting card while this device waits for approval. */
+function KeyInPlace({ status, access }: { status: PremiumStatus; access: DeviceAccess }) {
   const { showToast } = useUi();
-  const [confirming, setConfirming] = useState(false);
-  /** Whether the server is asked to drop the account too, not only this
-      device. Off every time the confirmation opens: nobody deletes an
-      account by clicking twice in the same place. */
-  const [alsoServer, setAlsoServer] = useState(false);
-  const [failure, setFailure] = useState<unknown>(undefined);
-  const busy = forget.isPending || erase.isPending;
-
-  const open = () => {
-    setAlsoServer(false);
-    setFailure(undefined);
-    setConfirming(true);
-  };
-
-  // The core deletes on the server first and forgets here only once the
-  // server confirmed, so a call that fails leaves the key where it was
-  // and the note below says so.
-  const go = () => {
-    setFailure(undefined);
-    const done = (words: string) => ({
-      onSuccess: () => {
-        setConfirming(false);
-        showToast(words);
-      },
-      onError: (problem: unknown) => setFailure(problem),
-    });
-    if (alsoServer) erase.mutate(undefined, done("Account deleted"));
-    else forget.mutate(undefined, done("Key forgotten"));
-  };
+  const [changing, setChanging] = useState(false);
+  const [forgetting, setForgetting] = useState(false);
   const key = status.key ?? "";
   const licence = status.licence;
+  const full = access === "full" && !status.disconnected;
 
   // The key goes to the clipboard, not into the address: see RENEW_URL.
   // The page opens either way — someone who has the key in hand can
@@ -216,70 +258,26 @@ function KeyInPlace({ status }: { status: PremiumStatus }) {
           <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
           Renew
         </Button>
-        <Button
-          variant="ghost"
-          disabled={confirming}
-          aria-expanded={confirming}
-          onClick={open}
-        >
-          Forget this key
-        </Button>
+        {full && (
+          <Button variant="ghost" aria-haspopup="dialog" onClick={() => setChanging(true)}>
+            Change key
+          </Button>
+        )}
+        {access !== "pending" && (
+          <Button
+            variant="ghost"
+            disabled={forgetting}
+            aria-expanded={forgetting}
+            onClick={() => setForgetting(true)}
+          >
+            Forget this key
+          </Button>
+        )}
       </div>
-      {confirming && (
-        <Notice
-          tone="info"
-          role="status"
-          action={
-            <span className="flex items-center gap-2">
-              {/* Cancel first, the destructive yes last, as everywhere
-                  else. The note stays amber either way: nothing here can
-                  lose funds. The button is where the red goes, and only
-                  for the half that cannot be undone. */}
-              <Button
-                variant="ghost"
-                className={GHOST_ON_TINT}
-                disabled={busy}
-                onClick={() => setConfirming(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant={alsoServer ? "danger" : "premium"}
-                className="h-9"
-                disabled={busy}
-                aria-busy={busy || undefined}
-                onClick={go}
-              >
-                {alsoServer
-                  ? erase.isPending
-                    ? "Deleting…"
-                    : "Delete the account"
-                  : forget.isPending
-                    ? "Forgetting…"
-                    : "Forget the key"}
-              </Button>
-            </span>
-          }
-        >
-          {alsoServer
-            ? "Deleting the account removes from the server the wallets it watches, the channels it tells and its alert log, and the key stops working everywhere. This cannot be undone, and whatever paid time the key had left is not refunded."
-            : "Forgetting the key stops the watch on this device, not on the server: your wallets stay registered there until you remove them."}
-          <label className="mt-2.5 flex cursor-pointer items-center gap-2 font-ui text-sm">
-            <input
-              type="checkbox"
-              checked={alsoServer}
-              disabled={busy}
-              onChange={(event) => {
-                setFailure(undefined);
-                setAlsoServer(event.target.checked);
-              }}
-              className="accent-(--color-premium)"
-            />
-            Also delete everything on the server
-          </label>
-        </Notice>
+      {forgetting && access !== "pending" && (
+        <ForgetKey allowDelete={full} onClose={() => setForgetting(false)} />
       )}
-      {confirming && failure !== undefined && <FailureNote error={failure} />}
+      {changing && <ChangeKeyModal onClose={() => setChanging(false)} />}
     </div>
   );
 }

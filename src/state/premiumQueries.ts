@@ -4,13 +4,15 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
-import type { ChannelKind } from "../lib/ipc";
+import type { ChannelKind, Device } from "../lib/ipc";
 import { ipc } from "../lib/ipc";
 import { TIMING } from "../lib/premium";
 import { keys } from "./queries";
 
 export const premiumKeys = {
   status: ["premium", "status"] as const,
+  device: ["premium", "device"] as const,
+  devices: ["premium", "devices"] as const,
   account: ["premium", "account"] as const,
   wallets: ["premium", "wallets"] as const,
   channels: ["premium", "channels"] as const,
@@ -18,8 +20,35 @@ export const premiumKeys = {
 };
 
 /** What the vault says, without a network. */
-export function usePremiumStatus() {
-  return useQuery({ queryKey: premiumKeys.status, queryFn: ipc.premiumStatus });
+export function usePremiumStatus(enabled = true) {
+  return useQuery({ queryKey: premiumKeys.status, queryFn: ipc.premiumStatus, enabled });
+}
+
+/** This device as the server sees it: whether it has full access or
+    waits for approval, and until when. Connecting a vault written
+    before devices existed happens on the way, on the Rust side. */
+export function usePremiumDevice(enabled: boolean) {
+  return useQuery({
+    queryKey: premiumKeys.device,
+    queryFn: ipc.premiumDevice,
+    enabled,
+    retry: false,
+    staleTime: TIMING.devicesFocusMs,
+  });
+}
+
+/** Every device of the account, for a device with full access. Shared
+    by the Devices card and the banner on the Overview; the Rust side
+    posts the notification for a newly pending one on the way, and asks
+    again on its own every five minutes. */
+export function usePremiumDevices(enabled: boolean) {
+  return useQuery({
+    queryKey: premiumKeys.devices,
+    queryFn: ipc.premiumDevices,
+    enabled,
+    retry: false,
+    staleTime: TIMING.devicesFocusMs,
+  });
 }
 
 /** The account from the server, refreshing the certificate on the way. */
@@ -121,6 +150,8 @@ export function useActivatePremium() {
 /** Everything the old key was worth showing, dropped: what the server
     said about it is not ours to show once it is not ours. */
 function forgetServerState(client: ReturnType<typeof useQueryClient>) {
+  client.removeQueries({ queryKey: premiumKeys.device });
+  client.removeQueries({ queryKey: premiumKeys.devices });
   client.removeQueries({ queryKey: premiumKeys.account });
   client.removeQueries({ queryKey: premiumKeys.wallets });
   client.removeQueries({ queryKey: premiumKeys.channels });
@@ -135,7 +166,7 @@ export function useDeleteAccount() {
   const client = useQueryClient();
   const invalidate = useInvalidatePremium();
   return useMutation({
-    mutationFn: () => ipc.premiumDeleteAccount(),
+    mutationFn: (secret: string) => ipc.premiumDeleteAccount(secret),
     onSuccess: () => {
       forgetServerState(client);
       invalidate();
@@ -172,7 +203,8 @@ export function useWatchWallet() {
 export function useUnwatchWallet() {
   const invalidate = useInvalidatePremium();
   return useMutation({
-    mutationFn: (id: string) => ipc.premiumUnwatchWallet(id),
+    mutationFn: (args: { id: string; secret: string }) =>
+      ipc.premiumUnwatchWallet(args.id, args.secret),
     onSuccess: invalidate,
   });
 }
@@ -207,7 +239,8 @@ export function useConfirmChannel() {
 export function useDeleteChannel() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => ipc.premiumDeleteChannel(id),
+    mutationFn: (args: { id: string; secret: string }) =>
+      ipc.premiumDeleteChannel(args.id, args.secret),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: premiumKeys.channels });
       void client.invalidateQueries({ queryKey: premiumKeys.account });
@@ -217,6 +250,77 @@ export function useDeleteChannel() {
 
 export function useTestChannel() {
   return useMutation({ mutationFn: (id: string) => ipc.premiumTestChannel(id) });
+}
+
+/** Connects this device again with the key the vault keeps, after the
+    server disconnected it. */
+export function useReconnectPremium() {
+  const client = useQueryClient();
+  const invalidate = useInvalidatePremium();
+  return useMutation({
+    mutationFn: () => ipc.premiumReconnect(),
+    onSuccess: () => {
+      forgetServerState(client);
+      invalidate();
+    },
+  });
+}
+
+/** Gives a pending device full access at once. */
+export function useApproveDevice() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; secret: string }) =>
+      ipc.premiumApproveDevice(args.id, args.secret),
+    onSuccess: (approved) => {
+      client.setQueryData<Device[]>(premiumKeys.devices, (devices) =>
+        devices?.map((device) => (device.id === approved.id ? approved : device)),
+      );
+      void client.invalidateQueries({ queryKey: premiumKeys.devices });
+    },
+  });
+}
+
+/** Refuses a pending device, or disconnects one with full access: the
+    server drops it either way. */
+export function useRemoveDevice() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; secret: string }) =>
+      ipc.premiumRemoveDevice(args.id, args.secret),
+    onSuccess: (_, { id }) => {
+      client.setQueryData<Device[]>(premiumKeys.devices, (devices) =>
+        devices?.filter((device) => device.id !== id),
+      );
+      void client.invalidateQueries({ queryKey: premiumKeys.devices });
+    },
+  });
+}
+
+/** Replaces the key: the old one stops working everywhere and every
+    other device is disconnected. Answers the new key as it is shown. */
+export function useChangeKey() {
+  const invalidate = useInvalidatePremium();
+  return useMutation({
+    mutationFn: (secret: string) => ipc.premiumChangeKey(secret),
+    onSuccess: invalidate,
+  });
+}
+
+export function useSetKeySaved() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (saved: boolean) => ipc.premiumSetKeySaved(saved),
+    onSuccess: (status) => client.setQueryData(premiumKeys.status, status),
+  });
+}
+
+export function useHideChecklist() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => ipc.premiumHideChecklist(),
+    onSuccess: (status) => client.setQueryData(premiumKeys.status, status),
+  });
 }
 
 export function useAcknowledgeOffline() {

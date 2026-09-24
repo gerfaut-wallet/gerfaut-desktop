@@ -17,6 +17,7 @@ import { DropLine, useDragReorder } from "../../components/DragReorder";
 import { Notice } from "../../components/Notice";
 import type { PremiumState, WalletMeta, WalletWatch } from "../../lib/ipc";
 import { moveItem } from "../../lib/reorder";
+import { premiumFailure } from "../../lib/premium";
 import { walletGlyph } from "../../lib/walletIcons";
 import { usePremiumWallets } from "../../state/premiumQueries";
 import {
@@ -28,6 +29,7 @@ import {
 } from "../../state/queries";
 import { useUi } from "../../state/store";
 import { useWalletOrder } from "../../state/walletOrder";
+import { IdentityModal } from "./premium/IdentityModal";
 import { SectionCard, SettingRow } from "./primitives";
 import { WalletIconPicker } from "./WalletIconPicker";
 
@@ -83,6 +85,14 @@ function watchedByServer(
   return server === undefined || server.some((wallet) => wallet.id === id);
 }
 
+/** Whether removing a wallet takes the app lock's secret: the rule the
+    Rust side holds to, a key set and the wallet agreed to. Ending the
+    server's watch by removing the wallet must not be the way around the
+    secret that unwatching it asks for. */
+function removalNeedsIdentity(premium: PremiumState, id: string): boolean {
+  return premium.key !== null && premium.watched.some((wallet) => wallet.wallet_id === id);
+}
+
 /** The shared gap limit, then every wallet of the shown network in the
     order it is listed everywhere, with what can be done to it: move,
     change its icon, rescan, rename, remove. */
@@ -108,6 +118,12 @@ export function WalletsSection({
   const { shown, reorder } = useWalletOrder(wallets);
   const drag = useDragReorder(shown, reorder);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  /** The removal whose yes was given and waits for the secret. */
+  const [identity, setIdentity] = useState<string | null>(null);
+  /** What a removal left behind, under its row. */
+  const [removeFailure, setRemoveFailure] = useState<{ id: string; error: unknown } | null>(
+    null,
+  );
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [rescanning, setRescanning] = useState<string | null>(null);
   // One wallet has no order to speak of.
@@ -317,12 +333,25 @@ export function WalletsSection({
                         <Button
                           variant="danger"
                           className="h-9"
-                          onClick={() =>
-                            void removeWallet.mutateAsync(wallet.id).then(() => {
-                              setConfirmRemove(null);
-                              showToast("Wallet removed");
-                            })
-                          }
+                          disabled={removeWallet.isPending}
+                          aria-busy={removeWallet.isPending || undefined}
+                          onClick={() => {
+                            setRemoveFailure(null);
+                            if (removalNeedsIdentity(premium, wallet.id)) {
+                              setIdentity(wallet.id);
+                              return;
+                            }
+                            removeWallet.mutate(
+                              { id: wallet.id },
+                              {
+                                onSuccess: () => {
+                                  setConfirmRemove(null);
+                                  showToast("Wallet removed");
+                                },
+                                onError: (error) => setRemoveFailure({ id: wallet.id, error }),
+                              },
+                            );
+                          }}
                         >
                           Remove wallet
                         </Button>
@@ -338,12 +367,35 @@ export function WalletsSection({
                         " The server stops watching it too, and deletes its alert history."}
                     </Notice>
                   )}
+                  {confirmRemove === wallet.id && removeFailure?.id === wallet.id && (
+                    <p role="alert" className="mt-2 font-ui text-xs text-muted">
+                      {premiumFailure(removeFailure.error).message}
+                    </p>
+                  )}
                 </li>
               );
             })}
           </ul>
           <DropLine y={drag.lineY} />
         </div>
+      )}
+      {identity !== null && (
+        <IdentityModal
+          action="Remove wallet"
+          busyLabel="Removing…"
+          tone="danger"
+          run={(secret) => removeWallet.mutateAsync({ id: identity, secret })}
+          onDone={() => {
+            setIdentity(null);
+            setConfirmRemove(null);
+            showToast("Wallet removed");
+          }}
+          onFailure={(error) => {
+            setRemoveFailure({ id: identity, error });
+            setIdentity(null);
+          }}
+          onCancel={() => setIdentity(null)}
+        />
       )}
     </SectionCard>
   );

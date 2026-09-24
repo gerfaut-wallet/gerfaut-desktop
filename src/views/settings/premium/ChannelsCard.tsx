@@ -6,7 +6,6 @@ import {
   Check,
   Clock,
   Copy,
-  EllipsisVertical,
   ExternalLink,
   Mail,
   Plus,
@@ -16,9 +15,9 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect, useId, useRef, useState } from "react";
-import type { FormEvent, KeyboardEvent } from "react";
-import { Button, IconButton } from "../../../components/Button";
+import { useRef, useState } from "react";
+import type { FormEvent } from "react";
+import { Button } from "../../../components/Button";
 import { Modal } from "../../../components/Modal";
 import { Notice } from "../../../components/Notice";
 import { Pill } from "../../../components/StatusPill";
@@ -31,7 +30,9 @@ import {
 } from "../../../state/premiumQueries";
 import { useUi } from "../../../state/store";
 import { FieldLabel, SectionCard } from "../primitives";
-import { FailureNote } from "./shared";
+import { IdentityModal } from "./IdentityModal";
+import { RowMenu } from "./RowMenu";
+import { FailureNote, GHOST_ON_TINT, useFocusAfterRender } from "./shared";
 
 /** Each kind of channel: its glyph, its name, and the one line that
     says what adding it means. */
@@ -220,6 +221,16 @@ export function ChannelsCard({
   const [confirming, setConfirming] = useState<Channel | null>(null);
   const [failure, setFailure] = useState<unknown>(undefined);
   const [testing, setTesting] = useState<string | null>(null);
+  /** The channel whose removal waits for a yes under its row, by id. */
+  const [removing, setRemoving] = useState<string | null>(null);
+  /** The yes was given: the secret is asked before it goes. */
+  const [identity, setIdentity] = useState<Channel | null>(null);
+  /** Where the focus lands once a row, and the button that removed it,
+      are gone. */
+  const heading = useRef<HTMLHeadingElement>(null);
+  const focusHeading = useFocusAfterRender(heading);
+  /** Each row, to hand the focus back to its menu on Cancel. */
+  const rows = useRef(new Map<string, HTMLElement>());
 
   const sendTest = (channel: Channel) => {
     setFailure(undefined);
@@ -231,17 +242,24 @@ export function ChannelsCard({
     });
   };
 
-  const removeChannel = (channel: Channel) => {
+  const askRemoval = (channel: Channel) => {
     setFailure(undefined);
-    remove.mutate(channel.id, {
-      onSuccess: () => showToast("Channel removed"),
-      onError: (problem) => setFailure(problem),
-    });
+    setRemoving(channel.id);
+  };
+
+  const cancelRemoval = (id: string) => {
+    setRemoving(null);
+    rows.current.get(id)?.querySelector<HTMLElement>("[aria-haspopup]")?.focus();
   };
 
   return (
     <>
-      <SectionCard icon={<BellRing size={18} strokeWidth={1.5} />} title="Channels" premium>
+      <SectionCard
+        icon={<BellRing size={18} strokeWidth={1.5} />}
+        title="Channels"
+        headingRef={heading}
+        premium
+      >
         {unreachable && channels === undefined ? (
           <p className="font-ui text-sm text-muted">Waiting for the server.</p>
         ) : loading && channels === undefined ? (
@@ -262,7 +280,14 @@ export function ChannelsCard({
               // waiting for.
               const off = !channel.enabled;
               return (
-                <li key={channel.id} className="py-2.5 first:pt-0 last:pb-0">
+                <li
+                  key={channel.id}
+                  ref={(element) => {
+                    if (element) rows.current.set(channel.id, element);
+                    else rows.current.delete(channel.id);
+                  }}
+                  className="py-2.5 first:pt-0 last:pb-0"
+                >
                   <div className="flex min-h-[56px] items-center gap-3">
                     <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-sunken text-text">
                       <Glyph size={16} strokeWidth={1.5} aria-hidden />
@@ -310,13 +335,27 @@ export function ChannelsCard({
                         Enter code
                       </Button>
                     )}
-                    <ChannelMenu
-                      channel={channel}
+                    <RowMenu
+                      label={`${entry.label} ${targetOf(channel)}`}
                       busy={testing === channel.id || remove.isPending}
-                      onTest={() => sendTest(channel)}
-                      onRemove={() => removeChannel(channel)}
+                      items={[
+                        {
+                          icon: Send,
+                          label: "Send a test",
+                          blocked: testBlocked(channel),
+                          onSelect: () => sendTest(channel),
+                        },
+                        { icon: Trash2, label: "Remove", onSelect: () => askRemoval(channel) },
+                      ]}
                     />
                   </div>
+                  {removing === channel.id && (
+                    <RemoveNote
+                      busy={remove.isPending}
+                      onConfirm={() => setIdentity(channel)}
+                      onCancel={() => cancelRemoval(channel.id)}
+                    />
+                  )}
                   {off && (
                     // Amber, and the words say it on their own: nothing
                     // is at risk on chain, something has to be done for
@@ -339,6 +378,26 @@ export function ChannelsCard({
       </SectionCard>
       {error !== undefined && <FailureNote error={error} onRetry={onRetry} />}
       {failure !== undefined && <FailureNote error={failure} />}
+      {identity !== null && (
+        <IdentityModal
+          action="Remove"
+          busyLabel="Removing…"
+          tone="danger"
+          run={(secret) => remove.mutateAsync({ id: identity.id, secret })}
+          onDone={() => {
+            const id = identity.id;
+            setIdentity(null);
+            setRemoving((current) => (current === id ? null : current));
+            showToast("Channel removed");
+            focusHeading();
+          }}
+          onFailure={(problem) => {
+            setIdentity(null);
+            setFailure(problem);
+          }}
+          onCancel={() => setIdentity(null)}
+        />
+      )}
       {confirming !== null && (
         <Modal
           open
@@ -370,146 +429,43 @@ export function ChannelsCard({
   );
 }
 
-/** The two things done to a channel, behind one button: a test and its
-    removal. Arrow keys walk the items, Escape and a click outside
-    close, focus returns to the button. */
-function ChannelMenu({
-  channel,
+/** The question before a channel goes, under its row. Amber: nothing
+    on chain is at stake, but the alerts that went there stop at once,
+    and the way back is to add it again. Cancel first, the destructive
+    yes last. */
+function RemoveNote({
   busy,
-  onTest,
-  onRemove,
+  onConfirm,
+  onCancel,
 }: {
-  channel: Channel;
   busy: boolean;
-  onTest: () => void;
-  onRemove: () => void;
+  onConfirm: () => void;
+  onCancel: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const menuId = useId();
-  const label = `${kindOf(channel.kind).label} ${targetOf(channel)}`;
-
-  const close = (refocus: boolean) => {
-    setOpen(false);
-    if (refocus) rootRef.current?.querySelector<HTMLElement>("[aria-haspopup]")?.focus();
-  };
-
-  useEffect(() => {
-    if (!open) return;
-    rootRef.current?.querySelector<HTMLElement>("[role='menuitem']")?.focus();
-    const onDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const items = [...(rootRef.current?.querySelectorAll<HTMLElement>("[role='menuitem']") ?? [])];
-    const index = items.indexOf(document.activeElement as HTMLElement);
-    switch (event.key) {
-      case "ArrowDown":
-        event.preventDefault();
-        items[(index + 1) % items.length]?.focus();
-        break;
-      case "ArrowUp":
-        event.preventDefault();
-        items[(index - 1 + items.length) % items.length]?.focus();
-        break;
-      case "Home":
-        event.preventDefault();
-        items[0]?.focus();
-        break;
-      case "End":
-        event.preventDefault();
-        items[items.length - 1]?.focus();
-        break;
-      case "Escape":
-        event.preventDefault();
-        event.stopPropagation();
-        close(true);
-        break;
-      case "Tab":
-        event.preventDefault();
-        close(true);
-        break;
-    }
-  };
-
-  const pick = (action: () => void) => {
-    close(true);
-    action();
-  };
-
   return (
-    <div ref={rootRef} className="relative">
-      <IconButton
-        label={`More for ${label}`}
-        disabled={busy}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
-        onClick={() => setOpen(!open)}
-      >
-        <EllipsisVertical size={18} strokeWidth={1.5} aria-hidden />
-      </IconButton>
-      {open && (
-        <div
-          id={menuId}
-          role="menu"
-          aria-label={`Actions for ${label}`}
-          onKeyDown={onKeyDown}
-          className="absolute right-0 top-full z-30 mt-1.5 w-[220px] rounded-lg border border-border bg-surface p-1.5 shadow-overlay motion-safe:animate-[menu-in_150ms_ease-out]"
-        >
-          <MenuItem icon={Send} blocked={testBlocked(channel)} onClick={() => pick(onTest)}>
-            Send a test
-          </MenuItem>
-          <MenuItem icon={Trash2} onClick={() => pick(onRemove)}>
+    <Notice
+      tone="info"
+      role="status"
+      className="mt-2.5"
+      action={
+        <span className="flex items-center gap-2">
+          <Button variant="ghost" className={GHOST_ON_TINT} disabled={busy} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            className="h-9"
+            disabled={busy}
+            aria-busy={busy || undefined}
+            onClick={onConfirm}
+          >
             Remove
-          </MenuItem>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MenuItem({
-  icon: Icon,
-  onClick,
-  blocked,
-  children,
-}: {
-  icon: LucideIcon;
-  onClick: () => void;
-  /** Why the item cannot be picked, when it cannot. It stays in the
-      menu, dimmed and still focusable — the arrow keys do not drop the
-      focus on it, and the menu keeps saying what it can do — and the
-      reason reads under the name. */
-  blocked?: string | null;
-  children: string;
-}) {
-  const off = blocked != null;
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      tabIndex={-1}
-      aria-disabled={off || undefined}
-      onClick={off ? undefined : onClick}
-      className={clsx(
-        "flex min-h-10 w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left font-ui text-sm font-medium text-text transition-colors duration-100 focus-visible:bg-sunken/70 focus-visible:outline-none",
-        off ? "cursor-not-allowed opacity-45" : "cursor-pointer hover:bg-sunken/70",
-      )}
+          </Button>
+        </span>
+      }
     >
-      <Icon size={16} strokeWidth={1.5} aria-hidden className="shrink-0 text-muted" />
-      {/* Two blocks, so a reader announces the name then the reason. */}
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate">{children}</span>
-        {off && (
-          <span className="truncate font-ui text-[11px] font-normal text-muted">{blocked}</span>
-        )}
-      </span>
-    </button>
+      Remove this channel? Gerfaut stops sending alerts to it at once.
+    </Notice>
   );
 }
 

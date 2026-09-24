@@ -31,6 +31,10 @@ export type SettingsSection =
   | "about"
   | "premium";
 
+/** A card a view can send Settings straight to, past the top of its
+    section: the Overview's "Review" goes to the Devices card. */
+export type SettingsTarget = "devices";
+
 /** A transaction handed to the network from this app, kept so the
     broadcast page can show where it stands after a restart. */
 export interface RecentBroadcast {
@@ -47,6 +51,9 @@ export const RECENT_BROADCASTS = 10;
 interface UiState {
   view: CanvasView;
   settingsSection: SettingsSection;
+  /** The card Settings was opened for, until that card has taken the
+      focus. */
+  settingsTarget: SettingsTarget | null;
   activeWalletId: string | null;
   /** Txid opened in the detail modal, null when closed. */
   selectedTxid: string | null;
@@ -82,8 +89,11 @@ interface UiState {
 
   setView: (view: CanvasView) => void;
   setSettingsSection: (section: SettingsSection) => void;
-  /** Opens Settings on one of its sections, from anywhere. */
-  openSettings: (section: SettingsSection) => void;
+  /** Opens Settings on one of its sections, from anywhere, and on one
+      of its cards when a target is named. */
+  openSettings: (section: SettingsSection, target?: SettingsTarget) => void;
+  /** The target card has scrolled into view and taken the focus. */
+  clearSettingsTarget: () => void;
   openWallet: (id: string) => void;
   selectTx: (txid: string | null) => void;
   setAddWalletOpen: (open: boolean) => void;
@@ -138,6 +148,7 @@ function parseRecentBroadcasts(raw: string | undefined): RecentBroadcast[] {
 export const useUi = create<UiState>((set, get) => ({
   view: "home",
   settingsSection: "general",
+  settingsTarget: null,
   activeWalletId: null,
   selectedTxid: null,
   addWalletOpen: false,
@@ -160,8 +171,14 @@ export const useUi = create<UiState>((set, get) => ({
 
   setView: (view) => set({ view, selectedTxid: null }),
   setSettingsSection: (settingsSection) => set({ settingsSection }),
-  openSettings: (settingsSection) =>
-    set({ view: "settings", settingsSection, selectedTxid: null }),
+  openSettings: (settingsSection, target) =>
+    set({
+      view: "settings",
+      settingsSection,
+      settingsTarget: target ?? null,
+      selectedTxid: null,
+    }),
+  clearSettingsTarget: () => set({ settingsTarget: null }),
   // Switching wallets keeps the current page, so wallets compare on the
   // same view; from settings it lands on the overview.
   openWallet: (id) =>

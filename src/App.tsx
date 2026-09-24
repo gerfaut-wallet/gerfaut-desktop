@@ -7,7 +7,7 @@ import { UpdateNotice } from "./components/UpdateNotice";
 import { Sidebar } from "./shell/Sidebar";
 import { useLiveEvents } from "./state/live";
 import { isLockedError, lockedSettings, useLock, useLockShortcut } from "./state/lock";
-import { usePremiumWatch } from "./state/premium";
+import { useDeviceWatch, usePremiumWatch } from "./state/premium";
 import { useUpdateCheck } from "./state/update";
 import { LockScreen } from "./views/LockScreen";
 import { WelcomeTour } from "./views/WelcomeTour";
@@ -26,12 +26,14 @@ import { TxDetailModal } from "./views/TxDetailModal";
 import { UtxosView } from "./views/UtxosView";
 
 /** Keeps the server's heartbeat coming while there is something to
-    watch: a key is set and at least one wallet was agreed to. Its own
-    component, so it can sit behind the lock check without a hook
-    running conditionally. */
+    watch: a key is set and at least one wallet was agreed to; and the
+    account's devices current while a key is set. Its own component, so
+    it can sit behind the lock check without a hook running
+    conditionally. */
 function PremiumWatch({ settings }: { settings: Settings }) {
   const { premium } = settings;
   usePremiumWatch(premium.key !== null && premium.watched.length > 0);
+  useDeviceWatch(premium.key !== null);
   return null;
 }
 
