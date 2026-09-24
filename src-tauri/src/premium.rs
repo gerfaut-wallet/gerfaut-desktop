@@ -15,7 +15,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use gerfaut_core::error::{CoreError, CoreResult};
+use gerfaut_core::error::{CoreError, CoreResult, PremiumError};
 use gerfaut_core::premium::client::{
     NTFY_BASE_URL, TELEGRAM_BOT, endpoint, new_ntfy_topic, ntfy_subscribe_url, telegram_link_url,
 };
@@ -357,7 +357,11 @@ pub async fn premium_activate(
     key: String,
 ) -> CommandResult<PremiumStatus> {
     state.unlocked()?;
-    if !licence::is_well_formed_key(&key) {
+    activate(&state, &base_url(), &key).await
+}
+
+async fn activate(state: &AppState, base_url: &str, key: &str) -> CommandResult<PremiumStatus> {
+    if !licence::is_well_formed_key(key) {
         return Err(CommandError::new(
             "invalid_input",
             "a key is sixteen letters and digits",
@@ -366,7 +370,7 @@ pub async fn premium_activate(
     // Another key would move this device to another account and log it
     // out of this one: what "Forget this key" does behind the secret.
     // The screen offers the field only once the key is gone.
-    if full_access(&state).await && !holds_key(&state, &key).await {
+    if !holds_key(state, key).await && full_access(state, base_url).await {
         return Err(CommandError::new(
             "invalid_input",
             "forget this key before entering another one",
@@ -374,10 +378,10 @@ pub async fn premium_activate(
     }
     let device = state
         .manager
-        .premium_connect(&base_url(), &key, platform()?)
+        .premium_connect(base_url, key, platform()?)
         .await?;
     state.devices.saw(&device);
-    Ok(status(&state).await)
+    Ok(status(state).await)
 }
 
 /// Connects this device again after the server disowned it, with the
@@ -386,15 +390,19 @@ pub async fn premium_activate(
 #[tauri::command]
 pub async fn premium_reconnect(state: tauri::State<'_, AppState>) -> CommandResult<PremiumStatus> {
     state.unlocked()?;
+    reconnect(&state, &base_url()).await
+}
+
+async fn reconnect(state: &AppState, base_url: &str) -> CommandResult<PremiumStatus> {
     let Some(key) = state.manager.premium_state().await.key else {
         return Err(CommandError::new("premium_no_key", "no premium key"));
     };
     let device = state
         .manager
-        .premium_connect(&base_url(), &key, platform()?)
+        .premium_connect(base_url, &key, platform()?)
         .await?;
     state.devices.saw(&device);
-    Ok(status(&state).await)
+    Ok(status(state).await)
 }
 
 /// Logs this device out and drops the key here: the server is told as
@@ -412,12 +420,20 @@ pub async fn premium_forget(
     secret: Option<String>,
 ) -> CommandResult<PremiumStatus> {
     state.unlocked()?;
-    if full_access(&state).await {
-        confirm_identity_given(&state, secret.as_deref()).await?;
+    forget(&state, &base_url(), secret.as_deref()).await
+}
+
+async fn forget(
+    state: &AppState,
+    base_url: &str,
+    secret: Option<&str>,
+) -> CommandResult<PremiumStatus> {
+    if full_access(state, base_url).await {
+        confirm_identity_given(state, secret).await?;
     }
-    state.manager.premium_log_out(&base_url()).await?;
+    state.manager.premium_log_out(base_url).await?;
     state.devices.forget();
-    Ok(status(&state).await)
+    Ok(status(state).await)
 }
 
 /// This device as the server sees it: full access, or waiting and until
@@ -793,11 +809,30 @@ pub(crate) async fn connected(state: &AppState) -> bool {
     premium.key.is_some() && premium.device.is_some() && !premium.disconnected
 }
 
-/// Whether this device is connected and, as far as the server last
-/// said, has full access. Not known yet counts as full: the secret is
-/// asked rather than skipped.
-pub(crate) async fn full_access(state: &AppState) -> bool {
-    connected(state).await && !state.devices.waiting()
+/// Whether this device is connected with full access, which is when
+/// leaving the account takes the app lock's secret. Not known yet
+/// counts as full: the secret is asked rather than skipped.
+///
+/// That the server last said this device waits is not enough to skip
+/// it: another device may have approved it since, and the background
+/// check would only notice within five minutes. The server is asked
+/// again first. A device it disowned on the way has no token left and
+/// leaves as one; no answer at all counts as full.
+pub(crate) async fn full_access(state: &AppState, base_url: &str) -> bool {
+    if !connected(state).await {
+        return false;
+    }
+    if !state.devices.waiting() {
+        return true;
+    }
+    match state.manager.premium_device(base_url).await {
+        Ok(device) => {
+            state.devices.saw(&device);
+            !waits(&device)
+        }
+        Err(CoreError::Premium(PremiumError::DeviceDisconnected)) => false,
+        Err(_) => true,
+    }
 }
 
 /// Whether `key` is the one the vault holds, however it was typed.
@@ -1527,20 +1562,93 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (state, _) = state_with_account(dir.path());
         let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime
-            .block_on(
-                state
-                    .manager
-                    .set_app_lock(gerfaut_core::lock::LockKind::Pin, "2468", None),
-            )
-            .unwrap();
-        assert!(runtime.block_on(full_access(&state)));
+        pin_lock(&state);
+        // Full access as far as anyone knows: the secret, and nothing
+        // asked of the server to know it.
+        let (base_url, requests) = stub_server(200, me("pending"));
+        assert!(runtime.block_on(full_access(&state, &base_url)));
+        assert!(requests.try_recv().is_err());
         assert!(!runtime.block_on(holds_key(&state, "2345-6789-abcd-efgh")));
         assert!(runtime.block_on(holds_key(&state, "ABCDEFGHIJKMNPQR")));
 
-        // Waiting: no secret needed.
+        // Waiting, and the server says so again: no secret needed.
         seen_waiting(&state);
-        assert!(!runtime.block_on(full_access(&state)));
+        assert!(!runtime.block_on(full_access(&state, &base_url)));
+        let request = requests.recv().unwrap();
+        assert!(
+            request.starts_with("GET /v1/devices/me HTTP/1.1"),
+            "{request}"
+        );
+        let (base_url, requests) =
+            stub_answers(vec![(200, me("pending").to_owned()), (200, deleted())]);
+        let gone = runtime.block_on(forget(&state, &base_url, None)).unwrap();
+        assert_eq!(gone.key, None);
+        let asked = requests.recv().unwrap();
+        assert!(asked.starts_with("GET /v1/devices/me HTTP/1.1"), "{asked}");
+        let told = requests.recv().unwrap();
+        assert!(told.starts_with("DELETE /v1/devices/me HTTP/1.1"), "{told}");
+    }
+
+    /// Approved on another device a moment ago, this one was last seen
+    /// waiting, and the background check has not been round since:
+    /// leaving, or entering another key, asks the server again rather
+    /// than skip the secret on that old word. No answer asks for the
+    /// secret too.
+    #[test]
+    fn a_device_approved_since_it_was_seen_waiting_leaves_behind_the_secret() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, _) = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        pin_lock(&state);
+
+        seen_waiting(&state);
+        let (base_url, requests) = stub_server(200, me("full"));
+        let refused = runtime
+            .block_on(forget(&state, &base_url, None))
+            .unwrap_err();
+        assert_eq!(refused.kind, "identity_refused");
+        let request = requests.recv().unwrap();
+        assert!(
+            request.starts_with("GET /v1/devices/me HTTP/1.1"),
+            "{request}"
+        );
+        assert!(requests.try_recv().is_err(), "nothing was logged out");
+        assert!(!state.devices.waiting());
+        assert_eq!(runtime.block_on(status(&state)).key.as_deref(), Some(KEY));
+
+        seen_waiting(&state);
+        let refused = runtime
+            .block_on(activate(&state, &base_url, "2345-6789-abcd-efgh"))
+            .unwrap_err();
+        assert_eq!(
+            refused.message,
+            "forget this key before entering another one"
+        );
+        let request = requests.recv().unwrap();
+        assert!(
+            request.starts_with("GET /v1/devices/me HTTP/1.1"),
+            "{request}"
+        );
+        assert!(requests.try_recv().is_err(), "the other key never left");
+
+        // The server out of reach: the secret all the same.
+        seen_waiting(&state);
+        let (base_url, _) = stub_server(503, UNREACHABLE);
+        assert!(runtime.block_on(full_access(&state, &base_url)));
+
+        // Disowned on the way: no token left, and it leaves as one.
+        let (base_url, _) = stub_server(401, DISOWNED);
+        assert!(!runtime.block_on(full_access(&state, &base_url)));
+
+        // With the secret, it goes.
+        let other = tempfile::tempdir().unwrap();
+        let (state, _) = state_with_account(other.path());
+        pin_lock(&state);
+        let (base_url, _) = stub_server(200, &deleted());
+        let gone = runtime
+            .block_on(forget(&state, &base_url, Some("2468")))
+            .unwrap();
+        assert_eq!(gone.key, None);
     }
 
     /// The heartbeat route takes no credential. A connection owed and
@@ -1578,6 +1686,25 @@ mod tests {
         assert!(runtime.block_on(status(&state)).connect_pending);
     }
 
+    const DISOWNED: &str = r#"{"error":"this device was disconnected from the Premium account","code":"device_disconnected"}"#;
+
+    /// `DELETE /v1/devices/me`.
+    fn deleted() -> String {
+        format!(r#"{{"id":"{DEVICE_ID}","deleted":true}}"#)
+    }
+
+    /// Puts the app lock on, a PIN, as Settings › Security does.
+    fn pin_lock(state: &AppState) {
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(
+                state
+                    .manager
+                    .set_app_lock(gerfaut_core::lock::LockKind::Pin, "2468", None),
+            )
+            .unwrap();
+    }
+
     /// `GET /v1/heartbeat` at `now`, signed the way the server signs it.
     fn signed_heartbeat(signing: &SigningKey, now: i64) -> String {
         let payload = format!(r#"{{"now":{now},"tip_height":900000}}"#);
@@ -1594,17 +1721,38 @@ mod tests {
     fn the_conditional_secrets_are_asked_first() {
         let premium = include_str!("premium.rs");
         let lib = include_str!("lib.rs");
-        for (source, name, guard) in [
-            (premium, "premium_forget", "if full_access(&state).await {"),
+        for (source, name, first) in [
+            (
+                premium,
+                "premium_forget",
+                [
+                    "state.unlocked()?;",
+                    "forget(&state, &base_url(), secret.as_deref()).await",
+                ],
+            ),
+            (
+                premium,
+                "forget",
+                [
+                    "if full_access(state, base_url).await {",
+                    "confirm_identity_given(state, secret).await?;",
+                ],
+            ),
             (
                 premium,
                 "premium_add_channel",
-                "if state.manager.app_lock().await.is_some() {",
+                [
+                    "state.unlocked()?;",
+                    "if state.manager.app_lock().await.is_some() {",
+                ],
             ),
             (
                 lib,
                 "remove_wallet",
-                "remove_checked(&state, &id, secret.as_deref()).await?;",
+                [
+                    "state.unlocked()?;",
+                    "remove_checked(&state, &id, secret.as_deref()).await?;",
+                ],
             ),
         ] {
             let source = &source[..source.find("#[cfg(test)]").unwrap_or(source.len())];
@@ -1616,10 +1764,9 @@ mod tests {
                 .map(str::trim)
                 .skip_while(|line| !line.ends_with('{'))
                 .skip(1)
-                .take(3)
+                .take(2)
                 .collect();
-            assert_eq!(lines.first(), Some(&"state.unlocked()?;"), "{name}");
-            assert_eq!(lines.get(1), Some(&guard), "{name}");
+            assert_eq!(lines, first, "{name}");
         }
     }
 

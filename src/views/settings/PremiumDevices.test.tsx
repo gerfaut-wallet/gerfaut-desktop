@@ -559,6 +559,65 @@ describe("a device waiting for approval", () => {
     await waitFor(() => expect(of("premium_forget", calls)).toEqual([{ secret: null }]));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+
+  it("asks for the secret when the Rust side finds it was approved since", async () => {
+    let me = WAITING;
+    const calls = mockPremium({
+      premium_device: () => me,
+      premium_forget: ({ secret }) => {
+        if (secret == null) {
+          // Approved on another device a moment ago: the Rust side
+          // asked the server again before letting it go.
+          me = { ...WAITING, access: "full", pending_until: null, approved_at: NOW };
+          return Promise.reject({
+            kind: "identity_refused",
+            message: "this needs the PIN or password of the app lock",
+          }) as never;
+        }
+        return { ...STATUS, key: null, device: null };
+      },
+    });
+    renderSection();
+    const user = userEvent.setup();
+    const waiting = await screen.findByRole("heading", { name: "Waiting for approval" });
+    await user.click(
+      within(waiting.closest("section")!).getByRole("button", { name: "Forget this key" }),
+    );
+    await user.click(
+      within(screen.getByRole("status")).getByRole("button", { name: "Forget the key" }),
+    );
+    await confirmIdentity(user, "Forget the key");
+    await waitFor(() =>
+      expect(of("premium_forget", calls)).toEqual([{ secret: null }, { secret: PIN }]),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    // Nothing of the refusal is left under the card: it was a question.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows the access it has once the secret is not given", async () => {
+    let me = WAITING;
+    mockPremium({
+      premium_device: () => me,
+      premium_forget: () => {
+        me = { ...WAITING, access: "full", pending_until: null, approved_at: NOW };
+        return Promise.reject({ kind: "identity_refused", message: "x" }) as never;
+      },
+    });
+    renderSection();
+    const user = userEvent.setup();
+    const waiting = await screen.findByRole("heading", { name: "Waiting for approval" });
+    await user.click(
+      within(waiting.closest("section")!).getByRole("button", { name: "Forget this key" }),
+    );
+    await user.click(
+      within(screen.getByRole("status")).getByRole("button", { name: "Forget the key" }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Confirm it's you" });
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(await screen.findByRole("heading", { name: "Devices" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Waiting for approval" })).not.toBeInTheDocument();
+  });
 });
 
 // --- a device the server disconnected -----------------------------------------

@@ -1,10 +1,21 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "../../../components/Button";
 import { Notice } from "../../../components/Notice";
-import { useDeleteAccount, useForgetPremium } from "../../../state/premiumQueries";
+import { isCommandError } from "../../../lib/ipc";
+import { premiumKeys, useDeleteAccount, useForgetPremium } from "../../../state/premiumQueries";
 import { useUi } from "../../../state/store";
 import { IdentityModal } from "./IdentityModal";
 import { FailureNote, GHOST_ON_TINT } from "./shared";
+
+/** The Rust side wants the app lock's secret for what was sent without
+    it: this device has full access after all. */
+function asksIdentity(error: unknown): boolean {
+  return (
+    isCommandError(error) &&
+    (error.kind === "identity_refused" || error.kind === "app_lock_required")
+  );
+}
 
 /** The amber question before the key leaves this device, and, for a
  *  device with full access, the box that deletes the account on the
@@ -30,6 +41,7 @@ export function ForgetKey({
 }) {
   const forget = useForgetPremium();
   const erase = useDeleteAccount();
+  const client = useQueryClient();
   const { showToast } = useUi();
   /** Whether the server is asked to drop the account too, not only this
       device. Off every time the question opens: nobody deletes an
@@ -37,6 +49,9 @@ export function ForgetKey({
   const [alsoServer, setAlsoServer] = useState(false);
   /** Which half waits for the secret. */
   const [identity, setIdentity] = useState<"forget" | "delete" | null>(null);
+  /** The secret was asked by the Rust side, not by this screen: what
+      the screen knew of this device is out of date. */
+  const [asked, setAsked] = useState(false);
   const [failure, setFailure] = useState<unknown>(undefined);
   const busy = forget.isPending || erase.isPending;
   const deleting = allowDelete && alsoServer;
@@ -59,8 +74,23 @@ export function ForgetKey({
         onClose();
         showToast("Key forgotten");
       },
-      onError: (problem: unknown) => setFailure(problem),
+      // Seen waiting, and approved since on another device: the Rust
+      // side asked the server again and wants the secret after all.
+      onError: (problem: unknown) => {
+        if (asksIdentity(problem)) {
+          setAsked(true);
+          setIdentity("forget");
+        } else {
+          setFailure(problem);
+        }
+      },
     });
+  };
+
+  const cancelIdentity = () => {
+    setIdentity(null);
+    // Left as it was, the screen would go on saying this device waits.
+    if (asked) void client.invalidateQueries({ queryKey: premiumKeys.device, exact: true });
   };
 
   return (
@@ -146,7 +176,7 @@ export function ForgetKey({
             setIdentity(null);
             setFailure(problem);
           }}
-          onCancel={() => setIdentity(null)}
+          onCancel={cancelIdentity}
         />
       )}
     </>
