@@ -1686,6 +1686,58 @@ mod tests {
         assert!(runtime.block_on(status(&state)).connect_pending);
     }
 
+    /// A key change left unfinished, then this device disowned, the key
+    /// changed elsewhere: "Connect again" meets a key the server no
+    /// longer knows, and the new key entered after it connects this
+    /// device. The change that never finished goes with the old key.
+    #[test]
+    fn an_unfinished_key_change_does_not_hold_back_the_new_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, _) = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        let (base_url, _) = stub_server(503, UNREACHABLE);
+        runtime
+            .block_on(state.manager.premium_change_key(&base_url))
+            .unwrap_err();
+        let (base_url, _) = stub_server(401, DISOWNED);
+        runtime
+            .block_on(state.manager.premium_device(&base_url))
+            .unwrap_err();
+        // The change ends with the token: this device can no longer
+        // finish it, and the server never applied it for a device it
+        // dropped.
+        let disowned = runtime.block_on(status(&state));
+        assert!(disowned.disconnected);
+        assert!(!disowned.key_change_pending);
+
+        let (base_url, _) = stub_server(401, r#"{"error":"unknown key"}"#);
+        let error = runtime.block_on(reconnect(&state, &base_url)).unwrap_err();
+        assert_eq!(error.kind, "premium_unknown_key");
+
+        const NEW_KEY: &str = "2345-6789-abcd-efgh";
+        let waiting = format!(
+            r#"{{"device":{},"token":"{TOKEN}"}}"#,
+            this_device("pending")
+        );
+        let (base_url, requests) =
+            stub_answers(vec![(201, waiting), (503, UNREACHABLE.to_owned())]);
+        let after = runtime
+            .block_on(activate(&state, &base_url, NEW_KEY))
+            .unwrap();
+        let request = requests.recv().unwrap();
+        assert!(
+            request.starts_with("POST /v1/devices HTTP/1.1"),
+            "{request}"
+        );
+        assert!(request.contains("Bearer 23456789abcdefgh"), "{request}");
+        assert_eq!(after.key.as_deref(), Some(NEW_KEY));
+        assert!(!after.key_change_pending);
+        assert!(!after.disconnected);
+        assert!(after.device.is_some());
+        assert!(state.devices.waiting());
+    }
+
     const DISOWNED: &str = r#"{"error":"this device was disconnected from the Premium account","code":"device_disconnected"}"#;
 
     /// `DELETE /v1/devices/me`.
