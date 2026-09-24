@@ -98,7 +98,7 @@ pub(crate) fn platform_word() -> String {
 }
 
 /// `POST /v1/devices` for the account's first device.
-fn connected_body() -> String {
+pub(crate) fn connected_body() -> String {
     format!(
         r#"{{"device":{{"id":"{DEVICE_ID}","platform":"{}","connected_at":{CONNECTED_AT},"access":"full","pending_until":null,"approved_at":{CONNECTED_AT},"this_device":true}},"token":"{TOKEN}"}}"#,
         platform_word()

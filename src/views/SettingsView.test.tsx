@@ -361,6 +361,9 @@ function mockSettingsIpc(
           disconnected: false,
           key_saved: false,
           checklist_hidden: false,
+          disconnected_reason: null,
+          key_change_pending: false,
+          connect_pending: false,
         };
       default:
         throw new Error(`unexpected command ${cmd}`);
@@ -716,6 +719,9 @@ describe("settings sections", () => {
       disconnected: false,
       key_saved: true,
       checklist_hidden: true,
+      disconnected_reason: null,
+      key_change_pending: false,
+      connect_pending: false,
     });
     const device = {
       id: "d-1",

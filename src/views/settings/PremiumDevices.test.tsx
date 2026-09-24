@@ -28,6 +28,9 @@ const STATUS: PremiumStatus = {
   disconnected: false,
   key_saved: true,
   checklist_hidden: true,
+  disconnected_reason: null,
+  key_change_pending: false,
+  connect_pending: false,
 };
 
 const ACCOUNT: PremiumAccountReport = {
@@ -669,6 +672,26 @@ describe("a disconnected device", () => {
     await waitFor(() => expect(of("premium_status", calls).length).toBeGreaterThanOrEqual(2));
     expect(screen.getByRole("button", { name: "Connect again" })).toBeInTheDocument();
   });
+
+  it("says in the server's words why it could not connect again", async () => {
+    mockPremium({
+      premium_status: () => ({
+        ...DISCONNECTED,
+        disconnected_reason:
+          "this key already has 10 devices; disconnect one from a device with full access",
+      }),
+    });
+    renderSection();
+    const note = await screen.findByText(
+      "This key already has 10 devices; disconnect one from a device with full access.",
+    );
+    const panel = note.closest("[role=status]") as HTMLElement;
+    expect(panel).toHaveClass("bg-pending-surface");
+    expect(within(panel).getByRole("button", { name: "Connect again" })).toBeInTheDocument();
+    expect(
+      screen.queryByText("This device was disconnected from your Premium account."),
+    ).not.toBeInTheDocument();
+  });
 });
 
 // --- change key ---------------------------------------------------------------
@@ -786,6 +809,96 @@ describe("changing the key", () => {
       "The server asks to wait. Try again in 30 s.",
     );
     expect(within(dialog).getByRole("button", { name: "Change key" })).toBeEnabled();
+  });
+});
+
+// --- a key change that did not finish ---------------------------------------------
+
+describe("a key change that did not finish", () => {
+  const UNFINISHED: PremiumStatus = {
+    ...STATUS,
+    key_saved: false,
+    checklist_hidden: false,
+    key_change_pending: true,
+  };
+  const WORDS = "The key change did not finish. Try again to complete it.";
+
+  async function noteOf() {
+    return (await screen.findByText(WORDS)).closest("[role=status]") as HTMLElement;
+  }
+
+  it("says so under the licence, and offers neither the key nor a new change", async () => {
+    mockPremium({ premium_status: () => UNFINISHED });
+    renderSection();
+    const note = await noteOf();
+    expect(note).toHaveClass("bg-pending-surface");
+    expect(within(note).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    // The key in place may be dead: nothing offers to copy it, and
+    // leaving would lose the new one.
+    const licence = card("Licence");
+    expect(licence.getByRole("button", { name: "Renew" })).toBeInTheDocument();
+    for (const name of ["Copy key", "Change key", "Forget this key"]) {
+      expect(licence.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
+    await screen.findByRole("heading", { name: "Protect your Premium account" });
+    expect(
+      card("Protect your Premium account").queryByRole("button", { name: "Copy key" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("finishes with the secret and shows the new key the way a change does", async () => {
+    let status = UNFINISHED;
+    const calls = mockPremium({
+      premium_status: () => status,
+      premium_change_key: () => {
+        status = { ...STATUS, key: "wxyz-2345-6789-abcd", key_saved: false };
+        return "wxyz-2345-6789-abcd";
+      },
+      premium_set_key_saved: ({ saved }) => {
+        status = { ...status, key_saved: saved as boolean };
+        return status;
+      },
+    });
+    renderSection();
+    const user = userEvent.setup();
+    await user.click(within(await noteOf()).getByRole("button", { name: "Try again" }));
+    expect(of("premium_change_key", calls)).toEqual([]);
+    await confirmIdentity(user, "Change key");
+    await waitFor(() => expect(of("premium_change_key", calls)).toEqual([{ secret: PIN }]));
+
+    const dialog = await screen.findByRole("dialog", { name: "Change your Premium key" });
+    const key = await within(dialog).findByText("wxyz-2345-6789-abcd");
+    await waitFor(() => expect(key).toHaveFocus());
+    // The note goes with the change it spoke of; the key stays.
+    await waitFor(() => expect(screen.queryByText(WORDS)).not.toBeInTheDocument());
+    expect(within(dialog).getByText("wxyz-2345-6789-abcd")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog", { name: "Change your Premium key" })).toBeInTheDocument();
+
+    await user.click(within(dialog).getByLabelText("I saved my new key"));
+    await user.click(within(dialog).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(of("premium_set_key_saved", calls)).toEqual([{ saved: true }]));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("says a failed try under the note, which stays", async () => {
+    mockPremium({
+      premium_status: () => UNFINISHED,
+      premium_change_key: () =>
+        Promise.reject({
+          kind: "premium_unreachable",
+          message: "the premium server is unreachable: timed out",
+        }) as never,
+    });
+    renderSection();
+    const user = userEvent.setup();
+    await user.click(within(await noteOf()).getByRole("button", { name: "Try again" }));
+    await confirmIdentity(user, "Change key");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not reach the Gerfaut server.",
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(within(await noteOf()).getByRole("button", { name: "Try again" })).toBeEnabled();
   });
 });
 

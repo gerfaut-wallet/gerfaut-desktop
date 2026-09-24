@@ -30,7 +30,15 @@ export function fullyProtected(protection: Protection): boolean {
  *  access, the app lock, the key kept somewhere safe. The last is the
  *  one only its owner can vouch for. Not a sequence, so no numbers: a
  *  ring that closes into a tick, and the words say it too. */
-export function ProtectCard({ keyText, protection }: { keyText: string; protection: Protection }) {
+export function ProtectCard({
+  keyText,
+  protection,
+}: {
+  /** The key to copy; null while a key change is unfinished and the
+      key in place may no longer work. */
+  keyText: string | null;
+  protection: Protection;
+}) {
   const { showToast, openSettings } = useUi();
   const hide = useHideChecklist();
   const saved = useSetKeySaved();
@@ -41,6 +49,7 @@ export function ProtectCard({ keyText, protection }: { keyText: string; protecti
   const [copyFailed, setCopyFailed] = useState(false);
 
   const copyKey = async () => {
+    if (keyText === null) return;
     const copied = await navigator.clipboard
       .writeText(keyText)
       .then(() => true)
@@ -76,17 +85,20 @@ export function ProtectCard({ keyText, protection }: { keyText: string; protecti
             title="Save your key in a password manager"
             hint="Your key is the whole account. Nobody can send it to you again."
             note={
-              copyFailed && (
+              copyFailed &&
+              keyText !== null && (
                 <Notice tone="info" role="alert">
                   Could not copy the key.
                 </Notice>
               )
             }
           >
-            <Button variant="ghost" className="h-9" onClick={() => void copyKey()}>
-              <Copy size={14} strokeWidth={1.5} aria-hidden />
-              Copy key
-            </Button>
+            {keyText !== null && (
+              <Button variant="ghost" className="h-9" onClick={() => void copyKey()}>
+                <Copy size={14} strokeWidth={1.5} aria-hidden />
+                Copy key
+              </Button>
+            )}
             <Button
               variant="ghost"
               className="h-9"

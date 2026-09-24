@@ -4,6 +4,7 @@ import {
   coinsWord,
   dayMonthYear,
   daysLeft,
+  disconnectedWords,
   eventWords,
   formatKeyInput,
   isDeviceDisconnected,
@@ -102,6 +103,16 @@ describe("what the server says", () => {
     expect(
       premiumFailure({ kind: "premium_rate_limited", message: "Try again in 42 s." }),
     ).toEqual({ message: "The server asks to wait. Try again in 42 s.", retry: true });
+    // What was asked would lose the new key of an unfinished change.
+    expect(
+      premiumFailure({
+        kind: "premium_key_change_pending",
+        message: "the key change did not finish; try again to complete it",
+      }),
+    ).toEqual({
+      message: "The key change did not finish. Try again to complete it.",
+      retry: false,
+    });
     // Something that is not a command error at all: the bridge failed.
     expect(premiumFailure(new Error("boom")).retry).toBe(true);
   });
@@ -202,5 +213,16 @@ describe("the devices of the account", () => {
     expect(premiumFailure({ kind: "app_lock_required", message: "x" }).message).toBe(
       "Changing who can use your Premium account needs an app lock on this device, so that nobody holding it unlocked can do it.",
     );
+  });
+});
+
+describe("a disconnected device", () => {
+  it("says why in the server's words when it gave some, and in the section's otherwise", () => {
+    expect(disconnectedWords(null)).toBe("This device was disconnected from your Premium account.");
+    expect(
+      disconnectedWords(
+        "this key already has 10 devices; disconnect one from a device with full access",
+      ),
+    ).toBe("This key already has 10 devices; disconnect one from a device with full access.");
   });
 });

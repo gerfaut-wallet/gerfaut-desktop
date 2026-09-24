@@ -197,7 +197,8 @@ function useInvalidatePremium() {
 /** Connects this device with a key just typed. Whatever the cache held
     of an account before belongs to another key, or to this device
     before it was disconnected: it goes, so none of it shows for a
-    moment under the new one. */
+    moment under the new one. A failure has the vault read again: see
+    `readVaultAgain`. */
 export function useActivatePremium() {
   const client = useQueryClient();
   const invalidate = useInvalidatePremium();
@@ -207,6 +208,7 @@ export function useActivatePremium() {
       forgetServerState(client);
       invalidate();
     },
+    onError: () => readVaultAgain(client),
   });
 }
 
@@ -319,7 +321,7 @@ export function useTestChannel() {
 }
 
 /** Connects this device again with the key the vault keeps, after the
-    server disconnected it. */
+    server disconnected it; a failure has the vault read again. */
 export function useReconnectPremium() {
   const client = useQueryClient();
   const invalidate = useInvalidatePremium();
@@ -329,6 +331,7 @@ export function useReconnectPremium() {
       forgetServerState(client);
       invalidate();
     },
+    onError: () => readVaultAgain(client),
   });
 }
 
@@ -369,8 +372,11 @@ export function useRemoveDevice() {
 
 /** Replaces the key: the old one stops working everywhere and every
     other device is disconnected. Answers the new key as it is shown. */
-/** Replaces the account key. Every other device is gone with the old
-    key: the list is read again from nothing, never shown as it was. */
+/** Replaces the account key; sent again after a lost answer, it sends
+    the same new key. Every other device is gone with the old key: the
+    list is read again from nothing, never shown as it was. A failure
+    may leave the change unfinished in the vault, or settle it: the
+    status is read again either way. */
 export function useChangeKey() {
   const client = useQueryClient();
   const invalidate = useInvalidatePremium();
@@ -380,6 +386,7 @@ export function useChangeKey() {
       void client.resetQueries({ queryKey: premiumKeys.devices, exact: true });
       invalidate();
     },
+    onError: () => readVaultAgain(client),
   });
 }
 

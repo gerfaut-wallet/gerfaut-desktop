@@ -8,17 +8,23 @@ import { PremiumPill } from "../../../components/PremiumPill";
 import type { PremiumStatus } from "../../../lib/ipc";
 import { isCommandError } from "../../../lib/ipc";
 import {
-  DISCONNECTED_WORDS,
+  KEY_CHANGE_UNFINISHED_WORDS,
   PREMIUM_URL,
   RENEW_URL,
+  disconnectedWords,
   formatKeyInput,
   isWellFormedKey,
 } from "../../../lib/premium";
-import { useActivatePremium, useReconnectPremium } from "../../../state/premiumQueries";
+import {
+  useActivatePremium,
+  useChangeKey,
+  useReconnectPremium,
+} from "../../../state/premiumQueries";
 import { useUi } from "../../../state/store";
 import { FieldLabel, SectionCard } from "../primitives";
 import { ChangeKeyModal } from "./ChangeKeyModal";
 import { ForgetKey } from "./ForgetKey";
+import { IdentityModal } from "./IdentityModal";
 import { FailureNote, longDate } from "./shared";
 
 /** What the server says about this device, once it has: full access,
@@ -36,9 +42,10 @@ const KEY_CHANGED_WORDS = "This key no longer works. Enter the new one.";
  *  the certificate the vault holds, verified offline by the core, so it
  *  shows the same with no network and never waits on the server. A
  *  device with full access can change the key; one the server
- *  disconnected says so under the card and connects again with the key
- *  it kept. Nothing here sells: no price, no countdown, one link to the
- *  site. */
+ *  disconnected says so under the card, in the server's words when it
+ *  gave some, and connects again with the key it kept. A key change
+ *  whose answer was lost says so too, and is finished from there.
+ *  Nothing here sells: no price, no countdown, one link to the site. */
 export function LicenceCard({
   status,
   access,
@@ -138,14 +145,76 @@ export function LicenceCard({
             </Button>
           }
         >
-          {DISCONNECTED_WORDS}
+          {disconnectedWords(status.disconnected_reason)}
         </Notice>
       )}
       {!asking && reconnectFailure !== undefined && (
         <FailureNote error={reconnectFailure} onRetry={connectAgain} />
       )}
+      <UnfinishedKeyChange
+        unfinished={!asking && status.key_change_pending && !status.disconnected}
+      />
       {!asking && !status.disconnected && accountError !== undefined && (
         <FailureNote error={accountError} onRetry={onRetryAccount} />
+      )}
+    </>
+  );
+}
+
+/** A key change sent and not answered: the server may have made the
+ *  new key the account's, and the one this card holds may be dead.
+ *  Amber, under the card, with "Try again", which asks the secret the
+ *  change always asks and sends the same new key; once the server has
+ *  answered, the key is shown the way a change shows it, and the note
+ *  goes. Always mounted, so the key outlives the note it came from. */
+function UnfinishedKeyChange({ unfinished }: { unfinished: boolean }) {
+  const change = useChangeKey();
+  const [identity, setIdentity] = useState(false);
+  const [failure, setFailure] = useState<unknown>(undefined);
+  const [finished, setFinished] = useState<string | null>(null);
+
+  return (
+    <>
+      {unfinished && (
+        <Notice
+          tone="info"
+          role="status"
+          action={
+            <Button
+              variant="premium"
+              className="h-9"
+              aria-haspopup="dialog"
+              disabled={change.isPending}
+              aria-busy={change.isPending || undefined}
+              onClick={() => {
+                setFailure(undefined);
+                setIdentity(true);
+              }}
+            >
+              {change.isPending ? "Changing…" : "Try again"}
+            </Button>
+          }
+        >
+          {KEY_CHANGE_UNFINISHED_WORDS}
+        </Notice>
+      )}
+      {unfinished && failure !== undefined && <FailureNote error={failure} />}
+      {identity && (
+        <IdentityModal
+          action="Change key"
+          busyLabel="Changing…"
+          tone="danger"
+          run={(secret) => change.mutateAsync(secret).then(setFinished)}
+          onDone={() => setIdentity(false)}
+          onFailure={(problem) => {
+            setIdentity(false);
+            setFailure(problem);
+          }}
+          onCancel={() => setIdentity(false)}
+        />
+      )}
+      {finished !== null && (
+        <ChangeKeyModal finished={finished} onClose={() => setFinished(null)} />
       )}
     </>
   );
@@ -230,6 +299,12 @@ function KeyInPlace({ status, access }: { status: PremiumStatus; access: DeviceA
   const licence = status.licence;
   const connected = status.device !== null && !status.disconnected;
   const full = access === "full" && connected;
+  // A key change that did not finish: the key here may be dead, so it
+  // is not offered, and the change is finished from the note under the
+  // card rather than started again. Leaving would lose the new key, and
+  // the core refuses it while this device can still finish the change.
+  const unfinished = status.key_change_pending;
+  const canForget = access !== "pending" && !(unfinished && connected);
 
   const copy = async (): Promise<boolean> => {
     const copied = await navigator.clipboard
@@ -242,9 +317,9 @@ function KeyInPlace({ status, access }: { status: PremiumStatus; access: DeviceA
 
   // The key goes to the clipboard, not into the address: see RENEW_URL.
   // The page opens either way — someone who has the key in hand can
-  // still type it.
+  // still type it. Not a key that may be dead, though.
   const renew = async () => {
-    if (await copy()) showToast("Key copied, paste it on the renewal page");
+    if (!unfinished && (await copy())) showToast("Key copied, paste it on the renewal page");
     await openUrl(RENEW_URL);
   };
 
@@ -280,18 +355,18 @@ function KeyInPlace({ status, access }: { status: PremiumStatus; access: DeviceA
         </Button>
         {/* Until its owner says it is saved: nothing else can hand it
             back to them. */}
-        {!status.key_saved && (
+        {!status.key_saved && !unfinished && (
           <Button variant="ghost" onClick={() => void copyKey()}>
             <Copy size={14} strokeWidth={1.5} aria-hidden />
             Copy key
           </Button>
         )}
-        {full && (
+        {full && !unfinished && (
           <Button variant="ghost" aria-haspopup="dialog" onClick={() => setChanging(true)}>
             Change key
           </Button>
         )}
-        {access !== "pending" && (
+        {canForget && (
           <Button
             variant="ghost"
             disabled={forgetting}
@@ -302,12 +377,12 @@ function KeyInPlace({ status, access }: { status: PremiumStatus; access: DeviceA
           </Button>
         )}
       </div>
-      {copyFailed && (
+      {copyFailed && !unfinished && (
         <Notice tone="info" role="alert">
           Could not copy the key.
         </Notice>
       )}
-      {forgetting && access !== "pending" && (
+      {forgetting && canForget && (
         <ForgetKey
           allowDelete={full}
           confirm={connected}

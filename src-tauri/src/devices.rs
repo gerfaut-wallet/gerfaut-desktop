@@ -16,6 +16,12 @@
 //! the core, so a device is announced once whichever path saw it first.
 //! Behind the lock the notification takes the generic form, and the
 //! window is told nothing.
+//!
+//! The same clock settles what the network left hanging. A connection
+//! sent and not answered is sent again as it was, so the server never
+//! keeps a device nobody holds; and the connections this device dropped
+//! while the server could not be told are revoked, from the start and
+//! every five minutes after.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -174,17 +180,40 @@ pub(crate) enum Round {
     Waiting,
     /// This device has full access now: approved, or its wait is over.
     GotFullAccess,
-    /// The server no longer knows this device.
+    /// A connection the vault owed went through: one whose answer was
+    /// lost, sent again, or a key from before devices.
+    Connected,
+    /// The server no longer takes this device: it disowned its token,
+    /// or refused to connect it again with the key it kept.
     Disowned,
     /// The server could not be reached, or refused for another reason:
     /// the next round asks again.
     Failed,
 }
 
-/// One round of the background check, at `now`: the list for a device
-/// with full access, this device's own standing for one that waits.
+/// One round of the background check, at `now`: a connection the vault
+/// owes first, then the list for a device with full access, or this
+/// device's own standing for one that waits.
 pub(crate) async fn round(state: &AppState, base_url: &str, now: Instant) -> Round {
-    if !state.devices.due(now) || !premium::connected(state).await {
+    if !state.devices.due(now) {
+        return Round::Idle;
+    }
+    if premium::connection_owed(state).await {
+        state.devices.touch(now);
+        return match premium::ensure_device(state, base_url).await {
+            Ok(Some(_)) => Round::Connected,
+            Ok(None) => Round::Idle,
+            // Refused for the key itself: the core left the device
+            // disconnected, with the server's words when it gave some.
+            Err(CoreError::Premium(PremiumError::UnknownKey | PremiumError::TooManyDevices(_))) => {
+                Round::Disowned
+            }
+            // Out of reach, or a rate limit the core waits out without
+            // a request: the next round tries again.
+            Err(_) => Round::Failed,
+        };
+    }
+    if !premium::connected(state).await {
         return Round::Idle;
     }
     if state.devices.waiting() {
@@ -223,7 +252,9 @@ pub(crate) enum Signal {
 pub(crate) fn deliver(round: Round, locked: bool) -> (Vec<Notice>, Option<Signal>) {
     let (notices, signal) = match round {
         Round::Devices { devices, notices } => (notices, Some(Signal::Devices(devices))),
-        Round::GotFullAccess | Round::Disowned => (Vec::new(), Some(Signal::Changed)),
+        Round::GotFullAccess | Round::Connected | Round::Disowned => {
+            (Vec::new(), Some(Signal::Changed))
+        }
         Round::Idle | Round::Waiting | Round::Failed => (Vec::new(), None),
     };
     (notices, if locked { None } else { signal })
@@ -250,10 +281,25 @@ async fn tick(app: &tauri::AppHandle) {
     }
 }
 
+/// Whether the revocations still owed are due at `now`: at the first
+/// look, then every [`EVERY`]. Their own clock, since the window's
+/// checks keep the list's fresh.
+fn flush_due(last: Option<Instant>, now: Instant) -> bool {
+    last.is_none_or(|last| now.duration_since(last) >= EVERY)
+}
+
 /// Runs the background check for as long as the app does.
 pub(crate) async fn watch(app: tauri::AppHandle) {
     tokio::time::sleep(SETTLE).await;
+    let mut flushed = None;
     loop {
+        let now = Instant::now();
+        if flush_due(flushed, now)
+            && let Some(state) = app.try_state::<AppState>()
+        {
+            flushed = Some(now);
+            premium::flush_logouts(&state, &premium::base_url()).await;
+        }
         tick(&app).await;
         tokio::time::sleep(TICK).await;
     }
@@ -304,6 +350,20 @@ mod tests {
         assert!(watch.due(start + Duration::from_secs(200) + EVERY));
     }
 
+    /// The revocations owed go at the first look, then every five
+    /// minutes, whatever the window asked in between.
+    #[test]
+    fn the_revocations_owed_go_at_start_then_every_five_minutes() {
+        let start = Instant::now();
+        assert!(flush_due(None, start));
+        assert!(!flush_due(Some(start), start + Duration::from_secs(60)));
+        assert!(!flush_due(
+            Some(start),
+            start + EVERY - Duration::from_secs(1)
+        ));
+        assert!(flush_due(Some(start), start + EVERY));
+    }
+
     #[test]
     fn what_the_server_said_of_this_device_is_kept_until_it_leaves() {
         let watch = DeviceWatch::default();
@@ -347,7 +407,7 @@ mod tests {
         );
         assert_eq!(signal, None);
 
-        for round in [Round::GotFullAccess, Round::Disowned] {
+        for round in [Round::GotFullAccess, Round::Connected, Round::Disowned] {
             assert_eq!(deliver(round, false), (Vec::new(), Some(Signal::Changed)));
         }
         assert_eq!(deliver(Round::Disowned, true), (Vec::new(), None));

@@ -18,14 +18,25 @@ import { FailureNote } from "./shared";
  *  the server has answered, the dialog shows the new key and cannot be
  *  closed by a stray Escape or a click beside it: "Done" waits for "I
  *  saved my new key". The key stays on this device either way; nothing
- *  else has it. */
-export function ChangeKeyModal({ onClose }: { onClose: () => void }) {
+ *  else has it.
+ *
+ *  A change that did not finish is completed from the licence card,
+ *  which already asked the secret: the dialog then opens on the key. */
+export function ChangeKeyModal({
+  onClose,
+  finished = null,
+}: {
+  onClose: () => void;
+  /** The new key, when the change was completed before the dialog
+      opened. */
+  finished?: string | null;
+}) {
   const change = useChangeKey();
   const saved = useSetKeySaved();
   const { showToast } = useUi();
   const [identity, setIdentity] = useState(false);
   const [failure, setFailure] = useState<unknown>(undefined);
-  const [newKey, setNewKey] = useState<string | null>(null);
+  const [newKey, setNewKey] = useState<string | null>(finished);
   const [stored, setStored] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);

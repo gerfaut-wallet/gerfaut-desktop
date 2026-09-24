@@ -509,6 +509,9 @@ export interface PremiumState {
   certificate: string | null;
   watched: WatchedWallet[];
   acknowledged_offline_until: number | null;
+  /** A connection sent and not answered, its secrets blanked: the Rust
+      side sends it again, and the window hears when it went through. */
+  pending_connect?: unknown;
 }
 
 /** What a certificate says at a given time, read by the core. */
@@ -539,10 +542,20 @@ export interface PremiumStatus {
       was disconnected from the account. "Connect again" uses the key
       kept here. */
   disconnected: boolean;
+  /** Why the server would not connect this device again, in its own
+      words, when it gave some: the key has every device it takes. */
+  disconnected_reason: string | null;
   /** "I saved my key" was ticked, for the key in place. */
   key_saved: boolean;
   /** The "Protect your Premium account" card was hidden. */
   checklist_hidden: boolean;
+  /** A key change was sent and not answered: the key in place may no
+      longer work. "Try again" sends the same new key; the key is not
+      offered for copying meanwhile. */
+  key_change_pending: boolean;
+  /** A connection of this device was sent and not answered; the Rust
+      side sends it again as it was. */
+  connect_pending: boolean;
 }
 
 export type DevicePlatform = "android" | "ios" | "windows" | "macos" | "linux";
@@ -977,6 +990,9 @@ export interface CommandError {
     | "premium_no_device"
     /** The key already has ten devices; the message is the server's. */
     | "premium_too_many_devices"
+    /** A key change was sent and not answered, and what was asked would
+        lose the new key: the change is to be finished first. */
+    | "premium_key_change_pending"
     /** A sensitive action needs the app lock, and there is none. */
     | "app_lock_required"
     /** The secret given for a sensitive action did not verify; the core

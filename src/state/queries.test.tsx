@@ -34,6 +34,9 @@ describe("useRemoveWallet", () => {
       disconnected: false,
       key_saved: false,
       checklist_hidden: false,
+      disconnected_reason: null,
+      key_change_pending: false,
+      connect_pending: false,
     };
     const removed: string[] = [];
     mockIPC((cmd, args) => {

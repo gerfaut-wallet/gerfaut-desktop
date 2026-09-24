@@ -103,6 +103,9 @@ export function premiumFailure(error: unknown): { message: string; retry: boolea
         return { message: DISCONNECTED_WORDS, retry: false };
       case "premium_no_device":
         return { message: "Connect this device with the Premium key first.", retry: false };
+      case "premium_key_change_pending":
+        // What was asked would lose the new key: the change comes first.
+        return { message: KEY_CHANGE_UNFINISHED_WORDS, retry: false };
       case "app_lock_required":
         return { message: LOCK_REQUIRED_WORDS, retry: false };
       case "premium_rate_limited":
@@ -200,6 +203,18 @@ export const TIMING = {
 
 /** What the section says once the server stopped knowing this device. */
 export const DISCONNECTED_WORDS = "This device was disconnected from your Premium account.";
+
+/** Why this device is disconnected: the server's own sentence when it
+    gave one, a key with every device it takes, and the section's
+    otherwise. */
+export function disconnectedWords(reason: string | null): string {
+  return reason ? sentence(reason) : DISCONNECTED_WORDS;
+}
+
+/** A key change sent and not answered: the server may already hold the
+    new key, and this device is the only other place that does. */
+export const KEY_CHANGE_UNFINISHED_WORDS =
+  "The key change did not finish. Try again to complete it.";
 
 /** Why a change to the account asks for an app lock first. */
 export const LOCK_REQUIRED_WORDS =

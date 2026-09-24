@@ -38,6 +38,9 @@ const NO_KEY: PremiumStatus = {
   disconnected: false,
   key_saved: false,
   checklist_hidden: false,
+  disconnected_reason: null,
+  key_change_pending: false,
+  connect_pending: false,
 };
 
 const ACTIVE: PremiumStatus = {
@@ -51,6 +54,9 @@ const ACTIVE: PremiumStatus = {
   // are not about it.
   key_saved: true,
   checklist_hidden: true,
+  disconnected_reason: null,
+  key_change_pending: false,
+  connect_pending: false,
 };
 
 /** This computer, the account's first device: full access. */
@@ -384,6 +390,26 @@ describe("the licence card", () => {
     // Typing again drops the note: it no longer describes the field.
     await user.type(field, "x");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("reads the vault again after an activation the server did not answer", async () => {
+    const calls = mockPremium({
+      premium_status: () => NO_KEY,
+      premium_activate: () =>
+        Promise.reject({
+          kind: "premium_unreachable",
+          message: "the premium server is unreachable: timed out",
+        }) as never,
+    });
+    renderSection();
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText("Account key"), "abcdefghijkmnpqr");
+    const before = of("premium_status", calls).length;
+    await user.click(screen.getByRole("button", { name: "Activate" }));
+    await screen.findByRole("alert");
+    // The core may keep the connection to send it again: what the
+    // vault now holds is read, not assumed.
+    await waitFor(() => expect(of("premium_status", calls).length).toBeGreaterThan(before));
   });
 
   it("shows the licence from the vault, and lets the key go behind an amber confirmation", async () => {

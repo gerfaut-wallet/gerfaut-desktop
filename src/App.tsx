@@ -28,13 +28,14 @@ import { UtxosView } from "./views/UtxosView";
 
 /** Keeps the server's heartbeat coming while there is something to
     watch: a key is set and at least one wallet was agreed to; and the
-    account's devices current while a key is set. Its own component, so
-    it can sit behind the lock check without a hook running
+    account's devices current while a key is set, or while a connection
+    whose answer was lost waits to go again. Its own component, so it
+    can sit behind the lock check without a hook running
     conditionally. */
 function PremiumWatch({ settings }: { settings: Settings }) {
   const { premium } = settings;
   usePremiumWatch(premium.key !== null && premium.watched.length > 0);
-  useDeviceWatch(premium.key !== null);
+  useDeviceWatch(premium.key !== null || premium.pending_connect != null);
   return null;
 }
 

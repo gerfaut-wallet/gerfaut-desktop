@@ -130,7 +130,10 @@ export function PremiumSection({ wallets: allWallets }: { wallets: WalletMeta[] 
             onRetry={() => void devices.refetch()}
           />
           {!status.data.checklist_hidden && devices.isSuccess && !fullyProtected(protection) && (
-            <ProtectCard keyText={status.data.key ?? ""} protection={protection} />
+            <ProtectCard
+              keyText={status.data.key_change_pending ? null : (status.data.key ?? "")}
+              protection={protection}
+            />
           )}
         </>
       )}

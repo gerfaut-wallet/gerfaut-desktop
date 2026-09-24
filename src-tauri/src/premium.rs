@@ -15,6 +15,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use gerfaut_core::error::{CoreError, CoreResult};
 use gerfaut_core::premium::client::{
     NTFY_BASE_URL, TELEGRAM_BOT, endpoint, new_ntfy_topic, ntfy_subscribe_url, telegram_link_url,
 };
@@ -68,10 +69,24 @@ pub struct PremiumStatus {
     /// The server disowned this device, and the key stays: "Connect
     /// again" is the user's to press.
     pub disconnected: bool,
+    /// Why the server would not connect this device again, in its own
+    /// words, when it said: the key has every device it takes. Null for
+    /// a device disowned or a key no longer known, which the screen
+    /// words itself.
+    pub disconnected_reason: Option<String>,
     /// "I saved my key" was ticked for the key in place.
     pub key_saved: bool,
     /// The "Protect your Premium account" card was hidden.
     pub checklist_hidden: bool,
+    /// A key change was sent and not answered: the key above may no
+    /// longer work. The screen says the change did not finish, offers
+    /// to try again, which sends the same new key, and does not offer
+    /// to copy the key meanwhile.
+    pub key_change_pending: bool,
+    /// A connection of this device was sent and not answered. It is
+    /// sent again as it was, in the background and by the next
+    /// premium call, never drawn anew.
+    pub connect_pending: bool,
 }
 
 /// The account as the server sees it, and the vault brought up to date
@@ -131,8 +146,11 @@ fn status_of(state: &PremiumState, public_key_hex: &str, now: i64) -> PremiumSta
             connected_at: device.connected_at,
         }),
         disconnected: state.disconnected,
+        disconnected_reason: state.disconnected_reason.clone(),
         key_saved: state.key_saved,
         checklist_hidden: state.checklist_hidden,
+        key_change_pending: state.key_change_pending(),
+        connect_pending: state.connect_pending(),
     }
 }
 
@@ -189,19 +207,40 @@ fn platform() -> CommandResult<DevicePlatform> {
     })
 }
 
-/// Connects a vault written before devices existed, once, with the key
-/// it holds: every premium call goes through here first. A device the
-/// server disowned is left alone; connecting it again is the user's
-/// call.
-async fn ensure_device(state: &AppState, base_url: &str) -> CommandResult<()> {
-    if let Some(device) = state
+/// Connects this device when the vault says it should be and is not:
+/// a connection sent and not answered goes again as it was, and a
+/// vault written before devices existed is connected once with the key
+/// it holds. Every premium call goes through here first. A device the
+/// server disowned is left alone, and so is a key it refused: connecting
+/// again is the user's call. After a rate limit, the core answers the
+/// wait that is left without asking the server.
+///
+/// Returns the device it connected, if any, and the core's own error
+/// otherwise: the background round tells a refusal that leaves this
+/// device disconnected from a server it could not reach.
+pub(crate) async fn ensure_device(state: &AppState, base_url: &str) -> CoreResult<Option<Device>> {
+    let platform = DevicePlatform::current().ok_or_else(|| CoreError::InvalidInput {
+        kind: "device platform",
+        detail: "this system is not one the Premium server takes".to_owned(),
+    })?;
+    let device = state
         .manager
-        .premium_ensure_device(base_url, platform()?)
-        .await?
-    {
-        state.devices.saw(&device);
+        .premium_ensure_device(base_url, platform)
+        .await?;
+    if let Some(device) = &device {
+        state.devices.saw(device);
     }
-    Ok(())
+    Ok(device)
+}
+
+/// Whether the vault says this device should be connected and is not,
+/// which is what [`ensure_device`] acts on: a connection sent and not
+/// answered, or a key from before devices, with no token and no word
+/// from the server against it.
+pub(crate) async fn connection_owed(state: &AppState) -> bool {
+    let premium = state.manager.premium_state().await;
+    premium.connect_pending()
+        || (premium.key.is_some() && !premium.has_device() && !premium.disconnected)
 }
 
 /// A client for the server at `base_url`, for this device, connected
@@ -221,6 +260,15 @@ async fn client(state: &AppState) -> CommandResult<PremiumClient> {
 /// to do does not depend on it.
 pub(crate) async fn flush_unwatch(state: &AppState) {
     let _ = state.manager.premium_flush_unwatch(&base_url()).await;
+}
+
+/// Tells the server about the connections this device dropped while it
+/// could not be reached: a key forgotten offline, an account left for
+/// another. Their tokens wait in the vault, never shown, until the
+/// server confirms; nothing waiting costs no request. Called at start,
+/// with the heartbeat, and every five minutes from the background.
+pub(crate) async fn flush_logouts(state: &AppState, base_url: &str) {
+    let _ = state.manager.premium_flush_logouts(base_url).await;
 }
 
 async fn status(state: &AppState) -> PremiumStatus {
@@ -677,13 +725,16 @@ pub async fn premium_events(state: tauri::State<'_, AppState>) -> CommandResult<
 /// device's clock. One that verifies also lifts a dismissed banner: the
 /// next outage is a new one, and gets shown. The pulse is also when a
 /// wallet removed while the server was out of reach gets unwatched
-/// there: every fifteen minutes, the queue gets its chance.
+/// there, and a connection dropped offline gets revoked: every fifteen
+/// minutes, the queues get their chance.
 #[tauri::command]
 pub async fn premium_heartbeat(
     state: tauri::State<'_, AppState>,
 ) -> CommandResult<HeartbeatReport> {
     state.unlocked()?;
-    let client = client(&state).await?;
+    let base_url = base_url();
+    flush_logouts(&state, &base_url).await;
+    let client = client_at(&state, &base_url).await?;
     flush_unwatch(&state).await;
     let report = client.heartbeat(now_unix()).await?;
     let premium = state.manager.premium_state().await;
@@ -789,10 +840,39 @@ mod tests {
                 acknowledged_offline_until: None,
                 device: None,
                 disconnected: false,
+                disconnected_reason: None,
                 key_saved: false,
                 checklist_hidden: false,
+                key_change_pending: false,
+                connect_pending: false,
             }
         );
+    }
+
+    /// What the network left hanging reads from the vault, with no
+    /// network: a key change that did not finish, a connection on its
+    /// way, and why the server would not connect this device again. The
+    /// new key and the token stay on the Rust side.
+    #[test]
+    fn what_the_network_left_hanging_reads_offline() {
+        const TOO_MANY: &str =
+            "this key already has 10 devices; disconnect one from a device with full access";
+        let state: PremiumState = serde_json::from_value(serde_json::json!({
+            "key": "abcdefghijkmnpqr",
+            "disconnected": true,
+            "disconnected_reason": TOO_MANY,
+            "pending_key": "mnpq23456789abcd",
+            "pending_connect": {"key": "abcdefghijkmnpqr", "token": TOKEN, "platform": "linux"},
+        }))
+        .unwrap();
+        let status = status_of(&state, LICENCE_PUBLIC_KEY_HEX, NOW);
+        assert!(status.key_change_pending);
+        assert!(status.connect_pending);
+        assert!(status.disconnected);
+        assert_eq!(status.disconnected_reason.as_deref(), Some(TOO_MANY));
+        let shown = serde_json::to_string(&status).unwrap();
+        assert!(!shown.contains("mnpq23456789abcd"), "{shown}");
+        assert!(!shown.contains(TOKEN), "{shown}");
     }
 
     #[test]
@@ -948,7 +1028,9 @@ mod tests {
     use gerfaut_core::WalletManager;
     use gerfaut_core::store::VaultKey;
 
-    use crate::testkit::{DEVICE_ID, TOKEN, platform_word, sent_field, stub_server};
+    use crate::testkit::{
+        DEVICE_ID, KEY, TOKEN, connected_body, platform_word, sent_field, stub_answers, stub_server,
+    };
 
     fn app_state(manager: WalletManager) -> AppState {
         AppState {
@@ -1257,6 +1339,161 @@ mod tests {
             Round::Idle
         ));
         assert!(requests.try_recv().is_err());
+    }
+
+    const UNREACHABLE: &str = r#"{"error":"node unreachable"}"#;
+
+    /// A fresh vault, with no account yet.
+    fn empty_state(dir: &std::path::Path) -> AppState {
+        app_state(WalletManager::open(dir, VaultKey::Raw([7u8; 32])).unwrap())
+    }
+
+    /// A connection whose answer was lost is sent again by the
+    /// background round as it was, the same token with the same key,
+    /// and the window hears of it. The key is the account's in the
+    /// vault once the server answered, not before.
+    #[test]
+    fn a_connection_whose_answer_was_lost_is_sent_again_as_it_was() {
+        use crate::devices::{Round, round};
+
+        let dir = tempfile::tempdir().unwrap();
+        let state = empty_state(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let platform = DevicePlatform::current().unwrap();
+
+        let (base_url, requests) = stub_server(503, UNREACHABLE);
+        let lost = runtime
+            .block_on(state.manager.premium_connect(&base_url, KEY, platform))
+            .map_err(CommandError::from)
+            .unwrap_err();
+        assert_eq!(lost.kind, "premium_unreachable");
+        let drawn = sent_field(&requests.recv().unwrap(), "token");
+        let hanging = runtime.block_on(status(&state));
+        assert_eq!(hanging.key, None);
+        assert!(hanging.connect_pending);
+
+        let (base_url, requests) =
+            stub_answers(vec![(201, connected_body()), (503, UNREACHABLE.to_owned())]);
+        assert!(matches!(
+            runtime.block_on(round(&state, &base_url, std::time::Instant::now())),
+            Round::Connected
+        ));
+        let again = requests.recv().unwrap();
+        assert!(again.starts_with("POST /v1/devices HTTP/1.1"), "{again}");
+        assert!(again.contains("Bearer abcdefghijkmnpqr"), "{again}");
+        assert_eq!(sent_field(&again, "token"), drawn);
+        let settled = runtime.block_on(status(&state));
+        assert_eq!(settled.key.as_deref(), Some(KEY));
+        assert!(!settled.connect_pending);
+        assert_eq!(
+            settled.device.map(|device| device.id).as_deref(),
+            Some(DEVICE_ID)
+        );
+    }
+
+    /// A rate limit is waited out: the round asks the core, which
+    /// answers the wait without a request, and the connection stays
+    /// owed, as it was, for after it.
+    #[test]
+    fn a_rate_limited_connection_waits_without_a_request() {
+        use crate::devices::{Round, round};
+
+        let dir = tempfile::tempdir().unwrap();
+        let state = empty_state(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        // A bare 429, as a proxy on the path sends it: no wait named,
+        // so the core holds back for its own.
+        let (base_url, requests) = stub_server(429, "<html>Too Many Requests</html>");
+        let limited = runtime
+            .block_on(state.manager.premium_connect(
+                &base_url,
+                KEY,
+                DevicePlatform::current().unwrap(),
+            ))
+            .map_err(CommandError::from)
+            .unwrap_err();
+        assert_eq!(limited.kind, "premium_rate_limited");
+        requests.recv().unwrap();
+
+        assert!(matches!(
+            runtime.block_on(round(&state, &base_url, std::time::Instant::now())),
+            Round::Failed
+        ));
+        assert!(requests.try_recv().is_err(), "nothing sent before the wait");
+        assert!(runtime.block_on(status(&state)).connect_pending);
+    }
+
+    /// A key forgotten while the server could not be told leaves its
+    /// token to revoke: the next flush tells the server with that very
+    /// token, once, and a flush with nothing owed sends nothing.
+    #[test]
+    fn a_connection_dropped_offline_is_revoked_later() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, _) = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime
+            .block_on(state.manager.premium_log_out("http://127.0.0.1:9"))
+            .unwrap();
+        assert_eq!(runtime.block_on(status(&state)).key, None);
+
+        let deleted = format!(r#"{{"id":"{DEVICE_ID}","deleted":true}}"#);
+        let (base_url, requests) = stub_server(200, &deleted);
+        runtime.block_on(flush_logouts(&state, &base_url));
+        let request = requests.recv().unwrap();
+        assert!(
+            request.starts_with("DELETE /v1/devices/me HTTP/1.1"),
+            "{request}"
+        );
+        assert!(request.contains(&format!("Bearer {TOKEN}")), "{request}");
+
+        runtime.block_on(flush_logouts(&state, &base_url));
+        assert!(requests.try_recv().is_err(), "nothing left to tell");
+    }
+
+    /// A key change whose answer was lost leaves the key in place and
+    /// reads as unfinished; trying again sends the very same new key,
+    /// and once the server has answered, it is the key shown. While it
+    /// is unfinished the new key stays on the Rust side, and logging
+    /// out, which would lose it, is refused under a kind of its own.
+    #[test]
+    fn a_key_change_whose_answer_was_lost_finishes_with_the_same_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, _) = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        let (base_url, requests) = stub_server(503, UNREACHABLE);
+        runtime
+            .block_on(state.manager.premium_change_key(&base_url))
+            .unwrap_err();
+        let first = requests.recv().unwrap();
+        assert!(
+            first.starts_with("POST /v1/account/key HTTP/1.1"),
+            "{first}"
+        );
+        let drawn = sent_field(&first, "key");
+        let hanging = runtime.block_on(status(&state));
+        assert!(hanging.key_change_pending);
+        assert_eq!(hanging.key.as_deref(), Some(KEY));
+        let shown = serde_json::to_string(&hanging).unwrap();
+        assert!(!shown.contains(&drawn), "{shown}");
+        let refused = runtime
+            .block_on(state.manager.premium_log_out(&base_url))
+            .map_err(CommandError::from)
+            .unwrap_err();
+        assert_eq!(refused.kind, "premium_key_change_pending");
+
+        let (base_url, requests) = stub_answers(vec![
+            (200, format!(r#"{{"key":"{drawn}"}}"#)),
+            (503, UNREACHABLE.to_owned()),
+        ]);
+        let new_key = runtime
+            .block_on(state.manager.premium_change_key(&base_url))
+            .unwrap();
+        assert_eq!(sent_field(&requests.recv().unwrap(), "key"), drawn);
+        let done = runtime.block_on(status(&state));
+        assert!(!done.key_change_pending);
+        assert_eq!(done.key, Some(new_key));
+        assert!(!done.key_saved);
     }
 
     /// Forgetting the key on a device with full access disconnects it
