@@ -1035,6 +1035,7 @@ mod tests {
         let (state, _) = state_with_account(dir.path());
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let stranger = r#",{"id":"d-mac","platform":"macos","connected_at":1790000100,"access":"pending","pending_until":1790864100,"this_device":false}"#;
+        notifications(&state, true);
 
         let (base_url, requests) = stub_server(200, device_list(stranger));
         let (devices, notices) = runtime
@@ -1073,6 +1074,42 @@ mod tests {
         assert_eq!(notices.len(), 1, "it stopped waiting, then came back");
         assert_eq!(notices[0].title, "Gerfaut");
         assert!(!notices[0].body.contains("Mac"), "{}", notices[0].body);
+    }
+
+    /// Turns the app's alerts on or off, as Settings › Notifications does.
+    fn notifications(state: &AppState, on: bool) {
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(state.manager.set_app_pref(
+                crate::live::NOTIFY_PREF.to_owned(),
+                if on { "1" } else { "0" }.to_owned(),
+            ))
+            .unwrap();
+    }
+
+    /// With the alerts off, a waiting device is recorded and not
+    /// announced; turned on later, they do not bring it up as news. The
+    /// banner, which reads the list, shows it all the same.
+    #[test]
+    fn device_notices_follow_the_alerts_setting() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, _) = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let stranger = r#",{"id":"d-mac","platform":"macos","connected_at":1790000100,"access":"pending","pending_until":1790864100,"this_device":false}"#;
+        let (base_url, _) = stub_server(200, device_list(stranger));
+
+        notifications(&state, false);
+        let (devices, notices) = runtime
+            .block_on(crate::devices::fetch(&state, &base_url))
+            .unwrap();
+        assert_eq!(devices.len(), 2, "the list is there for the banner");
+        assert!(notices.is_empty());
+
+        notifications(&state, true);
+        let (_, notices) = runtime
+            .block_on(crate::devices::fetch(&state, &base_url))
+            .unwrap();
+        assert!(notices.is_empty(), "seen with the alerts off, not news now");
     }
 
     /// This device as the server describes it.

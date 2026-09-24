@@ -3,11 +3,11 @@
 //! A device that connects with the key waits ten days, or until one
 //! with full access approves it, and every channel of the account says
 //! so. The app says it too: a red banner on the Overview while one
-//! waits, and a system notification, once per device. Both come from
-//! the list asked here, when the window opens or comes back to the
-//! front, and every five minutes on this side for as long as the app
-//! runs — minimised and locked included, which is when a window's own
-//! timers stop being worth anything.
+//! waits, and a system notification, once per device, when the alerts
+//! are on. Both come from the list asked here, when the window opens or
+//! comes back to the front, and every five minutes on this side for as
+//! long as the app runs — minimised and locked included, which is when
+//! a window's own timers stop being worth anything.
 //!
 //! Only a device with full access asks for the list: one that waits is
 //! refused it, and could do nothing about another anyway. It asks about
@@ -118,9 +118,11 @@ pub(crate) async fn check(
 }
 
 /// The list, and what it has to announce: one notice per device that
-/// waits and that no earlier check announced. The record is the core's:
-/// a device announced once is not announced again, and one that stopped
-/// waiting leaves it. The notices are written for the lock as it is at
+/// waits and that no earlier check announced, when the alerts are on.
+/// The record is the core's, and it is kept with the alerts off too: a
+/// device seen then is not news the day they are turned on. A device
+/// announced once is not announced again, and one that stopped waiting
+/// leaves the record. The notices are written for the lock as it is at
 /// this moment.
 pub(crate) async fn fetch(
     state: &AppState,
@@ -145,6 +147,9 @@ pub(crate) async fn fetch(
         .premium_mark_announced(&waiting_ids(&devices))
         .await
         .unwrap_or_default();
+    if !live::enabled(&state.manager).await {
+        return Ok((devices, Vec::new()));
+    }
     let locked = locked(state);
     let notices = fresh
         .iter()
