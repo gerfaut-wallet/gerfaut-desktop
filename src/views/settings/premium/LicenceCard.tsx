@@ -1,4 +1,4 @@
-import { ExternalLink, KeyRound } from "lucide-react";
+import { Copy, ExternalLink, KeyRound } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
@@ -222,21 +222,34 @@ function KeyInPlace({ status, access }: { status: PremiumStatus; access: DeviceA
   const { showToast } = useUi();
   const [changing, setChanging] = useState(false);
   const [forgetting, setForgetting] = useState(false);
+  /** The clipboard refused the key: said under the buttons, where it
+      was asked, and not in a toast that would be gone before it is
+      read. */
+  const [copyFailed, setCopyFailed] = useState(false);
   const key = status.key ?? "";
   const licence = status.licence;
   const connected = status.device !== null && !status.disconnected;
   const full = access === "full" && connected;
 
-  // The key goes to the clipboard, not into the address: see RENEW_URL.
-  // The page opens either way — someone who has the key in hand can
-  // still type it — and the toast says which of the two happened.
-  const renew = async () => {
+  const copy = async (): Promise<boolean> => {
     const copied = await navigator.clipboard
       .writeText(key)
       .then(() => true)
       .catch(() => false);
-    showToast(copied ? "Key copied, paste it on the renewal page" : "Could not copy the key");
+    setCopyFailed(!copied);
+    return copied;
+  };
+
+  // The key goes to the clipboard, not into the address: see RENEW_URL.
+  // The page opens either way — someone who has the key in hand can
+  // still type it.
+  const renew = async () => {
+    if (await copy()) showToast("Key copied, paste it on the renewal page");
     await openUrl(RENEW_URL);
+  };
+
+  const copyKey = async () => {
+    if (await copy()) showToast("Key copied");
   };
 
   return (
@@ -265,6 +278,14 @@ function KeyInPlace({ status, access }: { status: PremiumStatus; access: DeviceA
           <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
           Renew
         </Button>
+        {/* Until its owner says it is saved: nothing else can hand it
+            back to them. */}
+        {!status.key_saved && (
+          <Button variant="ghost" onClick={() => void copyKey()}>
+            <Copy size={14} strokeWidth={1.5} aria-hidden />
+            Copy key
+          </Button>
+        )}
         {full && (
           <Button variant="ghost" aria-haspopup="dialog" onClick={() => setChanging(true)}>
             Change key
@@ -281,6 +302,11 @@ function KeyInPlace({ status, access }: { status: PremiumStatus; access: DeviceA
           </Button>
         )}
       </div>
+      {copyFailed && (
+        <Notice tone="info" role="alert">
+          Could not copy the key.
+        </Notice>
+      )}
       {forgetting && access !== "pending" && (
         <ForgetKey
           allowDelete={full}

@@ -826,3 +826,79 @@ describe("the protect your premium account card", () => {
     expect(screen.queryByRole("heading", { name: "Protect your Premium account" })).not.toBeInTheDocument();
   });
 });
+
+// --- copying the key --------------------------------------------------------------
+
+describe("copying the key", () => {
+  /** A clipboard that refuses, for the length of one test. */
+  function refusingClipboard() {
+    const spy = vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("denied"));
+    return () => spy.mockRestore();
+  }
+
+  it("offers the key on the licence card until it is saved, and says a refusal under it", async () => {
+    let status: PremiumStatus = { ...STATUS, key_saved: false };
+    mockPremium({ premium_status: () => status });
+    const client = renderSection();
+    const user = userEvent.setup();
+    const licence = await screen.findByRole("heading", { name: "Licence" });
+    const copy = await within(licence.closest("section")!).findByRole("button", {
+      name: "Copy key",
+    });
+
+    const restore = refusingClipboard();
+    await user.click(copy);
+    const note = await within(licence.closest("section")!).findByRole("alert");
+    expect(note).toHaveTextContent("Could not copy the key.");
+    expect(note).toHaveClass("bg-pending-surface");
+    expect(useUi.getState().toast).toBeNull();
+    restore();
+
+    await user.click(copy);
+    expect(await navigator.clipboard.readText()).toBe("abcd-efgh-ijkm-npqr");
+    await waitFor(() =>
+      expect(within(licence.closest("section")!).queryByRole("alert")).not.toBeInTheDocument(),
+    );
+
+    // Saved: the licence card no longer offers it.
+    status = { ...status, key_saved: true };
+    await act(() => client.invalidateQueries({ queryKey: ["premium", "status"] }));
+    await waitFor(() =>
+      expect(
+        within(licence.closest("section")!).queryByRole("button", { name: "Copy key" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("says a refused copy of the new key under it, never in a toast", async () => {
+    mockPremium({ premium_change_key: () => "wxyz-2345-6789-abcd" });
+    renderSection();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Change key" }));
+    const dialog = screen.getByRole("dialog", { name: "Change your Premium key" });
+    await user.click(within(dialog).getByRole("button", { name: "Change key" }));
+    await confirmIdentity(user, "Change key");
+    await within(dialog).findByText("wxyz-2345-6789-abcd");
+
+    const restore = refusingClipboard();
+    await user.click(within(dialog).getByRole("button", { name: "Copy" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Could not copy the key.");
+    expect(useUi.getState().toast).toBeNull();
+    restore();
+  });
+
+  it("says a refused copy under the checklist step", async () => {
+    mockPremium({
+      premium_status: () => ({ ...STATUS, key_saved: false, checklist_hidden: false }),
+    });
+    renderSection();
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "Protect your Premium account" });
+    const step = card("Protect your Premium account").getAllByRole("listitem")[2];
+    const restore = refusingClipboard();
+    await user.click(within(step).getByRole("button", { name: "Copy key" }));
+    expect(await within(step).findByRole("alert")).toHaveTextContent("Could not copy the key.");
+    expect(useUi.getState().toast).toBeNull();
+    restore();
+  });
+});

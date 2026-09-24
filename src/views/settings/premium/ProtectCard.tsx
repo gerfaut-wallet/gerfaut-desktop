@@ -3,6 +3,7 @@ import { Circle, CircleCheck, Copy, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Button } from "../../../components/Button";
+import { Notice } from "../../../components/Notice";
 import { useHideChecklist, useSetKeySaved } from "../../../state/premiumQueries";
 import { useUi } from "../../../state/store";
 import { SectionCard } from "../primitives";
@@ -35,12 +36,17 @@ export function ProtectCard({ keyText, protection }: { keyText: string; protecti
   const saved = useSetKeySaved();
   const [failure, setFailure] = useState<unknown>(undefined);
 
+  /** The clipboard refused the key: said under the step, not in a
+      toast gone before it is read. */
+  const [copyFailed, setCopyFailed] = useState(false);
+
   const copyKey = async () => {
     const copied = await navigator.clipboard
       .writeText(keyText)
       .then(() => true)
       .catch(() => false);
-    showToast(copied ? "Key copied" : "Could not copy the key");
+    setCopyFailed(!copied);
+    if (copied) showToast("Key copied");
   };
 
   return (
@@ -69,6 +75,13 @@ export function ProtectCard({ keyText, protection }: { keyText: string; protecti
             done={protection.keySaved}
             title="Save your key in a password manager"
             hint="Your key is the whole account. Nobody can send it to you again."
+            note={
+              copyFailed && (
+                <Notice tone="info" role="alert">
+                  Could not copy the key.
+                </Notice>
+              )
+            }
           >
             <Button variant="ghost" className="h-9" onClick={() => void copyKey()}>
               <Copy size={14} strokeWidth={1.5} aria-hidden />
@@ -113,11 +126,14 @@ function Step({
   done,
   title,
   hint,
+  note,
   children,
 }: {
   done: boolean;
   title: string;
   hint: string;
+  /** What the step's own action left behind, under it. */
+  note?: ReactNode;
   children?: ReactNode;
 }) {
   const Glyph = done ? CircleCheck : Circle;
@@ -147,6 +163,7 @@ function Step({
       {!done && children && (
         <span className="ml-auto flex items-center gap-1 self-center">{children}</span>
       )}
+      {!done && note && <div className="basis-full pl-[30px]">{note}</div>}
     </li>
   );
 }

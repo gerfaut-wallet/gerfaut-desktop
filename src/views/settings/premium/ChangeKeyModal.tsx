@@ -28,6 +28,7 @@ export function ChangeKeyModal({ onClose }: { onClose: () => void }) {
   const [newKey, setNewKey] = useState<string | null>(null);
   const [stored, setStored] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const keyHeading = useRef<HTMLParagraphElement>(null);
 
   // The new key is the one thing on screen now: the focus goes to it,
@@ -40,11 +41,14 @@ export function ChangeKeyModal({ onClose }: { onClose: () => void }) {
     if (newKey === null) return;
     try {
       await navigator.clipboard.writeText(newKey);
+      setCopyFailed(false);
       setCopied(true);
       showToast("Key copied");
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      showToast("Could not copy the key");
+      // Said under the key, where it is to be copied from by hand now,
+      // and not in a toast gone before it is read.
+      setCopyFailed(true);
     }
   };
 
@@ -112,6 +116,11 @@ export function ChangeKeyModal({ onClose }: { onClose: () => void }) {
                   {copied ? "Copied" : "Copy"}
                 </Button>
               </div>
+              {copyFailed && (
+                <Notice tone="info" role="alert" className="mt-3">
+                  Could not copy the key.
+                </Notice>
+              )}
               <p className="mt-3 font-ui text-sm text-text">
                 Save it in your password manager now. This device keeps it, but nothing else
                 does.
