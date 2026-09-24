@@ -1,6 +1,6 @@
 import { ExternalLink, KeyRound } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Button } from "../../../components/Button";
 import { Notice } from "../../../components/Notice";
@@ -63,6 +63,12 @@ export function LicenceCard({
   const [reconnectFailure, setReconnectFailure] = useState<unknown>(undefined);
   const ready = isWellFormedKey(key);
   const asking = status.key === null || keyChanged;
+
+  // The field comes back in place of "Connect again", which is gone:
+  // the caret goes where the new key is typed.
+  useEffect(() => {
+    if (keyChanged) document.getElementById("premium-key")?.focus();
+  }, [keyChanged]);
 
   const run = () => {
     if (!ready || activate.isPending) return;

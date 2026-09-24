@@ -559,6 +559,7 @@ describe("a disconnected device", () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Connect again" }));
     const field = await screen.findByLabelText("Account key");
+    await waitFor(() => expect(field).toHaveFocus());
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "This key no longer works. Enter the new one.",
     );
