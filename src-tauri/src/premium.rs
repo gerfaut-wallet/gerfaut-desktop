@@ -258,8 +258,8 @@ async fn client(state: &AppState) -> CommandResult<PremiumClient> {
 /// last heard, and lets a failure go: what could not be told stays
 /// queued in the vault for the next call, and whatever the caller came
 /// to do does not depend on it.
-pub(crate) async fn flush_unwatch(state: &AppState) {
-    let _ = state.manager.premium_flush_unwatch(&base_url()).await;
+pub(crate) async fn flush_unwatch(state: &AppState, base_url: &str) {
+    let _ = state.manager.premium_flush_unwatch(base_url).await;
 }
 
 /// Tells the server about the connections this device dropped while it
@@ -534,8 +534,9 @@ pub async fn premium_account(state: tauri::State<'_, AppState>) -> CommandResult
 #[tauri::command]
 pub async fn premium_wallets(state: tauri::State<'_, AppState>) -> CommandResult<Vec<WalletWatch>> {
     state.unlocked()?;
-    let client = client(&state).await?;
-    flush_unwatch(&state).await;
+    let base_url = base_url();
+    let client = client_at(&state, &base_url).await?;
+    flush_unwatch(&state, &base_url).await;
     Ok(client.wallets().await?)
 }
 
@@ -732,11 +733,32 @@ pub async fn premium_heartbeat(
     state: tauri::State<'_, AppState>,
 ) -> CommandResult<HeartbeatReport> {
     state.unlocked()?;
-    let base_url = base_url();
-    flush_logouts(&state, &base_url).await;
-    let client = client_at(&state, &base_url).await?;
-    flush_unwatch(&state).await;
-    let report = client.heartbeat(now_unix()).await?;
+    heartbeat(&state, &base_url(), &endpoint().1, now_unix()).await
+}
+
+/// [`premium_heartbeat`] against the server at `base_url`, whose
+/// signature is checked against `public_key`.
+///
+/// The heartbeat route takes no credential, so the connection the vault
+/// owes goes along at best and never stands in its way: a rate limit
+/// the core waits out, or a key the server refused, says nothing about
+/// whether the watch is up, and must not raise the banner that says it
+/// is down.
+async fn heartbeat(
+    state: &AppState,
+    base_url: &str,
+    public_key: &str,
+    now: i64,
+) -> CommandResult<HeartbeatReport> {
+    flush_logouts(state, base_url).await;
+    let _ = ensure_device(state, base_url).await;
+    let client = state
+        .manager
+        .premium_client(base_url)
+        .await?
+        .with_public_key(public_key);
+    flush_unwatch(state, base_url).await;
+    let report = client.heartbeat(now).await?;
     let premium = state.manager.premium_state().await;
     if premium.acknowledged_offline_until.is_some() {
         let mut premium = premium;
@@ -1519,6 +1541,49 @@ mod tests {
         // Waiting: no secret needed.
         seen_waiting(&state);
         assert!(!runtime.block_on(full_access(&state)));
+    }
+
+    /// The heartbeat route takes no credential. A connection owed and
+    /// held back by a rate limit, which the core answers without a
+    /// request, goes along at best: the heartbeat still verifies, and
+    /// the banner that says the watch is down stays down.
+    #[test]
+    fn a_rate_limited_connection_does_not_stop_the_heartbeat() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = empty_state(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (base_url, requests) = stub_server(429, "<html>Too Many Requests</html>");
+        runtime
+            .block_on(state.manager.premium_connect(
+                &base_url,
+                KEY,
+                DevicePlatform::current().unwrap(),
+            ))
+            .unwrap_err();
+        requests.recv().unwrap();
+        assert!(runtime.block_on(connection_owed(&state)));
+
+        let (signing, public) = signer();
+        let (base_url, requests) = stub_server(200, &signed_heartbeat(&signing, NOW));
+        let report = runtime
+            .block_on(heartbeat(&state, &base_url, &public, NOW))
+            .unwrap();
+        assert_eq!(report.heartbeat.now, NOW);
+        let request = requests.recv().unwrap();
+        assert!(
+            request.starts_with("GET /v1/heartbeat HTTP/1.1"),
+            "{request}"
+        );
+        assert!(requests.try_recv().is_err(), "nothing else was sent");
+        assert!(runtime.block_on(status(&state)).connect_pending);
+    }
+
+    /// `GET /v1/heartbeat` at `now`, signed the way the server signs it.
+    fn signed_heartbeat(signing: &SigningKey, now: i64) -> String {
+        let payload = format!(r#"{{"now":{now},"tip_height":900000}}"#);
+        let signature = HEXLOWER.encode(&signing.sign(payload.as_bytes()).to_bytes());
+        let public = HEXLOWER.encode(&signing.verifying_key().to_bytes());
+        format!(r#"{{"heartbeat":{payload},"signature":"{signature}","public_key":"{public}"}}"#)
     }
 
     /// The commands that ask for the secret only in some cases say so

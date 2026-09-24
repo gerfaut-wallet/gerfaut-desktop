@@ -448,7 +448,7 @@ async fn remove_wallet(
     state.unlocked()?;
     remove_checked(&state, &id, secret.as_deref()).await?;
     tauri::async_runtime::spawn(async move {
-        premium::flush_unwatch(&app.state::<AppState>()).await;
+        premium::flush_unwatch(&app.state::<AppState>(), &premium::base_url()).await;
     });
     Ok(())
 }
