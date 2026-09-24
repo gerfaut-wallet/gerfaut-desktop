@@ -99,6 +99,14 @@ describe("what the server says", () => {
       message: "That is not an address Gerfaut can watch: addr() holds one address.",
       retry: false,
     });
+    // A refusal with a status and no words is not the server's: a proxy
+    // without a route, a captive portal. Worth a retry, never shown raw.
+    for (const bare of ["HTTP 404", "HTTP 405"]) {
+      expect(premiumFailure({ kind: "premium_rejected", message: bare })).toEqual({
+        message: "Could not reach the Gerfaut server.",
+        retry: true,
+      });
+    }
     // A rate limit is a wait, worded by the Rust side, and worth a retry.
     expect(
       premiumFailure({ kind: "premium_rate_limited", message: "Try again in 42 s." }),
@@ -224,5 +232,18 @@ describe("a disconnected device", () => {
         "this key already has 10 devices; disconnect one from a device with full access",
       ),
     ).toBe("This key already has 10 devices; disconnect one from a device with full access.");
+  });
+
+  it("says nothing of a bare status, which is no sentence of the server's", () => {
+    // What the core keeps when a refusal came without the server's
+    // words: a proxy with no route, a captive portal.
+    for (const bare of ["HTTP 404", "HTTP 410", " HTTP 400 "]) {
+      expect(disconnectedWords(bare)).toBe(
+        "This device was disconnected from your Premium account.",
+      );
+    }
+    expect(disconnectedWords("")).toBe("This device was disconnected from your Premium account.");
+    // A sentence that merely mentions a status is still the server's.
+    expect(disconnectedWords("HTTP 404 is not a key")).toBe("HTTP 404 is not a key.");
   });
 });

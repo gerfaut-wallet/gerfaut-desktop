@@ -77,6 +77,14 @@ export const NETWORK_WORD: Record<Network, string> = {
   regtest: "regtest",
 };
 
+/** The server did not answer, or something else answered for it. */
+const UNREACHABLE_WORDS = "Could not reach the Gerfaut server.";
+
+/** A refusal that came with no words of the server's: the core keeps
+    the status alone, "HTTP 404", which is what a proxy without a route
+    or a captive portal answers. */
+const BARE_STATUS = /^HTTP \d{3}$/;
+
 /** How a failure of the premium server reads under a card: one
     sentence, and whether offering "Retry" makes sense. The kind comes
     from the core; the words are the section's. */
@@ -93,10 +101,16 @@ export function premiumFailure(error: unknown): { message: string; retry: boolea
         // "Could not reach" would make a refusal read as an outage.
         const words = /HTTP \d{3}: (.+)$/.exec(error.message)?.[1];
         return {
-          message: words ? sentence(words) : "Could not reach the Gerfaut server.",
+          message: words ? sentence(words) : UNREACHABLE_WORDS,
           retry: true,
         };
       }
+      case "premium_rejected":
+        // A status with none of the server's words did not come from
+        // it: whatever answered in its place is out of the way later.
+        return BARE_STATUS.test(error.message.trim())
+          ? { message: UNREACHABLE_WORDS, retry: true }
+          : { message: sentence(error.message), retry: false };
       case "premium_no_key":
         return { message: "Enter an account key first.", retry: false };
       case "premium_device_disconnected":
@@ -125,7 +139,7 @@ export function premiumFailure(error: unknown): { message: string; retry: boolea
         return { message: sentence(error.message), retry: false };
     }
   }
-  return { message: "Could not reach the Gerfaut server.", retry: true };
+  return { message: UNREACHABLE_WORDS, retry: true };
 }
 
 /** The server writes its refusals in lower case; a note starts with a
@@ -206,9 +220,10 @@ export const DISCONNECTED_WORDS = "This device was disconnected from your Premiu
 
 /** Why this device is disconnected: the server's own sentence when it
     gave one, a key with every device it takes, and the section's
-    otherwise. */
+    otherwise, a bare status included. */
 export function disconnectedWords(reason: string | null): string {
-  return reason ? sentence(reason) : DISCONNECTED_WORDS;
+  const words = reason?.trim() ?? "";
+  return words === "" || BARE_STATUS.test(words) ? DISCONNECTED_WORDS : sentence(words);
 }
 
 /** A key change sent and not answered: the server may already hold the

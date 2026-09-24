@@ -751,6 +751,31 @@ describe("a disconnected device", () => {
       screen.queryByText("This device was disconnected from your Premium account."),
     ).not.toBeInTheDocument();
   });
+
+  it("keeps the plain note when the refusal came with a status and no words", async () => {
+    let status = DISCONNECTED;
+    mockPremium({
+      premium_status: () => status,
+      // A proxy with no route answers in the server's place.
+      premium_reconnect: () => {
+        status = { ...DISCONNECTED, disconnected_reason: "HTTP 404" };
+        return Promise.reject({ kind: "premium_rejected", message: "HTTP 404" }) as never;
+      },
+    });
+    renderSection();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Connect again" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not reach the Gerfaut server.",
+    );
+    const note = await screen.findByText("This device was disconnected from your Premium account.");
+    expect(screen.queryByText(/HTTP 404/)).not.toBeInTheDocument();
+    expect(
+      within(note.closest("[role=status]") as HTMLElement).getByRole("button", {
+        name: "Connect again",
+      }),
+    ).toBeInTheDocument();
+  });
 });
 
 // --- change key ---------------------------------------------------------------
