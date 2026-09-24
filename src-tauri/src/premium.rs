@@ -1,28 +1,33 @@
-//! The premium commands: the account key and its licence, the wallets
-//! the server watches, the channels it tells, and the heartbeat that
-//! says it is up.
+//! The premium commands: the account key and the device it connects,
+//! the account's other devices, the licence, the wallets the server
+//! watches, the channels it tells, and the heartbeat that says it is up.
 //!
 //! Every request leaves from here, and every signature is checked here,
-//! by the core, against the key it embeds. The webview shows what was
+//! by the core, against the key it trusts. The webview shows what was
 //! verified and never judges a certificate or a heartbeat itself; the
 //! descriptor a wallet is registered with is read from the vault, not
-//! taken from the screen.
+//! taken from the screen, and the token this device speaks with never
+//! leaves the core.
+//!
+//! What changes who can use the account, or what it watches and where
+//! it tells, takes the app lock's secret and checks it first, through
+//! the lock screen's own path: see [`confirm_identity`].
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gerfaut_core::premium::client::{
-    DEFAULT_BASE_URL, NTFY_BASE_URL, TELEGRAM_BOT, new_ntfy_topic, ntfy_subscribe_url,
-    telegram_link_url,
+    NTFY_BASE_URL, TELEGRAM_BOT, endpoint, new_ntfy_topic, ntfy_subscribe_url, telegram_link_url,
 };
-use gerfaut_core::premium::licence::{self, LICENCE_PUBLIC_KEY_HEX};
+use gerfaut_core::premium::licence;
 use gerfaut_core::premium::{
-    Account, Channel, ChannelKind, Event, HeartbeatReport, LicenceState, PremiumClient,
-    PremiumState, WalletWatch,
+    Account, Channel, ChannelKind, Device, DeviceAccess, DevicePlatform, Event, HeartbeatReport,
+    LicenceState, PremiumClient, PremiumState, WalletWatch,
 };
 use gerfaut_core::wallet::meta::WalletKind;
 use serde::Serialize;
+use std::sync::atomic::Ordering;
 
-use crate::{AppState, CommandError, CommandResult};
+use crate::{AppState, CommandError, CommandResult, devices};
 
 /// How many events the "Recent alerts" card shows.
 const RECENT_EVENTS: usize = 20;
@@ -34,6 +39,14 @@ const EVENTS_PAGE: u32 = 500;
 /// outlives it is worth a second look.
 const ACKNOWLEDGE_SECS: i64 = 24 * 60 * 60;
 
+/// This device's connection as the screen may know it: which device it
+/// is and since when. Never the token.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DeviceConnection {
+    pub id: String,
+    pub connected_at: i64,
+}
+
 /// What the vault says about the account, readable without a network.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PremiumStatus {
@@ -41,14 +54,24 @@ pub struct PremiumStatus {
     /// one is entered.
     pub key: Option<String>,
     /// What the stored certificate says right now, verified offline
-    /// against the embedded key; null without a certificate, and for
-    /// one this build cannot verify.
+    /// against the trusted key; null without a certificate, and for one
+    /// this build cannot verify.
     pub licence: Option<LicenceState>,
     /// The wallets the user agreed to send to the server.
     pub consented: Vec<String>,
     /// Unix seconds until which the "watch is offline" banner stays
     /// quiet because it was dismissed.
     pub acknowledged_offline_until: Option<i64>,
+    /// This device's connection; null until the key connects it, and
+    /// again once the server disowned it.
+    pub device: Option<DeviceConnection>,
+    /// The server disowned this device, and the key stays: "Connect
+    /// again" is the user's to press.
+    pub disconnected: bool,
+    /// "I saved my key" was ticked for the key in place.
+    pub key_saved: bool,
+    /// The "Protect your Premium account" card was hidden.
+    pub checklist_hidden: bool,
 }
 
 /// The account as the server sees it, and the vault brought up to date
@@ -83,6 +106,12 @@ fn now_unix() -> i64 {
         .unwrap_or_default()
 }
 
+/// The premium server this build talks to. A release build names the
+/// production server; a debug build may be pointed at another one.
+pub(crate) fn base_url() -> String {
+    endpoint().0
+}
+
 /// The vault's premium state read against a clock and a licence key.
 /// A certificate that does not verify reads as no certificate: the
 /// screen then says nothing it cannot stand behind.
@@ -97,6 +126,13 @@ fn status_of(state: &PremiumState, public_key_hex: &str, now: i64) -> PremiumSta
         licence,
         consented: state.watched.iter().map(|w| w.wallet_id.clone()).collect(),
         acknowledged_offline_until: state.acknowledged_offline_until,
+        device: state.device.as_ref().map(|device| DeviceConnection {
+            id: device.id.clone(),
+            connected_at: device.connected_at,
+        }),
+        disconnected: state.disconnected,
+        key_saved: state.key_saved,
+        checklist_hidden: state.checklist_hidden,
     }
 }
 
@@ -142,8 +178,41 @@ fn view_of(channel: Channel) -> ChannelView {
     }
 }
 
+/// The platform this device connects as. The desktop builds for three,
+/// all of which the server takes.
+fn platform() -> CommandResult<DevicePlatform> {
+    DevicePlatform::current().ok_or_else(|| {
+        CommandError::new(
+            "invalid_input",
+            "this system is not one the Premium server takes",
+        )
+    })
+}
+
+/// Connects a vault written before devices existed, once, with the key
+/// it holds: every premium call goes through here first. A device the
+/// server disowned is left alone; connecting it again is the user's
+/// call.
+async fn ensure_device(state: &AppState, base_url: &str) -> CommandResult<()> {
+    if let Some(device) = state
+        .manager
+        .premium_ensure_device(base_url, platform()?)
+        .await?
+    {
+        state.devices.saw(&device);
+    }
+    Ok(())
+}
+
+/// A client for the server at `base_url`, for this device, connected
+/// on the way when the vault predates devices.
+async fn client_at(state: &AppState, base_url: &str) -> CommandResult<PremiumClient> {
+    ensure_device(state, base_url).await?;
+    Ok(state.manager.premium_client(base_url).await?)
+}
+
 async fn client(state: &AppState) -> CommandResult<PremiumClient> {
-    Ok(state.manager.premium_client(DEFAULT_BASE_URL).await?)
+    client_at(state, &base_url()).await
 }
 
 /// Tells the server about the wallets removed from this device since it
@@ -151,31 +220,72 @@ async fn client(state: &AppState) -> CommandResult<PremiumClient> {
 /// queued in the vault for the next call, and whatever the caller came
 /// to do does not depend on it.
 pub(crate) async fn flush_unwatch(state: &AppState) {
-    let _ = state.manager.premium_flush_unwatch(DEFAULT_BASE_URL).await;
+    let _ = state.manager.premium_flush_unwatch(&base_url()).await;
 }
 
 async fn status(state: &AppState) -> PremiumStatus {
     status_of(
         &state.manager.premium_state().await,
-        LICENCE_PUBLIC_KEY_HEX,
+        &endpoint().1,
         now_unix(),
     )
 }
 
-/// Stores the certificate a licence answer carried, and the key it was
-/// asked with when one is given.
-async fn store_licence(
-    state: &AppState,
-    key: Option<&str>,
-    certificate: String,
-) -> CommandResult<()> {
-    let mut premium = state.manager.premium_state().await;
-    if let Some(key) = key {
-        premium.key = Some(licence::normalize_key(key));
+/// Whether the person at the keyboard knows the app lock's secret, asked
+/// before anything that changes who can use the account, or what it
+/// watches and where it tells.
+///
+/// The secret goes through the core the way the lock screen's does: the
+/// same hash, the same count of failures and the same wait after three,
+/// shared with the lock screen, so trying PINs here costs what it costs
+/// there. A secret that does not verify comes back as `identity_refused`
+/// with the wait before the next one is looked at. With no lock on this
+/// device the answer is `app_lock_required`: an unlocked computer is
+/// all it would take otherwise, and the screen says to set a lock.
+pub(crate) async fn confirm_identity(state: &AppState, secret: &str) -> CommandResult<()> {
+    if state.manager.app_lock().await.is_none() {
+        return Err(CommandError::new(
+            "app_lock_required",
+            "this needs an app lock on this device",
+        ));
     }
-    premium.certificate = Some(certificate);
-    state.manager.set_premium_state(premium).await?;
-    Ok(())
+    let verdict = state.manager.verify_app_lock(secret).await?;
+    if verdict.unlocked {
+        return Ok(());
+    }
+    Err(CommandError {
+        kind: "identity_refused",
+        message: "the PIN or password did not match".to_owned(),
+        retry_after_secs: Some(verdict.retry_after_secs),
+    })
+}
+
+/// [`confirm_identity`] for a command that asks for the secret only in
+/// some cases, and may have been handed none: that is refused as a
+/// secret that did not match, without counting against the lock.
+pub(crate) async fn confirm_identity_given(
+    state: &AppState,
+    secret: Option<&str>,
+) -> CommandResult<()> {
+    match secret {
+        Some(secret) => confirm_identity(state, secret).await,
+        None if state.manager.app_lock().await.is_none() => Err(CommandError::new(
+            "app_lock_required",
+            "this needs an app lock on this device",
+        )),
+        None => Err(CommandError::new(
+            "identity_refused",
+            "this needs the PIN or password of the app lock",
+        )),
+    }
+}
+
+/// Whether removing this wallet from the device ends the server's watch
+/// of it: a key is set and the wallet was agreed to, the rule the core
+/// queues the unwatch by.
+pub(crate) async fn watched_by_server(state: &AppState, id: &str) -> bool {
+    let premium = state.manager.premium_state().await;
+    premium.has_key() && premium.is_consented(id)
 }
 
 // --- commands ----------------------------------------------------------
@@ -188,9 +298,11 @@ pub async fn premium_status(state: tauri::State<'_, AppState>) -> CommandResult<
     Ok(status(&state).await)
 }
 
-/// Asks the server for the licence of a key just typed, and keeps both
-/// once the certificate verifies. A key the server does not know, or one
-/// never paid for, is refused and nothing is stored.
+/// Connects this device with a key just typed: the one request the key
+/// goes with. The core keeps the key with the token the server handed
+/// back, in one write, and fetches the certificate after. A key the
+/// server does not know is refused and nothing is stored. The account's
+/// first device gets full access at once; any other waits for approval.
 #[tauri::command]
 pub async fn premium_activate(
     state: tauri::State<'_, AppState>,
@@ -198,29 +310,138 @@ pub async fn premium_activate(
 ) -> CommandResult<PremiumStatus> {
     state.unlocked()?;
     if !licence::is_well_formed_key(&key) {
-        return Err(CommandError {
-            kind: "invalid_input",
-            message: "a key is sixteen letters and digits".to_owned(),
-        });
+        return Err(CommandError::new(
+            "invalid_input",
+            "a key is sixteen letters and digits",
+        ));
     }
-    let mut client = client(&state).await?;
-    client.set_key(Some(key.clone()));
-    let licence = client.licence().await?;
-    store_licence(&state, Some(&key), licence.certificate).await?;
+    let device = state
+        .manager
+        .premium_connect(&base_url(), &key, platform()?)
+        .await?;
+    state.devices.saw(&device);
     Ok(status(&state).await)
 }
 
-/// Drops the key and its certificate from this device. The server keeps
-/// watching what it was told to; the consents stay, so a wallet already
-/// agreed to is not asked about twice.
+/// Connects this device again after the server disowned it, with the
+/// key the vault kept. A key changed on another device comes back as
+/// `premium_unknown_key`, and the screen asks for the new one.
+#[tauri::command]
+pub async fn premium_reconnect(state: tauri::State<'_, AppState>) -> CommandResult<PremiumStatus> {
+    state.unlocked()?;
+    let Some(key) = state.manager.premium_state().await.key else {
+        return Err(CommandError::new("premium_no_key", "no premium key"));
+    };
+    let device = state
+        .manager
+        .premium_connect(&base_url(), &key, platform()?)
+        .await?;
+    state.devices.saw(&device);
+    Ok(status(&state).await)
+}
+
+/// Logs this device out and drops the key here: the server is told as
+/// far as it can be reached, and the account and what it watches stay.
+/// The consents stay too, so a wallet already agreed to is not asked
+/// about twice.
 #[tauri::command]
 pub async fn premium_forget(state: tauri::State<'_, AppState>) -> CommandResult<PremiumStatus> {
     state.unlocked()?;
-    let mut premium = state.manager.premium_state().await;
-    premium.key = None;
-    premium.certificate = None;
-    premium.acknowledged_offline_until = None;
-    state.manager.set_premium_state(premium).await?;
+    state.manager.premium_log_out(&base_url()).await?;
+    state.devices.forget();
+    Ok(status(&state).await)
+}
+
+/// This device as the server sees it: full access, or waiting and until
+/// when. A vault that predates devices is connected on the way.
+#[tauri::command]
+pub async fn premium_device(state: tauri::State<'_, AppState>) -> CommandResult<Device> {
+    state.unlocked()?;
+    let base_url = base_url();
+    ensure_device(&state, &base_url).await?;
+    let device = state.manager.premium_device(&base_url).await?;
+    state.devices.saw(&device);
+    Ok(device)
+}
+
+/// Every device of the account, oldest first, for a device with full
+/// access. A device waiting for approval is announced here once, as the
+/// background check does: see [`devices::check`].
+#[tauri::command]
+pub async fn premium_devices(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> CommandResult<Vec<Device>> {
+    state.unlocked()?;
+    let base_url = base_url();
+    ensure_device(&state, &base_url).await?;
+    Ok(devices::check(&app, &state, &base_url).await?)
+}
+
+/// Gives a waiting device full access now, once the app lock's secret
+/// went through.
+#[tauri::command]
+pub async fn premium_approve_device(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    secret: String,
+) -> CommandResult<Device> {
+    state.unlocked()?;
+    confirm_identity(&state, &secret).await?;
+    let base_url = base_url();
+    ensure_device(&state, &base_url).await?;
+    Ok(state.manager.premium_approve_device(&base_url, &id).await?)
+}
+
+/// Refuses a waiting device, or disconnects one with full access, once
+/// the app lock's secret went through.
+#[tauri::command]
+pub async fn premium_remove_device(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    secret: String,
+) -> CommandResult<()> {
+    state.unlocked()?;
+    confirm_identity(&state, &secret).await?;
+    let base_url = base_url();
+    ensure_device(&state, &base_url).await?;
+    Ok(state.manager.premium_remove_device(&base_url, &id).await?)
+}
+
+/// Replaces the account key once the app lock's secret went through:
+/// the old key stops working everywhere, every other device is
+/// disconnected, and this one stays. Answers the new key, formatted to
+/// be shown: it is shown there and nowhere else.
+#[tauri::command]
+pub async fn premium_change_key(
+    state: tauri::State<'_, AppState>,
+    secret: String,
+) -> CommandResult<String> {
+    state.unlocked()?;
+    confirm_identity(&state, &secret).await?;
+    let base_url = base_url();
+    ensure_device(&state, &base_url).await?;
+    Ok(state.manager.premium_change_key(&base_url).await?)
+}
+
+/// Records whether the key was saved somewhere safe.
+#[tauri::command]
+pub async fn premium_set_key_saved(
+    state: tauri::State<'_, AppState>,
+    saved: bool,
+) -> CommandResult<PremiumStatus> {
+    state.unlocked()?;
+    state.manager.premium_set_key_saved(saved).await?;
+    Ok(status(&state).await)
+}
+
+/// Puts the "Protect your Premium account" card away.
+#[tauri::command]
+pub async fn premium_hide_checklist(
+    state: tauri::State<'_, AppState>,
+) -> CommandResult<PremiumStatus> {
+    state.unlocked()?;
+    state.manager.premium_hide_checklist().await?;
     Ok(status(&state).await)
 }
 
@@ -230,11 +451,9 @@ pub async fn premium_forget(state: tauri::State<'_, AppState>) -> CommandResult<
 #[tauri::command]
 pub async fn premium_account(state: tauri::State<'_, AppState>) -> CommandResult<PremiumAccount> {
     state.unlocked()?;
-    let client = client(&state).await?;
-    let account = client.account().await?;
-    if let Ok(licence) = client.licence().await {
-        store_licence(&state, None, licence.certificate).await?;
-    }
+    let base_url = base_url();
+    let account = client_at(&state, &base_url).await?.account().await?;
+    let _ = state.manager.premium_refresh_licence(&base_url).await;
     Ok(PremiumAccount {
         account,
         status: status(&state).await,
@@ -247,8 +466,9 @@ pub async fn premium_account(state: tauri::State<'_, AppState>) -> CommandResult
 #[tauri::command]
 pub async fn premium_wallets(state: tauri::State<'_, AppState>) -> CommandResult<Vec<WalletWatch>> {
     state.unlocked()?;
+    let client = client(&state).await?;
     flush_unwatch(&state).await;
-    Ok(client(&state).await?.wallets().await?)
+    Ok(client.wallets().await?)
 }
 
 /// Records the consent and registers the wallet under its own id, with
@@ -267,10 +487,7 @@ pub async fn premium_watch_wallet(
         .await
         .into_iter()
         .find(|wallet| wallet.id == id)
-        .ok_or_else(|| CommandError {
-            kind: "wallet_not_found",
-            message: format!("no wallet with id {id}"),
-        })?;
+        .ok_or_else(|| CommandError::new("wallet_not_found", format!("no wallet with id {id}")))?;
     let input = descriptor_input(&wallet.kind);
     let mut premium = state.manager.premium_state().await;
     premium.consent(&id, now_unix());
@@ -282,19 +499,21 @@ pub async fn premium_watch_wallet(
     Ok(())
 }
 
+/// Ends the server's watch of a wallet once the app lock's secret went
+/// through. The manager withdraws the consent with the watch: switching
+/// the wallet back on asks the question again, and removing it later
+/// queues nothing for a server that already forgot it.
 #[tauri::command]
 pub async fn premium_unwatch_wallet(
     state: tauri::State<'_, AppState>,
     id: String,
+    secret: String,
 ) -> CommandResult<()> {
     state.unlocked()?;
-    // The manager withdraws the consent with the watch: switching the
-    // wallet back on asks the question again, and removing it later
-    // queues nothing for a server that already forgot it.
-    Ok(state
-        .manager
-        .premium_unwatch_wallet(DEFAULT_BASE_URL, &id)
-        .await?)
+    confirm_identity(&state, &secret).await?;
+    let base_url = base_url();
+    ensure_device(&state, &base_url).await?;
+    Ok(state.manager.premium_unwatch_wallet(&base_url, &id).await?)
 }
 
 #[tauri::command]
@@ -336,12 +555,16 @@ pub async fn premium_add_channel(
     })
 }
 
+/// Removes a channel once the app lock's secret went through: nothing
+/// is sent there again.
 #[tauri::command]
 pub async fn premium_delete_channel(
     state: tauri::State<'_, AppState>,
     id: String,
+    secret: String,
 ) -> CommandResult<()> {
     state.unlocked()?;
+    confirm_identity(&state, &secret).await?;
     Ok(client(&state).await?.delete_channel(&id).await?)
 }
 
@@ -356,7 +579,7 @@ pub async fn premium_confirm_channel(
     code: String,
 ) -> CommandResult<ChannelView> {
     state.unlocked()?;
-    confirm_channel(&state, DEFAULT_BASE_URL, &id, &code).await
+    confirm_channel(&state, &base_url(), &id, &code).await
 }
 
 async fn confirm_channel(
@@ -367,11 +590,12 @@ async fn confirm_channel(
 ) -> CommandResult<ChannelView> {
     let code = code.trim();
     if code.is_empty() {
-        return Err(CommandError {
-            kind: "invalid_input",
-            message: "type the code from the e-mail".to_owned(),
-        });
+        return Err(CommandError::new(
+            "invalid_input",
+            "type the code from the e-mail",
+        ));
     }
+    ensure_device(state, base_url).await?;
     let channel = state
         .manager
         .premium_confirm_channel(base_url, id, code)
@@ -379,19 +603,24 @@ async fn confirm_channel(
     Ok(view_of(channel))
 }
 
-/// Deletes the account on the server, everything it watches and tells
-/// included, and forgets the key here once the server said it did. The
-/// opposite of `premium_forget`, which leaves the server as it is.
+/// Deletes the account on the server once the app lock's secret went
+/// through, everything it watches and tells included, and forgets the
+/// key here once the server said it did. The opposite of
+/// `premium_forget`, which leaves the server as it is.
 #[tauri::command]
 pub async fn premium_delete_account(
     state: tauri::State<'_, AppState>,
+    secret: String,
 ) -> CommandResult<PremiumStatus> {
     state.unlocked()?;
-    delete_account(&state, DEFAULT_BASE_URL).await
+    confirm_identity(&state, &secret).await?;
+    delete_account(&state, &base_url()).await
 }
 
 async fn delete_account(state: &AppState, base_url: &str) -> CommandResult<PremiumStatus> {
+    ensure_device(state, base_url).await?;
     state.manager.premium_delete_account(base_url).await?;
+    state.devices.forget();
     Ok(status(state).await)
 }
 
@@ -414,7 +643,7 @@ pub async fn premium_events(state: tauri::State<'_, AppState>) -> CommandResult<
     Ok(latest_events(events, RECENT_EVENTS))
 }
 
-/// The server's heartbeat, verified against the embedded key and this
+/// The server's heartbeat, verified against the trusted key and this
 /// device's clock. One that verifies also lifts a dismissed banner: the
 /// next outage is a new one, and gets shown. The pulse is also when a
 /// wallet removed while the server was out of reach gets unwatched
@@ -424,8 +653,9 @@ pub async fn premium_heartbeat(
     state: tauri::State<'_, AppState>,
 ) -> CommandResult<HeartbeatReport> {
     state.unlocked()?;
+    let client = client(&state).await?;
     flush_unwatch(&state).await;
-    let report = client(&state).await?.heartbeat(now_unix()).await?;
+    let report = client.heartbeat(now_unix()).await?;
     let premium = state.manager.premium_state().await;
     if premium.acknowledged_offline_until.is_some() {
         let mut premium = premium;
@@ -448,11 +678,29 @@ pub async fn premium_acknowledge_offline(
     Ok(status(&state).await)
 }
 
+/// Whether the device the server described waits for approval.
+pub(crate) fn waits(device: &Device) -> bool {
+    device.access == DeviceAccess::Pending
+}
+
+/// Whether the vault holds a connected device, the only kind the
+/// background check asks about.
+pub(crate) async fn connected(state: &AppState) -> bool {
+    let premium = state.manager.premium_state().await;
+    premium.key.is_some() && premium.device.is_some() && !premium.disconnected
+}
+
+/// Whether the app is locked right now.
+pub(crate) fn locked(state: &AppState) -> bool {
+    state.locked.load(Ordering::SeqCst)
+}
+
 #[cfg(test)]
 mod tests {
     use data_encoding::{BASE64URL_NOPAD, HEXLOWER};
     use ed25519_dalek::{Signer, SigningKey};
     use gerfaut_core::input::ScriptKind;
+    use gerfaut_core::premium::licence::LICENCE_PUBLIC_KEY_HEX;
     use gerfaut_core::premium::{Claims, EventKind, WatchedWallet};
 
     use super::*;
@@ -492,6 +740,10 @@ mod tests {
                 licence: None,
                 consented: vec![],
                 acknowledged_offline_until: None,
+                device: None,
+                disconnected: false,
+                key_saved: false,
+                checklist_hidden: false,
             }
         );
     }
@@ -507,9 +759,14 @@ mod tests {
                 consented_at: NOW,
             }],
             acknowledged_offline_until: Some(NOW + 100),
-            pending_unwatch: Vec::new(),
+            key_saved: true,
+            ..PremiumState::default()
         };
         let status = status_of(&state, &public, NOW);
+        assert!(status.key_saved);
+        assert!(!status.checklist_hidden);
+        assert_eq!(status.device, None);
+        assert!(!status.disconnected);
         assert_eq!(status.key.as_deref(), Some("abcd-efgh-ijkm-npqr"));
         assert_eq!(
             status.licence,
@@ -639,98 +896,289 @@ mod tests {
     // --- against a server ---------------------------------------------
     //
     // The commands that talk to the server are run against one on
-    // loopback that answers every request the same way and hands each
-    // request to the test: what left the app is checked byte by byte.
-
-    use std::io::{Read, Write};
-    use std::net::{Ipv4Addr, Shutdown, TcpListener};
-    use std::sync::mpsc;
+    // loopback, scripted by the test: see `crate::testkit`.
 
     use gerfaut_core::WalletManager;
     use gerfaut_core::store::VaultKey;
 
-    /// One HTTP request, read whole: the head, then as much body as its
-    /// `Content-Length` announces.
-    fn read_request(stream: &mut std::net::TcpStream) -> String {
-        let mut bytes = Vec::new();
-        let mut buf = [0u8; 4096];
-        loop {
-            let n = stream.read(&mut buf).unwrap_or(0);
-            if n == 0 {
-                break;
-            }
-            bytes.extend_from_slice(&buf[..n]);
-            let text = String::from_utf8_lossy(&bytes);
-            let Some(end) = text.find("\r\n\r\n") else {
-                continue;
-            };
-            let length = text[..end]
-                .lines()
-                .find_map(|line| {
-                    let (name, value) = line.split_once(':')?;
-                    name.eq_ignore_ascii_case("content-length")
-                        .then(|| value.trim().parse::<usize>().ok())
-                        .flatten()
-                })
-                .unwrap_or(0);
-            if bytes.len() >= end + 4 + length {
-                break;
-            }
-        }
-        String::from_utf8_lossy(&bytes).into_owned()
-    }
+    use crate::testkit::{DEVICE_ID, TOKEN, platform_word, stub_server};
 
-    /// A premium server on loopback that answers every request with
-    /// `status` and `body`, and hands each request to the test.
-    fn stub_server(status: u16, body: &'static str) -> (String, mpsc::Receiver<String>) {
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-        let address = listener.local_addr().unwrap();
-        let (sender, receiver) = mpsc::channel();
-        std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                let Ok(mut stream) = stream else { break };
-                let request = read_request(&mut stream);
-                let _ = sender.send(request);
-                let response = format!(
-                    "HTTP/1.1 {status} Stub\r\nContent-Type: application/json\r\n\
-                     Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                );
-                let _ = stream.write_all(response.as_bytes());
-                let _ = stream.shutdown(Shutdown::Both);
-            }
-        });
-        (format!("http://{address}"), receiver)
-    }
-
-    /// A fresh vault holding an account: a key and a certificate.
-    fn state_with_account(dir: &std::path::Path) -> AppState {
-        let manager = WalletManager::open(dir, VaultKey::Raw([7u8; 32])).unwrap();
-        let (signing, _) = signer();
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime
-            .block_on(manager.set_premium_state(PremiumState {
-                key: Some("abcdefghijkmnpqr".to_owned()),
-                certificate: Some(issue(&signing, NOW + 86_400)),
-                ..PremiumState::default()
-            }))
-            .unwrap();
+    fn app_state(manager: WalletManager) -> AppState {
         AppState {
             manager,
             locked: std::sync::atomic::AtomicBool::new(false),
             live: crate::live::LiveAlerts::default(),
+            devices: crate::devices::DeviceWatch::default(),
         }
+    }
+
+    /// A fresh vault holding an account this device is connected to: a
+    /// key and a token. What left for the connection is handed back.
+    fn state_with_account(dir: &std::path::Path) -> (AppState, String) {
+        let manager = WalletManager::open(dir, VaultKey::Raw([7u8; 32])).unwrap();
+        let connection = crate::testkit::connect(&manager);
+        (app_state(manager), connection)
+    }
+
+    /// The key goes with the connection and with nothing else; every
+    /// later request carries the token the server handed back, and the
+    /// screen learns which device this is, never its token.
+    #[test]
+    fn a_device_connects_with_the_key_and_speaks_with_its_token_after() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, connection) = state_with_account(dir.path());
+        assert!(
+            connection.starts_with("POST /v1/devices HTTP/1.1"),
+            "{connection}"
+        );
+        assert!(
+            connection.contains("Bearer abcdefghijkmnpqr"),
+            "{connection}"
+        );
+        assert!(
+            connection.ends_with(&format!(r#"{{"platform":"{}"}}"#, platform_word())),
+            "{connection}"
+        );
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let status = runtime.block_on(status(&state));
+        assert_eq!(
+            status.device,
+            Some(DeviceConnection {
+                id: DEVICE_ID.to_owned(),
+                connected_at: NOW,
+            })
+        );
+        assert!(!status.disconnected);
+        let shown = serde_json::to_string(&status).unwrap();
+        assert!(!shown.contains("gdt1_"), "{shown}");
+
+        let (base_url, requests) = stub_server(200, EMAIL_CHANNEL);
+        runtime
+            .block_on(confirm_channel(&state, &base_url, "c1", "482913"))
+            .unwrap();
+        let request = requests.recv().unwrap();
+        assert!(request.contains(&format!("Bearer {TOKEN}")), "{request}");
+        assert!(!request.contains("abcdefghijkmnpqr"), "{request}");
+    }
+
+    /// A token the server no longer knows is dropped on the way, the key
+    /// stays, and the screen reads a disconnected device: the one state
+    /// with "Connect again" under it.
+    #[test]
+    fn a_disowned_device_reads_as_disconnected_and_keeps_its_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, _) = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (base_url, _) = stub_server(
+            401,
+            r#"{"error":"this device was disconnected from the Premium account","code":"device_disconnected"}"#,
+        );
+        let error = runtime
+            .block_on(state.manager.premium_device(&base_url))
+            .map_err(CommandError::from)
+            .unwrap_err();
+        assert_eq!(error.kind, "premium_device_disconnected");
+        let after = runtime.block_on(status(&state));
+        assert_eq!(after.device, None);
+        assert!(after.disconnected);
+        assert_eq!(after.key.as_deref(), Some("abcd-efgh-ijkm-npqr"));
+        // And nothing connects it again behind the user's back.
+        let (base_url, requests) = stub_server(201, "{}");
+        runtime.block_on(ensure_device(&state, &base_url)).unwrap();
+        assert!(requests.try_recv().is_err());
+    }
+
+    /// A device that waits is refused the list, in the kind the window
+    /// reads the waiting card by, and the background check stops asking
+    /// until the server says otherwise.
+    #[test]
+    fn a_device_that_waits_is_told_so_and_asks_no_more() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, _) = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (base_url, _) = stub_server(
+            403,
+            r#"{"error":"this device is waiting for approval: approve it on another of your devices, or wait until it gets full access","code":"device_pending","pending_until":1790864000}"#,
+        );
+        let error = runtime
+            .block_on(crate::devices::fetch(&state, &base_url))
+            .map(|_| ())
+            .map_err(CommandError::from)
+            .unwrap_err();
+        assert_eq!(error.kind, "premium_device_pending");
+        assert!(!state.devices.due(std::time::Instant::now()));
+    }
+
+    /// The list of the account with this device first, and `extra`
+    /// after it.
+    fn device_list(extra: &str) -> &'static str {
+        Box::leak(
+            format!(
+                r#"{{"devices":[{{"id":"{DEVICE_ID}","platform":"windows","connected_at":{NOW},"access":"full","approved_at":{NOW},"this_device":true}}{extra}]}}"#
+            )
+            .into_boxed_str(),
+        )
+    }
+
+    /// A device that waits is announced once, by the list that first
+    /// shows it, in words that name its platform; behind the lock, in
+    /// words that name neither it nor the account. One that stops
+    /// waiting leaves the record, and nothing is said of this device.
+    #[test]
+    fn each_waiting_device_is_announced_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, _) = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let stranger = r#",{"id":"d-mac","platform":"macos","connected_at":1790000100,"access":"pending","pending_until":1790864100,"this_device":false}"#;
+
+        let (base_url, requests) = stub_server(200, device_list(stranger));
+        let (devices, notices) = runtime
+            .block_on(crate::devices::fetch(&state, &base_url))
+            .unwrap();
+        assert_eq!(devices.len(), 2);
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].title, "Gerfaut Premium: new device");
+        assert_eq!(
+            notices[0].body,
+            "A new Mac asks for access to your Premium account. Open Gerfaut to approve or refuse it."
+        );
+        let request = requests.recv().unwrap();
+        assert!(request.starts_with("GET /v1/devices HTTP/1.1"), "{request}");
+        assert!(request.contains(&format!("Bearer {TOKEN}")), "{request}");
+
+        // The same list again: nothing new to say.
+        let (_, notices) = runtime
+            .block_on(crate::devices::fetch(&state, &base_url))
+            .unwrap();
+        assert!(notices.is_empty());
+
+        // Refused elsewhere, then back, behind the lock.
+        let (base_url, _) = stub_server(200, device_list(""));
+        let (_, notices) = runtime
+            .block_on(crate::devices::fetch(&state, &base_url))
+            .unwrap();
+        assert!(notices.is_empty());
+        state
+            .locked
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let (base_url, _) = stub_server(200, device_list(stranger));
+        let (_, notices) = runtime
+            .block_on(crate::devices::fetch(&state, &base_url))
+            .unwrap();
+        assert_eq!(notices.len(), 1, "it stopped waiting, then came back");
+        assert_eq!(notices[0].title, "Gerfaut");
+        assert!(!notices[0].body.contains("Mac"), "{}", notices[0].body);
+    }
+
+    /// The secret is the lock screen's: without a lock the answer says
+    /// one is needed, a wrong secret is refused with the wait the lock
+    /// screen would show, and the failures are one count for both.
+    #[test]
+    fn the_identity_is_asked_of_the_app_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, _) = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        let none = runtime
+            .block_on(confirm_identity(&state, "2468"))
+            .unwrap_err();
+        assert_eq!(none.kind, "app_lock_required");
+
+        runtime
+            .block_on(
+                state
+                    .manager
+                    .set_app_lock(gerfaut_core::lock::LockKind::Pin, "2468", None),
+            )
+            .unwrap();
+        runtime.block_on(confirm_identity(&state, "2468")).unwrap();
+
+        let wrong = runtime
+            .block_on(confirm_identity(&state, "1111"))
+            .unwrap_err();
+        assert_eq!(wrong.kind, "identity_refused");
+        assert_eq!(wrong.retry_after_secs, Some(0));
+        let json = serde_json::to_value(&wrong).unwrap();
+        assert_eq!(json["retry_after_secs"], 0);
+
+        // The lock screen's count goes on from there: its next failure
+        // is the second, and the third brings the wait here too.
+        let verdict = runtime
+            .block_on(state.manager.verify_app_lock("0000"))
+            .unwrap();
+        assert_eq!(verdict.failures, 2);
+        let third = runtime
+            .block_on(confirm_identity(&state, "3333"))
+            .unwrap_err();
+        assert!(third.retry_after_secs.unwrap() > 0, "{third:?}");
+        // While it runs, even the right secret is not looked at.
+        let waiting = runtime
+            .block_on(confirm_identity(&state, "2468"))
+            .unwrap_err();
+        assert_eq!(waiting.kind, "identity_refused");
+
+        // An error of any other kind carries no wait at all.
+        let plain = serde_json::to_value(CommandError::new("internal", "x")).unwrap();
+        assert!(plain.get("retry_after_secs").is_none());
+    }
+
+    /// Removing a wallet the server watches ends that watch, so it takes
+    /// the secret unwatching takes; a wallet the server never had does
+    /// not. A removal handed no secret is refused without counting
+    /// against the lock.
+    #[test]
+    fn removing_a_watched_wallet_takes_the_secret() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, _) = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let mut premium = runtime.block_on(state.manager.premium_state());
+        premium.consent("w-watched", NOW);
+        runtime
+            .block_on(state.manager.set_premium_state(premium))
+            .unwrap();
+        assert!(runtime.block_on(watched_by_server(&state, "w-watched")));
+        assert!(!runtime.block_on(watched_by_server(&state, "w-local")));
+
+        let none = runtime
+            .block_on(confirm_identity_given(&state, None))
+            .unwrap_err();
+        assert_eq!(none.kind, "app_lock_required");
+        runtime
+            .block_on(
+                state
+                    .manager
+                    .set_app_lock(gerfaut_core::lock::LockKind::Pin, "2468", None),
+            )
+            .unwrap();
+        let missing = runtime
+            .block_on(confirm_identity_given(&state, None))
+            .unwrap_err();
+        assert_eq!(missing.kind, "identity_refused");
+        runtime
+            .block_on(confirm_identity_given(&state, Some("2468")))
+            .unwrap();
+        let verdict = runtime
+            .block_on(state.manager.verify_app_lock("0000"))
+            .unwrap();
+        assert_eq!(verdict.failures, 1, "the missing secret counted nothing");
+
+        // Without a key, nothing the server watches goes with a wallet.
+        runtime
+            .block_on(state.manager.premium_log_out("http://127.0.0.1:9"))
+            .unwrap();
+        assert!(!runtime.block_on(watched_by_server(&state, "w-watched")));
     }
 
     const EMAIL_CHANNEL: &str = r#"{"id":"4f8f5252-b152-4fae-b142-5e6f70819203","kind":"email","target":"a…@example.org","linked":true,"link_code":null,"link_url":null,"linked_name":null,"enabled":true,"created_at":1789000004}"#;
 
-    /// The code goes to the channel's own route with the stored key,
-    /// the channel comes back as the list shows it, and a code the
-    /// server refuses is refused in its words.
+    /// The code goes to the channel's own route with this device's
+    /// token, the channel comes back as the list shows it, and a code
+    /// the server refuses is refused in its words.
     #[test]
     fn confirming_a_channel_sends_the_code_and_reads_the_channel_back() {
         let dir = tempfile::tempdir().unwrap();
-        let state = state_with_account(dir.path());
+        let (state, _) = state_with_account(dir.path());
         let runtime = tokio::runtime::Runtime::new().unwrap();
 
         let (base_url, requests) = stub_server(200, EMAIL_CHANNEL);
@@ -752,7 +1200,7 @@ mod tests {
             ),
             "{request}"
         );
-        assert!(request.contains("Bearer abcdefghijkmnpqr"), "{request}");
+        assert!(request.contains(&format!("Bearer {TOKEN}")), "{request}");
         assert!(request.ends_with(r#"{"code":"482913"}"#), "{request}");
 
         // A wrong or expired code, and one try too many: the server's
@@ -782,12 +1230,12 @@ mod tests {
         assert!(requests.try_recv().is_err());
     }
 
-    /// One request with the stored key; the key is forgotten here only
-    /// once the server said the account is gone.
+    /// One request with this device's token; the key is forgotten here
+    /// only once the server said the account is gone.
     #[test]
     fn deleting_the_account_forgets_the_key_once_the_server_confirms() {
         let dir = tempfile::tempdir().unwrap();
-        let state = state_with_account(dir.path());
+        let (state, _) = state_with_account(dir.path());
         let runtime = tokio::runtime::Runtime::new().unwrap();
 
         let (base_url, _) = stub_server(503, r#"{"error":"node unreachable"}"#);
@@ -804,11 +1252,48 @@ mod tests {
         let after = runtime.block_on(delete_account(&state, &base_url)).unwrap();
         assert_eq!(after.key, None);
         assert_eq!(after.licence, None);
+        assert_eq!(after.device, None);
         let request = requests.recv().unwrap();
         assert!(
             request.starts_with("DELETE /v1/account HTTP/1.1"),
             "{request}"
         );
-        assert!(request.contains("Bearer abcdefghijkmnpqr"), "{request}");
+        assert!(request.contains(&format!("Bearer {TOKEN}")), "{request}");
+    }
+
+    /// The commands that change who can use the account, or what it
+    /// watches and where it tells, ask the app lock first, before any
+    /// other line. The day one is added without it, this notices.
+    #[test]
+    fn every_sensitive_command_asks_for_the_secret_first() {
+        const SENSITIVE: [&str; 6] = [
+            "premium_approve_device",
+            "premium_remove_device",
+            "premium_change_key",
+            "premium_delete_account",
+            "premium_unwatch_wallet",
+            "premium_delete_channel",
+        ];
+        let source = include_str!("premium.rs");
+        let source = &source[..source.find("#[cfg(test)]").unwrap_or(source.len())];
+        for name in SENSITIVE {
+            let start = source
+                .find(&format!("pub async fn {name}("))
+                .unwrap_or_else(|| panic!("{name} is gone"));
+            let body = &source[start..];
+            let body = &body[..body.find("\n}\n").unwrap_or(body.len())];
+            let lines: Vec<&str> = body
+                .lines()
+                .map(str::trim)
+                .skip_while(|line| !line.ends_with('{'))
+                .skip(1)
+                .collect();
+            assert_eq!(lines.first(), Some(&"state.unlocked()?;"), "{name}");
+            assert_eq!(
+                lines.get(1),
+                Some(&"confirm_identity(&state, &secret).await?;"),
+                "{name} asks for the app lock's secret before anything else"
+            );
+        }
     }
 }

@@ -20,6 +20,7 @@ use std::collections::HashMap;
 
 use gerfaut_core::format::{format_btc, group_thousands};
 use gerfaut_core::live::LiveTx;
+use gerfaut_core::premium::DevicePlatform;
 use gerfaut_core::store::TxStage;
 
 /// Transactions said one by one for a wallet in one sync; the rest are
@@ -55,11 +56,14 @@ pub(crate) struct Context {
 
 /// Which flood budget a notification draws on. A payment that is no
 /// longer coming has one of its own, so a burst of new transactions
-/// can never silence it.
+/// can never silence it. A device asking into the account draws on
+/// none: each is announced once, and a check announces a handful at
+/// most.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NoticeKind {
     Transaction,
     Dropped,
+    Device,
 }
 
 /// Which payment a notification is about: the id the core asks a host
@@ -300,9 +304,71 @@ pub(crate) fn compose(wallet_id: &str, held: &Held, context: &Context) -> Vec<No
     notices
 }
 
+/// How a platform is named in a sentence: the label the screens use,
+/// and a plain word for one this build does not know. The server takes
+/// five platforms and no free text, so nothing the connecting party
+/// wrote reaches the system.
+fn platform_words(platform: DevicePlatform) -> &'static str {
+    match platform {
+        DevicePlatform::Other => "device",
+        known => known.label(),
+    }
+}
+
+/// What a device waiting for approval on the account is announced
+/// with. Behind the lock the lock screen's rule holds: the title is the
+/// app's name alone, and the body says a device asks without saying
+/// which or into what, since the window refuses to say either.
+pub(crate) fn new_device(platform: DevicePlatform, locked: bool) -> Notice {
+    let (title, body) = if locked {
+        (
+            APP_TITLE.to_owned(),
+            "A new device asks for access. Open Gerfaut to approve or refuse it.".to_owned(),
+        )
+    } else {
+        (
+            "Gerfaut Premium: new device".to_owned(),
+            format!(
+                "A new {} asks for access to your Premium account. Open Gerfaut to approve or refuse it.",
+                platform_words(platform)
+            ),
+        )
+    };
+    Notice {
+        title,
+        body,
+        kind: NoticeKind::Device,
+        id: None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_device_is_named_by_its_platform_and_never_behind_the_lock() {
+        let open = new_device(DevicePlatform::Android, false);
+        assert_eq!(open.title, "Gerfaut Premium: new device");
+        assert_eq!(
+            open.body,
+            "A new Android phone asks for access to your Premium account. Open Gerfaut to approve or refuse it."
+        );
+        assert_eq!(open.kind, NoticeKind::Device);
+        assert_eq!(
+            new_device(DevicePlatform::Macos, false).body,
+            "A new Mac asks for access to your Premium account. Open Gerfaut to approve or refuse it."
+        );
+        assert_eq!(
+            new_device(DevicePlatform::Other, false).body,
+            "A new device asks for access to your Premium account. Open Gerfaut to approve or refuse it."
+        );
+        // Behind the lock: neither the platform nor the account.
+        let shut = new_device(DevicePlatform::Windows, true);
+        assert_eq!(shut.title, APP_TITLE);
+        assert!(!shut.body.contains("Windows"), "{}", shut.body);
+        assert!(!shut.body.contains("Premium"), "{}", shut.body);
+    }
 
     fn tx(txid: &str, net_sats: i64, stage: TxStage) -> LiveTx {
         LiveTx {

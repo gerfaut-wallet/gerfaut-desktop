@@ -282,6 +282,11 @@ pub(crate) fn within_budget(
     let mut out = Vec::new();
     for notice in notices {
         let (budget, last_call) = match notice.kind {
+            // Announced once each, never in a flood: nothing to count.
+            NoticeKind::Device => {
+                out.push(notice);
+                continue;
+            }
             NoticeKind::Transaction => (
                 &mut budgets.transactions,
                 "More transactions are coming in. Open Gerfaut to see them.",
@@ -311,7 +316,7 @@ pub(crate) fn within_budget(
 /// takes an id or a tag. The pending notice of a payment stays in the
 /// system's list beside its confirmation there.
 #[cfg(not(target_os = "linux"))]
-fn post(app: &tauri::AppHandle, notice: &Notice) -> Result<(), String> {
+pub(crate) fn post(app: &tauri::AppHandle, notice: &Notice) -> Result<(), String> {
     app.notification()
         .builder()
         .title(&notice.title)
@@ -327,7 +332,7 @@ fn post(app: &tauri::AppHandle, notice: &Notice) -> Result<(), String> {
 /// is waited for on a thread of its own, never by the caller, and a
 /// notice it refuses is dropped, as the plugin does.
 #[cfg(target_os = "linux")]
-fn post(app: &tauri::AppHandle, notice: &Notice) -> Result<(), String> {
+pub(crate) fn post(app: &tauri::AppHandle, notice: &Notice) -> Result<(), String> {
     let app = app.clone();
     let notice = notice.clone();
     tauri::async_runtime::spawn_blocking(move || {
@@ -601,10 +606,10 @@ pub async fn send_test_notification(
         .transactions
         .allow(Instant::now());
     if allowance != Allowance::Post {
-        return Err(CommandError {
-            kind: "notification",
-            message: "too many notifications in the last minute; try again shortly".to_owned(),
-        });
+        return Err(CommandError::new(
+            "notification",
+            "too many notifications in the last minute; try again shortly",
+        ));
     }
     post(
         &app,
@@ -615,10 +620,7 @@ pub async fn send_test_notification(
             id: None,
         },
     )
-    .map_err(|message| CommandError {
-        kind: "notification",
-        message,
-    })
+    .map_err(|message| CommandError::new("notification", message))
 }
 
 #[cfg(test)]
@@ -882,6 +884,7 @@ mod tests {
             manager: WalletManager::open(dir.path(), VaultKey::Raw([7u8; 32])).unwrap(),
             locked: AtomicBool::new(false),
             live: LiveAlerts::default(),
+            devices: crate::devices::DeviceWatch::default(),
         };
         // The BIP 173 example address: public, and valid on signet.
         let parsed = gerfaut_core::input::parse_input_with_options(

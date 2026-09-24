@@ -30,6 +30,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
 
+mod devices;
 mod live;
 mod notice;
 mod premium;
@@ -39,15 +40,35 @@ mod premium;
 pub struct CommandError {
     pub kind: &'static str,
     pub message: String,
+    /// With `identity_refused`: seconds before the app lock looks at
+    /// another secret, as the lock screen counts them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_after_secs: Option<u32>,
+}
+
+impl CommandError {
+    pub(crate) fn new(kind: &'static str, message: impl Into<String>) -> Self {
+        CommandError {
+            kind,
+            message: message.into(),
+            retry_after_secs: None,
+        }
+    }
 }
 
 /// What the screen does about a premium failure: back to the key field,
-/// to the renewal page, a note in the server's words, or the "watch is
-/// offline" banner.
+/// to the renewal page, the waiting card, "Connect again", a note in the
+/// server's words, or the "watch is offline" banner.
 fn premium_kind(error: &PremiumError) -> &'static str {
     match error {
         PremiumError::NoKey => "premium_no_key",
         PremiumError::UnknownKey => "premium_unknown_key",
+        // No token to speak with: never connected, or the key went where
+        // a token was due. Either way the device is to be connected.
+        PremiumError::NoDevice | PremiumError::DeviceRequired => "premium_no_device",
+        PremiumError::DevicePending { .. } => "premium_device_pending",
+        PremiumError::DeviceDisconnected => "premium_device_disconnected",
+        PremiumError::TooManyDevices(_) => "premium_too_many_devices",
         PremiumError::NoPaidTime => "premium_no_paid_time",
         PremiumError::Rejected(_) => "premium_rejected",
         // Nothing under that id on the server: the screen shows it as
@@ -68,21 +89,18 @@ impl From<CoreError> for CommandError {
         // A refusal is shown in the server's own sentence, without the
         // prefix the error type wraps it in.
         if let CoreError::Premium(PremiumError::Rejected(words)) = &error {
-            return CommandError {
-                kind: "premium_rejected",
-                message: words.clone(),
-            };
+            return CommandError::new("premium_rejected", words.clone());
         }
         // A rate limit is no failure of the request: the screen says
         // when to try again, calmly, and nothing else.
         if let CoreError::Premium(PremiumError::RateLimited { retry_after }) = &error {
-            return CommandError {
-                kind: "premium_rate_limited",
-                message: match retry_after {
+            return CommandError::new(
+                "premium_rate_limited",
+                match retry_after {
                     Some(seconds) => format!("Try again in {seconds} s."),
                     None => "Try again in a moment.".to_owned(),
                 },
-            };
+            );
         }
         let kind = match &error {
             CoreError::UnrecognizedInput(_) => "unrecognized_input",
@@ -105,20 +123,14 @@ impl From<CoreError> for CommandError {
             CoreError::Premium(error) => premium_kind(error),
             CoreError::Internal(_) => "internal",
         };
-        CommandError {
-            kind,
-            message: error.to_string(),
-        }
+        CommandError::new(kind, error.to_string())
     }
 }
 
 pub(crate) type CommandResult<T> = Result<T, CommandError>;
 
 fn internal(message: String) -> CommandError {
-    CommandError {
-        kind: "internal",
-        message,
-    }
+    CommandError::new("internal", message)
 }
 
 pub(crate) struct AppState {
@@ -136,6 +148,9 @@ pub(crate) struct AppState {
     /// The live watch and what it posts. It runs on this side, behind
     /// the lock included: see [`live`].
     pub(crate) live: live::LiveAlerts,
+    /// What the check of the account's devices remembers between two
+    /// rounds: see [`devices`].
+    pub(crate) devices: devices::DeviceWatch,
 }
 
 impl AppState {
@@ -145,10 +160,7 @@ impl AppState {
     /// painted with.
     pub(crate) fn unlocked(&self) -> CommandResult<()> {
         if self.locked.load(Ordering::SeqCst) {
-            return Err(CommandError {
-                kind: "locked",
-                message: "Gerfaut is locked.".to_owned(),
-            });
+            return Err(CommandError::new("locked", "Gerfaut is locked."));
         }
         Ok(())
     }
@@ -419,13 +431,21 @@ async fn rename_wallet(
 /// The core queued the wallet for unwatching in the same write that
 /// removed it, so the answer does not wait for the network: a server
 /// out of reach now is told at the next heartbeat.
+///
+/// A wallet the server watches stops being watched with it, which is
+/// what unwatching it asks the app lock's secret for: removing it asks
+/// the same, or the one would be the way around the other.
 #[tauri::command]
 async fn remove_wallet(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     id: String,
+    secret: Option<String>,
 ) -> CommandResult<()> {
     state.unlocked()?;
+    if premium::watched_by_server(&state, &id).await {
+        premium::confirm_identity_given(&state, secret.as_deref()).await?;
+    }
     state.manager.remove_wallet(&id).await?;
     tauri::async_runtime::spawn(async move {
         premium::flush_unwatch(&app.state::<AppState>()).await;
@@ -830,10 +850,10 @@ async fn pick_backup_file(app: tauri::AppHandle) -> CommandResult<Option<PickedB
         .read_to_end(&mut bytes)
         .map_err(unreadable)?;
     if bytes.len() > limit {
-        return Err(CommandError {
-            kind: "invalid_input",
-            message: "this file is far too large to be a Gerfaut backup".to_owned(),
-        });
+        return Err(CommandError::new(
+            "invalid_input",
+            "this file is far too large to be a Gerfaut backup",
+        ));
     }
     let name = path
         .file_name()
@@ -936,6 +956,7 @@ pub fn run() {
                 manager,
                 locked: AtomicBool::new(locked),
                 live: live::LiveAlerts::default(),
+                devices: devices::DeviceWatch::default(),
             });
             // The watch starts with the app when the alerts are on,
             // locked or not, and before the opening sync so nothing
@@ -945,6 +966,9 @@ pub fn run() {
                 live::apply(&handle).await;
                 live::keep_time(handle).await;
             });
+            // The account's devices are checked on this side too, so a
+            // new one is announced with the window minimised or locked.
+            tauri::async_runtime::spawn(devices::watch(app.handle().clone()));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -998,7 +1022,15 @@ pub fn run() {
             tor_connect,
             premium::premium_status,
             premium::premium_activate,
+            premium::premium_reconnect,
             premium::premium_forget,
+            premium::premium_device,
+            premium::premium_devices,
+            premium::premium_approve_device,
+            premium::premium_remove_device,
+            premium::premium_change_key,
+            premium::premium_set_key_saved,
+            premium::premium_hide_checklist,
             premium::premium_account,
             premium::premium_wallets,
             premium::premium_watch_wallet,
@@ -1222,6 +1254,7 @@ mod tests {
                 manager,
                 locked: AtomicBool::new(locked),
                 live: crate::live::LiveAlerts::default(),
+                devices: crate::devices::DeviceWatch::default(),
             },
             runtime,
         )
@@ -1265,6 +1298,7 @@ mod tests {
             manager,
             locked: AtomicBool::new(false),
             live: crate::live::LiveAlerts::default(),
+            devices: crate::devices::DeviceWatch::default(),
         };
 
         runtime.block_on(super::lock_vault(&state)).unwrap();
@@ -1290,12 +1324,8 @@ mod tests {
         runtime
             .block_on(state.manager.set_active_network(Network::Signet))
             .unwrap();
-        runtime
-            .block_on(state.manager.set_premium_state(PremiumState {
-                key: Some("abcdefghijkmnpqr".to_owned()),
-                ..PremiumState::default()
-            }))
-            .unwrap();
+        // An account: a key, and the token of the device it connected.
+        crate::testkit::connect(&state.manager);
         runtime
             .block_on(
                 state
@@ -1331,6 +1361,16 @@ mod tests {
             .unwrap();
         let open = runtime.block_on(super::settings_of(&state));
         assert_eq!(open.premium.key.as_deref(), Some("abcdefghijkmnpqr"));
+        // The token never does, locked or not: the core blanks it.
+        let shown = serde_json::to_string(&open).unwrap();
+        assert!(!shown.contains(crate::testkit::TOKEN), "{shown}");
+        assert_eq!(
+            open.premium
+                .device
+                .as_ref()
+                .map(|device| device.id.as_str()),
+            Some(crate::testkit::DEVICE_ID)
+        );
         assert_eq!(open.electrum_certs.len(), 1);
         assert!(open.app_prefs.contains_key("broadcast.recent"));
     }
@@ -1427,6 +1467,7 @@ mod tests {
             ("lib.rs", include_str!("lib.rs")),
             ("premium.rs", include_str!("premium.rs")),
             ("live.rs", include_str!("live.rs")),
+            ("devices.rs", include_str!("devices.rs")),
         ];
 
         let mut checked = 0;
@@ -1499,3 +1540,8 @@ mod tests {
         assert!(checked >= 50, "only {checked} commands scanned");
     }
 }
+
+// After the tests, which read this file and stop at the first
+// `#[cfg(test)]`: declared above them, it would hide every command.
+#[cfg(test)]
+mod testkit;
