@@ -805,6 +805,58 @@ describe("a disconnected device", () => {
     expect(await screen.findByRole("button", { name: "Connect again" })).toBeInTheDocument();
     expect(screen.queryByText("Could not reach the Gerfaut server.")).not.toBeInTheDocument();
   });
+
+  it("lets a key the server no longer knows go, for whoever lacks the new one", async () => {
+    let status = DISCONNECTED;
+    const calls = mockPremium({
+      premium_status: () => status,
+      premium_reconnect: () =>
+        Promise.reject({ kind: "premium_unknown_key", message: "unknown key" }) as never,
+      premium_forget: () => {
+        status = { ...STATUS, key: null, device: null, licence: null };
+        return status;
+      },
+      premium_activate: () =>
+        Promise.reject({
+          kind: "premium_unreachable",
+          message: "the premium server is unreachable: timed out",
+        }) as never,
+    });
+    const client = renderSection();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Connect again" }));
+    await screen.findByText("This key no longer works. Enter the new one.");
+    const licence = card("Licence");
+    await user.click(licence.getByRole("button", { name: "Forget this key" }));
+    // Disconnected already: nothing depends on this device, no secret.
+    await user.click(
+      within(licence.getByRole("status")).getByRole("button", { name: "Forget the key" }),
+    );
+    await waitFor(() => expect(of("premium_forget", calls)).toEqual([{ secret: null }]));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // The field stays, for a key of any account, without the note that
+    // spoke of the dead one.
+    await waitFor(() =>
+      expect(
+        screen.queryByText("This key no longer works. Enter the new one."),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getByLabelText("Account key")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Forget this key" })).not.toBeInTheDocument();
+
+    // Another key, whose answer is lost and which the background then
+    // connects: it is the key in place, not one that "no longer works".
+    await user.type(screen.getByLabelText("Account key"), "23456789abcdefgh");
+    await user.click(screen.getByRole("button", { name: "Activate" }));
+    await screen.findByText("Could not reach the Gerfaut server.");
+    status = { ...STATUS, key: "2345-6789-abcd-efgh" };
+    await act(() => client.invalidateQueries({ queryKey: ["premium", "status"] }));
+    expect(await screen.findByText(/Active until/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Account key")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("This key no longer works. Enter the new one."),
+    ).not.toBeInTheDocument();
+  });
 });
 
 // --- change key ---------------------------------------------------------------

@@ -65,17 +65,22 @@ export function LicenceCard({
   const [failure, setFailure] = useState<unknown>(undefined);
   /** "Connect again" was refused for the key itself: the field comes
       back for the new one. Local to this visit; the key stays in the
-      vault until a new one works. */
-  const [keyChanged, setKeyChanged] = useState(false);
+      vault until a new one works, or until it is forgotten. */
+  const [refused, setRefused] = useState(false);
+  const keyChanged = refused && status.key !== null && status.disconnected;
+  const [forgetting, setForgetting] = useState(false);
   const [reconnectFailure, setReconnectFailure] = useState<unknown>(undefined);
   // What "Connect again" met belongs to the connection it was pressed
   // for: once this device connects, forgets the key or holds another,
-  // it goes, rather than turn up under the next disconnection.
+  // it goes, rather than turn up under the next disconnection or speak
+  // of a key that is no longer the one here.
   const connection = `${status.key ?? ""}|${status.disconnected}`;
   const [failedFor, setFailedFor] = useState(connection);
   if (failedFor !== connection) {
     setFailedFor(connection);
     setReconnectFailure(undefined);
+    setRefused(false);
+    setForgetting(false);
   }
   const ready = isWellFormedKey(key);
   const asking = status.key === null || keyChanged;
@@ -92,7 +97,7 @@ export function LicenceCard({
     activate.mutate(key, {
       onSuccess: () => {
         setKey("");
-        setKeyChanged(false);
+        setRefused(false);
       },
       onError: (error) => setFailure(error),
     });
@@ -104,7 +109,7 @@ export function LicenceCard({
     reconnect.mutate(undefined, {
       onError: (error) => {
         if (isCommandError(error) && error.kind === "premium_unknown_key") {
-          setKeyChanged(true);
+          setRefused(true);
         } else {
           setReconnectFailure(error);
         }
@@ -118,16 +123,29 @@ export function LicenceCard({
     <>
       <SectionCard icon={<KeyRound size={18} strokeWidth={1.5} />} title="Licence" premium>
         {asking ? (
-          <KeyForm
-            value={key}
-            ready={ready}
-            pending={activate.isPending}
-            onChange={(next) => {
-              setFailure(undefined);
-              setKey(next);
-            }}
-            onSubmit={run}
-          />
+          <>
+            <KeyForm
+              value={key}
+              ready={ready}
+              pending={activate.isPending}
+              onChange={(next) => {
+                setFailure(undefined);
+                setKey(next);
+              }}
+              onSubmit={run}
+              // The dead key is still in the vault: whoever does not
+              // have the new one can let it go from here.
+              onForget={
+                keyChanged && !activate.isPending ? () => setForgetting(true) : undefined
+              }
+              forgetting={forgetting}
+            />
+            {keyChanged && forgetting && (
+              <div className="mt-4">
+                <ForgetKey allowDelete={false} confirm={false} onClose={() => setForgetting(false)} />
+              </div>
+            )}
+          </>
         ) : (
           <KeyInPlace status={status} access={access} />
         )}
@@ -238,12 +256,18 @@ function KeyForm({
   pending,
   onChange,
   onSubmit,
+  onForget,
+  forgetting = false,
 }: {
   value: string;
   ready: boolean;
   pending: boolean;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  /** Offered when the vault still holds a key the server no longer
+      knows. */
+  onForget?: () => void;
+  forgetting?: boolean;
 }) {
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -283,11 +307,21 @@ function KeyForm({
           account to recover it from.
         </p>
       </div>
-      <div>
-        <Button variant="premium-ghost" className="-ml-3" onClick={() => void openUrl(PREMIUM_URL)}>
+      <div className="-ml-3 flex flex-wrap items-center gap-1">
+        <Button variant="premium-ghost" onClick={() => void openUrl(PREMIUM_URL)}>
           <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
           Get Premium
         </Button>
+        {onForget && (
+          <Button
+            variant="ghost"
+            disabled={forgetting}
+            aria-expanded={forgetting}
+            onClick={onForget}
+          >
+            Forget this key
+          </Button>
+        )}
       </div>
     </form>
   );
