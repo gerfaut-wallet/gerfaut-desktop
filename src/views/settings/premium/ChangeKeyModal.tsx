@@ -92,30 +92,30 @@ export function ChangeKeyModal({ onClose }: { onClose: () => void }) {
           <div className="flex flex-col gap-4">
             <div>
               <FieldLabel>Your new key</FieldLabel>
-              {/* An identifier: mono, whole, selectable, read out as
-                  one piece. */}
-              <p
-                ref={keyHeading}
-                tabIndex={-1}
-                aria-label={`Your new key: ${newKey}`}
-                className="selectable rounded-sm bg-sunken px-3 py-3 text-center font-data text-[22px] tracking-[0.08em] text-text focus-visible:outline-none"
-              >
-                {newKey}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="max-w-sm font-ui text-sm text-text">
+              <div className="flex items-stretch gap-2">
+                {/* An identifier: mono, whole, selectable, read out as
+                    one piece. */}
+                <p
+                  ref={keyHeading}
+                  tabIndex={-1}
+                  aria-label={`Your new key: ${newKey}`}
+                  className="selectable min-w-0 flex-1 rounded-sm bg-sunken px-3 py-3 text-center font-data text-[22px] tracking-[0.08em] text-text focus-visible:outline-none"
+                >
+                  {newKey}
+                </p>
+                <Button variant="secondary" className="h-auto" onClick={() => void copy()}>
+                  {copied ? (
+                    <Check size={14} strokeWidth={2} aria-hidden />
+                  ) : (
+                    <Copy size={14} strokeWidth={1.5} aria-hidden />
+                  )}
+                  {copied ? "Copied" : "Copy"}
+                </Button>
+              </div>
+              <p className="mt-3 font-ui text-sm text-text">
                 Save it in your password manager now. This device keeps it, but nothing else
                 does.
               </p>
-              <Button variant="secondary" onClick={() => void copy()}>
-                {copied ? (
-                  <Check size={14} strokeWidth={2} aria-hidden />
-                ) : (
-                  <Copy size={14} strokeWidth={1.5} aria-hidden />
-                )}
-                {copied ? "Copied" : "Copy"}
-              </Button>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
               <label className="flex cursor-pointer items-center gap-2 font-ui text-sm text-text">
