@@ -859,6 +859,59 @@ describe("a disconnected device", () => {
   });
 });
 
+// --- a way out of every state --------------------------------------------------
+
+describe("every state of the connection", () => {
+  const unreachable = () =>
+    Promise.reject({ kind: "premium_unreachable", message: "timed out" }) as never;
+
+  it.each([
+    ["full access", {}, ["Forget this key", "Change key"]],
+    [
+      "waiting for approval",
+      { premium_device: () => ({ ...THIS, access: "pending", pending_until: NOW + DAY }) },
+      ["Forget this key", "Check again"],
+    ],
+    [
+      "disconnected",
+      { premium_status: () => ({ ...STATUS, device: null, disconnected: true }) },
+      ["Forget this key", "Connect again"],
+    ],
+    [
+      "disconnected with every device the key takes",
+      {
+        premium_status: () => ({
+          ...STATUS,
+          device: null,
+          disconnected: true,
+          disconnected_reason: "this key already has 10 devices; disconnect one from a device with full access",
+        }),
+      },
+      ["Forget this key", "Connect again"],
+    ],
+    ["out of reach", { premium_device: unreachable }, ["Forget this key", "Retry"]],
+    [
+      "a key change left unfinished",
+      { premium_status: () => ({ ...STATUS, key_change_pending: true }) },
+      ["Try again"],
+    ],
+    [
+      "a connection on its way",
+      { premium_status: () => ({ ...STATUS, key: null, device: null, connect_pending: true }) },
+      ["Activate"],
+    ],
+  ] as [string, Record<string, Answer>, string[]][])(
+    "offers a way on when %s",
+    async (_, overrides, ways) => {
+      mockPremium(overrides);
+      renderSection();
+      for (const name of ways) {
+        expect(await screen.findByRole("button", { name })).toBeInTheDocument();
+      }
+    },
+  );
+});
+
 // --- change key ---------------------------------------------------------------
 
 describe("changing the key", () => {
