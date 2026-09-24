@@ -99,7 +99,7 @@ export function DevicesCard({
   useEffect(() => {
     if (target !== "devices") return;
     const node = heading.current;
-    node?.scrollIntoView({ block: "start" });
+    node?.closest("section")?.scrollIntoView({ block: "start" });
     node?.focus({ preventScroll: true });
     clearTarget();
   }, [target, clearTarget]);
@@ -130,6 +130,7 @@ export function DevicesCard({
         icon={<MonitorSmartphone size={18} strokeWidth={1.5} />}
         title="Devices"
         headingRef={heading}
+        className="scroll-mt-4"
         premium
       >
         <p className="-mt-2 mb-4 max-w-2xl font-ui text-sm text-muted">
