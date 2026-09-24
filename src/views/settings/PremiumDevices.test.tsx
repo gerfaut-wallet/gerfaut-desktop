@@ -1046,6 +1046,32 @@ describe("a key change that did not finish", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
+  it("reads the devices again after a change whose answer was lost", async () => {
+    let applied = false;
+    mockPremium({
+      premium_status: () => (applied ? { ...STATUS, key_change_pending: true } : STATUS),
+      // The server applied it, and dropped every other device; the
+      // answer never came back.
+      premium_change_key: () => {
+        applied = true;
+        return Promise.reject({
+          kind: "premium_unreachable",
+          message: "the premium server is unreachable: connection reset",
+        }) as never;
+      },
+      premium_devices: () => (applied ? [THIS] : [THIS, PHONE]),
+    });
+    renderSection();
+    const user = userEvent.setup();
+    expect(await screen.findByText("Android phone")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Change key" }));
+    const dialog = screen.getByRole("dialog", { name: "Change your Premium key" });
+    await user.click(within(dialog).getByRole("button", { name: "Change key" }));
+    await confirmIdentity(user, "Change key");
+    await waitFor(() => expect(screen.queryByText("Android phone")).not.toBeInTheDocument());
+    expect(card("Devices").getByText("Windows computer")).toBeInTheDocument();
+  });
+
   it("says a failed try under the note, which stays", async () => {
     mockPremium({
       premium_status: () => UNFINISHED,

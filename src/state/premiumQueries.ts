@@ -370,13 +370,12 @@ export function useRemoveDevice() {
   });
 }
 
-/** Replaces the key: the old one stops working everywhere and every
-    other device is disconnected. Answers the new key as it is shown. */
 /** Replaces the account key; sent again after a lost answer, it sends
     the same new key. Every other device is gone with the old key: the
     list is read again from nothing, never shown as it was. A failure
     may leave the change unfinished in the vault, or settle it: the
-    status is read again either way. */
+    status is read again either way, and so is the list, which the
+    server may already have emptied of every other device. */
 export function useChangeKey() {
   const client = useQueryClient();
   const invalidate = useInvalidatePremium();
@@ -386,7 +385,10 @@ export function useChangeKey() {
       void client.resetQueries({ queryKey: premiumKeys.devices, exact: true });
       invalidate();
     },
-    onError: () => readVaultAgain(client),
+    onError: () => {
+      readVaultAgain(client);
+      void client.invalidateQueries({ queryKey: premiumKeys.devices, exact: true });
+    },
   });
 }
 
