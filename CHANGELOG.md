@@ -36,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - If you type a server address with its port in the host field, Save now tells you to put the port in its own field. Any other address the backend settings refuse is explained under the Save button. Before, Gerfaut could say "Saved. The server did not answer" while nothing had been saved.
 - When the Telegram link cannot carry the link code, the channel now shows the /start message to send the bot by hand, with a Copy button. In that case the link only opens the bot.
 - Restoring a backup that holds a private key, or a descriptor Gerfaut cannot watch, now says so, and says that nothing was restored.
+- When the system's credential store answers that it holds no vault key while a vault is already on disk, Gerfaut no longer stores a new key, which could never open that vault. The startup screen says the key is missing, and Try again reads the store again.
 
 ### Security
 
