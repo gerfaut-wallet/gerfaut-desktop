@@ -826,13 +826,16 @@ async fn export_backup(
 /// Asks where a sealed backup (base64 from `export_backup`) should go
 /// and writes it there. The bytes are already encrypted: this is plain
 /// I/O. True once the file is written, false when the dialog was
-/// closed instead.
+/// closed instead. Behind the lock no dialog opens: nothing a locked
+/// app does asks the person to pick a file.
 #[tauri::command]
 async fn save_backup_file(
     app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
     data: String,
     suggested_name: String,
 ) -> CommandResult<bool> {
+    state.unlocked()?;
     let bytes = gerfaut_core::backup::decode_source(&data)?;
     let dialog = file_dialog(&app)
         .add_filter("Gerfaut backup", &["gerfaut"])
@@ -850,9 +853,14 @@ async fn save_backup_file(
 /// read stops one byte past the largest backup the core accepts, so
 /// picking a disc image by mistake costs nothing, and the file is
 /// judged by what was read rather than by a size it may have outgrown
-/// since. Null when the dialog was closed instead.
+/// since. Null when the dialog was closed instead, and nothing opens
+/// behind the lock.
 #[tauri::command]
-async fn pick_backup_file(app: tauri::AppHandle) -> CommandResult<Option<PickedBackup>> {
+async fn pick_backup_file(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> CommandResult<Option<PickedBackup>> {
+    state.unlocked()?;
     use std::io::Read;
 
     let dialog = file_dialog(&app)
