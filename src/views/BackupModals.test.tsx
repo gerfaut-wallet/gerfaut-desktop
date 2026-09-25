@@ -549,6 +549,47 @@ describe("restoring a backup", () => {
     expect(choices.apply_settings).toBe(true);
   });
 
+  /** A backup written by hand with a private key in it: the core
+      refuses the whole restore, and the screen says why in its own
+      words, not as some input rejected. */
+  it("says a private key stopped the restore, and that nothing came in", async () => {
+    let refusal = { kind: "private_material", message: "input contains private key material and was rejected" };
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "pick_backup_file":
+          return PICKED;
+        case "preview_backup":
+          return PREVIEW;
+        case "import_backup":
+          return Promise.reject(refusal) as never;
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderModal(<BackupRestoreModal open onClose={() => {}} activeNetwork="signet" />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /open a file/i }));
+    await screen.findByText(/Backup read from/);
+    await user.type(screen.getByLabelText("Password"), "correct horse");
+    await user.click(screen.getByRole("button", { name: /open backup/i }));
+    await screen.findByText("Cold storage");
+
+    await user.click(screen.getByRole("button", { name: /restore 1 wallet/i }));
+    expect(
+      await screen.findByText(
+        "A wallet in this backup holds a private key, and Gerfaut only watches: nothing was restored.",
+      ),
+    ).toBeInTheDocument();
+
+    refusal = { kind: "descriptor", message: "descriptor error: Invalid descriptor" };
+    await user.click(screen.getByRole("button", { name: /restore 1 wallet/i }));
+    expect(
+      await screen.findByText(
+        "A wallet in this backup is not a descriptor Gerfaut can watch, so nothing was restored. The core says: descriptor error: Invalid descriptor",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("names the server and the certificate the settings would put in place", async () => {
     // A backup is a file someone can be handed. Agreeing to "apply node
     // settings" without seeing them meant agreeing to a server and a

@@ -428,6 +428,19 @@ export function BackupRestoreModal({
     return String(error);
   };
 
+  /** A restore goes whole or not at all, so a wallet the core refuses
+      stops every one of them: the words say so, and say which kind of
+      wallet it was, since the core names none. */
+  const restoreMessage = (error: unknown) => {
+    if (isCommandError(error) && error.kind === "private_material") {
+      return "A wallet in this backup holds a private key, and Gerfaut only watches: nothing was restored.";
+    }
+    if (isCommandError(error) && error.kind === "descriptor") {
+      return `A wallet in this backup is not a descriptor Gerfaut can watch, so nothing was restored. The core says: ${error.message}`;
+    }
+    return message(error);
+  };
+
   const openBackup = async () => {
     if (source === null) return;
     try {
@@ -467,7 +480,7 @@ export function BackupRestoreModal({
       syncAll.mutate(network);
       close();
     } catch (error) {
-      setProblem(message(error));
+      setProblem(restoreMessage(error));
     }
   };
 
