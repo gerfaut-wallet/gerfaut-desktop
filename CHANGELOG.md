@@ -24,6 +24,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The Licence card offers Copy key until you mark the key as saved. When the clipboard refuses a copy, an amber note under the button says so, never a toast.
 - On Windows, when a pending payment confirms or is no longer coming while Gerfaut is open, the new notification now takes the place of the pending one in the notification center, fee bumps included, as it already did on Linux. On macOS, both notifications still stay side by side.
 
+### Fixed
+
+- The Overview no longer opens scrolled down after you leave a long Settings page, which could push the red banner about a device waiting for approval out of view. Every page now opens at its top.
+
 ## [0.1.0] - 2026-09-12
 
 First public release. Windows, macOS and Linux.

@@ -64,6 +64,7 @@ export default function App() {
   const client = useQueryClient();
   const syncLock = useLock((state) => state.syncFromSettings);
   const [tourOpen, setTourOpen] = useState(false);
+  const canvas = useRef<HTMLDivElement>(null);
   useLockShortcut();
 
   // Both of these read the vault, and both have to land before the
@@ -87,6 +88,17 @@ export default function App() {
     hydratePrefs(settings.data.app_prefs);
     hydrated.current = !useLock.getState().locked;
   }, [settings.data, hydratePrefs]);
+
+  // Every page opens at its top. The canvas is one scrolling box for all
+  // of them, and it used to keep the offset of the page left behind: the
+  // Overview came back from a long Settings section scrolled past its
+  // first card, and the red banner of a device asking into the account
+  // stood out of view. Another wallet's page is another page too. Done
+  // before the paint, and before any page's own effects, so a section
+  // that brings a card into view on arrival still has the last word.
+  useLayoutEffect(() => {
+    if (canvas.current) canvas.current.scrollTop = 0;
+  }, [view, activeWalletId]);
 
   // What the cache is allowed to hold is decided by the lock, in one
   // place. The curtain falling empties it of everything the vault
@@ -207,7 +219,7 @@ export default function App() {
           {/* In the layout, above the page: it pushes the page down and
               never covers what the page shows. */}
           <UpdateNotice />
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div ref={canvas} data-canvas-scroll className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto h-full max-w-[1280px] px-6 py-4">
               {view === "settings" ? (
                 <SettingsView settings={settings.data} wallets={walletList} />

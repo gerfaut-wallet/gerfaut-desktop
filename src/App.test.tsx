@@ -1188,6 +1188,32 @@ describe("navigation", () => {
     expect(nav().getByRole("button", { name: "Network" })).toHaveAttribute("aria-current", "page");
   });
 
+  // The canvas scrolls as one box for every page: a page reached from
+  // another one starts at its top, where the Overview keeps the banner
+  // of a device asking into the account.
+  it("opens every page at its top, whatever the last one was scrolled to", async () => {
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    const canvas = document.querySelector<HTMLElement>("[data-canvas-scroll]")!;
+
+    await openSettings(user, "Network");
+    canvas.scrollTop = 900;
+    await user.click(sidebar().getByRole("button", { name: "Overview" }));
+    await screen.findByText("Bitcoin price");
+    expect(canvas.scrollTop).toBe(0);
+
+    canvas.scrollTop = 400;
+    await user.click(sidebar().getByRole("button", { name: "Transactions" }));
+    expect(await screen.findByRole("heading", { name: /transactions/i })).toBeInTheDocument();
+    expect(canvas.scrollTop).toBe(0);
+
+    canvas.scrollTop = 400;
+    await user.click(sidebar().getByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    expect(canvas.scrollTop).toBe(0);
+  });
+
   it("has no search field and no command palette", async () => {
     renderApp();
     const user = userEvent.setup();
