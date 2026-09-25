@@ -708,6 +708,66 @@ describe("empty workspace", () => {
   });
 });
 
+describe("a vault that did not open", () => {
+  /** A second Gerfaut on the same vault: the window says so and how to
+      get out of it, and a retry once the other one is closed opens the
+      app where it was. */
+  it("says another Gerfaut holds the vault, and opens once it lets go", async () => {
+    let held = true;
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "startup_failure":
+          return held
+            ? {
+                kind: "vault_in_use",
+                message: "the vault is already open in another Gerfaut process",
+              }
+            : null;
+        case "retry_open":
+          held = false;
+          return undefined;
+        case "get_settings":
+          if (held) throw "state not managed for field `state` on command `get_settings`";
+          return SETTINGS;
+        case "list_wallets":
+          return [];
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderApp();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Gerfaut is already open");
+    expect(alert).toHaveTextContent("Switch to that window, or close it and try again.");
+    // Never the screen of a broken vault.
+    expect(screen.queryByText(/could not be opened/)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("No wallets watched yet")).toBeInTheDocument();
+    expect(screen.queryByText("Gerfaut is already open")).not.toBeInTheDocument();
+  });
+
+  it("says why any other open failed, and keeps the retry", async () => {
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "startup_failure":
+          return { kind: "vault", message: "vault i/o error: access is denied" };
+        case "retry_open":
+          throw { kind: "vault", message: "vault i/o error: the disk is gone" };
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderApp();
+    expect(await screen.findByText("The vault could not be opened")).toBeInTheDocument();
+    expect(screen.getByText("Vault i/o error: access is denied.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    // The new reason takes the old one's place.
+    expect(await screen.findByText("Vault i/o error: the disk is gone.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled();
+  });
+});
+
 describe("overview", () => {
   beforeEach(() => walletIpc());
 

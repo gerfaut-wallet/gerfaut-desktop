@@ -13,7 +13,14 @@ import { useUpdateCheck } from "./state/update";
 import { LockScreen } from "./views/LockScreen";
 import { WelcomeTour } from "./views/WelcomeTour";
 import type { Settings } from "./lib/ipc";
-import { keys, useSettings, useSyncAll, useSyncing, useWallets } from "./state/queries";
+import {
+  keys,
+  useSettings,
+  useStartupFailure,
+  useSyncAll,
+  useSyncing,
+  useWallets,
+} from "./state/queries";
 import { useUi } from "./state/store";
 import { AddWalletModal } from "./views/AddWalletModal";
 import { BroadcastView } from "./views/BroadcastView";
@@ -21,6 +28,7 @@ import { ExportView } from "./views/ExportView";
 import { HomeView } from "./views/HomeView";
 import { PolicyView } from "./views/PolicyView";
 import { ReceiveView } from "./views/ReceiveView";
+import { StartupFailure } from "./views/StartupFailure";
 import { SettingsView } from "./views/SettingsView";
 import { TransactionsView } from "./views/TransactionsView";
 import { TxDetailModal } from "./views/TxDetailModal";
@@ -40,6 +48,7 @@ function PremiumWatch({ settings }: { settings: Settings }) {
 }
 
 export default function App() {
+  const startup = useStartupFailure();
   const settings = useSettings();
   const locked = useLock((state) => state.locked);
   const lockSeen = useLock((state) => state.seen);
@@ -158,8 +167,11 @@ export default function App() {
   // A command refused because the curtain came down is the lock doing
   // its work, not a vault that failed to open: the screen behind it is
   // the lock screen, and it is already on its way.
+  // A vault that did not open at startup is the whole screen, before
+  // any other answer is read: without it, every one of them fails.
+  if (startup.data) return <StartupFailure failure={startup.data} />;
   const shut = isLockedError(settings.error) || isLockedError(wallets.error);
-  if (!shut && (settings.isError || wallets.isError)) {
+  if (!startup.isPending && !shut && (settings.isError || wallets.isError)) {
     return (
       <div className="shell-rail flex h-full items-center justify-center bg-shell">
         <p className="max-w-sm text-center font-ui text-sm text-muted">
@@ -174,7 +186,7 @@ export default function App() {
   // self-contained dark island: the theme lives in the vault too, so
   // there is nothing to follow yet and a light sheet here would flash
   // white on the way to a dark one.
-  if (settings.isPending || !settings.data || !lockSeen) {
+  if (startup.isPending || settings.isPending || !settings.data || !lockSeen) {
     return (
       <div className="shell-rail flex h-full items-center justify-center bg-shell">
         <p className="font-ui text-sm text-muted">Opening vault…</p>

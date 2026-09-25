@@ -129,6 +129,9 @@ impl From<CoreError> for CommandError {
             // else: a backup written by a newer Gerfaut is refused in
             // the core's own words, not blamed on the person typing.
             CoreError::Vault(VaultError::WrongKeyOrCorrupted) => "wrong_key",
+            // Another Gerfaut holds the vault: the screen says to switch
+            // to it, not that anything is broken.
+            CoreError::Vault(VaultError::AlreadyOpen) => "vault_in_use",
             CoreError::Vault(_) => "vault",
             CoreError::Sync { .. } => "sync",
             CoreError::Broadcast { .. } => "broadcast",
@@ -969,12 +972,80 @@ fn vault_key() -> Result<VaultKey, String> {
 /// Where the vault lives. Development builds honour `GERFAUT_DATA_DIR`
 /// so that a test instance never opens the vault of an app already
 /// running on the machine; release builds always use the app data dir.
-fn data_dir(app: &tauri::App) -> tauri::Result<std::path::PathBuf> {
+fn data_dir(app: &tauri::AppHandle) -> tauri::Result<std::path::PathBuf> {
     #[cfg(debug_assertions)]
     if let Some(dir) = std::env::var_os("GERFAUT_DATA_DIR") {
         return Ok(std::path::PathBuf::from(dir));
     }
     app.path().app_data_dir()
+}
+
+/// Why the vault did not open at startup; `None` once it is open.
+///
+/// A failed open used to end the app before a window existed, which
+/// read as a crash. The window now opens on a screen that says what
+/// happened, and [`retry_open`] tries again from there: the usual case
+/// is a vault another Gerfaut holds, which the second launch of this
+/// build never reaches (it hands over to the first), but two builds
+/// under different names on one data directory, or a platform where
+/// the hand-over cannot run, still do.
+pub(crate) struct Startup(std::sync::Mutex<Option<CommandError>>);
+
+/// Opens the vault and starts what runs beside it. Called at startup,
+/// then by [`retry_open`] as long as it has not succeeded.
+fn open_vault(app: &tauri::AppHandle) -> CommandResult<()> {
+    let data_dir =
+        data_dir(app).map_err(|e| internal(format!("no data directory for the vault: {e}")))?;
+    let key = vault_key().map_err(|e| CommandError::new("vault", e))?;
+    let manager = WalletManager::open(&data_dir, key)?;
+    // A vault that holds a lock opens shut: the first frame the
+    // webview draws is the lock screen, and until a secret goes
+    // through, the commands below answer nothing about it.
+    let locked = tauri::async_runtime::block_on(manager.app_lock()).is_some();
+    app.manage(AppState {
+        manager,
+        locked: AtomicBool::new(locked),
+        live: live::LiveAlerts::default(),
+        devices: devices::DeviceWatch::default(),
+    });
+    // The watch starts with the app when the alerts are on,
+    // locked or not, and before the opening sync so nothing
+    // falls between the two.
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        live::apply(&handle).await;
+        live::keep_time(handle).await;
+    });
+    // The account's devices are checked on this side too, so a
+    // new one is announced with the window minimised or locked.
+    tauri::async_runtime::spawn(devices::watch(app.clone()));
+    Ok(())
+}
+
+/// What kept the vault shut at startup; null when it opened. The
+/// window asks before anything else, and a failure here is the whole
+/// screen.
+#[tauri::command]
+fn startup_failure(startup: tauri::State<'_, Startup>) -> Option<CommandError> {
+    startup.0.lock().ok().and_then(|failure| failure.clone())
+}
+
+/// Tries the open again, from the screen that said why it failed: the
+/// other Gerfaut was closed, the credential store answers now. Nothing
+/// happens once the vault is open. Runs on the main thread, like the
+/// first open did.
+#[tauri::command]
+fn retry_open(app: tauri::AppHandle, startup: tauri::State<'_, Startup>) -> CommandResult<()> {
+    let mut failure = startup
+        .0
+        .lock()
+        .map_err(|_| internal("the startup state is poisoned".to_owned()))?;
+    if failure.is_none() {
+        return Ok(());
+    }
+    let result = open_vault(&app);
+    *failure = result.clone().err();
+    result
 }
 
 /// Brings the window back to the front: unminimised, shown, focused.
@@ -1021,34 +1092,19 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
-            let data_dir = data_dir(app)?;
-            let key = vault_key().map_err(std::io::Error::other)?;
-            let manager = WalletManager::open(&data_dir, key)
-                .map_err(|e| std::io::Error::other(e.to_string()))?;
-            // A vault that holds a lock opens shut: the first frame the
-            // webview draws is the lock screen, and until a secret goes
-            // through, the commands below answer nothing about it.
-            let locked = tauri::async_runtime::block_on(manager.app_lock()).is_some();
-            app.manage(AppState {
-                manager,
-                locked: AtomicBool::new(locked),
-                live: live::LiveAlerts::default(),
-                devices: devices::DeviceWatch::default(),
-            });
-            // The watch starts with the app when the alerts are on,
-            // locked or not, and before the opening sync so nothing
-            // falls between the two.
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                live::apply(&handle).await;
-                live::keep_time(handle).await;
-            });
-            // The account's devices are checked on this side too, so a
-            // new one is announced with the window minimised or locked.
-            tauri::async_runtime::spawn(devices::watch(app.handle().clone()));
+            // A vault that would not open leaves the window to say why,
+            // and every command that needs it answers an error until it
+            // does: no state is managed for them to reach.
+            let failure = open_vault(app.handle()).err();
+            if let Some(failure) = &failure {
+                eprintln!("gerfaut: the vault did not open: {}", failure.message);
+            }
+            app.manage(Startup(std::sync::Mutex::new(failure)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            startup_failure,
+            retry_open,
             parse_input,
             parse_backend,
             assemble_qr,
@@ -1258,6 +1314,26 @@ mod tests {
         let last = one.strip_prefix("com.gerfautwallet.gerfaut.").unwrap();
         assert!(last.starts_with("dev"), "{one}");
         assert!(last.chars().all(|c| c.is_ascii_alphanumeric()), "{one}");
+    }
+
+    /// A vault another Gerfaut holds has a kind of its own, so the
+    /// window says to switch to the other one rather than that the
+    /// vault is broken.
+    #[test]
+    fn a_vault_another_gerfaut_holds_is_named_for_the_screen() {
+        let dir = tempfile::tempdir().unwrap();
+        let _first = gerfaut_core::WalletManager::open(
+            dir.path(),
+            gerfaut_core::store::VaultKey::Raw([9; 32]),
+        )
+        .unwrap();
+        let second = gerfaut_core::WalletManager::open(
+            dir.path(),
+            gerfaut_core::store::VaultKey::Raw([9; 32]),
+        )
+        .err()
+        .expect("the vault is held");
+        assert_eq!(CommandError::from(second).kind, "vault_in_use");
     }
 
     #[test]

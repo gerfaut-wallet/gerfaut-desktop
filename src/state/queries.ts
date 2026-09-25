@@ -32,6 +32,19 @@ export const keys = {
   receive: (id: string) => ["receive", id] as const,
 };
 
+/** What kept the vault shut at startup, or null. Asked once: only a
+    retry from the screen that shows it changes the answer, and that
+    screen resets every query when it does. A bridge that does not know
+    the command reads as no failure. */
+export function useStartupFailure() {
+  return useQuery({
+    queryKey: ["startup"],
+    queryFn: async () => (await ipc.startupFailure()) ?? null,
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
 export function useSettings() {
   return useQuery({ queryKey: keys.settings, queryFn: ipc.getSettings });
 }

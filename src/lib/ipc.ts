@@ -971,6 +971,9 @@ export interface CommandError {
         password is wrong or the file is damaged. Any other refusal of a
         file — one a newer Gerfaut wrote, say — stays `vault`. */
     | "wrong_key"
+    /** Another Gerfaut holds the vault: a second copy running on the
+        same data directory. Only ever met at startup. */
+    | "vault_in_use"
     | "sync"
     | "backend_unavailable"
     | "descriptor"
@@ -1025,6 +1028,10 @@ export function isCommandError(error: unknown): error is CommandError {
 // --- commands ----------------------------------------------------------
 
 export const ipc = {
+  /** What kept the vault shut at startup; null when it opened. */
+  startupFailure: () => invoke<CommandError | null>("startup_failure"),
+  /** Tries the open again after a startup failure. */
+  retryOpen: () => invoke<void>("retry_open"),
   parseInput: (input: string, script?: ScriptKind, derivation?: DerivationChoice) =>
     invoke<ParsedInput>("parse_input", {
       input,
