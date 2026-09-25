@@ -19,7 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A lost answer from the Gerfaut server costs neither the key nor a device. In practice, when a connection or a key change never gets its answer back, Gerfaut sends the exact same request again, in the background or with the next request. While a key change is unfinished, the Licence card says "The key change did not finish. Try again to complete it." with a Try again button, and does not offer the key for copying. When you forget the key while the server is out of reach, Gerfaut disconnects this device on the server at the next chance.
 - Opening Gerfaut while it is already running now brings the open window to the front instead of starting a second copy.
 - When the vault cannot be opened at startup, the window now says why and offers a Try again button. Before, the app closed without a word. This covers a vault that another copy of Gerfaut holds, for example a second installation that uses the same data folder: two copies can no longer open the same vault and save over each other's changes.
-- The Broadcast preview now warns in red when an input is signed with SIGHASH_NONE or SIGHASH_SINGLE. Such a signature does not fix where the money goes, so anyone who relays the transaction before it is mined can send the money somewhere else. The confirmation dialog repeats the warning.
+- The Broadcast preview now warns in red when an input is signed with SIGHASH_NONE or SIGHASH_SINGLE. Such a signature does not fix where all of the money goes, so anyone who relays the transaction before it is mined can send some or all of it somewhere else. The confirmation dialog repeats the warning.
 
 ### Changed
 

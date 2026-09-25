@@ -403,7 +403,7 @@ const WARNING_ADVICE: Partial<Record<TxWarningKind, string>> = {
   input_unknown:
     "Look the coin up on a backend you trust, or check the amounts on the signing device, before you send.",
   uncommitted_outputs:
-    "This signature does not fix where the money goes: anyone who sees the transaction before it is mined can send it somewhere else. Unless you set this up on purpose, do not broadcast it.",
+    "This signature does not fix where all of the money goes: anyone who sees the transaction before it is mined can send some or all of it somewhere else. Unless you set this up on purpose, do not broadcast it.",
 };
 
 /** Whether the outputs pay more than the inputs bring: every input's
@@ -729,8 +729,8 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
           said again here, in red, where the send is decided. */}
       {outputsOpen && (
         <Notice tone="alert" icon={Unlink}>
-          A signature in this transaction leaves its outputs open: whoever relays it can
-          change where the money goes.
+          A signature in this transaction leaves some or all of its outputs open: whoever
+          relays it can change where the money goes.
         </Notice>
       )}
       {(claimed || preview.warnings.some((warning) => warning.severity === "alert")) && (

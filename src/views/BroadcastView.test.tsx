@@ -205,12 +205,12 @@ describe("BroadcastView", () => {
     expect(note.firstElementChild).toHaveClass("bg-alert-surface", "text-alert");
     expect(note.querySelector(".lucide-unlink")).toBeInTheDocument();
     expect(note).toHaveTextContent(
-      /\(SIGHASH_ALL\)\. This signature does not fix where the money goes: anyone who sees the transaction before it is mined can send it somewhere else\. Unless you set this up on purpose, do not broadcast it\.$/,
+      /\(SIGHASH_ALL\)\. This signature does not fix where all of the money goes: anyone who sees the transaction before it is mined can send some or all of it somewhere else\. Unless you set this up on purpose, do not broadcast it\.$/,
     );
 
     await user.click(screen.getByRole("button", { name: "Broadcast" }));
     const dialog = within(await screen.findByRole("dialog"));
-    const reminder = dialog.getByText(/leaves its outputs open: whoever relays it can change/);
+    const reminder = dialog.getByText(/leaves some or all of its outputs open: whoever relays it can change/);
     expect(reminder.parentElement).toHaveClass("bg-alert-surface", "text-alert");
   });
 
