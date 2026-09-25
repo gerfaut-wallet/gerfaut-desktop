@@ -977,9 +977,46 @@ fn data_dir(app: &tauri::App) -> tauri::Result<std::path::PathBuf> {
     app.path().app_data_dir()
 }
 
+/// Brings the window back to the front: unminimised, shown, focused.
+/// This is what a second launch asks for, and all it gets.
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+/// The identifier of a development build on a data directory of its
+/// own. One launch per identifier is let through, so under the shipped
+/// one a test instance would hand over to the Gerfaut already running
+/// and quit; each directory gets an identifier of its own instead, and
+/// two launches on the same directory still meet.
+#[cfg(debug_assertions)]
+fn isolated_identifier(identifier: &str, dir: &std::ffi::OsStr) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    dir.hash(&mut hasher);
+    format!("{identifier}.dev{:08x}", hasher.finish() as u32)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[allow(unused_mut)]
+    let mut context = tauri::generate_context!();
+    #[cfg(debug_assertions)]
+    if let Some(dir) = std::env::var_os("GERFAUT_DATA_DIR") {
+        let config = context.config_mut();
+        config.identifier = isolated_identifier(&config.identifier, &dir);
+    }
     tauri::Builder::default()
+        // First, so that a second launch leaves before anything else
+        // starts: before the vault is opened, before a window exists.
+        // Its arguments and working directory are not read: a launch
+        // only ever brings the open window forward.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main_window(app);
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -1087,7 +1124,7 @@ pub fn run() {
             live::live_status,
             live::send_test_notification
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while running tauri application")
         .run(|app, event| {
             // The window is gone: stop the watch, and leave within
@@ -1199,6 +1236,28 @@ mod tests {
             schema.message,
             "invalid backup: backup version 2 needs a newer Gerfaut"
         );
+    }
+
+    /// A test instance on its own directory is an app of its own, and
+    /// two launches on the same directory are still one.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn each_data_directory_gets_an_identifier_of_its_own() {
+        use super::isolated_identifier;
+        use std::ffi::OsStr;
+
+        let shipped = "com.gerfautwallet.gerfaut";
+        let one = isolated_identifier(shipped, OsStr::new("C:\\scratch\\one"));
+        let again = isolated_identifier(shipped, OsStr::new("C:\\scratch\\one"));
+        let two = isolated_identifier(shipped, OsStr::new("C:\\scratch\\two"));
+        assert_eq!(one, again);
+        assert_ne!(one, two);
+        assert_ne!(one, shipped);
+        // Still a reverse-domain name whose last label starts with a
+        // letter, which the D-Bus name on Linux requires.
+        let last = one.strip_prefix("com.gerfautwallet.gerfaut.").unwrap();
+        assert!(last.starts_with("dev"), "{one}");
+        assert!(last.chars().all(|c| c.is_ascii_alphanumeric()), "{one}");
     }
 
     #[test]
