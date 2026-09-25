@@ -17,22 +17,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - After the first connection, a Protect your Premium account card suggests 3 things: connect a second device, turn on the app lock, and save the key in a password manager. Each step ticks itself when Gerfaut can tell it is done, and you can hide the card.
 - Before approving, refusing or disconnecting a device, changing the key, deleting the account, taking a wallet off the server, removing a wallet the server watches or removing a channel, Gerfaut asks for the app lock's PIN or password, and checks it the way the lock screen does. It also asks before you forget the key on a device with full access, or add a channel while the app lock is on. Without an app lock, these actions say one is needed and lead to Settings › Security.
 - A lost answer from the Gerfaut server costs neither the key nor a device. In practice, when a connection or a key change never gets its answer back, Gerfaut sends the exact same request again, in the background or with the next request. While a key change is unfinished, the Licence card says "The key change did not finish. Try again to complete it." with a Try again button, and does not offer the key for copying. When you forget the key while the server is out of reach, Gerfaut disconnects this device on the server at the next chance.
+- Opening Gerfaut while it is already running now brings the open window to the front instead of starting a second copy.
+- When the vault cannot be opened at startup, the window now says why and offers a Try again button. Before, the app closed without a word. This covers a vault that another copy of Gerfaut holds, for example a second installation that uses the same data folder: two copies can no longer open the same vault and save over each other's changes.
+- The Broadcast preview now warns in red when an input is signed with SIGHASH_NONE or SIGHASH_SINGLE. Such a signature does not fix where the money goes, so anyone who relays the transaction before it is mined can send the money somewhere else. The confirmation dialog repeats the warning.
 
 ### Changed
 
 - Forget this key now also disconnects this computer from the account on the server. Connecting it again takes a new approval, or 10 days.
 - The Licence card offers Copy key until you mark the key as saved. When the clipboard refuses a copy, an amber note under the button says so, never a toast.
 - On Windows, when a pending payment confirms or is no longer coming while Gerfaut is open, the new notification now takes the place of the pending one in the notification center, fee bumps included, as it already did on Linux. On macOS, both notifications still stay side by side.
+- On the Receive page, Next address now goes through at most 200 unused addresses past the next one, skips any address another app already received a payment on, and stops on the last one with a line that explains why. A descriptor without a wildcard shows its single address, with nothing to skip to. The gap limit warning now counts the unused addresses since the last used one, instead of how many times you pressed Next address.
+- When the outputs of a transaction pay more than its inputs bring in, the Broadcast confirmation now says there is no fee instead of calling it unknown.
+- Premium requests now go through Tor as soon as the backend of any network is an onion address, and no longer only when the backend of the network on screen is one. The message shown when Tor is out of reach says so, and so does the note about the update check in Settings › About.
 
 ### Fixed
 
 - The Overview no longer opens scrolled down after you leave a long Settings page, which could push the red banner about a device waiting for approval out of view. Every page now opens at its top.
+- If you type a server address with its port in the host field, Save now tells you to put the port in its own field. Any other address the backend settings refuse is explained under the Save button. Before, Gerfaut could say "Saved. The server did not answer" while nothing had been saved.
+- When the Telegram link cannot carry the link code, the channel now shows the /start message to send the bot by hand, with a Copy button. In that case the link only opens the bot.
+- Restoring a backup that holds a private key, or a descriptor Gerfaut cannot watch, now says so, and says that nothing was restored.
 
 ### Security
 
 - Gerfaut now opens only the addresses it links to: the block explorer, its releases page, the Premium page, the Telegram alerts bot and the ntfy topic. Before, the window could ask the system to open any web address.
 - When you pick a file to add a wallet or broadcast a transaction, Gerfaut now refuses it before reading it if it is far too large to be one, so the window no longer stalls on it.
 - While Gerfaut is locked, it no longer opens a file dialog to save or open a backup.
+- A QR code that announces billions of parts no longer closes the app. A sync that reports a transaction worth more than 21 million bitcoin is refused, like a failed server.
+- An Electrum address whose host still contains a port is refused, so an onion name can no longer reach the system resolver in the clear.
+- The Broadcast preview checks each previous transaction it fetches against its txid, flags a time lock only when an input's sequence enables it, and adds up amounts with overflow checks.
+- The Premium client follows no redirect and reads at most 2 MiB of an answer.
 
 ## [0.1.0] - 2026-09-12
 
