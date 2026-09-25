@@ -37,6 +37,12 @@ data-encoding = "2"
 [target.'cfg(target_os = "linux")'.dependencies]
 notify-rust = "4.11"
 
+# The toast API, called directly on Windows for the same reason: a
+# toast replaces another only when both carry a tag and a group, and the
+# plugin sets neither. The version the plugin's toast library uses.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = ["Data_Xml_Dom", "Foundation_Collections", "UI_Notifications"] }
+
 [dev-dependencies]
 # The tests sign the licences they then read back; the app itself never
 # signs anything.

@@ -2624,6 +2624,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tempfile",
  "tokio",
+ "windows 0.61.3",
 ]
 
 [[package]]

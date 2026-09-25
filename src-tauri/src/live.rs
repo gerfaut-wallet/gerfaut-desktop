@@ -31,7 +31,7 @@ use gerfaut_core::wallet::snapshot::SyncReport;
 use gerfaut_core::watch::WatchStatus;
 use serde::Serialize;
 use tauri::{Emitter, Manager};
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 use tauri_plugin_notification::NotificationExt;
 
 #[cfg(target_os = "linux")]
@@ -198,6 +198,9 @@ pub(crate) struct LiveAlerts {
     budgets: std::sync::Mutex<Budgets>,
     #[cfg(target_os = "linux")]
     shown: std::sync::Mutex<Shown>,
+    /// The tags this run posts payments' toasts under.
+    #[cfg(windows)]
+    pub(crate) tags: crate::toast::Tags,
 }
 
 impl Default for LiveAlerts {
@@ -207,6 +210,8 @@ impl Default for LiveAlerts {
             budgets: std::sync::Mutex::new(Budgets::new()),
             #[cfg(target_os = "linux")]
             shown: std::sync::Mutex::new(Shown::default()),
+            #[cfg(windows)]
+            tags: crate::toast::Tags::default(),
         }
     }
 }
@@ -310,12 +315,11 @@ pub(crate) fn within_budget(
     out
 }
 
-/// Posts through the notification plugin. On Windows and macOS nothing
-/// posted from here replaces a notification: the plugin drops the id on
-/// the desktop, and neither the toast library under it nor the macOS one
-/// takes an id or a tag. The pending notice of a payment stays in the
-/// system's list beside its confirmation there.
-#[cfg(not(target_os = "linux"))]
+/// Posts through the notification plugin. On macOS nothing posted from
+/// here replaces a notification: the plugin drops the id on the desktop,
+/// and the library under it takes none. The pending notice of a payment
+/// stays in the system's list beside its confirmation there.
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(crate) fn post(app: &tauri::AppHandle, notice: &Notice) -> Result<(), String> {
     app.notification()
         .builder()
@@ -323,6 +327,13 @@ pub(crate) fn post(app: &tauri::AppHandle, notice: &Notice) -> Result<(), String
         .body(&notice.body)
         .show()
         .map_err(|e| e.to_string())
+}
+
+/// Posts a toast with a tag of the payment's own, which the next notice
+/// of that payment replaces: see [`crate::toast`].
+#[cfg(windows)]
+pub(crate) fn post(app: &tauri::AppHandle, notice: &Notice) -> Result<(), String> {
+    crate::toast::post(app, notice)
 }
 
 /// Posts to the notification server directly, through notify-rust, the

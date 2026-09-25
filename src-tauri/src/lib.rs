@@ -34,6 +34,8 @@ mod devices;
 mod live;
 mod notice;
 mod premium;
+#[cfg(any(windows, test))]
+mod toast;
 
 /// Error shape every command returns; the frontend matches on `kind`.
 #[derive(Debug, Clone, Serialize)]
