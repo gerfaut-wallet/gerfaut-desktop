@@ -374,11 +374,11 @@ async fn wallet_policy(
     Ok(state.manager.policy(&id).await?)
 }
 
-/// The furthest the Receive page looks past the next unused address.
-/// Skipping past the gap limit already warns, and the gap limit stops
-/// at 500: this only keeps a window gone wrong from asking the core to
-/// derive four billion addresses in one call.
-const MAX_LOOKAHEAD: u32 = 1_000;
+/// The furthest the Receive page looks past the next unused address,
+/// the most the core hands out in one call. Skipping past the gap limit
+/// already warns: this only keeps a window gone wrong from asking for
+/// more than the core would give.
+const MAX_LOOKAHEAD: u32 = 200;
 
 /// The next unused address and the `lookahead` after it, within
 /// [`MAX_LOOKAHEAD`].

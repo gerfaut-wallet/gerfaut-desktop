@@ -15,16 +15,30 @@ import { StackedAmount } from "../components/Amount";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { Notice } from "../components/Notice";
-import type { AddressRow } from "../lib/ipc";
+import type { AddressEntry, AddressRow } from "../lib/ipc";
 import { useAddressList, useReceiveAddresses, useSnapshot } from "../state/queries";
 import { useUi } from "../state/store";
 
 /** Rows each keychain shows before "Show all". */
 const FOLDED_ROWS = 5;
 
-/** How far past the next unused address the backend derives: past it,
-    "Next address" would show the same address again. */
-const MAX_LOOKAHEAD = 1_000;
+/** How many upcoming addresses the core hands out past the next unused
+    one, at most. It skips the ones a payment already reached, so the
+    200th is often further than 200 indexes away. */
+const MAX_LOOKAHEAD = 200;
+
+/** How many unused addresses come right before the one at `position`,
+    back to the last used one. The core leaves out an address a payment
+    already reached, so a jump between two indexes is a used address,
+    and the count starts again after it. Everything before the next
+    unused address is used. */
+export function unusedBefore(entries: AddressEntry[], position: number): number {
+  let start = entries[0].index;
+  for (let k = 1; k <= position; k += 1) {
+    if (entries[k].index !== entries[k - 1].index + 1) start = entries[k].index;
+  }
+  return entries[position].index - start;
+}
 
 /** Receive page: the next unused address first (QR, the address in
     full, copy, skip), then the audit of every revealed address, one
@@ -36,7 +50,9 @@ export function ReceiveView({ walletId }: { walletId: string }) {
   // Skipping peeks further down the derivation path; nothing is
   // retired, and a restart returns to the first unused address.
   const [offset, setOffset] = useState(0);
-  const addresses = useReceiveAddresses(walletId, offset);
+  // One more than the one shown, so the page knows whether there is a
+  // next one before "Next address" is pressed.
+  const addresses = useReceiveAddresses(walletId, Math.min(offset + 1, MAX_LOOKAHEAD));
   const list = useAddressList(walletId);
   const [copied, setCopied] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
@@ -44,9 +60,25 @@ export function ReceiveView({ walletId }: { walletId: string }) {
   // A wallet switch resets the peek: offsets are not comparable.
   useEffect(() => setOffset(0), [walletId]);
 
+  const entries = addresses.data ?? [];
+  // The list the core answered, not the one kept on screen while it
+  // was asked: only that one says where the upcoming addresses end.
+  const settled = addresses.data !== undefined && !addresses.isPlaceholderData;
+  const position = Math.min(offset, entries.length - 1);
+  const entry = entries[position];
+  const hasNext = settled ? entries.length > offset + 1 : offset < MAX_LOOKAHEAD;
+
+  // A sync that found a payment shortens the list under the page: the
+  // peek comes back to the last address still offered.
+  useEffect(() => {
+    if (settled && entries.length > 0 && offset > entries.length - 1) {
+      setOffset(entries.length - 1);
+    }
+  }, [settled, entries.length, offset]);
+
   const singleAddress = snapshot.data?.meta.kind.type === "single_address";
   const gapLimit = snapshot.data?.meta.gap_limit ?? 20;
-  const entry = addresses.data?.[Math.min(offset, (addresses.data?.length ?? 1) - 1)];
+  const gap = entry ? unusedBefore(entries, position) : 0;
 
   const copy = async () => {
     if (!entry) return;
@@ -112,7 +144,7 @@ export function ReceiveView({ walletId }: { walletId: string }) {
                     <p className="mb-1.5 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
                       {singleAddress
                         ? "Watched address"
-                        : offset === 0
+                        : position === 0
                           ? `Next unused address · index ${entry.index}`
                           : `Unused address · index ${entry.index}`}
                     </p>
@@ -133,11 +165,11 @@ export function ReceiveView({ walletId }: { walletId: string }) {
 
                   {/* A convention other software follows, not a risk to
                       funds or privacy: amber, and the info glyph. */}
-                  {!singleAddress && offset >= gapLimit && (
+                  {!singleAddress && gap >= gapLimit && (
                     <Notice tone="info">
-                      This is {offset} addresses past the next unused one — beyond
-                      the gap limit of {gapLimit}, other wallet software may not
-                      detect funds received here.
+                      {gap} unused addresses come before this one, beyond the gap
+                      limit of {gapLimit}: other wallet software may not detect funds
+                      received here.
                     </Notice>
                   )}
 
@@ -154,8 +186,8 @@ export function ReceiveView({ walletId }: { walletId: string }) {
                       <>
                         <Button
                           variant="ghost"
-                          disabled={offset >= MAX_LOOKAHEAD}
-                          onClick={() => setOffset(offset + 1)}
+                          disabled={!hasNext}
+                          onClick={() => setOffset(position + 1)}
                         >
                           <SkipForward size={15} strokeWidth={1.5} aria-hidden />
                           Next address
@@ -169,6 +201,15 @@ export function ReceiveView({ walletId }: { walletId: string }) {
                       </>
                     )}
                   </div>
+                  {/* Why "Next address" stopped: a hint, since nothing is
+                      at stake. */}
+                  {!singleAddress && settled && !hasNext && (
+                    <p className="font-ui text-xs text-muted">
+                      {entries.length === 1
+                        ? "This descriptor has one address and no other to skip to."
+                        : `Gerfaut looks ${MAX_LOOKAHEAD} unused addresses ahead and no further.`}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

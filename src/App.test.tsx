@@ -1772,6 +1772,45 @@ describe("receive page", () => {
     expect(await screen.findByText(/beyond the gap limit of 20/i)).toBeInTheDocument();
   });
 
+  /** The core hands out a bounded list, and fewer addresses when it
+      skips the paid ones: "Next address" stops on the last one instead
+      of showing it again, and says why. */
+  it("stops on the last upcoming address and says why", async () => {
+    walletIpc({
+      receive_addresses: (args) =>
+        receiveEntries(Math.min(Number(args.lookahead ?? 0), 2)),
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Receive" }));
+    await screen.findByText(/next unused address · index 0/i);
+    const next = () => screen.getByRole("button", { name: /next address/i });
+    await user.click(next());
+    await screen.findByText(/unused address · index 1/i);
+    await user.click(next());
+    expect(await screen.findByText(/unused address · index 2/i)).toBeInTheDocument();
+    await waitFor(() => expect(next()).toBeDisabled());
+    expect(
+      screen.getByText("Gerfaut looks 200 unused addresses ahead and no further."),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no next address for a descriptor that has only one", async () => {
+    walletIpc({ receive_addresses: () => receiveEntries(0) });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Receive" }));
+    await screen.findByText(/next unused address · index 0/i);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /next address/i })).toBeDisabled(),
+    );
+    expect(
+      screen.getByText("This descriptor has one address and no other to skip to."),
+    ).toBeInTheDocument();
+  });
+
   it("shows a single-address wallet without a skip control", async () => {
     const single: WalletMeta = {
       ...WALLET,
