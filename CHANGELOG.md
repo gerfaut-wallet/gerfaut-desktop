@@ -28,6 +28,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The Overview no longer opens scrolled down after you leave a long Settings page, which could push the red banner about a device waiting for approval out of view. Every page now opens at its top.
 
+### Security
+
+- Gerfaut now opens only the addresses it links to: the block explorer, its releases page, the Premium page, the Telegram alerts bot and the ntfy topic. Before, the window could ask the system to open any web address.
+
 ## [0.1.0] - 2026-09-12
 
 First public release. Windows, macOS and Linux.

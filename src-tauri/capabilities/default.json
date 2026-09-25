@@ -1,17 +1,22 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capabilities of the main window",
+  "description": "Capabilities of the main window. It opens the addresses listed below and no other.",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
-    "opener:allow-open-url",
-    "opener:allow-default-urls",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "ntfy://*" }]
+      "allow": [
+        { "url": "https://mempool.space/*" },
+        { "url": "https://github.com/gerfaut-wallet/gerfaut-desktop/releases/latest" },
+        { "url": "https://gerfaut-wallet.com/premium" },
+        { "url": "https://gerfaut-wallet.com/premium#renew" },
+        { "url": "https://t.me/GerfautAlertsBot?start=*" },
+        { "url": "ntfy://ntfy.gerfaut-wallet.com/*" }
+      ]
     },
     "notification:allow-is-permission-granted",
     "notification:allow-request-permission"
