@@ -63,11 +63,13 @@ pub(crate) fn app_id<'a>(exe_dir: &Path, identifier: &'a str) -> &'a str {
 }
 
 /// Posts a notice as a toast. The system is waited for on a thread of
-/// its own, never by the caller, and a toast it refuses is dropped, as
-/// the plugin does.
+/// its own, never by the caller. A toast it refuses goes out through
+/// the plugin instead, without the tag: a notice beside its pending one
+/// is better than no notice at all.
 #[cfg(windows)]
 pub(crate) fn post(app: &tauri::AppHandle, notice: &crate::notice::Notice) -> Result<(), String> {
     use tauri::Manager;
+    use tauri_plugin_notification::NotificationExt;
 
     let tag = notice
         .id
@@ -80,8 +82,17 @@ pub(crate) fn post(app: &tauri::AppHandle, notice: &crate::notice::Notice) -> Re
         .unwrap_or_default();
     let app_id = app_id(&exe_dir, &app.config().identifier).to_owned();
     let (title, body) = (notice.title.clone(), notice.body.clone());
+    let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let _ = show(&app_id, &title, &body, tag.as_deref());
+        if let Err(error) = show(&app_id, &title, &body, tag.as_deref()) {
+            eprintln!("gerfaut: the toast was refused ({error}), posting it through the plugin");
+            let _ = app
+                .notification()
+                .builder()
+                .title(&title)
+                .body(&body)
+                .show();
+        }
     });
     Ok(())
 }
