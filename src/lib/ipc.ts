@@ -872,7 +872,11 @@ export type TxWarningKind =
   | "input_mismatch"
   | "fee_unknown"
   | "dust_output"
-  | "spends_watched";
+  | "spends_watched"
+  /** An input signed with SIGHASH_NONE or SIGHASH_SINGLE: its signature
+      leaves some or all of the outputs open, and whoever relays the
+      transaction can send that money elsewhere. */
+  | "uncommitted_outputs";
 
 /** How loudly a caution is read. The core answers the one question —
     can the person lose funds or lose privacy? — so the two applications

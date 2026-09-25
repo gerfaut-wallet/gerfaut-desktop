@@ -183,6 +183,60 @@ describe("BroadcastView", () => {
     ).toBeInTheDocument();
   });
 
+  /** A signature over only some outputs, or none: what the preview
+      shows is not what the network has to pay. Red on the page, with
+      the plain words after the core's, and red again where the send is
+      decided. */
+  it("warns in red when a signature leaves the outputs open", async () => {
+    const user = mount({
+      ...PREVIEW,
+      warnings: [
+        warning(
+          "uncommitted_outputs",
+          "alert",
+          "Input 0 is signed with SIGHASH_NONE, which leaves some or all of the outputs open: whoever relays or mines this transaction can send that money elsewhere. Have it signed again over every output (SIGHASH_ALL).",
+        ),
+      ],
+    });
+    await preview(user);
+
+    const cautions = within(screen.getByRole("region", { name: "Before you send" }));
+    const [note] = cautions.getAllByRole("listitem");
+    expect(note.firstElementChild).toHaveClass("bg-alert-surface", "text-alert");
+    expect(note.querySelector(".lucide-unlink")).toBeInTheDocument();
+    expect(note).toHaveTextContent(
+      /\(SIGHASH_ALL\)\. This signature does not fix where the money goes: anyone who sees the transaction before it is mined can send it somewhere else\. Unless you set this up on purpose, do not broadcast it\.$/,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Broadcast" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    const reminder = dialog.getByText(/leaves its outputs open: whoever relays it can change/);
+    expect(reminder.parentElement).toHaveClass("bg-alert-surface", "text-alert");
+  });
+
+  /** Every coin's value is known and there is still no fee: the
+      outputs pay more than the inputs bring, and "unknown" would send
+      someone looking for a value that is not missing. */
+  it("says there is no fee when the outputs exceed the inputs", async () => {
+    const user = mount({
+      ...PREVIEW,
+      fee_sats: null,
+      fee_rate_sat_vb: null,
+      warnings: [
+        warning(
+          "fee_unknown",
+          "info",
+          "The outputs pay more than the inputs bring: the network will refuse this transaction.",
+        ),
+      ],
+    });
+    await preview(user);
+    await user.click(screen.getByRole("button", { name: "Broadcast" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(dialog.getByText("none, the outputs exceed the inputs")).toBeInTheDocument();
+    expect(dialog.queryByText("unknown")).not.toBeInTheDocument();
+  });
+
   /** A coin nothing stood behind — no backend answered, or none knew
       it. The core says so, in amber, and the preview still shows the
       fee it summed over the PSBT's own word. The mark says which figures

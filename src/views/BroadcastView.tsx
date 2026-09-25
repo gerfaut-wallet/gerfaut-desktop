@@ -18,6 +18,7 @@ import {
   ScanLine,
   Trash2,
   Undo2,
+  Unlink,
   Wallet as WalletIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -392,6 +393,7 @@ const WARNING_ICON: Record<TxWarningKind, LucideIcon> = {
   fee_unknown: CircleHelp,
   dust_output: Coins,
   spends_watched: WalletIcon,
+  uncommitted_outputs: Unlink,
 };
 
 /** What the reader can do about a caution, for the kinds where the
@@ -400,7 +402,19 @@ const WARNING_ICON: Record<TxWarningKind, LucideIcon> = {
 const WARNING_ADVICE: Partial<Record<TxWarningKind, string>> = {
   input_unknown:
     "Look the coin up on a backend you trust, or check the amounts on the signing device, before you send.",
+  uncommitted_outputs:
+    "This signature does not fix where the money goes: anyone who sees the transaction before it is mined can send it somewhere else. Unless you set this up on purpose, do not broadcast it.",
 };
+
+/** Whether the outputs pay more than the inputs bring: every input's
+    value is known, and there is still no fee. The network refuses such
+    a transaction; "unknown" would send someone looking for a value
+    that is not missing. */
+function overspends(preview: TxPreview): boolean {
+  return (
+    preview.fee_sats === null && preview.inputs.every((input) => input.value_sats !== null)
+  );
+}
 
 /** Whether a figure on the preview is the PSBT's own word. The core
     says so coin by coin — nothing stood behind it, no backend and no
@@ -688,6 +702,7 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
   // The last figure read before an irreversible send: if it is the
   // PSBT's word, it is marked here as it was on the preview.
   const claimed = restsOnClaims(preview) && preview.fee_sats !== null;
+  const outputsOpen = preview.warnings.some((warning) => warning.kind === "uncommitted_outputs");
   return (
     <div className="flex flex-col gap-3">
       <p className="font-ui text-sm text-text">
@@ -698,7 +713,9 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
         <Fact label="Outputs">{groupThousands(String(preview.outputs.length))}</Fact>
         <Fact label="Fee" note={claimed ? <Claimed /> : undefined}>
           {preview.fee_sats === null
-            ? "unknown"
+            ? overspends(preview)
+              ? "none, the outputs exceed the inputs"
+              : "unknown"
             : masked
               ? MASKED
               : `${formatAmount(preview.fee_sats, unit)}${
@@ -708,6 +725,14 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
                 }`}
         </Fact>
       </dl>
+      {/* The one caution that makes the outputs above a suggestion:
+          said again here, in red, where the send is decided. */}
+      {outputsOpen && (
+        <Notice tone="alert" icon={Unlink}>
+          A signature in this transaction leaves its outputs open: whoever relays it can
+          change where the money goes.
+        </Notice>
+      )}
       {(claimed || preview.warnings.some((warning) => warning.severity === "alert")) && (
         <p className="font-ui text-xs text-pending">
           The cautions listed on the preview still apply.
