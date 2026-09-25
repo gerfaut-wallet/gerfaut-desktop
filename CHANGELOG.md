@@ -31,6 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Security
 
 - Gerfaut now opens only the addresses it links to: the block explorer, its releases page, the Premium page, the Telegram alerts bot and the ntfy topic. Before, the window could ask the system to open any web address.
+- When you pick a file to add a wallet or broadcast a transaction, Gerfaut now refuses it before reading it if it is far too large to be one, so the window no longer stalls on it.
 
 ## [0.1.0] - 2026-09-12
 

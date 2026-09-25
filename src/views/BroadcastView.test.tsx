@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BroadcastView } from "./BroadcastView";
+import { BroadcastView, MAX_TRANSACTION_FILE_BYTES } from "./BroadcastView";
 import type { BroadcastStatus, TxPreview, TxWarning } from "../lib/ipc";
 import { useUi } from "../state/store";
 import { formatFiat } from "../lib/format";
@@ -426,5 +426,25 @@ describe("BroadcastView", () => {
       expect(screen.getAllByText("Script output").length).toBeGreaterThan(0),
     );
     expect(screen.queryByText("non-standard script")).not.toBeInTheDocument();
+  });
+
+  it("refuses a file far too large to be a transaction without reading it", async () => {
+    let asked = false;
+    mount();
+    mockIPC((cmd) => {
+      asked ||= cmd === "preview_transaction";
+      return undefined;
+    });
+    const file = new File(["0200"], "disc.img");
+    Object.defineProperty(file, "size", { value: MAX_TRANSACTION_FILE_BYTES + 1 });
+    const read = vi.spyOn(file, "arrayBuffer");
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This file is too large to hold a transaction.",
+    );
+    expect(read).not.toHaveBeenCalled();
+    expect(asked).toBe(false);
   });
 });

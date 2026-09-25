@@ -1,11 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ParsedInput } from "../lib/ipc";
 import { useUi } from "../state/store";
-import { AddWalletModal } from "./AddWalletModal";
+import { AddWalletModal, MAX_WALLET_FILE_BYTES } from "./AddWalletModal";
 
 /** A lone tpub: the core keeps Native SegWit and says it assumed it. */
 const PARSED_TPUB: ParsedInput = {
@@ -82,5 +82,24 @@ describe("AddWalletModal", () => {
     await confirmStep({ ...PARSED_TPUB, warnings: [] });
     expect(screen.queryByText(/carries no script type/i)).not.toBeInTheDocument();
     expect(screen.getByText(/recognized as/i)).toBeInTheDocument();
+  });
+
+  it("refuses a file far too large to be a wallet without reading it", async () => {
+    let asked = false;
+    mockIPC((cmd) => {
+      asked ||= cmd === "parse_input";
+      return undefined;
+    });
+    useUi.setState({ addWalletOpen: true });
+    renderModal();
+    const file = new File(["wpkh(tpub...)"], "disc.img");
+    Object.defineProperty(file, "size", { value: MAX_WALLET_FILE_BYTES + 1 });
+    const read = vi.spyOn(file, "text");
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    expect(await screen.findByText("This file is too large to hold a wallet.")).toBeInTheDocument();
+    expect(read).not.toHaveBeenCalled();
+    expect(asked).toBe(false);
   });
 });

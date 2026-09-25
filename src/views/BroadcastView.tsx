@@ -71,6 +71,11 @@ function bytesToHex(bytes: Uint8Array): string {
   return out;
 }
 
+/** The largest file read for a transaction: twice what the core takes
+    as one. A bigger file is none, and reading it whole would only
+    stall the window. */
+export const MAX_TRANSACTION_FILE_BYTES = 8_000_000;
+
 /** Reads an imported file into the text the core decodes: a binary
     PSBT or transaction as hex, anything else as the text it holds. */
 export async function fileToInput(file: File): Promise<string> {
@@ -97,24 +102,34 @@ export function BroadcastView({ network }: { network: Network }) {
   const [scanOpen, setScanOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [sent, setSent] = useState<RecentBroadcast | null>(null);
+  /** A file refused before it was read: said where the core's refusal
+      would be. */
+  const [fileError, setFileError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Another workspace network means another chain: start over.
   useEffect(() => {
     setRaw("");
     setSent(null);
+    setFileError(null);
     preview.reset();
     broadcast.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [network]);
 
   const decode = (input: string) => {
+    setFileError(null);
     setSent(null);
     broadcast.reset();
     preview.mutate({ input, network });
   };
 
   const importFile = async (file: File) => {
+    if (file.size > MAX_TRANSACTION_FILE_BYTES) {
+      preview.reset();
+      setFileError("This file is too large to hold a transaction.");
+      return;
+    }
     const input = await fileToInput(file);
     setRaw(input);
     decode(input);
@@ -144,6 +159,7 @@ export function BroadcastView({ network }: { network: Network }) {
   const startOver = () => {
     setRaw("");
     setSent(null);
+    setFileError(null);
     preview.reset();
     broadcast.reset();
   };
@@ -183,7 +199,7 @@ export function BroadcastView({ network }: { network: Network }) {
             onImport={() => fileRef.current?.click()}
             onScan={() => setScanOpen(true)}
             busy={preview.isPending}
-            error={previewError}
+            error={fileError ?? previewError}
           />
         )}
 

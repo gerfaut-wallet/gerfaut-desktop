@@ -64,6 +64,11 @@ const NETWORK_LABEL: Record<Network, string> = {
   regtest: "Regtest",
 };
 
+/** The largest file read for a wallet: sixteen times what the core
+    takes as one. A bigger file is none, and reading it whole would
+    only stall the window. */
+export const MAX_WALLET_FILE_BYTES = 1024 * 1024;
+
 /** Two steps: paste or import, then confirm what was recognized.
     Detection is never silent — the user validates before anything is
     stored. */
@@ -151,6 +156,10 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
   };
 
   const importFile = async (file: File) => {
+    if (file.size > MAX_WALLET_FILE_BYTES) {
+      setError("This file is too large to hold a wallet.");
+      return;
+    }
     const text = await file.text();
     setRaw(text.trim());
     await parse(text);
