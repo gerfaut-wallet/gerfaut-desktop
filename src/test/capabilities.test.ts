@@ -27,7 +27,7 @@ const patterns = permissions
     expect(url).not.toMatch(/[[\]{}]/);
     const source = url
       .split("")
-      .map((c) => (c === "*" ? ".*" : c === "?" ? "." : c.replace(/[.+^$()|\/]/g, "\$&")))
+      .map((c) => (c === "*" ? ".*" : c === "?" ? "." : c.replace(/[.+^$()|\/]/g, "\\$&")))
       .join("");
     return new RegExp(`^${source}$`);
   });
@@ -68,6 +68,7 @@ describe("addresses the window may open", () => {
       "http://mempool.space/tx/ab",
       "https://mempool.space.evil.example/tx/ab",
       "https://mempool.space@evil.example/tx/ab",
+      "https://mempoolxspace/tx/ab",
       "https://github.com/someone/else/releases/latest",
       "https://gerfaut-wallet.com.evil.example/premium",
       "https://t.me/SomeoneElsesBot?start=K7QM2XRA",
