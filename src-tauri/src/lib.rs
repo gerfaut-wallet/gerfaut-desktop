@@ -962,11 +962,26 @@ fn isolated_account(dir: &std::ffi::OsStr) -> String {
     format!("{KEYRING_ACCOUNT}.{}", dev_suffix(dir))
 }
 
+/// The vault file inside the data directory, as the core names it.
+const VAULT_FILE: &str = "gerfaut.vault";
+
 /// Fetches the vault key from the OS credential store, creating and
 /// storing a fresh random one on first launch.
-fn vault_key() -> Result<VaultKey, String> {
+fn vault_key(data_dir: &std::path::Path) -> Result<VaultKey, String> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, &vault_key_account())
         .map_err(|e| format!("credential store unavailable: {e}"))?;
+    // A vault that cannot be looked at counts as there, as the core
+    // has it.
+    let vault_present = data_dir.join(VAULT_FILE).try_exists().unwrap_or(true);
+    key_from(&entry, vault_present)
+}
+
+/// The key `entry` holds, or a fresh one stored there when it holds
+/// none and no vault exists yet. With a vault already on disk, a new
+/// key could never open it, and would take the place of the right one
+/// should the store have answered "none" by mistake: the open fails
+/// instead, and the store is left as it was.
+fn key_from(entry: &keyring::Entry, vault_present: bool) -> Result<VaultKey, String> {
     match entry.get_password() {
         Ok(stored) => {
             let bytes =
@@ -976,6 +991,10 @@ fn vault_key() -> Result<VaultKey, String> {
                 .map_err(|_| "stored vault key has the wrong length".to_owned())?;
             Ok(VaultKey::Raw(key))
         }
+        Err(keyring::Error::NoEntry) if vault_present => Err(
+            "the credential store holds no key for the vault already here, and a new key would not open it"
+                .to_owned(),
+        ),
         Err(keyring::Error::NoEntry) => {
             let mut key = [0u8; 32];
             use rand::RngCore;
@@ -1016,7 +1035,7 @@ pub(crate) struct Startup(std::sync::Mutex<Option<CommandError>>);
 fn open_vault(app: &tauri::AppHandle) -> CommandResult<()> {
     let data_dir =
         data_dir(app).map_err(|e| internal(format!("no data directory for the vault: {e}")))?;
-    let key = vault_key().map_err(|e| CommandError::new("vault", e))?;
+    let key = vault_key(&data_dir).map_err(|e| CommandError::new("vault", e))?;
     let manager = WalletManager::open(&data_dir, key)?;
     // A vault that holds a lock opens shut: the first frame the
     // webview draws is the lock screen, and until a secret goes
@@ -1368,6 +1387,48 @@ mod tests {
         // FNV-1a, pinned: a toolchain update must not lose the key of a
         // test vault.
         assert_eq!(dev_suffix(OsStr::new("a")), "deve40c292c");
+    }
+
+    /// A store in memory, the OS one left alone.
+    fn mock_entry() -> keyring::Entry {
+        keyring::Entry::new_with_credential(Box::new(keyring::mock::MockCredential::default()))
+    }
+
+    /// The first launch stores a key, and the next one reads it back.
+    #[test]
+    fn a_vault_key_is_made_once_before_any_vault() {
+        use gerfaut_core::store::VaultKey;
+        let entry = mock_entry();
+        let VaultKey::Raw(made) = super::key_from(&entry, false).unwrap() else {
+            panic!("a raw key");
+        };
+        let VaultKey::Raw(read) = super::key_from(&entry, true).unwrap() else {
+            panic!("a raw key");
+        };
+        assert_eq!(made, read);
+    }
+
+    /// A store that holds no key beside a vault already on disk gets
+    /// none: a new one would never open that vault, and would take the
+    /// place of the right one had the store answered "none" by mistake.
+    #[test]
+    fn no_new_vault_key_is_stored_beside_an_existing_vault() {
+        let entry = mock_entry();
+        let refused = super::key_from(&entry, true).err().expect("refused");
+        assert!(refused.contains("no key"), "{refused}");
+        assert!(matches!(entry.get_password(), Err(keyring::Error::NoEntry)));
+    }
+
+    /// The vault file is looked for under the name the core gives it.
+    #[test]
+    fn the_vault_file_is_named_as_the_core_names_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let _manager = gerfaut_core::WalletManager::open(
+            dir.path(),
+            gerfaut_core::store::VaultKey::Raw([7; 32]),
+        )
+        .unwrap();
+        assert!(dir.path().join(super::VAULT_FILE).is_file());
     }
 
     /// A vault another Gerfaut holds has a kind of its own, so the
