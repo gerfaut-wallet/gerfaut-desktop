@@ -980,6 +980,51 @@ describe("the channels card", () => {
     expect(card("Channels").getAllByText("Linked")).toHaveLength(2);
   });
 
+  /** A code Telegram would not take in a link: the core leaves it out,
+      the link only opens the bot, and the screen gives the message to
+      send by hand, in the dialog and on the channel's row. */
+  it("gives the message to send when the link cannot carry the code", async () => {
+    const odd: Channel = {
+      ...TELEGRAM_WAITING,
+      link_code: "ab cd#1",
+      telegram_url: "https://t.me/GerfautAlertsBot",
+    };
+    let channels: Channel[] = [NTFY];
+    mockPremium({
+      premium_channels: () => channels,
+      premium_add_channel: () => {
+        channels = [NTFY, odd];
+        return { channel: odd, subscribe_url: null };
+      },
+    });
+    useLock.setState({ lock: null });
+    renderSection();
+    const user = userEvent.setup();
+    await screen.findByText("abc…xyz");
+
+    await user.click(screen.getByRole("button", { name: "Add a channel" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Telegram/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Link Telegram" });
+    expect(dialog).toHaveTextContent("send this message to @GerfautAlertsBot");
+    expect(within(dialog).getByText("/start ab cd#1")).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent("with the code already in place");
+    await user.click(within(dialog).getByRole("button", { name: "Copy" }));
+    expect(await navigator.clipboard.readText()).toBe("/start ab cd#1");
+    await user.click(within(dialog).getByRole("button", { name: "Open Telegram" }));
+    expect(opened.urls).toEqual(["https://t.me/GerfautAlertsBot"]);
+    await user.click(within(dialog).getByRole("button", { name: "Done" }));
+
+    const row = card("Channels").getAllByRole("listitem")[1];
+    expect(row).toHaveTextContent("Open Telegram and send the bot /start ab cd#1");
+  });
+
+  it("asks nothing to be typed when the link carries the code", async () => {
+    mockPremium({ premium_channels: () => [NTFY, TELEGRAM_WAITING] });
+    renderSection();
+    await screen.findByText("abc…xyz");
+    expect(card("Channels").queryByText(/send the bot/)).not.toBeInTheDocument();
+  });
+
   it("takes an e-mail address and a webhook with its secret, and repeats a refusal in the server's words", async () => {
     useLock.setState({ lock: null });
     let refuse = false;

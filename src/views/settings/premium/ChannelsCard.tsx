@@ -90,6 +90,26 @@ function waitingWord(channel: Channel): string | null {
   return null;
 }
 
+/** Whether a Telegram link opens the bot with the code in place. */
+function carriesCode(url: string): boolean {
+  try {
+    return new URL(url).searchParams.has("start");
+  } catch {
+    return false;
+  }
+}
+
+/** The message to type to the bot, when the link cannot carry the
+    code. Telegram takes only letters, digits, `_` and `-` as a start
+    parameter, so the core leaves any other code out of the link, which
+    then only opens the bot. Null when the link carries it, or when the
+    channel waits for no code. */
+export function startToType(channel: Channel): string | null {
+  if (channel.kind !== "telegram" || channel.linked || !channel.link_code) return null;
+  if (channel.telegram_url !== null && carriesCode(channel.telegram_url)) return null;
+  return `/start ${channel.link_code}`;
+}
+
 /** What happened to a channel the server turned off, and the way back.
     Only a webhook goes this way today — one written to a private or
     local address, which the server refuses to post to and disables
@@ -275,6 +295,7 @@ export function ChannelsCard({
               const entry = kindOf(channel.kind);
               const Glyph = entry.icon;
               const waiting = waitingWord(channel);
+              const toType = startToType(channel);
               // The server turned this one off and delivers nothing to
               // it, whatever else the row would have said: that state
               // comes first, and the way back is not the one it was
@@ -356,6 +377,14 @@ export function ChannelsCard({
                       onConfirm={() => setIdentity(channel)}
                       onCancel={() => cancelRemoval(channel.id)}
                     />
+                  )}
+                  {!off && toType !== null && (
+                    // Under the name, where the code would otherwise be
+                    // missing: the link opens the bot and no more.
+                    <p className="mt-1 pl-11 font-ui text-xs text-muted">
+                      Open Telegram and send the bot{" "}
+                      <span className="selectable break-all font-data text-text">{toType}</span>
+                    </p>
                   )}
                   {off && (
                     // Amber, and the words say it on their own: nothing
@@ -570,6 +599,10 @@ function AddChannelModal({
               ? "Subscribe to this topic in the ntfy app"
               : "Link Telegram";
 
+  /** The message to send the bot by hand, when the link cannot carry
+      the code. */
+  const telegramTyped = step.kind === "telegram" ? startToType(step.created.channel) : null;
+
   const linked =
     step.kind === "telegram" &&
     (channels.find((channel) => channel.id === step.created.channel.id)?.linked ?? false);
@@ -711,13 +744,40 @@ function AddChannelModal({
 
           {step.kind === "telegram" && (
             <>
-              <p className="font-ui text-sm text-text">
-                Send this to <span className="font-medium">@GerfautAlertsBot</span>, or open
-                Telegram with the code already in place.
-              </p>
-              <p className="selectable rounded-sm bg-sunken px-3 py-3 text-center font-data text-[22px] tracking-[0.12em] text-text">
-                {step.created.channel.link_code ?? "—"}
-              </p>
+              {telegramTyped === null ? (
+                <>
+                  <p className="font-ui text-sm text-text">
+                    Send this to <span className="font-medium">@GerfautAlertsBot</span>, or
+                    open Telegram with the code already in place.
+                  </p>
+                  <p className="selectable rounded-sm bg-sunken px-3 py-3 text-center font-data text-[22px] tracking-[0.12em] text-text">
+                    {step.created.channel.link_code ?? "—"}
+                  </p>
+                </>
+              ) : (
+                // The link could not carry this code: it opens the bot,
+                // and the message is typed, or pasted, there.
+                <>
+                  <p className="font-ui text-sm text-text">
+                    Open Telegram and send this message to{" "}
+                    <span className="font-medium">@GerfautAlertsBot</span>. The code could
+                    not go into the link, so it has to be sent by hand.
+                  </p>
+                  <div className="flex items-center gap-2 rounded-sm bg-sunken py-2 pl-3 pr-2">
+                    <p className="selectable min-w-0 flex-1 break-all font-data text-[17px] text-text">
+                      {telegramTyped}
+                    </p>
+                    <Button variant="ghost" className="h-9" onClick={() => void copy(telegramTyped)}>
+                      {copied ? (
+                        <Check size={14} strokeWidth={2} aria-hidden />
+                      ) : (
+                        <Copy size={14} strokeWidth={1.5} aria-hidden />
+                      )}
+                      {copied ? "Copied" : "Copy"}
+                    </Button>
+                  </div>
+                </>
+              )}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 {linked ? (
                   <Pill tone="neutral" icon={<Check size={12} strokeWidth={2} aria-hidden className="shrink-0" />}>

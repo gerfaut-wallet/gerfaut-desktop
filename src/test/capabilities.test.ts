@@ -56,6 +56,9 @@ describe("addresses the window may open", () => {
       PREMIUM_URL,
       RENEW_URL,
       "https://t.me/GerfautAlertsBot?start=K7QM2XRA",
+      // A code Telegram would not take as a start parameter stays out
+      // of the link, which then only opens the bot.
+      "https://t.me/GerfautAlertsBot",
       "ntfy://ntfy.gerfaut-wallet.com/abcdefghijkmnpqrstuvwxyz23456789",
     ]) {
       expect(opens(url), url).toBe(true);
@@ -72,6 +75,8 @@ describe("addresses the window may open", () => {
       "https://github.com/someone/else/releases/latest",
       "https://gerfaut-wallet.com.evil.example/premium",
       "https://t.me/SomeoneElsesBot?start=K7QM2XRA",
+      "https://t.me/GerfautAlertsBotX",
+      "https://t.me/GerfautAlertsBot/other",
       "ntfy://evil.example/topic",
       "file:///C:/Windows/System32/calc.exe",
       "mailto:someone@example.com",
