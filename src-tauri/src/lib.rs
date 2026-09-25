@@ -942,10 +942,30 @@ async fn import_backup(
 const KEYRING_SERVICE: &str = "Gerfaut";
 const KEYRING_ACCOUNT: &str = "vault-key";
 
+/// The credential store account that holds the vault key. A development
+/// build on a data directory of its own keeps a key of its own there
+/// too, so a test instance never reads the key of the vault already on
+/// the machine, nor creates it; release builds always use the shipped
+/// account.
+fn vault_key_account() -> String {
+    #[cfg(debug_assertions)]
+    if let Some(dir) = std::env::var_os("GERFAUT_DATA_DIR") {
+        return isolated_account(&dir);
+    }
+    KEYRING_ACCOUNT.to_owned()
+}
+
+/// The key account of a development build on `dir`: the shipped one,
+/// followed by the same suffix as its identifier.
+#[cfg(debug_assertions)]
+fn isolated_account(dir: &std::ffi::OsStr) -> String {
+    format!("{KEYRING_ACCOUNT}.{}", dev_suffix(dir))
+}
+
 /// Fetches the vault key from the OS credential store, creating and
 /// storing a fresh random one on first launch.
 fn vault_key() -> Result<VaultKey, String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT)
+    let entry = keyring::Entry::new(KEYRING_SERVICE, &vault_key_account())
         .map_err(|e| format!("credential store unavailable: {e}"))?;
     match entry.get_password() {
         Ok(stored) => {
@@ -1065,10 +1085,22 @@ fn show_main_window(app: &tauri::AppHandle) {
 /// two launches on the same directory still meet.
 #[cfg(debug_assertions)]
 fn isolated_identifier(identifier: &str, dir: &std::ffi::OsStr) -> String {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    dir.hash(&mut hasher);
-    format!("{identifier}.dev{:08x}", hasher.finish() as u32)
+    format!("{identifier}.{}", dev_suffix(dir))
+}
+
+/// `dev` and eight hex digits naming a data directory, the same from
+/// one build and one toolchain to the next: the vault key of a test
+/// instance is filed under it. FNV-1a, since the standard hasher may
+/// change between Rust releases.
+#[cfg(debug_assertions)]
+fn dev_suffix(dir: &std::ffi::OsStr) -> String {
+    let hash = dir
+        .as_encoded_bytes()
+        .iter()
+        .fold(0x811c_9dc5_u32, |hash, byte| {
+            (hash ^ u32::from(*byte)).wrapping_mul(0x0100_0193)
+        });
+    format!("dev{hash:08x}")
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1314,6 +1346,28 @@ mod tests {
         let last = one.strip_prefix("com.gerfautwallet.gerfaut.").unwrap();
         assert!(last.starts_with("dev"), "{one}");
         assert!(last.chars().all(|c| c.is_ascii_alphanumeric()), "{one}");
+    }
+
+    /// A test instance on its own directory files its vault key apart
+    /// from the shipped one, under the suffix of its identifier, and
+    /// finds it again at the next launch on the same directory.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn each_data_directory_keeps_a_vault_key_of_its_own() {
+        use super::{KEYRING_ACCOUNT, dev_suffix, isolated_account, isolated_identifier};
+        use std::ffi::OsStr;
+
+        let dir = OsStr::new("C:\\scratch\\one");
+        let one = isolated_account(dir);
+        assert_ne!(one, KEYRING_ACCOUNT);
+        assert_eq!(one, isolated_account(OsStr::new("C:\\scratch\\one")));
+        assert_ne!(one, isolated_account(OsStr::new("C:\\scratch\\two")));
+        let suffix = dev_suffix(dir);
+        assert_eq!(one, format!("vault-key.{suffix}"));
+        assert!(isolated_identifier("com.gerfautwallet.gerfaut", dir).ends_with(&suffix));
+        // FNV-1a, pinned: a toolchain update must not lose the key of a
+        // test vault.
+        assert_eq!(dev_suffix(OsStr::new("a")), "deve40c292c");
     }
 
     /// A vault another Gerfaut holds has a kind of its own, so the
