@@ -86,7 +86,7 @@ describe("what the server says", () => {
     // Tor, raw, read "tor: no proxy answers on 127.0.0.1:9050".
     expect(premiumFailure({ kind: "tor", message: "tor: no proxy answers" })).toEqual({
       message:
-        "Tor is not reachable. While your backend is an onion address, Gerfaut sends these requests through Tor too.",
+        "Tor is not reachable. While any of your backends, on any network, is an onion address, Gerfaut sends these requests through Tor too.",
       retry: true,
     });
     // The server's own words, made a sentence.

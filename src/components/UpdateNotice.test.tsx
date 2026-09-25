@@ -370,7 +370,7 @@ describe("the update notice", () => {
     await user.click(screen.getByRole("button", { name: "Later" }));
     await user.click(screen.getByRole("button", { name: "Settings" }));
     await user.click(screen.getByRole("button", { name: "About" }));
-    expect(await screen.findByText(/With an onion backend the request goes through Tor/)).toBeInTheDocument();
+    expect(await screen.findByText(/With an onion backend on any network, the request goes through Tor/)).toBeInTheDocument();
     expect(screen.queryByText(/Paused/)).not.toBeInTheDocument();
   });
 

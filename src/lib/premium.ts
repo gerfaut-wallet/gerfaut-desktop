@@ -127,12 +127,13 @@ export function premiumFailure(error: unknown): { message: string; retry: boolea
         // wait ("Try again in 42 s."), and the same request may pass.
         return { message: `The server asks to wait. ${error.message}`, retry: true };
       case "tor":
-        // The server is a clearnet address, but an onion backend sends
-        // everything through Tor, this included. Raw, this read
+        // The server is a clearnet address, but an onion backend on any
+        // network sends everything through Tor, this included: the one
+        // on screen may well be in the clear. Raw, this read
         // "tor: no proxy answers on 127.0.0.1:9050".
         return {
           message:
-            "Tor is not reachable. While your backend is an onion address, Gerfaut sends these requests through Tor too.",
+            "Tor is not reachable. While any of your backends, on any network, is an onion address, Gerfaut sends these requests through Tor too.",
           retry: true,
         };
       default:

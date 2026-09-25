@@ -101,7 +101,7 @@ export function AboutSection() {
         <div>
           <SettingRow
             title="Check for updates automatically"
-            hint="Asks GitHub for the latest release at most once a day while Gerfaut is unlocked, and tells you once when there is a newer one. Nothing is downloaded. With an onion backend the request goes through Tor."
+            hint="Asks GitHub for the latest release at most once a day while Gerfaut is unlocked, and tells you once when there is a newer one. Nothing is downloaded. With an onion backend on any network, the request goes through Tor."
           >
             <Toggle
               checked={auto}
