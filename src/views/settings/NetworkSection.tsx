@@ -70,7 +70,7 @@ export function NetworkSection({ settings }: { settings: Settings }) {
         network={network}
         settings={settings}
         onSave={(config) =>
-          void setBackend.mutateAsync({ network, config }).then(() => {
+          setBackend.mutateAsync({ network, config }).then(() => {
             showToast("Setting saved");
           })
         }

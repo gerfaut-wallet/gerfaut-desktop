@@ -63,7 +63,9 @@ export function BackendSection({
 }: {
   network: Network;
   settings: Settings;
-  onSave: (config: BackendConfig) => void;
+  /** Settles once the core stored the setting; rejects with its
+      refusal otherwise. */
+  onSave: (config: BackendConfig) => Promise<void>;
   saving: boolean;
 }) {
   const current = settings.backends[network] ?? { type: "public_esplora" };
@@ -89,6 +91,8 @@ export function BackendSection({
   const [scanOpen, setScanOpen] = useState(false);
   // Why the core refused the last code read, in its own words.
   const [scanError, setScanError] = useState<string | null>(null);
+  /** Why the core would not store the address, under the button. */
+  const [saveError, setSaveError] = useState<string | null>(null);
   // The last code read was a Tor hidden service: a fact about the
   // address the fields now hold, gone the moment one of them is edited.
   const [onion, setOnion] = useState(false);
@@ -113,6 +117,7 @@ export function BackendSection({
     setPort(electrum.port);
     setTls(electrum.tls);
     setOnion(false);
+    setSaveError(null);
   }, [network, settings.backends]);
 
   const valid =
@@ -150,6 +155,7 @@ export function BackendSection({
     try {
       const backend = await ipc.parseBackend(text);
       setScanError(null);
+      setSaveError(null);
       setOnion(backend.onion);
       if (backend.kind === "esplora") {
         setKind("custom_esplora");
@@ -170,10 +176,43 @@ export function BackendSection({
     }
   };
 
+  /** Stores the setting, and says in the core's words why not when it
+      refuses: the address and nothing else is at fault then, so the
+      line sits under the button that sent it. */
+  const store = async (config: BackendConfig, note?: string) => {
+    try {
+      await onSave(config);
+      if (note) showToast(note);
+    } catch (error) {
+      setSaveError(isCommandError(error) ? error.message : String(error));
+    }
+  };
+
   const save = async () => {
+    setSaveError(null);
     const config = draft();
+    // A name with one colon is no IPv6 address: its port went into the
+    // host field, and the core would only call it a bad IPv6 literal.
+    const typed = /^([^:[\]]+):(\d*)$/.exec(host.trim());
+    if (config.type === "custom_electrum" && typed) {
+      setSaveError(
+        `The host holds a port. Put ${typed[1]} in the host field and the port in its own.`,
+      );
+      return;
+    }
+    // A typed address is read first, the way the core will store it:
+    // one it refuses — a host with a port still in it, say — is said
+    // so here, and not taken for a server that did not answer.
+    if (config.type === "custom_electrum" || config.type === "custom_esplora") {
+      try {
+        await ipc.parseBackend(config.url);
+      } catch (error) {
+        setSaveError(isCommandError(error) ? error.message : String(error));
+        return;
+      }
+    }
     const url = electrumUrlOf(config);
-    if (!url) return onSave(config);
+    if (!url) return store(config);
     // A bridge that cannot answer must not block a setting: the sync
     // meets the same certificate and says so.
     const report = await inspect.mutateAsync(url).catch(() => null);
@@ -181,16 +220,18 @@ export function BackendSection({
       setPending({ url, config, report });
       return;
     }
-    if (report?.status === "unreachable") {
-      showToast("Saved. The server did not answer, so its certificate is unchecked.");
-    }
-    onSave(config);
+    await store(
+      config,
+      report?.status === "unreachable"
+        ? "Saved. The server did not answer, so its certificate is unchecked."
+        : undefined,
+    );
   };
 
   const accept = (fingerprint: string) => {
     if (!pending) return;
     void trust.mutateAsync({ url: pending.url, fingerprint }).then(() => {
-      onSave(pending.config);
+      void store(pending.config);
       setPending(null);
     });
   };
@@ -248,6 +289,7 @@ export function BackendSection({
               onChange={(event) => {
                 setEsploraUrl(event.target.value);
                 setScanError(null);
+                setSaveError(null);
                 setOnion(false);
               }}
               spellCheck={false}
@@ -272,6 +314,7 @@ export function BackendSection({
               onChange={(event) => {
                 setHost(event.target.value);
                 setScanError(null);
+                setSaveError(null);
                 setOnion(false);
               }}
               spellCheck={false}
@@ -287,6 +330,7 @@ export function BackendSection({
               onChange={(event) => {
                 setPort(event.target.value.replace(/\D/g, ""));
                 setScanError(null);
+                setSaveError(null);
                 setOnion(false);
               }}
               inputMode="numeric"
@@ -344,6 +388,7 @@ export function BackendSection({
                 onChange={() => {
                   setKind(option.value);
                   setScanError(null);
+                  setSaveError(null);
                   setOnion(false);
                 }}
                 className="mt-1 accent-(--color-primary)"
@@ -382,6 +427,11 @@ export function BackendSection({
         >
           {inspect.isPending ? "Checking the certificate…" : "Save backend"}
         </Button>
+        {saveError && (
+          <p role="alert" className="mt-2 font-ui text-sm text-muted">
+            {saveError}
+          </p>
+        )}
       </div>
       {pending && (
         <CertificateDialog

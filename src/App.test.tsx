@@ -548,6 +548,17 @@ function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => 
         ];
       case "receive_addresses":
         return receiveEntries(Number(payload.lookahead ?? 0));
+      // The address is read before it is saved; these tests type good
+      // ones.
+      case "parse_backend":
+        return {
+          kind: "electrum",
+          url: String(payload.input),
+          host: "",
+          port: null,
+          tls: true,
+          onion: false,
+        };
       case "wallet_policy":
         return SINGLE_KEY_POLICY;
       case "sync_all":

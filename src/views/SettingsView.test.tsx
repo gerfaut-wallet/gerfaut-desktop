@@ -68,7 +68,7 @@ function renderBackend(
       <BackendSection
         network="mainnet"
         settings={settings}
-        onSave={onSave}
+        onSave={async (config) => onSave(config)}
         saving={false}
       />
     </QueryClientProvider>,
@@ -111,6 +111,75 @@ function toggle(name: string): HTMLElement {
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+describe("saving a server address", () => {
+  /** A port typed into the host field: the core would only call the
+      whole a bad IPv6 literal, so the section says where the port goes
+      before anything is asked of it. */
+  it("says the port belongs in its own field", async () => {
+    const calls = mockBackendIpc({ error: "unused" });
+    const saved: BackendConfig[] = [];
+    renderBackend((config) => saved.push(config));
+    const user = userEvent.setup();
+    await user.clear(field("Host"));
+    await user.type(field("Host"), "abcdef.onion:50001");
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The host holds a port. Put abcdef.onion in the host field and the port in its own.",
+    );
+    expect(saved).toEqual([]);
+    expect(calls.map((call) => call.cmd)).not.toContain("inspect_certificate");
+
+    // Typing drops the note: it no longer describes the field.
+    await user.type(field("Host"), "x");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  /** An address the core refuses is refused before its certificate is
+      looked at: taken for a server that did not answer, it read
+      "Saved" while nothing was. */
+  it("says in the core's words why an address is refused, and saves nothing", async () => {
+    const reason =
+      "invalid server: [abcdef.onion:50001] is not a host name: invalid IPv6 address";
+    const calls = mockBackendIpc({ error: reason });
+    const saved: BackendConfig[] = [];
+    renderBackend((config) => saved.push(config));
+    const user = userEvent.setup();
+    await user.clear(field("Host"));
+    await user.type(field("Host"), "[[abcdef.onion:50001]");
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(reason);
+    expect(saved).toEqual([]);
+    expect(calls.map((call) => call.cmd)).not.toContain("inspect_certificate");
+  });
+
+  it("says why the core would not store a setting", async () => {
+    mockBackendIpc({
+      kind: "electrum",
+      url: "ssl://node.local:50002",
+      host: "node.local",
+      port: 50002,
+      tls: true,
+      onion: false,
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <BackendSection
+          network="mainnet"
+          settings={SETTINGS}
+          onSave={() => Promise.reject({ kind: "vault", message: "vault i/o error: disk full" })}
+          saving={false}
+        />
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("vault i/o error: disk full");
+  });
 });
 
 describe("scanning a server address", () => {
