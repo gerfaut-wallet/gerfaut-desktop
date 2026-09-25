@@ -371,6 +371,14 @@ async fn wallet_policy(
     Ok(state.manager.policy(&id).await?)
 }
 
+/// The furthest the Receive page looks past the next unused address.
+/// Skipping past the gap limit already warns, and the gap limit stops
+/// at 500: this only keeps a window gone wrong from asking the core to
+/// derive four billion addresses in one call.
+const MAX_LOOKAHEAD: u32 = 1_000;
+
+/// The next unused address and the `lookahead` after it, within
+/// [`MAX_LOOKAHEAD`].
 #[tauri::command]
 async fn receive_addresses(
     state: tauri::State<'_, AppState>,
@@ -378,7 +386,10 @@ async fn receive_addresses(
     lookahead: u32,
 ) -> CommandResult<Vec<AddressEntry>> {
     state.unlocked()?;
-    Ok(state.manager.receive_addresses(&id, lookahead).await?)
+    Ok(state
+        .manager
+        .receive_addresses(&id, lookahead.min(MAX_LOOKAHEAD))
+        .await?)
 }
 
 /// A sync asked for by hand. What it found is claimed and announced
