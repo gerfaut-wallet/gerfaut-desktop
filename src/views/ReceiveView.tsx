@@ -22,6 +22,10 @@ import { useUi } from "../state/store";
 /** Rows each keychain shows before "Show all". */
 const FOLDED_ROWS = 5;
 
+/** How far past the next unused address the backend derives: past it,
+    "Next address" would show the same address again. */
+const MAX_LOOKAHEAD = 1_000;
+
 /** Receive page: the next unused address first (QR, the address in
     full, copy, skip), then the audit of every revealed address, one
     card per keychain, folded to a few rows. Single-address wallets
@@ -148,7 +152,11 @@ export function ReceiveView({ walletId }: { walletId: string }) {
                     </Button>
                     {!singleAddress && (
                       <>
-                        <Button variant="ghost" onClick={() => setOffset(offset + 1)}>
+                        <Button
+                          variant="ghost"
+                          disabled={offset >= MAX_LOOKAHEAD}
+                          onClick={() => setOffset(offset + 1)}
+                        >
                           <SkipForward size={15} strokeWidth={1.5} aria-hidden />
                           Next address
                         </Button>
