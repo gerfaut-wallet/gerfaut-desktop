@@ -609,6 +609,12 @@ pub async fn premium_watch_wallet(
 /// Under the same id a `PUT` is only a rename for the server, with no
 /// scan and outside the cap. On the side: a server out of reach keeps
 /// the old name until the wallet is registered again.
+///
+/// The consent kept here is not enough to go by: it outlives a watch
+/// ended from another device, and the consents of a key forgotten for
+/// another. A `PUT` registers what it does not find, so it goes only
+/// for a wallet the server lists right now, and watches: a rename must
+/// never send a descriptor the user took off the server.
 pub(crate) async fn rename_on_server(state: &AppState, base_url: &str, id: &str) {
     if !state.manager.premium_state().await.is_consented(id) || !connected(state).await {
         return;
@@ -622,8 +628,17 @@ pub(crate) async fn rename_on_server(state: &AppState, base_url: &str, id: &str)
     else {
         return;
     };
-    let input = descriptor_input(&wallet.kind);
-    if let Ok(client) = client_at(state, base_url).await {
+    let Ok(client) = client_at(state, base_url).await else {
+        return;
+    };
+    let Ok(listed) = client.wallets().await else {
+        return;
+    };
+    let stale = listed
+        .iter()
+        .any(|watch| watch.id == id && watch.watching && watch.name != wallet.name);
+    if stale {
+        let input = descriptor_input(&wallet.kind);
         let _ = client.put_wallet(id, &wallet.name, &input).await;
     }
 }
@@ -1278,7 +1293,8 @@ mod tests {
     };
 
     /// A wallet the server watches is renamed there too; one it never
-    /// had is not sent.
+    /// had is not sent, and neither is one agreed to here that the server
+    /// no longer lists — unwatched from another device, say.
     #[test]
     fn a_rename_reaches_the_server_for_a_watched_wallet_only() {
         use gerfaut_core::input::ImportOptions;
@@ -1312,8 +1328,21 @@ mod tests {
         runtime
             .block_on(state.manager.set_premium_state(premium))
             .unwrap();
+        let listing = |ids: &[&str]| {
+            let rows: Vec<String> = ids
+                .iter()
+                .map(|id| {
+                    format!(
+                        r#"{{"id":"{id}","name":"Coffre de Paul","script_kind":"wpkh","watched_since":1790000000,"baseline_at":1790000100,"baseline_height":200000,"coins":1,"value_sats":1000}}"#
+                    )
+                })
+                .collect();
+            format!(r#"{{"wallets":[{}]}}"#, rows.join(","))
+        };
 
-        let (base_url, requests) = crate::testkit::stub_server(200, "{}");
+        // Not agreed to: nothing asked. Agreed to and listed: renamed.
+        let (base_url, requests) =
+            crate::testkit::stub_answers(vec![(200, listing(&[&watched])), (200, "{}".to_owned())]);
         for id in [&local, &watched] {
             runtime
                 .block_on(state.manager.rename_wallet(id, "Savings"))
@@ -1321,13 +1350,33 @@ mod tests {
             runtime.block_on(super::rename_on_server(&state, &base_url, id));
         }
         let sent: Vec<String> = requests.try_iter().collect();
-        assert_eq!(sent.len(), 1, "{sent:?}");
+        assert_eq!(sent.len(), 2, "{sent:?}");
         assert!(
-            sent[0].starts_with(&format!("PUT /v1/wallets/{watched} HTTP/1.1")),
+            sent[0].starts_with("GET /v1/wallets HTTP/1.1"),
             "{}",
             sent[0]
         );
-        assert_eq!(crate::testkit::sent_field(&sent[0], "name"), "Savings");
+        assert!(
+            sent[1].starts_with(&format!("PUT /v1/wallets/{watched} HTTP/1.1")),
+            "{}",
+            sent[1]
+        );
+        assert_eq!(crate::testkit::sent_field(&sent[1], "name"), "Savings");
+
+        // Agreed to here, but the server no longer lists it: the
+        // descriptor stays on this device.
+        let (base_url, requests) = crate::testkit::stub_server(200, &listing(&[]));
+        runtime
+            .block_on(state.manager.rename_wallet(&watched, "Cold"))
+            .unwrap();
+        runtime.block_on(super::rename_on_server(&state, &base_url, &watched));
+        let sent: Vec<String> = requests.try_iter().collect();
+        assert_eq!(sent.len(), 1, "{sent:?}");
+        assert!(
+            sent[0].starts_with("GET /v1/wallets HTTP/1.1"),
+            "{}",
+            sent[0]
+        );
     }
 
     fn app_state(manager: WalletManager) -> AppState {
