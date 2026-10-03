@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Lockup } from "./Lockup";
 import { Mark } from "./Mark";
 
 /** What, why, and exactly one action. The brand mark as a discreet
@@ -19,10 +20,7 @@ export function EmptyState({
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 px-6 py-10 text-center">
       {lockup ? (
-        <div aria-hidden className="mb-3 flex w-40 items-center justify-center gap-2.5 text-primary">
-          <Mark className="h-8 w-auto shrink-0" />
-          <span className="font-display text-[22px] font-extrabold tracking-wide">GERFAUT</span>
-        </div>
+        <Lockup className="mb-3" />
       ) : (
         <Mark className="mb-2 h-12 w-auto text-text opacity-[0.08]" />
       )}
