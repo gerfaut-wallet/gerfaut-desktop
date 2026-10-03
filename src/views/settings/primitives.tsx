@@ -99,10 +99,10 @@ export function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: 
 }
 
 /** Row of mutually exclusive choices, styled instead of a native select.
-    The chosen one in a Glacier fill, as DESIGN's group of choices has
-    it: the white chip with a hairline it used to be was the faintest
-    mark on the page for the one thing the control says. An option that
-    cannot apply stays, in Ardoise, and takes no click. */
+    The chosen one in a Glacier fill: the white chip with a hairline it
+    used to be was the faintest mark on the page for the one thing the
+    control says. An option that cannot apply stays, in Ardoise, and
+    takes no click. */
 export function Segmented<T extends string>({
   value,
   options,
