@@ -22,7 +22,7 @@ export function formatBtcSigned(sats: number): string {
   return sats < 0 ? formatBtc(sats) : `+${formatBtc(sats)}`;
 }
 
-/** `1234567` -> `"1 234 567"` (narrow no-break spaces). */
+/** `1234567` -> `"1 234 567"`, grouped with no-break spaces (U+00A0). */
 export function groupThousands(digits: string): string {
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, GROUP);
 }

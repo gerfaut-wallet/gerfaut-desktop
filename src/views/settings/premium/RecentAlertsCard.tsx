@@ -72,7 +72,8 @@ export function RecentAlertsCard({
   onRetry,
 }: {
   events: PremiumEvent[] | undefined;
-  /** Every wallet this device knows, to open one from a row. */
+  /** The wallets of the network the workspace shows, to open one from
+      a row; an alert about a wallet of another network opens none. */
   wallets: WalletMeta[];
   loading: boolean;
   /** The server could not be reached at all; the licence card says so. */
