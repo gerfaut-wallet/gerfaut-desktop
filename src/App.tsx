@@ -21,7 +21,7 @@ import {
   useSyncing,
   useWallets,
 } from "./state/queries";
-import { useUi } from "./state/store";
+import { useFollowSystemTheme, useUi } from "./state/store";
 import { AddWalletModal } from "./views/AddWalletModal";
 import { BroadcastView } from "./views/BroadcastView";
 import { ExportView } from "./views/ExportView";
@@ -80,6 +80,7 @@ export default function App() {
   const [tourOpen, setTourOpen] = useState(false);
   const canvas = useRef<HTMLDivElement>(null);
   useLockShortcut();
+  useFollowSystemTheme();
 
   // Both of these read the vault, and both have to land before the
   // browser paints, so they run in layout effects rather than ordinary

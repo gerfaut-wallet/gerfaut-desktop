@@ -1,6 +1,7 @@
 // UI state. Server state lives in TanStack Query; this store only holds
 // what the interface itself decides: selection, navigation, preferences.
 
+import { useEffect } from "react";
 import { create } from "zustand";
 import { ALL_CURRENCIES, quotesCurrency } from "../lib/ipc";
 import type { FiatCurrency, Network, PriceRange, PriceSource } from "../lib/ipc";
@@ -318,6 +319,20 @@ export const useUi = create<UiState>((set, get) => ({
     applyTheme(theme);
   },
 }));
+
+/** Keeps "System" on the system's side: the machine going dark at
+    sunset takes Gerfaut with it, not at the next launch. Listens only
+    while the preference is "System". */
+export function useFollowSystemTheme() {
+  const theme = useUi((state) => state.theme);
+  useEffect(() => {
+    if (theme !== "system" || typeof window === "undefined" || !window.matchMedia) return;
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const follow = () => applyTheme("system");
+    query.addEventListener("change", follow);
+    return () => query.removeEventListener("change", follow);
+  }, [theme]);
+}
 
 export function applyTheme(theme: ThemePref) {
   const dark =
