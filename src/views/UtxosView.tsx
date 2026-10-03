@@ -57,7 +57,8 @@ export function UtxosView({ walletId }: { walletId: string }) {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-surface">
+      {/* As tall as its rows, then scrolling: a short list stays short. */}
+      <div className="min-h-0 overflow-y-auto rounded-lg border border-border bg-surface">
         {utxos.isPending ? (
           <p className="px-3 py-4 font-ui text-sm text-muted">Loading UTXOs…</p>
         ) : utxos.isError ? (
