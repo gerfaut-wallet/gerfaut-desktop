@@ -69,14 +69,6 @@ export function serverNetwork(name: string): Network | null {
   }
 }
 
-/** How a network is named in a sentence. */
-export const NETWORK_WORD: Record<Network, string> = {
-  mainnet: "mainnet",
-  signet: "signet",
-  testnet4: "testnet4",
-  regtest: "regtest",
-};
-
 /** The server did not answer, or something else answered for it. */
 const UNREACHABLE_WORDS = "Could not reach the Gerfaut server.";
 

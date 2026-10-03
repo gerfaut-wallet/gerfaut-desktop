@@ -5,7 +5,8 @@ import { Button } from "../../../components/Button";
 import { Notice } from "../../../components/Notice";
 import { WatchedPill } from "../../../components/PremiumPill";
 import type { Network, WalletMeta, WalletWatch } from "../../../lib/ipc";
-import { NETWORK_WORD, coinsWord, shortDay } from "../../../lib/premium";
+import { NETWORK_LABEL } from "../../../lib/format";
+import { coinsWord, shortDay } from "../../../lib/premium";
 import { walletGlyph } from "../../../lib/walletIcons";
 import { useUnwatchWallet, useWatchWallet } from "../../../state/premiumQueries";
 import { SectionCard, Toggle } from "../primitives";
@@ -128,7 +129,7 @@ export function WatchedWalletsCard({
       >
         {wallets.length === 0 && (
           <p className={clsx("font-ui text-sm text-muted", gone.length > 0 && "mb-3")}>
-            No wallets on {NETWORK_WORD[network]} yet.
+            No wallets on {NETWORK_LABEL[network]} yet.
           </p>
         )}
         {(wallets.length > 0 || gone.length > 0) && (

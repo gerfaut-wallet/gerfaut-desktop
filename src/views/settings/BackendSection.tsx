@@ -5,7 +5,7 @@ import { Button } from "../../components/Button";
 import { ScanQrModal } from "../../components/ScanQrModal";
 import { Select } from "../../components/Select";
 import { OnionIcon } from "../../components/icons/OnionIcon";
-import { groupThousands } from "../../lib/format";
+import { NETWORK_LABEL, groupThousands } from "../../lib/format";
 import { errorMessage, ipc, isCommandError } from "../../lib/ipc";
 import type { BackendConfig, CertificateReport, Network, Settings } from "../../lib/ipc";
 import {
@@ -20,10 +20,10 @@ import { FieldLabel, SectionCard, Toggle } from "./primitives";
 
 /** The chains a workspace can watch, each with a word on what it is. */
 export const NETWORKS: { value: Network; label: string; hint: string }[] = [
-  { value: "mainnet", label: "Mainnet", hint: "The Bitcoin network" },
-  { value: "signet", label: "Signet", hint: "Test network, reliable blocks" },
-  { value: "testnet4", label: "Testnet 4", hint: "Public test network" },
-  { value: "regtest", label: "Regtest", hint: "Local development chain" },
+  { value: "mainnet", label: NETWORK_LABEL.mainnet, hint: "The Bitcoin network" },
+  { value: "signet", label: NETWORK_LABEL.signet, hint: "Test network, reliable blocks" },
+  { value: "testnet4", label: NETWORK_LABEL.testnet4, hint: "Public test network" },
+  { value: "regtest", label: NETWORK_LABEL.regtest, hint: "Local development chain" },
 ];
 
 // --- electrum url helpers ----------------------------------------------

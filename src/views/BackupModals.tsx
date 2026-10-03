@@ -13,7 +13,7 @@ import type {
   WalletMeta,
 } from "../lib/ipc";
 import { ipc, isCommandError } from "../lib/ipc";
-import { formatTimestamp } from "../lib/format";
+import { NETWORK_LABEL, formatTimestamp } from "../lib/format";
 import {
   backupFilename,
   formatBytes,
@@ -62,13 +62,6 @@ function SettingsPreview({ preview }: { preview: BackupPreview }) {
     </div>
   );
 }
-
-const NETWORK_LABEL: Record<Network, string> = {
-  mainnet: "Mainnet",
-  signet: "Signet",
-  testnet4: "Testnet 4",
-  regtest: "Regtest",
-};
 
 /** A password typed once here and typed again on the other device: it
     can be read back before it is committed to. */

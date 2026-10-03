@@ -13,6 +13,7 @@ import type {
   RecognizedKind,
   ScriptKind,
 } from "../lib/ipc";
+import { NETWORK_LABEL } from "../lib/format";
 import { ipc, isCommandError } from "../lib/ipc";
 import { useAddWallet, useSetActiveNetwork, useSyncWallet } from "../state/queries";
 import { useUi } from "../state/store";
@@ -55,13 +56,6 @@ const SCRIPT_HINT: Record<ScriptKind, string> = {
   witness_script: "P2WSH multisig or script",
   legacy_script: "P2SH multisig or script",
   bare: "Raw script",
-};
-
-const NETWORK_LABEL: Record<Network, string> = {
-  mainnet: "Mainnet",
-  signet: "Signet",
-  testnet4: "Testnet 4",
-  regtest: "Regtest",
 };
 
 /** The largest file read for a wallet: sixteen times what the core

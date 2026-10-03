@@ -884,7 +884,7 @@ describe("the watched wallets card", () => {
   it("keeps the empty sentence, and still lists what the server watches, when this device has no wallet", async () => {
     mockPremium({ list_wallets: () => [], premium_wallets: () => [GONE] });
     renderSection([]);
-    expect(await screen.findByText("No wallets on mainnet yet.")).toBeInTheDocument();
+    expect(await screen.findByText("No wallets on Mainnet yet.")).toBeInTheDocument();
     const row = (await screen.findByText("Old wallet")).closest("li")!;
     expect(within(row).getByRole("button", { name: "Unwatch Old wallet" })).toBeInTheDocument();
     expect(screen.queryByRole("switch")).not.toBeInTheDocument();
