@@ -18,10 +18,10 @@ import { GHOST_ON_TINT } from "./premium/shared";
 import { SaveFailure, SectionCard, SettingRow, Toggle } from "./primitives";
 
 /** What the live watch leaves to the syncs when it is short of room, and
-    the way out: a node of one's own, where it follows ten times more.
-    Amber, under the status: nothing is at risk, a payment to those
-    addresses only shows later. Which wallets, the badges in Settings ›
-    Wallets and on each Overview say. */
+    the way out: a node of one's own, where it follows ten times more,
+    or on it, the node's own setting. Amber, under the status: nothing
+    is at risk, a payment to those addresses only shows later. Which
+    wallets, the badges in Settings › Wallets and on each Overview say. */
 function ShortOfRoomNote({ status, ownNode }: { status: WatchStatus; ownNode: boolean }) {
   const openSettings = useUi((state) => state.openSettings);
   const words = shortOfRoomWords(status, ownNode);
@@ -30,7 +30,9 @@ function ShortOfRoomNote({ status, ownNode }: { status: WatchStatus; ownNode: bo
       tone="info"
       className="mt-2.5 max-w-2xl"
       action={
-        words.remedy !== null ? (
+        // The node settings are the way out only off one's own node: on
+        // it, what is left to change is in the node's configuration.
+        !ownNode && words.remedy !== null ? (
           <Button
             variant="ghost"
             className={GHOST_ON_TINT}

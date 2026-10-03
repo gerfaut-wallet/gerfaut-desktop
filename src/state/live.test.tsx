@@ -11,7 +11,9 @@ import {
   coverageOf,
   isOwnNode,
   liveStatusLine,
+  raiseWords,
   shortOfRoom,
+  shortOfRoomWords,
   useLiveEvents,
   useLiveStatus,
   usesAutomaticBackend,
@@ -106,6 +108,51 @@ describe("room in the live watch", () => {
     expect(shortOfRoom(roomy)).toBe(false);
     expect(coverageOf(roomy, "w-1")).toBe(null);
     expect(coverageOf(undefined, "w-1")).toBe(null);
+  });
+
+  /** The setting each server documents, read from its `server.version`
+      answer: ElectrumX caps a cost per session, not a count, and the two
+      electrs forks name their flags differently. */
+  it("names the setting that lets the user's node follow more", () => {
+    expect(raiseWords("Fulcrum 1.12.0")).toBe(
+      "Raise max_subs_per_ip in the Fulcrum configuration to follow them all.",
+    );
+    expect(raiseWords("ElectrumX 1.18.0")).toBe(
+      "Raise COST_SOFT_LIMIT and COST_HARD_LIMIT in the ElectrumX settings to follow them all.",
+    );
+    expect(raiseWords("electrs-esplora 0.4.1")).toBe(
+      "Raise --electrum-subscription-limit on this electrs to follow them all.",
+    );
+    expect(raiseWords("mempool-electrs 3.4.0-dev")).toBe(
+      "Raise --electrum-max-subscriptions on this electrs to follow them all.",
+    );
+    // Caps nothing: there is no setting to name.
+    expect(raiseWords("electrs/0.10.9")).toBe(null);
+    expect(raiseWords("SomethingElse 2.0")).toBe(
+      "Raise the subscription limit of your server to follow them all.",
+    );
+    expect(raiseWords(null)).toBe(
+      "Raise the subscription limit of your server to follow them all.",
+    );
+  });
+
+  it("puts the node's setting after what waits, and nothing at the cap", () => {
+    const refused: WatchStatus = {
+      ...OFF,
+      state: "connected",
+      watched_scripts: 4_000,
+      pushed_scripts: 3_700,
+      left_out_scripts: 300,
+      left_out_wallets: 1,
+      server_software: "ElectrumX 1.18.0",
+    };
+    expect(shortOfRoomWords(refused, true)).toEqual({
+      limits: "Your node refuses some of the addresses the live watch asks it to follow.",
+      waiting: "300 addresses of 1 wallet are checked at the next sync instead.",
+      remedy:
+        "Raise COST_SOFT_LIMIT and COST_HARD_LIMIT in the ElectrumX settings to follow them all.",
+    });
+    expect(shortOfRoomWords({ ...refused, watched_scripts: 20_000 }, true).remedy).toBe(null);
   });
 });
 

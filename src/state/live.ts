@@ -167,8 +167,10 @@ export function waitingWords(coverage: WalletCoverage): string {
 }
 
 /** The note under the status when the live watch is short of room: its
-    limits, what they leave to the syncs, and the way out, which is the
-    user's own node; already there, the limit is all there is to say. */
+    limits, what they leave to the syncs, and the way out. Elsewhere it
+    is the user's own node; on it, the setting of the node that takes
+    more when the node refused addresses, and nothing once the cap is
+    reached. */
 export function shortOfRoomWords(status: WatchStatus, ownNode: boolean): {
   limits: string;
   waiting: string;
@@ -176,10 +178,10 @@ export function shortOfRoomWords(status: WatchStatus, ownNode: boolean): {
 } {
   // On the user's own node, a list below the cap that still leaves
   // addresses out is the server refusing them: its own limit, which
-  // its owner can raise, and the setting is named when it is known.
+  // its owner can raise.
   const refused = ownNode && status.watched_scripts < WATCH_LIMITS.ownNode.total;
   const limits = refused
-    ? refusedWords(status.server_software ?? null)
+    ? "Your node refuses some of the addresses the live watch asks it to follow."
     : ownNode
       ? `The live watch follows at most ${groupThousands(String(WATCH_LIMITS.ownNode.total))} addresses, even on your own node.`
       : `The live watch follows at most ${groupThousands(String(WATCH_LIMITS.any.perWallet))} addresses per wallet and ${groupThousands(String(WATCH_LIMITS.any.total))} in all.`;
@@ -188,28 +190,37 @@ export function shortOfRoomWords(status: WatchStatus, ownNode: boolean): {
     "wallet",
     "wallets",
   )} ${status.left_out_scripts === 1 ? "is" : "are"} checked at the next sync instead.`;
-  const remedy = ownNode
-    ? null
-    : `Connect your own node and turn on "This is my node" to follow up to ${groupThousands(String(WATCH_LIMITS.ownNode.total))}.`;
+  const remedy = refused
+    ? raiseWords(status.server_software ?? null)
+    : ownNode
+      ? null
+      : `Connect your own node and turn on "This is my node" to follow up to ${groupThousands(String(WATCH_LIMITS.ownNode.total))}.`;
   return { limits, waiting, remedy };
 }
 
-/** The setting of a server that caps how many addresses one client
-    may follow, for the servers that have one. electrs has none. */
-function subscriptionSetting(software: string): string | null {
-  if (/fulcrum/i.test(software)) return "max_subs_per_ip";
-  if (/electrumx/i.test(software)) return "MAX_SESSION_SUBS";
-  return null;
-}
-
-/** A node of the user's own that refuses addresses, and what it runs. */
-function refusedWords(software: string | null): string {
-  const head = "Your node refuses some of the addresses the live watch asks it to follow.";
-  if (software === null) return head;
-  const setting = subscriptionSetting(software);
-  return setting === null
-    ? `${head} It runs ${software}.`
-    : `${head} It runs ${software}: raise ${setting} in its configuration.`;
+/** What lets a node of the user's own follow more addresses, read from
+    what it answers to `server.version`: the setting each of these
+    servers documents for it. ElectrumX caps a cost per session rather
+    than a count of subscriptions; electrs by Roman Zeyde caps nothing,
+    so there is nothing to raise. Unknown software gets the general
+    advice. */
+export function raiseWords(software: string | null): string | null {
+  const name = software?.trim().toLowerCase() ?? "";
+  if (name.startsWith("fulcrum")) {
+    return "Raise max_subs_per_ip in the Fulcrum configuration to follow them all.";
+  }
+  if (name.startsWith("electrumx")) {
+    return "Raise COST_SOFT_LIMIT and COST_HARD_LIMIT in the ElectrumX settings to follow them all.";
+  }
+  // Blockstream's electrs.
+  if (name.startsWith("electrs-esplora")) {
+    return "Raise --electrum-subscription-limit on this electrs to follow them all.";
+  }
+  if (name.startsWith("mempool-electrs")) {
+    return "Raise --electrum-max-subscriptions on this electrs to follow them all.";
+  }
+  if (name.startsWith("electrs/")) return null;
+  return "Raise the subscription limit of your server to follow them all.";
 }
 
 /** Whether the live connection goes to a server the person did not

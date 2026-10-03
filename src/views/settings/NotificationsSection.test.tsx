@@ -188,8 +188,9 @@ describe("Settings › Notifications", () => {
   });
 
   /** On the user's own node, addresses left out below the cap are the
-      server's refusals: the note says so, names what the server runs,
-      and the setting that lets it take more. */
+      server's refusals: the note says so, and names the setting of the
+      server it runs that lets it take more, which no button of the app
+      reaches. */
   it("names the node's own limit when it refuses addresses", async () => {
     useUi.setState({ notifyNewTx: true, settingsSection: "notifications" });
     const desk = mockDesk({
@@ -210,9 +211,10 @@ describe("Settings › Notifications", () => {
     });
     expect(
       await screen.findByText(
-        "Your node refuses some of the addresses the live watch asks it to follow. It runs Fulcrum 1.12.0: raise max_subs_per_ip in its configuration. 300 addresses of 1 wallet are checked at the next sync instead.",
+        "Your node refuses some of the addresses the live watch asks it to follow. 300 addresses of 1 wallet are checked at the next sync instead. Raise max_subs_per_ip in the Fulcrum configuration to follow them all.",
       ),
     ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Node settings" })).not.toBeInTheDocument();
   });
 
   it("says nothing of room while every address is followed, or the watch is off", async () => {
