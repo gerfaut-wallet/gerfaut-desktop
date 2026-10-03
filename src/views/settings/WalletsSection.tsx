@@ -212,8 +212,11 @@ export function WalletsSection({
                     dragging && "relative z-10 opacity-80",
                   )}
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="flex min-w-0 items-center gap-2.5">
+                  {/* The name takes the room there is, and the actions go
+                      under it when the row is too narrow for both: a row
+                      that squeezed the name to nothing named nothing. */}
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                    <span className="flex min-w-0 flex-[1_1_10rem] items-center gap-2.5">
                       {movable && (
                         <span
                           aria-hidden
@@ -264,19 +267,22 @@ export function WalletsSection({
                       ) : (
                         <span className="flex min-w-0 flex-col">
                           <span className="flex min-w-0 items-center gap-2">
-                            <span className="truncate font-ui text-sm font-medium text-text">
+                            <span
+                              title={wallet.name}
+                              className="truncate font-ui text-sm font-medium text-text"
+                            >
                               {wallet.name}
                             </span>
                             {coverage && <CoverageBadge coverage={coverage} />}
                           </span>
-                          <span className="font-ui text-xs text-muted">
+                          <span className="truncate font-ui text-xs text-muted">
                             {single ? "Single address" : "Descriptor wallet"}
                           </span>
                         </span>
                       )}
                     </span>
                     {renaming?.id !== wallet.id && confirmRemove !== wallet.id && (
-                      <span className="flex items-center gap-1">
+                      <span className="ml-auto flex shrink-0 flex-wrap items-center gap-1">
                         {movable && (
                           <>
                             <MoveButton
