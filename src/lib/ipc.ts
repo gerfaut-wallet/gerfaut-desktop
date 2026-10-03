@@ -127,6 +127,9 @@ export interface WalletMeta {
   labels: Record<string, string>;
   last_sync: SyncStamp | null;
   cached: { balance: BalanceSnapshot; tx_count: number };
+  /** Watched live before any other wallet when Live cannot follow every
+      address. Absent while off. */
+  live_pinned?: boolean;
 }
 
 export type TxStatus =
@@ -1091,6 +1094,10 @@ export const ipc = {
     invoke<void>("remove_wallet", { id, secret: secret ?? null }),
   setWalletIcon: (id: string, icon: WalletIconId) =>
     invoke<void>("set_wallet_icon", { id, icon }),
+  /** Pinned wallets are watched live before the others when the live
+      watch cannot follow every address. */
+  setWalletLivePinned: (id: string, pinned: boolean) =>
+    invoke<void>("set_wallet_live_pinned", { id, pinned }),
   /** The listed wallets take that order; unlisted ones keep their slots. */
   reorderWallets: (ids: string[]) => invoke<void>("reorder_wallets", { ids }),
   getSettings: () => invoke<Settings>("get_settings"),

@@ -30,6 +30,7 @@ export const keys = {
   policy: (id: string) => ["policy", id] as const,
   txDetail: (id: string, txid: string) => ["tx", id, txid] as const,
   receive: (id: string) => ["receive", id] as const,
+  liveStatus: ["live-status"] as const,
 };
 
 /** What kept the vault shut at startup, or null. Asked once: only a
@@ -365,6 +366,22 @@ export function useSetWalletIcon() {
     onSuccess: (_data, { id }) => {
       void client.invalidateQueries({ queryKey: ["wallets"] });
       void client.invalidateQueries({ queryKey: keys.snapshot(id) });
+    },
+  });
+}
+
+/** A pin lives in the wallet list; the live watch takes it at once and
+    its status says how much of each wallet it now hears. */
+export function useSetWalletLivePinned() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; pinned: boolean }) =>
+      ipc.setWalletLivePinned(args.id, args.pinned),
+    // Settled once the list has been read back, so the switch shows
+    // what the vault holds and never flips back for a frame.
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: keys.liveStatus });
+      return client.invalidateQueries({ queryKey: ["wallets"] });
     },
   });
 }

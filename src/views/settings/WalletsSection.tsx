@@ -15,6 +15,7 @@ import { clsx } from "clsx";
 import { Button, IconButton } from "../../components/Button";
 import { DropLine, useDragReorder } from "../../components/DragReorder";
 import { Notice } from "../../components/Notice";
+import { isCommandError } from "../../lib/ipc";
 import type { PremiumState, WalletMeta, WalletWatch } from "../../lib/ipc";
 import { moveItem } from "../../lib/reorder";
 import { premiumFailure } from "../../lib/premium";
@@ -26,11 +27,12 @@ import {
   useRescanWallet,
   useSetGapLimit,
   useSetWalletIcon,
+  useSetWalletLivePinned,
 } from "../../state/queries";
 import { useUi } from "../../state/store";
 import { useWalletOrder } from "../../state/walletOrder";
 import { IdentityModal } from "./premium/IdentityModal";
-import { SectionCard, SettingRow } from "./primitives";
+import { SectionCard, SettingRow, Toggle } from "./primitives";
 import { WalletIconPicker } from "./WalletIconPicker";
 
 /** Numeric gap-limit field: commits on blur or Enter, clamped to what
@@ -379,6 +381,7 @@ export function WalletsSection({
           <DropLine y={drag.lineY} />
         </div>
       )}
+      {shown.length > 0 && <LivePins wallets={shown} />}
       {identity !== null && (
         <IdentityModal
           action="Remove wallet"
@@ -398,6 +401,94 @@ export function WalletsSection({
         />
       )}
     </SectionCard>
+  );
+}
+
+/** "Always watch live first": an advanced setting, folded away. When
+    the live watch cannot follow every address, it serves the pinned
+    wallets before the others, then the ones holding coins. Pinning many
+    large wallets can leave the rest to the syncs, which is the user's
+    call to make, and why the switch is out of the way. */
+function LivePins({ wallets }: { wallets: WalletMeta[] }) {
+  const { showToast } = useUi();
+  const pin = useSetWalletLivePinned();
+  const [open, setOpen] = useState(false);
+  /** What the vault refused, under the wallet it was for. */
+  const [failure, setFailure] = useState<{ id: string; error: unknown } | null>(null);
+  const pinned = wallets.filter((wallet) => wallet.live_pinned === true).length;
+
+  return (
+    <div className="mt-4 border-t border-border pt-3">
+      <Button
+        variant="ghost"
+        className="-ml-2 h-9 px-2"
+        aria-expanded={open}
+        aria-controls="live-pins"
+        onClick={() => setOpen(!open)}
+      >
+        {open ? (
+          <ChevronUp size={14} strokeWidth={1.5} aria-hidden />
+        ) : (
+          <ChevronDown size={14} strokeWidth={1.5} aria-hidden />
+        )}
+        Advanced
+        {/* A space for the name read out; the gap already draws one. */}
+        {!open && pinned > 0 && " "}
+        {!open && pinned > 0 && (
+          <span className="font-normal">
+            · {pinned === 1 ? "1 wallet" : `${pinned} wallets`} watched live first
+          </span>
+        )}
+      </Button>
+      {open && (
+        <div id="live-pins" className="mt-2">
+          <p className="font-ui text-sm font-medium text-text">Always watch live first</p>
+          <p id="live-pins-hint" className="mt-0.5 max-w-xl font-ui text-xs text-muted">
+            When the live watch cannot follow every address, the wallets turned on here are
+            followed first.
+          </p>
+          <ul className="mt-2 flex flex-col divide-y divide-border">
+            {wallets.map((wallet) => {
+              const Glyph = walletGlyph(wallet.icon);
+              return (
+                <li key={wallet.id} className="py-1.5">
+                  <div className="flex min-h-11 items-center justify-between gap-3">
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-sunken text-text">
+                        <Glyph size={16} strokeWidth={1.5} aria-hidden />
+                      </span>
+                      <span className="truncate font-ui text-sm text-text">{wallet.name}</span>
+                    </span>
+                    <Toggle
+                      checked={wallet.live_pinned === true}
+                      label={`Always watch ${wallet.name} live first`}
+                      describedBy="live-pins-hint"
+                      busy={pin.isPending && pin.variables?.id === wallet.id}
+                      disabled={pin.isPending && pin.variables?.id !== wallet.id}
+                      onChange={(pinned) => {
+                        setFailure(null);
+                        pin.mutate(
+                          { id: wallet.id, pinned },
+                          {
+                            onSuccess: () => showToast("Setting saved"),
+                            onError: (error) => setFailure({ id: wallet.id, error }),
+                          },
+                        );
+                      }}
+                    />
+                  </div>
+                  {failure?.id === wallet.id && (
+                    <p role="alert" className="mt-1 font-ui text-xs text-muted">
+                      {isCommandError(failure.error) ? failure.error.message : String(failure.error)}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 

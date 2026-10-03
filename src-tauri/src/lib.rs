@@ -498,6 +498,19 @@ async fn set_wallet_icon(
     Ok(state.manager.set_wallet_icon(&id, icon).await?)
 }
 
+/// Pins a wallet to the live watch, or unpins it: when the watch cannot
+/// follow every address, the pinned wallets are followed first. The core
+/// hands a running watch its new list itself.
+#[tauri::command]
+async fn set_wallet_live_pinned(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    pinned: bool,
+) -> CommandResult<()> {
+    state.unlocked()?;
+    Ok(state.manager.set_wallet_live_pinned(&id, pinned).await?)
+}
+
 /// Puts the listed wallets in that order; wallets not listed keep
 /// their slots, so one network's list reorders without the others.
 #[tauri::command]
@@ -1179,6 +1192,7 @@ pub fn run() {
             rename_wallet,
             remove_wallet,
             set_wallet_icon,
+            set_wallet_live_pinned,
             reorder_wallets,
             get_settings,
             set_active_network,

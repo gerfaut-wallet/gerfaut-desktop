@@ -934,6 +934,57 @@ describe("settings sections", () => {
     );
   });
 
+  /** An advanced setting, out of the way: folded until asked for. */
+  it("pins a wallet to the live watch from a folded advanced list", async () => {
+    let pinned = false;
+    const calls = mockSettingsIpc({
+      list_wallets: () => [{ ...WALLET, ...(pinned ? { live_pinned: true } : {}) }],
+      set_wallet_live_pinned: (args) => {
+        pinned = args.pinned as boolean;
+        return undefined;
+      },
+    });
+    useUi.setState({ settingsSection: "wallets" });
+    renderLiveSettings();
+    const user = userEvent.setup();
+    const advanced = await screen.findByRole("button", { name: /^Advanced/ });
+    expect(advanced).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("switch", { name: /live first/ })).not.toBeInTheDocument();
+
+    await user.click(advanced);
+    expect(advanced).toHaveAttribute("aria-expanded", "true");
+    const pin = screen.getByRole("switch", { name: "Always watch Cold storage live first" });
+    expect(pin).toHaveAttribute("aria-checked", "false");
+    expect(pin).toHaveAccessibleDescription(
+      "When the live watch cannot follow every address, the wallets turned on here are followed first.",
+    );
+
+    await user.click(pin);
+    await waitFor(() => expect(pin).toHaveAttribute("aria-checked", "true"));
+    expect(calls.filter((call) => call.cmd === "set_wallet_live_pinned")).toEqual([
+      { cmd: "set_wallet_live_pinned", args: { id: "w-1", pinned: true } },
+    ]);
+
+    // Folded again, the count still says something is set.
+    await user.click(advanced);
+    expect(advanced).toHaveAccessibleName("Advanced · 1 wallet watched live first");
+  });
+
+  it("says why a pin was not saved, under its wallet", async () => {
+    mockSettingsIpc({
+      set_wallet_live_pinned: () =>
+        Promise.reject({ kind: "vault", message: "vault i/o error: disk full" }),
+    });
+    useUi.setState({ settingsSection: "wallets" });
+    renderSettings();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /^Advanced/ }));
+    const pin = screen.getByRole("switch", { name: "Always watch Cold storage live first" });
+    await user.click(pin);
+    expect(await screen.findByRole("alert")).toHaveTextContent("vault i/o error: disk full");
+    expect(pin).toHaveAttribute("aria-checked", "false");
+  });
+
   it("offers no reordering to a single wallet", () => {
     mockSettingsIpc();
     act(() => useUi.getState().openSettings("wallets"));

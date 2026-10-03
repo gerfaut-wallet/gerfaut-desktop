@@ -12,14 +12,14 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { ipc } from "../lib/ipc";
 import type { BackendConfig, Network, WatchStatus } from "../lib/ipc";
-import { useInvalidateWallet } from "./queries";
+import { keys, useInvalidateWallet } from "./queries";
 import { useUi } from "./store";
 
 export const LIVE_WALLET_SYNCED = "live://wallet-synced";
 export const LIVE_SYNC_FAILED = "live://sync-failed";
 export const LIVE_STATUS = "live://status";
 
-export const liveStatusKey = ["live-status"] as const;
+export const liveStatusKey = keys.liveStatus;
 
 function walletIdOf(payload: unknown): string | null {
   if (typeof payload !== "object" || payload === null) return null;
