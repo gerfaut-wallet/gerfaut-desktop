@@ -1,4 +1,5 @@
 import { Bell, CircleOff, Clock, Radio, RefreshCw } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Button } from "../../components/Button";
@@ -7,6 +8,7 @@ import { ipc, isCommandError } from "../../lib/ipc";
 import type { Settings, WatchState, WatchStatus } from "../../lib/ipc";
 import {
   isOwnNode,
+  liveStatusKey,
   liveStatusLine,
   shortOfRoom,
   shortOfRoomWords,
@@ -73,6 +75,12 @@ export function NotificationsSection({
   /** The vault refused the switch: it went back, and this says why. */
   const [saveFailure, setSaveFailure] = useState<unknown>(null);
   const live = useLiveStatus();
+  const client = useQueryClient();
+  /** The switch was just turned on, and the watch is on its way: the
+      vault writes the preference and the Rust side starts the watch
+      before either answers, a second or more on a remote server, and
+      the line said "Off" under a switch that said on all that time. */
+  const [turningOn, setTurningOn] = useState(false);
   const [test, setTest] = useState<TestResult>(null);
   const [testing, setTesting] = useState(false);
 
@@ -89,6 +97,7 @@ export function NotificationsSection({
   };
 
   const status = live.data?.status;
+  const starting = notifyNewTx && turningOn && (!status || status.state === "off");
   const automatic = usesAutomaticBackend(settings.backends, settings.active_network);
   const ownNode = isOwnNode(settings.backends[settings.active_network]);
 
@@ -104,7 +113,13 @@ export function NotificationsSection({
               checked={notifyNewTx}
               onChange={(on) => {
                 setSaveFailure(null);
-                setNotifyNewTx(on).catch(setSaveFailure);
+                setTurningOn(on);
+                setNotifyNewTx(on)
+                  // The status read once the watch has started, so the
+                  // line goes from "Connecting…" to where it stands.
+                  .then(() => client.refetchQueries({ queryKey: liveStatusKey }))
+                  .catch(setSaveFailure)
+                  .finally(() => setTurningOn(false));
               }}
               label="Notify about new transactions"
             />
@@ -119,9 +134,9 @@ export function NotificationsSection({
             aria-label="Live watch status"
             className="mt-1.5 flex items-center gap-2 font-ui text-sm text-text"
           >
-            {STATE_ICON[notifyNewTx && status ? status.state : "off"]}
+            {STATE_ICON[starting ? "connecting" : notifyNewTx && status ? status.state : "off"]}
             <span className="min-w-0 break-words">
-              {notifyNewTx && status ? liveStatusLine(status) : "Off"}
+              {starting ? "Connecting…" : notifyNewTx && status ? liveStatusLine(status) : "Off"}
             </span>
           </p>
           {notifyNewTx && status?.state === "reconnecting" && status.detail && (

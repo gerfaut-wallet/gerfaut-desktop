@@ -99,6 +99,40 @@ describe("Settings › Notifications", () => {
     );
   });
 
+  /** The vault writes the preference and the Rust side starts the watch
+      before either answers: meanwhile the line says the watch is on its
+      way, not "Off" under a switch that says on. */
+  it("says the watch is connecting while it starts", async () => {
+    const desk = mockDesk();
+    let started: () => void = () => {};
+    mockIPC((cmd, args) => {
+      const payload = (args ?? {}) as Record<string, string>;
+      if (cmd === "live_status") {
+        return { enabled: desk.prefs["notify.new_tx"] === "1", status: desk.status };
+      }
+      if (cmd === "set_app_pref") {
+        return new Promise<void>((resolve) => {
+          started = () => {
+            desk.prefs[payload.key] = payload.value;
+            desk.status = { ...OFF, state: "connected", transport: "electrum", server: "node.example" };
+            resolve();
+          };
+        });
+      }
+      throw new Error(`unexpected command ${cmd}`);
+    });
+    renderCard();
+    await waitFor(() => expect(statusLine()).toHaveTextContent("Off"));
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("switch", { name: "Notify about new transactions" }));
+    expect(statusLine()).toHaveTextContent("Connecting…");
+    started();
+    await waitFor(() =>
+      expect(statusLine()).toHaveTextContent("Connected · Electrum · node.example"),
+    );
+  });
+
   it("says why it is reconnecting, and that an Esplora backend is polled", async () => {
     useUi.setState({ notifyNewTx: true });
     const desk = mockDesk({
