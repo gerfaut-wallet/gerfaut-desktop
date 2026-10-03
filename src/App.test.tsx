@@ -1842,7 +1842,9 @@ describe("receive page", () => {
     expect(await screen.findByText("m/84'/1'/0'/0/1")).toBeInTheDocument();
   });
 
-  it("warns beyond the gap limit", async () => {
+  // Twenty clicks, each a round trip to the mocked core: past the
+  // default five seconds on a busy machine, with nothing wrong.
+  it("warns beyond the gap limit", { timeout: 20_000 }, async () => {
     walletIpc();
     renderApp();
     const user = userEvent.setup();
