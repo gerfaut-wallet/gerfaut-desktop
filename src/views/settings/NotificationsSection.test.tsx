@@ -4,7 +4,6 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BackendConfig, Network, WatchStatus } from "../../lib/ipc";
-import { notifier } from "../../state/notifications";
 import { useUi } from "../../state/store";
 import { NotificationsSection } from "./NotificationsSection";
 
@@ -65,9 +64,7 @@ function renderCard(
 const statusLine = () => screen.getByRole("status", { name: "Live watch status" });
 
 beforeEach(() => {
-  useUi.setState({ notifyNewTx: false, notificationsRefused: false });
-  vi.spyOn(notifier, "isPermissionGranted").mockResolvedValue(true);
-  vi.spyOn(notifier, "requestPermission").mockResolvedValue("granted");
+  useUi.setState({ notifyNewTx: false });
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -100,21 +97,6 @@ describe("Settings › Notifications", () => {
     await waitFor(() =>
       expect(statusLine()).toHaveTextContent("Connected · Electrum · mempool.space"),
     );
-  });
-
-  it("stays off, and says why, when the system refuses notifications", async () => {
-    const desk = mockDesk();
-    vi.spyOn(notifier, "isPermissionGranted").mockResolvedValue(false);
-    vi.spyOn(notifier, "requestPermission").mockResolvedValue("denied");
-    renderCard();
-    const user = userEvent.setup();
-
-    await user.click(screen.getByRole("switch", { name: "Notify about new transactions" }));
-    expect(
-      await screen.findByText("Notifications are off for Gerfaut in the system settings."),
-    ).toBeInTheDocument();
-    expect(desk.prefs["notify.new_tx"]).toBeUndefined();
-    expect(statusLine()).toHaveTextContent("Off");
   });
 
   it("says why it is reconnecting, and that an Esplora backend is polled", async () => {

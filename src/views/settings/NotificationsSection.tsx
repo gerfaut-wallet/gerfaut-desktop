@@ -13,7 +13,6 @@ import {
   useLiveStatus,
   usesAutomaticBackend,
 } from "../../state/live";
-import { notifier } from "../../state/notifications";
 import { useUi } from "../../state/store";
 import { GHOST_ON_TINT } from "./premium/shared";
 import { SectionCard, SettingRow, Toggle } from "./primitives";
@@ -68,27 +67,10 @@ export function NotificationsSection({
 }: {
   settings: Pick<Settings, "backends" | "active_network">;
 }) {
-  const { notifyNewTx, notificationsRefused, setNotifyNewTx, setNotificationsRefused } = useUi();
+  const { notifyNewTx, setNotifyNewTx } = useUi();
   const live = useLiveStatus();
   const [test, setTest] = useState<TestResult>(null);
   const [testing, setTesting] = useState(false);
-
-  // Turning it on asks the system first; a refusal is said rather than
-  // pretended away.
-  const toggle = async (on: boolean) => {
-    if (!on) {
-      setNotifyNewTx(false);
-      return;
-    }
-    try {
-      let granted = await notifier.isPermissionGranted();
-      if (!granted) granted = (await notifier.requestPermission()) === "granted";
-      setNotificationsRefused(!granted);
-      if (granted) setNotifyNewTx(true);
-    } catch {
-      setNotificationsRefused(true);
-    }
-  };
 
   const sendTest = async () => {
     setTesting(true);
@@ -116,15 +98,10 @@ export function NotificationsSection({
           >
             <Toggle
               checked={notifyNewTx}
-              onChange={(on) => void toggle(on)}
+              onChange={setNotifyNewTx}
               label="Notify about new transactions"
             />
           </SettingRow>
-          {notificationsRefused && (
-            <p className="mt-1.5 font-ui text-xs text-muted">
-              Notifications are off for Gerfaut in the system settings.
-            </p>
-          )}
         </div>
 
         <div>

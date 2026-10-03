@@ -75,8 +75,6 @@ interface UiState {
       it confirms. Off by default. The Rust side starts and stops the
       watch on this preference as it is written. */
   notifyNewTx: boolean;
-  /** The system refused notifications the last time we asked. */
-  notificationsRefused: boolean;
   /** The welcome tour has been seen. */
   onboardingSeen: boolean;
   /** It was dismissed in this session, whatever the vault says yet. */
@@ -107,7 +105,6 @@ interface UiState {
   setPriceRange: (range: PriceRange) => void;
   setExplorerAck: (acknowledged: boolean) => void;
   setNotifyNewTx: (enabled: boolean) => void;
-  setNotificationsRefused: (refused: boolean) => void;
   setOnboardingSeen: (seen: boolean) => void;
   markTourSeen: () => void;
   showToast: (message: string) => void;
@@ -162,7 +159,6 @@ export const useUi = create<UiState>((set, get) => ({
   priceRange: "month",
   explorerAck: false,
   notifyNewTx: false,
-  notificationsRefused: false,
   onboardingSeen: false,
   tourDismissed: false,
   toast: null,
@@ -239,7 +235,6 @@ export const useUi = create<UiState>((set, get) => ({
     set({ notifyNewTx });
     persist("notify.new_tx", notifyNewTx ? "1" : "0");
   },
-  setNotificationsRefused: (notificationsRefused) => set({ notificationsRefused }),
   setOnboardingSeen: (onboardingSeen) => {
     set({ onboardingSeen });
     persist("onboarding.seen", onboardingSeen ? "1" : "0");
