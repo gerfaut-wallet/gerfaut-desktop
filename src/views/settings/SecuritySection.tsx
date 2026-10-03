@@ -134,7 +134,7 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
         </SettingRow>
 
         {lock && (
-          <div className="flex gap-2">
+          <div className="-ml-4 flex gap-2">
             <Button
               variant="ghost"
               onClick={() => {

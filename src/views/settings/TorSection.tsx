@@ -144,7 +144,7 @@ export function TorSection({ tor }: { tor: TorSettings }) {
           </p>
         )}
 
-        <div>
+        <div className="-ml-4">
           <Button
             variant="ghost"
             disabled={connect.isPending}

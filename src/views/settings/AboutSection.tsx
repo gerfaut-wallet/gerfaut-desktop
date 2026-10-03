@@ -117,7 +117,7 @@ export function AboutSection() {
             </p>
           )}
         </div>
-        <div>
+        <div className="-ml-4">
           <Button variant="ghost" onClick={() => setTourOpen(true)}>
             <Compass size={14} strokeWidth={1.5} aria-hidden />
             Show the welcome tour

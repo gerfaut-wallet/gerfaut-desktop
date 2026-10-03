@@ -19,13 +19,13 @@ export function BackupSection({ activeNetwork }: { activeNetwork: Network }) {
 
   return (
     <SectionCard icon={<Archive size={18} strokeWidth={1.5} />} title="Backup & sync">
-      <p className="font-ui text-sm text-muted">
+      <p className="max-w-2xl font-ui text-sm text-muted">
         Every wallet you watch, encrypted with a password you choose. Restore it
         on another device: the same file or QR code moves your wallets between
         the desktop and the phone. A backup holds descriptors and addresses,
         never a private key or seed.
       </p>
-      <div className="mt-4 flex gap-2">
+      <div className="-ml-4 mt-4 flex gap-2">
         <Button variant="ghost" onClick={() => setExporting(true)}>
           <Upload size={14} strokeWidth={1.5} aria-hidden />
           Export…
