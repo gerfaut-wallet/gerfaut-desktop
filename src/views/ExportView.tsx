@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { Button } from "../components/Button";
+import { LoadFailure } from "../components/LoadFailure";
 import type { ExportDirection, ExportOptions, TxSummary } from "../lib/ipc";
 import { Notice } from "../components/Notice";
 import { errorMessage } from "../lib/ipc";
@@ -52,9 +53,12 @@ export function ExportView({ walletId }: { walletId: string }) {
   }
   if (snapshot.isError || !snapshot.data) {
     return (
-      <p className="px-1 py-4 font-ui text-sm text-muted">
-        This wallet could not be loaded.
-      </p>
+      <LoadFailure
+        what="This wallet"
+        error={snapshot.error}
+        retrying={snapshot.isFetching}
+        onRetry={() => void snapshot.refetch()}
+      />
     );
   }
   const { meta, txs, truncated } = snapshot.data;

@@ -1,5 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import { Button } from "../components/Button";
+import { LoadFailure } from "../components/LoadFailure";
 import { SyncIndicator } from "../components/SyncIndicator";
 import { MASKED, formatAmount } from "../lib/format";
 import { useLoadMoreHistory, useSnapshot, useSyncing } from "../state/queries";
@@ -19,9 +20,12 @@ export function TransactionsView({ walletId }: { walletId: string }) {
   }
   if (snapshot.isError || !snapshot.data) {
     return (
-      <p className="px-1 py-4 font-ui text-sm text-muted">
-        This wallet could not be loaded.
-      </p>
+      <LoadFailure
+        what="This wallet"
+        error={snapshot.error}
+        retrying={snapshot.isFetching}
+        onRetry={() => void snapshot.refetch()}
+      />
     );
   }
   const { meta, balance, txs } = snapshot.data;

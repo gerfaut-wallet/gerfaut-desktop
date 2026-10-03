@@ -17,6 +17,7 @@ import type { ReactNode } from "react";
 import { Balance, ListAmount } from "../components/Amount";
 import { BalanceChart } from "../components/BalanceChart";
 import { CoverageBadge } from "../components/CoverageBadge";
+import { LoadFailure } from "../components/LoadFailure";
 import { NewDeviceBanner } from "../components/NewDeviceBanner";
 import { WatchOfflineBanner } from "../components/WatchOfflineBanner";
 import {
@@ -62,9 +63,12 @@ export function HomeView({ walletId }: { walletId: string }) {
   }
   if (snapshot.isError || !snapshot.data) {
     return (
-      <p className="px-1 py-4 font-ui text-sm text-muted">
-        This wallet could not be loaded.
-      </p>
+      <LoadFailure
+        what="This wallet"
+        error={snapshot.error}
+        retrying={snapshot.isFetching}
+        onRetry={() => void snapshot.refetch()}
+      />
     );
   }
   const { meta } = snapshot.data;
@@ -324,7 +328,13 @@ function BalanceCard({
         <div className="-mx-2 mt-3 border-t border-border/60 pt-2">
           <LinkRow
             icon={<Coins size={15} strokeWidth={1.5} aria-hidden />}
-            figure={utxos.data ? groupThousands(String(utxos.data.length)) : "…"}
+            figure={
+              utxos.data
+                ? groupThousands(String(utxos.data.length))
+                : utxos.isError
+                  ? "—"
+                  : "…"
+            }
             label={`UTXO${(utxos.data?.length ?? 0) === 1 ? "" : "s"}`}
             onClick={() => setView("utxos")}
           />

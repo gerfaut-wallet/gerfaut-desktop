@@ -1,4 +1,5 @@
 import { SyncIndicator } from "../components/SyncIndicator";
+import { LoadFailure } from "../components/LoadFailure";
 import { MASKED, formatAmount } from "../lib/format";
 import { useSnapshot, useSyncing, useUtxos } from "../state/queries";
 import { useUi } from "../state/store";
@@ -17,9 +18,12 @@ export function UtxosView({ walletId }: { walletId: string }) {
   }
   if (snapshot.isError || !snapshot.data) {
     return (
-      <p className="px-1 py-4 font-ui text-sm text-muted">
-        This wallet could not be loaded.
-      </p>
+      <LoadFailure
+        what="This wallet"
+        error={snapshot.error}
+        retrying={snapshot.isFetching}
+        onRetry={() => void snapshot.refetch()}
+      />
     );
   }
 
@@ -56,6 +60,16 @@ export function UtxosView({ walletId }: { walletId: string }) {
       <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-surface">
         {utxos.isPending ? (
           <p className="px-3 py-4 font-ui text-sm text-muted">Loading UTXOs…</p>
+        ) : utxos.isError ? (
+          // Never the empty table: it says the wallet holds no coins.
+          <div className="px-2">
+            <LoadFailure
+              what="The UTXOs"
+              error={utxos.error}
+              retrying={utxos.isFetching}
+              onRetry={() => void utxos.refetch()}
+            />
+          </div>
         ) : (
           <UtxoTable utxos={utxos.data ?? []} />
         )}

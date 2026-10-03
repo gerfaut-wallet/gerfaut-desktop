@@ -2436,6 +2436,40 @@ describe("broadcast page", () => {
   });
 });
 
+describe("a page that could not be read", () => {
+  it("says why and asks again, and the wallet comes back", async () => {
+    let attempts = 0;
+    walletIpc({
+      wallet_snapshot: () => {
+        attempts += 1;
+        return attempts === 1
+          ? Promise.reject({ kind: "vault", message: "the vault is busy" })
+          : SNAPSHOT;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+
+    const failure = await screen.findByRole("alert");
+    expect(failure).toHaveTextContent("This wallet could not be loaded.");
+    expect(failure).toHaveTextContent("the vault is busy");
+    await user.click(within(failure).getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Bitcoin price")).toBeInTheDocument();
+  });
+
+  /** An empty table would say the wallet holds no coins. */
+  it("never shows a failed list of UTXOs as an empty one", async () => {
+    walletIpc({ utxos: () => Promise.reject({ kind: "vault", message: "the vault is busy" }) });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "UTXOs" }));
+
+    expect(await screen.findByText("The UTXOs could not be loaded.")).toBeInTheDocument();
+    expect(screen.queryByText("No unspent outputs")).not.toBeInTheDocument();
+  });
+});
+
 describe("export page", () => {
   it("previews the selection and writes the file", async () => {
     const exported = vi.fn((_args: Record<string, unknown>) => undefined);
