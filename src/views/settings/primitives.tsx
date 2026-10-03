@@ -133,11 +133,15 @@ export function Toggle({
   disabled = false,
   busy = false,
   tone = "primary",
+  describedBy,
   ref,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label: string;
+  /** The id of the line that says what the switch does, read out after
+      its name. */
+  describedBy?: string;
   /** What the switch acts on when it is on: the app, or the paid
       service. */
   tone?: "primary" | "premium";
@@ -156,6 +160,7 @@ export function Toggle({
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      aria-describedby={describedBy}
       aria-busy={busy || undefined}
       disabled={disabled || busy}
       onClick={() => onChange(!checked)}

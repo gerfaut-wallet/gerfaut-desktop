@@ -413,8 +413,12 @@ export type BackendConfig =
   /** `server` names one public operator; absent, every public Esplora
       instance is tried in order. */
   | { type: "public_esplora"; server?: string }
-  | { type: "custom_esplora"; url: string }
-  | { type: "custom_electrum"; url: string };
+  /** `own_node`: the user said the server is their own node, and Live
+      asks more of it. The core leaves it out while false, so it is sent
+      back with every save of a custom server, or saving would turn it
+      off. */
+  | { type: "custom_esplora"; url: string; own_node?: boolean }
+  | { type: "custom_electrum"; url: string; own_node?: boolean };
 
 export type ServerProtocol = "esplora" | "electrum";
 

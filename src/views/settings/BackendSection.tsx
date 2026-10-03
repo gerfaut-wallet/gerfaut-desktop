@@ -5,6 +5,7 @@ import { Button } from "../../components/Button";
 import { ScanQrModal } from "../../components/ScanQrModal";
 import { Select } from "../../components/Select";
 import { OnionIcon } from "../../components/icons/OnionIcon";
+import { groupThousands } from "../../lib/format";
 import { ipc, isCommandError } from "../../lib/ipc";
 import type { BackendConfig, CertificateReport, Network, Settings } from "../../lib/ipc";
 import {
@@ -12,6 +13,7 @@ import {
   usePublicServers,
   useTrustCertificate,
 } from "../../state/queries";
+import { isOwnNode, WATCH_LIMITS } from "../../state/live";
 import { useUi } from "../../state/store";
 import { CertificateDialog } from "./CertificatesSection";
 import { FieldLabel, SectionCard, Toggle } from "./primitives";
@@ -85,6 +87,10 @@ export function BackendSection({
   const [host, setHost] = useState(initialElectrum.host);
   const [port, setPort] = useState(initialElectrum.port);
   const [tls, setTls] = useState(initialElectrum.tls);
+  // Read from the stored backend and sent back with every save: the
+  // core leaves it out while off, so a form that rebuilt the config
+  // without it would turn it off each time the address is saved.
+  const [ownNode, setOwnNode] = useState(isOwnNode(current));
   const inspect = useInspectCertificate();
   const trust = useTrustCertificate();
   const { showToast } = useUi();
@@ -116,6 +122,7 @@ export function BackendSection({
     setHost(electrum.host);
     setPort(electrum.port);
     setTls(electrum.tls);
+    setOwnNode(isOwnNode(config));
     setOnion(false);
     setSaveError(null);
   }, [network, settings.backends]);
@@ -130,12 +137,15 @@ export function BackendSection({
   const known = servers.data?.some((server) => server.id === publicServer) ?? false;
   const chosen = known ? publicServer : "";
 
-  /** What the form describes right now. */
+  /** What the form describes right now. The switch goes with every
+      custom server, in the form the core stores: there while on, left
+      out while off. */
   const draft = (): BackendConfig => {
     if (kind === "public_esplora")
       return chosen ? { type: "public_esplora", server: chosen } : { type: "public_esplora" };
-    if (kind === "custom_esplora") return { type: "custom_esplora", url: esploraUrl.trim() };
-    return { type: "custom_electrum", url: buildElectrumUrl(host, port, tls) };
+    const mine = ownNode ? { own_node: true } : {};
+    if (kind === "custom_esplora") return { type: "custom_esplora", url: esploraUrl.trim(), ...mine };
+    return { type: "custom_electrum", url: buildElectrumUrl(host, port, tls), ...mine };
   };
 
   /** The Electrum address a configuration talks to, if any: the only case
@@ -408,10 +418,13 @@ export function BackendSection({
       </fieldset>
 
       {kind !== "public_esplora" && (
-        <p className="mt-3 font-ui text-xs text-muted">
-          An address ending in .onion goes through Tor; the Tor card below says
-          which one and lets you test it.
-        </p>
+        <>
+          <OwnNodeSwitch checked={ownNode} onChange={setOwnNode} />
+          <p className="mt-3 font-ui text-xs text-muted">
+            An address ending in .onion goes through Tor; the Tor card below says
+            which one and lets you test it.
+          </p>
+        </>
       )}
       {plainTcp && (
         <p className="mt-3 font-ui text-xs text-muted">
@@ -448,6 +461,43 @@ export function BackendSection({
         onScan={(text) => void applyScan(text)}
       />
     </SectionCard>
+  );
+}
+
+/** "This is my node": the one thing about a server the app cannot
+    find out for itself. A public server limits how many addresses one
+    connection may follow and refuses the rest, and it learns every one
+    of them; a node of one's own serves all it is asked. So Live asks
+    ten times more of a server the user says is theirs, and nothing
+    checks the claim: the line under the switch says when to leave it
+    off. */
+function OwnNodeSwitch({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="mt-4 flex items-start justify-between gap-6 border-t border-border pt-4">
+      <div className="min-w-0 max-w-xl">
+        <p className="font-ui text-sm font-medium text-text">This is my node</p>
+        <p id="own-node-hint" className="mt-0.5 font-ui text-xs text-muted">
+          The live watch then follows up to{" "}
+          {groupThousands(String(WATCH_LIMITS.ownNode.total))} addresses instead of{" "}
+          {groupThousands(String(WATCH_LIMITS.any.total))}. Leave it off for a server you do not
+          run: it would refuse most of them, and learn every one.
+        </p>
+      </div>
+      <div className="shrink-0 pt-0.5">
+        <Toggle
+          checked={checked}
+          onChange={onChange}
+          label="This is my node"
+          describedBy="own-node-hint"
+        />
+      </div>
+    </div>
   );
 }
 

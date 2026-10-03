@@ -311,6 +311,76 @@ describe("scanning a server address", () => {
   });
 });
 
+describe("this is my node", () => {
+  const TRUSTED: ScannedBackend = {
+    kind: "electrum",
+    url: "ssl://node.local:50002",
+    host: "node.local",
+    port: 50002,
+    tls: true,
+    onion: false,
+  };
+
+  /** The core leaves the switch out of a stored backend while it is
+      off, so a form that rebuilt the config from the address alone
+      turned it off at every save. It is read back and sent back. */
+  it("stays on when the address is saved again", async () => {
+    mockBackendIpc(TRUSTED);
+    const saved: BackendConfig[] = [];
+    renderBackend((config) => saved.push(config), {
+      ...SETTINGS,
+      backends: {
+        mainnet: { type: "custom_electrum", url: "ssl://node.local:50002", own_node: true },
+      },
+    });
+    const user = userEvent.setup();
+    expect(toggle("This is my node")).toHaveAttribute("aria-checked", "true");
+
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    await waitFor(() =>
+      expect(saved).toEqual([
+        { type: "custom_electrum", url: "ssl://node.local:50002", own_node: true },
+      ]),
+    );
+  });
+
+  it("is off for a server stored before it existed, and goes along once turned on", async () => {
+    mockBackendIpc(TRUSTED);
+    const saved: BackendConfig[] = [];
+    renderBackend((config) => saved.push(config), {
+      ...SETTINGS,
+      backends: { mainnet: { type: "custom_esplora", url: "https://node.local/api" } },
+    });
+    const user = userEvent.setup();
+    const ownNode = toggle("This is my node");
+    expect(ownNode).toHaveAttribute("aria-checked", "false");
+    // What it does and when to leave it off, read out with its name.
+    expect(ownNode).toHaveAccessibleDescription(
+      "The live watch then follows up to 20 000 addresses instead of 2 000. Leave it off for a server you do not run: it would refuse most of them, and learn every one.",
+    );
+
+    await user.click(ownNode);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    await user.click(toggle("This is my node"));
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    await waitFor(() =>
+      expect(saved).toEqual([
+        { type: "custom_esplora", url: "https://node.local/api", own_node: true },
+        { type: "custom_esplora", url: "https://node.local/api" },
+      ]),
+    );
+  });
+
+  it("is not offered for the public servers", async () => {
+    mockBackendIpc(TRUSTED);
+    renderBackend();
+    const user = userEvent.setup();
+    expect(toggle("This is my node")).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: /public api/i }));
+    expect(screen.queryByRole("switch", { name: "This is my node" })).not.toBeInTheDocument();
+  });
+});
+
 // --- the sections --------------------------------------------------------
 
 /** What the core answers about Tor on a machine with no daemon. */

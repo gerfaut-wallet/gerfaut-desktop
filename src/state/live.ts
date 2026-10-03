@@ -115,6 +115,21 @@ export function liveStatusLine(status: WatchStatus): string {
   }
 }
 
+/** What the live watch follows at most, of one wallet and in all, as
+    the core's `WatchLimits` has it: on any server, and on a node the
+    user said is their own. Past them, an address waits for the next
+    sync. */
+export const WATCH_LIMITS = {
+  any: { perWallet: 200, total: 2_000 },
+  ownNode: { perWallet: 20_000, total: 20_000 },
+} as const;
+
+/** Whether the user said this backend is their own node ("This is my
+    node"). A public backend never is. */
+export function isOwnNode(config: BackendConfig | undefined): boolean {
+  return config !== undefined && config.type !== "public_esplora" && config.own_node === true;
+}
+
 /** Whether the live connection goes to a server the person did not
     name: with the automatic public backend the core tries first an
     Electrum server run by an operator already in the rotation, because
