@@ -976,6 +976,9 @@ export interface WatchStatus {
   /** How much of each wallet of the list Live hears, in list order;
       empty while it is off. */
   wallets: WalletCoverage[];
+  /** What an Electrum server says it runs ("Fulcrum 1.12.0"); null over
+      the other transports, and from a core that predates it. */
+  server_software?: string | null;
 }
 
 /** Whether Live hears a wallet whole, in part, or not at all. */

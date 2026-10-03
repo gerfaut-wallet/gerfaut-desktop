@@ -174,9 +174,15 @@ export function shortOfRoomWords(status: WatchStatus, ownNode: boolean): {
   waiting: string;
   remedy: string | null;
 } {
-  const limits = ownNode
-    ? `The live watch follows at most ${groupThousands(String(WATCH_LIMITS.ownNode.total))} addresses, even on your own node.`
-    : `The live watch follows at most ${groupThousands(String(WATCH_LIMITS.any.perWallet))} addresses per wallet and ${groupThousands(String(WATCH_LIMITS.any.total))} in all.`;
+  // On the user's own node, a list below the cap that still leaves
+  // addresses out is the server refusing them: its own limit, which
+  // its owner can raise, and the setting is named when it is known.
+  const refused = ownNode && status.watched_scripts < WATCH_LIMITS.ownNode.total;
+  const limits = refused
+    ? refusedWords(status.server_software ?? null)
+    : ownNode
+      ? `The live watch follows at most ${groupThousands(String(WATCH_LIMITS.ownNode.total))} addresses, even on your own node.`
+      : `The live watch follows at most ${groupThousands(String(WATCH_LIMITS.any.perWallet))} addresses per wallet and ${groupThousands(String(WATCH_LIMITS.any.total))} in all.`;
   const waiting = `${count(status.left_out_scripts, "address", "addresses")} of ${count(
     status.left_out_wallets,
     "wallet",
@@ -186,6 +192,24 @@ export function shortOfRoomWords(status: WatchStatus, ownNode: boolean): {
     ? null
     : `Connect your own node and turn on "This is my node" to follow up to ${groupThousands(String(WATCH_LIMITS.ownNode.total))}.`;
   return { limits, waiting, remedy };
+}
+
+/** The setting of a server that caps how many addresses one client
+    may follow, for the servers that have one. electrs has none. */
+function subscriptionSetting(software: string): string | null {
+  if (/fulcrum/i.test(software)) return "max_subs_per_ip";
+  if (/electrumx/i.test(software)) return "MAX_SESSION_SUBS";
+  return null;
+}
+
+/** A node of the user's own that refuses addresses, and what it runs. */
+function refusedWords(software: string | null): string {
+  const head = "Your node refuses some of the addresses the live watch asks it to follow.";
+  if (software === null) return head;
+  const setting = subscriptionSetting(software);
+  return setting === null
+    ? `${head} It runs ${software}.`
+    : `${head} It runs ${software}: raise ${setting} in its configuration.`;
 }
 
 /** Whether the live connection goes to a server the person did not

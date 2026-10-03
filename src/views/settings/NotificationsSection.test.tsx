@@ -168,7 +168,14 @@ describe("Settings › Notifications", () => {
     expect(useUi.getState().settingsSection).toBe("network");
     first.unmount();
 
-    desk.status = { ...short, left_out_scripts: 1, left_out_wallets: 1 };
+    // At the own node's cap: the cap is all there is to say.
+    desk.status = {
+      ...short,
+      watched_scripts: 20_000,
+      pushed_scripts: 20_000,
+      left_out_scripts: 1,
+      left_out_wallets: 1,
+    };
     renderCard({
       mainnet: { type: "custom_electrum", url: "ssl://node.example:50002", own_node: true },
     });
@@ -178,6 +185,34 @@ describe("Settings › Notifications", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Node settings" })).not.toBeInTheDocument();
+  });
+
+  /** On the user's own node, addresses left out below the cap are the
+      server's refusals: the note says so, names what the server runs,
+      and the setting that lets it take more. */
+  it("names the node's own limit when it refuses addresses", async () => {
+    useUi.setState({ notifyNewTx: true, settingsSection: "notifications" });
+    const desk = mockDesk({
+      ...OFF,
+      state: "connected",
+      transport: "electrum",
+      server: "node.example",
+      watched_scripts: 4_000,
+      pushed_scripts: 3_700,
+      left_out_scripts: 300,
+      left_out_wallets: 1,
+      wallets: [],
+      server_software: "Fulcrum 1.12.0",
+    });
+    desk.prefs["notify.new_tx"] = "1";
+    renderCard({
+      mainnet: { type: "custom_electrum", url: "ssl://node.example:50002", own_node: true },
+    });
+    expect(
+      await screen.findByText(
+        "Your node refuses some of the addresses the live watch asks it to follow. It runs Fulcrum 1.12.0: raise max_subs_per_ip in its configuration. 300 addresses of 1 wallet are checked at the next sync instead.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("says nothing of room while every address is followed, or the watch is off", async () => {
