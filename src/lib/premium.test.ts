@@ -83,6 +83,15 @@ describe("what the server says", () => {
         message: "the premium server is unreachable: HTTP 502: the e-mail could not be sent",
       }),
     ).toEqual({ message: "The e-mail could not be sent.", retry: true });
+    // A 4xx without the server's words — a captive portal, a proxy
+    // between deployments — is no refusal: the core calls it an
+    // unexpected answer, and the screen offers to try again.
+    expect(
+      premiumFailure({
+        kind: "premium_unreachable",
+        message: "unexpected answer from the premium server: HTTP 404",
+      }),
+    ).toEqual({ message: "Could not reach the Gerfaut server.", retry: true });
     // Tor, raw, read "tor: no proxy answers on 127.0.0.1:9050".
     expect(premiumFailure({ kind: "tor", message: "tor: no proxy answers" })).toEqual({
       message:
