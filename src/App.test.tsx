@@ -750,6 +750,31 @@ describe("empty workspace", () => {
     // Settings stays reachable without a wallet.
     expect(sidebar().getByRole("button", { name: "Settings" })).toBeEnabled();
   });
+
+  /** The first screen of an empty vault presents the app by name, once;
+      a network that only lacks wallets keeps the watermark. */
+  it("shows the lockup on an empty vault only", async () => {
+    const first = renderApp();
+    const main = () => within(screen.getByRole("main"));
+    await screen.findByText("No wallets watched yet");
+    await waitFor(() => expect(main().getByText("GERFAUT")).toBeInTheDocument());
+    first.unmount();
+
+    mockIPC((cmd, args) => {
+      switch (cmd) {
+        case "get_settings":
+          return SETTINGS;
+        case "list_wallets":
+          // A wallet on another network than the one shown.
+          return (args as { network?: string }).network == null ? [WALLET] : [];
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderApp();
+    await screen.findByText("No wallets watched yet");
+    await waitFor(() => expect(main().queryByText("GERFAUT")).not.toBeInTheDocument());
+  });
 });
 
 describe("a vault that did not open", () => {
@@ -3219,8 +3244,11 @@ describe("the app lock", () => {
     await screen.findAllByText(WALLET.name);
     await waitFor(() => expect(asked.some((call) => call.cmd === "sync_all")).toBe(true));
 
-    expect(asked.length).toBeGreaterThan(0);
-    for (const call of asked) expect(call.network).toBe("signet");
+    // The read of every network's wallets names none, by design: it only
+    // tells a first launch from a network without wallets.
+    const scoped = asked.filter((call) => !(call.cmd === "list_wallets" && call.network === null));
+    expect(scoped.length).toBeGreaterThan(0);
+    for (const call of scoped) expect(call.network).toBe("signet");
     expect(screen.queryByText(/no wallets watched yet/i)).not.toBeInTheDocument();
   });
 

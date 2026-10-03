@@ -57,6 +57,9 @@ export default function App() {
   // it is locked, and nothing while it is: the lock screen used to be
   // a curtain over a cache full of descriptors and balances.
   const wallets = useWallets(network, lockSeen && !locked);
+  // Every network's: the first screen of an empty vault is not the
+  // first screen of a network that only lacks wallets.
+  const everyWallet = useWallets(undefined, lockSeen && !locked);
   const syncAll = useSyncAll();
   // Any sync in flight, not only this hook's: the one a fresh wallet
   // starts, or a single wallet's refresh, must turn the sidebar icon.
@@ -260,6 +263,7 @@ export default function App() {
                   <NewDeviceBanner className="mb-4 mt-2" />
                   <div className="min-h-0 flex-1">
                     <EmptyState
+                      lockup={everyWallet.data?.length === 0}
                       title="No wallets watched yet"
                       hint="Add a descriptor, an extended public key, or an address. Gerfaut watches it and never touches a private key."
                       action={
