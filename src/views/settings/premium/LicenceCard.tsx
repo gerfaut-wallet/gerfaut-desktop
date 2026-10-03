@@ -293,7 +293,7 @@ function KeyForm({
             aria-invalid={value.length > 0 && !ready ? true : undefined}
             aria-describedby="premium-key-hint"
             readOnly={pending}
-            className="field-focus selectable h-11 w-64 max-w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[15px] tracking-[0.04em] text-text placeholder:text-muted/60"
+            className="field-focus selectable h-11 w-64 max-w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[15px] tracking-[0.04em] text-text placeholder:text-muted"
           />
           <Button
             type="submit"

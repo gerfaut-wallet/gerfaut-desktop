@@ -220,7 +220,7 @@ function CodeForm({
           autoComplete="one-time-code"
           autoFocus
           placeholder="000000"
-          className="field-focus selectable h-11 w-40 rounded-sm border border-transparent bg-sunken px-3 text-center font-data text-[20px] tracking-[0.24em] text-text placeholder:text-muted/50"
+          className="field-focus selectable h-11 w-40 rounded-sm border border-transparent bg-sunken px-3 text-center font-data text-[20px] tracking-[0.24em] text-text placeholder:text-muted"
         />
       </div>
       <div className="mt-1 flex items-center justify-end gap-3">

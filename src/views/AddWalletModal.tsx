@@ -218,7 +218,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
               spellCheck={false}
               aria-invalid={error !== null}
               placeholder="wpkh([fingerprint/84h/0h/0h]xpub.../0/*)"
-              className="field-focus selectable w-full resize-none rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text placeholder:text-muted/60"
+              className="field-focus selectable w-full resize-none rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text placeholder:text-muted"
             />
             {error && (
               <p role="alert" className="mt-2 font-ui text-sm text-muted">
@@ -416,7 +416,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
                   }
                 }}
                 placeholder="Cold storage"
-                className="field-focus h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-ui text-base text-text placeholder:text-muted/60"
+                className="field-focus h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-ui text-base text-text placeholder:text-muted"
               />
             </div>
             <div>

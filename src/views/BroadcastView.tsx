@@ -347,7 +347,7 @@ function InputCard({
         spellCheck={false}
         rows={7}
         placeholder="Paste a PSBT (base64 or hex) or a raw transaction (hex)…"
-        className="field-focus selectable w-full resize-y rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text placeholder:text-muted/60"
+        className="field-focus selectable w-full resize-y rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text placeholder:text-muted"
       />
       {error && (
         <p role="alert" className="mt-2 font-ui text-sm text-muted">
