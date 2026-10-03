@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ParsedInput } from "../lib/ipc";
 import { useUi } from "../state/store";
-import { AddWalletModal, MAX_WALLET_FILE_BYTES } from "./AddWalletModal";
+import { AddWalletModal, MAX_WALLET_FILE_BYTES, scriptHint } from "./AddWalletModal";
 
 /** A lone tpub: the core keeps Native SegWit and says it assumed it. */
 const PARSED_TPUB: ParsedInput = {
@@ -54,6 +54,30 @@ async function confirmStep(parsed: ParsedInput) {
 describe("AddWalletModal", () => {
   beforeEach(() => {
     useUi.setState({ addWalletOpen: false });
+  });
+
+  /** The hints name how the addresses start on the network the wallet
+      goes to, the ones the person compares with their own wallet: a
+      signet wallet never shows a mainnet prefix. */
+  it("names the address prefixes of the wallet's network", async () => {
+    const user = await confirmStep(PARSED_TPUB);
+    await user.click(screen.getByRole("combobox", { name: "Script type" }));
+    const listbox = await screen.findByRole("listbox");
+    expect(listbox).toHaveTextContent("P2WPKH, addresses starting with tb1q");
+    expect(listbox).toHaveTextContent("P2TR, addresses starting with tb1p");
+    expect(listbox).toHaveTextContent("P2SH-P2WPKH, addresses starting with 2");
+    expect(listbox).not.toHaveTextContent(/bc1q|bc1p/);
+  });
+
+  it("writes each network's prefixes", () => {
+    expect(scriptHint("segwit", "mainnet")).toBe("P2WPKH, addresses starting with bc1q");
+    expect(scriptHint("taproot", "mainnet")).toBe("P2TR, addresses starting with bc1p");
+    expect(scriptHint("legacy", "mainnet")).toBe("P2PKH, addresses starting with 1");
+    expect(scriptHint("segwit", "testnet4")).toBe("P2WPKH, addresses starting with tb1q");
+    expect(scriptHint("legacy", "signet")).toBe("P2PKH, addresses starting with m or n");
+    expect(scriptHint("segwit", "regtest")).toBe("P2WPKH, addresses starting with bcrt1q");
+    expect(scriptHint("taproot", "regtest")).toBe("P2TR, addresses starting with bcrt1p");
+    expect(scriptHint("witness_script", "signet")).toBe("P2WSH multisig or script");
   });
 
   it("says what it does not know in an amber notice, outside the recognition card", async () => {

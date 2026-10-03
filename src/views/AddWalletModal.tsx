@@ -47,16 +47,40 @@ const WARNING_LABEL: Record<InputWarning, string> = {
     "The paths chosen are not the usual 0/* and 1/*: compare the first address with your wallet.",
 };
 
-/** What each script type means to the person choosing, in one line. */
-const SCRIPT_HINT: Record<ScriptKind, string> = {
-  legacy: "P2PKH, addresses starting with 1",
-  nested_segwit: "P2SH-P2WPKH, addresses starting with 3",
-  segwit: "P2WPKH, addresses starting with bc1q",
-  taproot: "P2TR, addresses starting with bc1p",
-  witness_script: "P2WSH multisig or script",
-  legacy_script: "P2SH multisig or script",
-  bare: "Raw script",
+/** How the addresses of each single-key script type start on each
+    network: the test networks share theirs, and regtest has its own
+    prefix for SegWit. */
+const ADDRESS_START: Record<
+  "legacy" | "nested_segwit" | "segwit" | "taproot",
+  Record<Network, string>
+> = {
+  legacy: { mainnet: "1", signet: "m or n", testnet4: "m or n", regtest: "m or n" },
+  nested_segwit: { mainnet: "3", signet: "2", testnet4: "2", regtest: "2" },
+  segwit: { mainnet: "bc1q", signet: "tb1q", testnet4: "tb1q", regtest: "bcrt1q" },
+  taproot: { mainnet: "bc1p", signet: "tb1p", testnet4: "tb1p", regtest: "bcrt1p" },
 };
+
+/** What each script type means to the person choosing, in one line,
+    with the start of the addresses it gives on the wallet's network:
+    what they compare with their own wallet. */
+export function scriptHint(script: ScriptKind, network: Network): string {
+  switch (script) {
+    case "legacy":
+      return `P2PKH, addresses starting with ${ADDRESS_START.legacy[network]}`;
+    case "nested_segwit":
+      return `P2SH-P2WPKH, addresses starting with ${ADDRESS_START.nested_segwit[network]}`;
+    case "segwit":
+      return `P2WPKH, addresses starting with ${ADDRESS_START.segwit[network]}`;
+    case "taproot":
+      return `P2TR, addresses starting with ${ADDRESS_START.taproot[network]}`;
+    case "witness_script":
+      return "P2WSH multisig or script";
+    case "legacy_script":
+      return "P2SH multisig or script";
+    case "bare":
+      return "Raw script";
+  }
+}
 
 /** The largest file read for a wallet: sixteen times what the core
     takes as one. A bigger file is none, and reading it whole would
@@ -322,7 +346,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
                 options={parsed.script_options.map((option) => ({
                   value: option,
                   label: SCRIPT_LABEL[option],
-                  hint: SCRIPT_HINT[option],
+                  hint: scriptHint(option, network),
                 }))}
               />
               <p className="mt-1.5 font-ui text-xs text-muted">
