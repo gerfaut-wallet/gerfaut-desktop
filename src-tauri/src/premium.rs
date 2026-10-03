@@ -602,6 +602,32 @@ pub async fn premium_watch_wallet(
     Ok(())
 }
 
+/// Gives the server the new name of a wallet it watches. It keeps the
+/// name the wallet was registered under, and every alert and every line
+/// of Recent alerts says it: a rename made only here would leave the
+/// old name, the one the user took off the wallet, in each message.
+/// Under the same id a `PUT` is only a rename for the server, with no
+/// scan and outside the cap. On the side: a server out of reach keeps
+/// the old name until the wallet is registered again.
+pub(crate) async fn rename_on_server(state: &AppState, base_url: &str, id: &str) {
+    if !state.manager.premium_state().await.is_consented(id) || !connected(state).await {
+        return;
+    }
+    let Some(wallet) = state
+        .manager
+        .list_wallets(None)
+        .await
+        .into_iter()
+        .find(|wallet| wallet.id == id)
+    else {
+        return;
+    };
+    let input = descriptor_input(&wallet.kind);
+    if let Ok(client) = client_at(state, base_url).await {
+        let _ = client.put_wallet(id, &wallet.name, &input).await;
+    }
+}
+
 /// Ends the server's watch of a wallet once the app lock's secret went
 /// through. The manager withdraws the consent with the watch: switching
 /// the wallet back on asks the question again, and removing it later
@@ -1250,6 +1276,59 @@ mod tests {
     use crate::testkit::{
         DEVICE_ID, KEY, TOKEN, connected_body, platform_word, sent_field, stub_answers, stub_server,
     };
+
+    /// A wallet the server watches is renamed there too; one it never
+    /// had is not sent.
+    #[test]
+    fn a_rename_reaches_the_server_for_a_watched_wallet_only() {
+        use gerfaut_core::input::ImportOptions;
+        use gerfaut_core::network::Network;
+
+        let dir = tempfile::tempdir().unwrap();
+        let (state, _) = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let add = |address: &str, name: &str| {
+            let options = ImportOptions {
+                script: None,
+                derivation: None,
+            };
+            let parsed = gerfaut_core::input::parse_input_with_options(address, &options).unwrap();
+            runtime
+                .block_on(state.manager.add_wallet(name, &parsed, Network::Signet))
+                .unwrap()
+                .id
+        };
+        // The BIP 173 example addresses: public, valid on signet.
+        let watched = add(
+            "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
+            "Coffre de Paul",
+        );
+        let local = add(
+            "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7",
+            "Spending",
+        );
+        let mut premium = runtime.block_on(state.manager.premium_state());
+        premium.consent(&watched, 1_790_000_000);
+        runtime
+            .block_on(state.manager.set_premium_state(premium))
+            .unwrap();
+
+        let (base_url, requests) = crate::testkit::stub_server(200, "{}");
+        for id in [&local, &watched] {
+            runtime
+                .block_on(state.manager.rename_wallet(id, "Savings"))
+                .unwrap();
+            runtime.block_on(super::rename_on_server(&state, &base_url, id));
+        }
+        let sent: Vec<String> = requests.try_iter().collect();
+        assert_eq!(sent.len(), 1, "{sent:?}");
+        assert!(
+            sent[0].starts_with(&format!("PUT /v1/wallets/{watched} HTTP/1.1")),
+            "{}",
+            sent[0]
+        );
+        assert_eq!(crate::testkit::sent_field(&sent[0], "name"), "Savings");
+    }
 
     fn app_state(manager: WalletManager) -> AppState {
         AppState {

@@ -453,12 +453,20 @@ async fn sync_all(
 
 #[tauri::command]
 async fn rename_wallet(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     id: String,
     name: String,
 ) -> CommandResult<()> {
     state.unlocked()?;
-    Ok(state.manager.rename_wallet(&id, &name).await?)
+    state.manager.rename_wallet(&id, &name).await?;
+    // The premium server learns the new name on the side: the rename is
+    // done here whatever it answers.
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        premium::rename_on_server(&state, &premium::base_url(), &id).await;
+    });
+    Ok(())
 }
 
 /// Removes the wallet here, then tells the premium server on the side.
