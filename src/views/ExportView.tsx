@@ -23,15 +23,17 @@ const DIRECTIONS: { value: DirectionChoice; label: string }[] = [
     UTC as the file is: its `date_utc` column then holds only days the
     range names, and the page says so beside the fields, since the rest
     of the app shows the computer's time. */
-function dayBound(value: string, end: boolean): number | null {
+export function dayBound(value: string, end: boolean): number | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
   if (!match) return null;
   const [year, month, day] = match.slice(1).map(Number);
-  const start = Date.UTC(year, month - 1, day);
-  // 2026-02-31 is no day: Date.UTC would roll it into March.
-  const back = new Date(start);
-  if (back.getUTCMonth() !== month - 1 || back.getUTCDate() !== day) return null;
-  return end ? start / 1000 + 86_399 : start / 1000;
+  // Not Date.UTC, which reads the years 0 to 99 as 1900 to 1999.
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  // 2026-02-31 is no day: the date would roll into March.
+  if (date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  const start = date.getTime() / 1000;
+  return end ? start + 86_399 : start;
 }
 
 /** What is wrong with the range as typed, or null. */
