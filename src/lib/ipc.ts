@@ -950,6 +950,26 @@ export interface WatchStatus {
   watched_scripts: number;
   /** Scripts the server pushes changes for; the rest are polled. */
   pushed_scripts: number;
+  /** Scripts worth watching that Live leaves to the regular syncs, past
+      what it takes of one wallet or of all of them. */
+  left_out_scripts: number;
+  /** The wallets those scripts belong to. */
+  left_out_wallets: number;
+  /** How much of each wallet of the list Live hears, in list order;
+      empty while it is off. */
+  wallets: WalletCoverage[];
+}
+
+/** Whether Live hears a wallet whole, in part, or not at all. */
+export type Coverage = "live" | "partial" | "sync_only";
+
+export interface WalletCoverage {
+  wallet_id: string;
+  coverage: Coverage;
+  /** Scripts of the wallet Live hears. */
+  watched_scripts: number;
+  /** Scripts of the wallet left to the regular syncs. */
+  left_out_scripts: number;
 }
 
 export interface LiveStatus {

@@ -23,6 +23,9 @@ const OFF: WatchStatus = {
   detail: null,
   watched_scripts: 0,
   pushed_scripts: 0,
+  left_out_scripts: 0,
+  left_out_wallets: 0,
+  wallets: [],
 };
 
 describe("the status line", () => {
