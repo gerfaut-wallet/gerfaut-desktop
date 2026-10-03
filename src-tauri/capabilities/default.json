@@ -1,12 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capabilities of the main window. It opens the addresses listed below and no other.",
+  "description": "Capabilities of the main window. It listens to what the Rust side announces, and opens the addresses listed below and no other. Everything else it asks for goes through the app's own commands.",
   "windows": [
     "main"
   ],
   "permissions": [
-    "core:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     {
       "identifier": "opener:allow-open-url",
       "allow": [

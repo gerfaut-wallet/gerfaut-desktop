@@ -34,6 +34,23 @@ const patterns = permissions
 
 const opens = (url: string) => patterns.some((pattern) => pattern.test(url));
 
+/** The window's whole reach outside the app's own commands: listening
+    to the events the Rust side sends, and opening a short list of
+    addresses. `core:default` would add the window, webview, menu, tray,
+    path and resource commands and the right to emit events, none of
+    which the window uses: a page gone wrong could have hidden, moved or
+    closed the window, or read where the system keeps the app's data. */
+describe("permissions of the window", () => {
+  it("names each one it uses, and nothing more", () => {
+    const names = permissions.map((entry) => (typeof entry === "string" ? entry : entry.identifier));
+    expect(names).toEqual([
+      "core:event:allow-listen",
+      "core:event:allow-unlisten",
+      "opener:allow-open-url",
+    ]);
+  });
+});
+
 /** What the window can make the system open is a short list written
     here, not any address a page gone wrong could name: the explorer,
     the releases page, the Premium page, the alerts bot and the ntfy
