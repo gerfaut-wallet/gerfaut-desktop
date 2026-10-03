@@ -96,7 +96,7 @@ export function NotificationsSection({
         <div>
           <SettingRow
             title="New transactions"
-            hint="A notification when a transaction appears, incoming or outgoing, and again when it confirms, for as long as Gerfaut is open, minimised and locked included. Amounts follow the display unit and stay hidden while balances are masked. While Gerfaut is locked, a notification names no wallet and no amount."
+            hint="A notification when a transaction appears and again when it confirms, while Gerfaut is open, minimised or locked."
           >
             <Toggle
               checked={notifyNewTx}
@@ -129,15 +129,20 @@ export function NotificationsSection({
             <ShortOfRoomNote status={status} ownNode={ownNode} />
           )}
           <p className="mt-1.5 max-w-xl font-ui text-xs text-muted">
-            While this is on, Gerfaut keeps one connection open to your backend. The server
-            learns what a sync already tells it, and also how long Gerfaut stays connected.
+            While this is on, Gerfaut keeps one connection open to your backend, which learns
+            what a sync already tells it and how long Gerfaut stays connected.
             {automatic &&
-              " With the Automatic backend, Gerfaut first tries an Electrum server run by one of the public operators already in the rotation, because Electrum is what pushes changes."}
+              " With the Automatic backend, that is an Electrum server of an operator already in the rotation: Electrum is what pushes changes."}
           </p>
         </div>
 
         <div>
-          <Button variant="ghost" disabled={testing} onClick={() => void sendTest()}>
+          <Button
+            variant="ghost"
+            className="-ml-4"
+            disabled={testing}
+            onClick={() => void sendTest()}
+          >
             <Bell size={14} strokeWidth={1.5} aria-hidden />
             Send a test notification
           </Button>

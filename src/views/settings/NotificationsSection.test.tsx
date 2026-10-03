@@ -127,10 +127,10 @@ describe("Settings › Notifications", () => {
     mockDesk();
     const automatic = renderCard({}, "mainnet");
     expect(
-      screen.getByText(/The server learns what a sync already tells it, and also how long Gerfaut stays connected\./),
+      screen.getByText(/which learns what a sync already tells it and how long Gerfaut stays connected\./),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/With the Automatic backend, Gerfaut first tries an Electrum server run by one of the public operators already in the rotation, because Electrum is what pushes changes\./),
+      screen.getByText(/With the Automatic backend, that is an Electrum server of an operator already in the rotation: Electrum is what pushes changes\./),
     ).toBeInTheDocument();
     automatic.unmount();
 

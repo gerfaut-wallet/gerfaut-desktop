@@ -94,7 +94,7 @@ function DisplayCard() {
         </SettingRow>
         <SettingRow
           title="Currency"
-          hint="Used by the fiat value and the overview price chart."
+          hint="Used by the fiat value and the overview price."
         >
           <Select
             id="fiat-currency"
