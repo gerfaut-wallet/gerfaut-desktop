@@ -1880,25 +1880,35 @@ mod tests {
     /// Four commands answer behind the lock, and only four: the two that
     /// read the lock itself, the one that draws it, and the settings,
     /// which go through the redaction above instead.
+    ///
+    /// Every shape of command is read, synchronous ones included: one
+    /// that took the state without being `async` used to pass unseen.
     #[test]
     fn every_command_that_reaches_the_vault_begins_with_the_guard() {
         const PASSES_LOCKED: [&str; 4] =
             ["app_lock", "verify_app_lock", "lock_app", "get_settings"];
+        const SHAPES: [&str; 6] = [
+            "pub async fn ",
+            "pub(crate) async fn ",
+            "async fn ",
+            "pub fn ",
+            "pub(crate) fn ",
+            "fn ",
+        ];
         let sources = [
             ("lib.rs", include_str!("lib.rs")),
             ("premium.rs", include_str!("premium.rs")),
             ("live.rs", include_str!("live.rs")),
             ("devices.rs", include_str!("devices.rs")),
+            ("clipboard.rs", include_str!("clipboard.rs")),
         ];
 
         let mut checked = 0;
+        let mut commands = 0;
         for (file, source) in sources {
             let lines: Vec<&str> = source.lines().collect();
             for (index, line) in lines.iter().enumerate() {
-                let Some(rest) = line
-                    .strip_prefix("pub async fn ")
-                    .or_else(|| line.strip_prefix("async fn "))
-                else {
+                let Some(rest) = SHAPES.iter().find_map(|shape| line.strip_prefix(shape)) else {
                     continue;
                 };
                 let name = rest.split('(').next().unwrap_or_default();
@@ -1917,6 +1927,7 @@ mod tests {
                 if !command {
                     continue;
                 }
+                commands += 1;
                 // The body opens at the first line ending in `{`.
                 let Some(offset) = lines[index..]
                     .iter()
@@ -1957,8 +1968,21 @@ mod tests {
                 );
             }
         }
-        // A count, so an empty scan cannot pass for a clean one.
-        assert!(checked >= 50, "only {checked} commands scanned");
+        // Counts, so an empty scan cannot pass for a clean one: every
+        // command the app registers is read, the six synchronous ones
+        // and the one in clipboard.rs among them.
+        assert!(checked >= 50, "only {checked} commands checked");
+        let registered = include_str!("lib.rs")
+            .split("generate_handler![")
+            .nth(1)
+            .and_then(|list| list.split(']').next())
+            .map(|list| {
+                list.split(',')
+                    .filter(|name| !name.trim().is_empty())
+                    .count()
+            })
+            .unwrap_or_default();
+        assert_eq!(commands, registered, "a registered command was not read");
     }
 }
 
