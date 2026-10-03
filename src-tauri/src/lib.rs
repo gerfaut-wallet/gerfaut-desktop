@@ -35,6 +35,10 @@ mod devices;
 mod live;
 mod notice;
 mod premium;
+// Compiled on Linux for its tests too, where nothing else calls it.
+#[cfg(any(target_os = "macos", all(unix, test)))]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod single_instance;
 #[cfg(any(windows, test))]
 mod toast;
 
@@ -1145,19 +1149,38 @@ pub fn run() {
         let config = context.config_mut();
         config.identifier = isolated_identifier(&config.identifier, &dir);
     }
-    tauri::Builder::default()
-        // First, so that a second launch leaves before anything else
-        // starts: before the vault is opened, before a window exists.
-        // Its arguments and working directory are not read: a launch
-        // only ever brings the open window forward.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            show_main_window(app);
-        }))
+    // On macOS, before anything else starts: a second launch leaves
+    // before the vault is opened, before a window exists. See
+    // `single_instance` for why not the plugin there.
+    #[cfg(target_os = "macos")]
+    let first = match single_instance::claim(&context.config().identifier) {
+        single_instance::Claim::Second => return,
+        single_instance::Claim::First(listener) => Some(listener),
+        single_instance::Claim::Unavailable => None,
+    };
+    #[cfg(target_os = "macos")]
+    let socket = first.as_ref().map(|listener| listener.path().to_owned());
+
+    let builder = tauri::Builder::default();
+    // First, so that a second launch leaves before anything else
+    // starts: before the vault is opened, before a window exists. Its
+    // arguments and working directory are not read: a launch only ever
+    // brings the open window forward.
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        show_main_window(app);
+    }));
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .manage(clipboard::SensitiveClipboard::default())
-        .setup(|app| {
+        .setup(move |app| {
+            #[cfg(target_os = "macos")]
+            if let Some(listener) = first {
+                let handle = app.handle().clone();
+                listener.serve(move || show_main_window(&handle));
+            }
             // A vault that would not open leaves the window to say why,
             // and every command that needs it answers an error until it
             // does: no state is managed for them to reach.
@@ -1251,7 +1274,7 @@ pub fn run() {
         ])
         .build(context)
         .expect("error while running tauri application")
-        .run(|app, event| {
+        .run(move |app, event| {
             // The window is gone: stop the watch, and leave within
             // `live::EXIT_GRACE` whatever is still in flight.
             if matches!(
@@ -1264,6 +1287,10 @@ pub fn run() {
             // the app.
             if matches!(event, tauri::RunEvent::Exit) {
                 app.state::<clipboard::SensitiveClipboard>().expire_now();
+                #[cfg(target_os = "macos")]
+                if let Some(path) = &socket {
+                    single_instance::release(path);
+                }
             }
         });
 }
