@@ -360,7 +360,7 @@ function InputCard({
         back to the signer.
       </p>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1">
+        <div className="-ml-4 flex gap-1">
           <Button variant="ghost" onClick={onImport}>
             <FileUp size={16} strokeWidth={1.5} aria-hidden />
             Import a file

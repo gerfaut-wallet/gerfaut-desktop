@@ -231,7 +231,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
             </p>
           </div>
           <div className="flex items-center justify-between">
-            <div className="flex gap-1">
+            <div className="-ml-4 flex gap-1">
               <Button variant="ghost" onClick={() => fileRef.current?.click()}>
                 <FileUp size={16} strokeWidth={1.5} aria-hidden />
                 Import a file
@@ -448,7 +448,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
           )}
 
           <div className="flex justify-between">
-            <Button variant="ghost" onClick={back}>
+            <Button variant="ghost" className="-ml-4" onClick={back}>
               Back
             </Button>
             <Button
