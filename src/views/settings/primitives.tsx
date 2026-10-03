@@ -96,7 +96,11 @@ export function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: 
   );
 }
 
-/** Row of mutually exclusive choices, styled instead of a native select. */
+/** Row of mutually exclusive choices, styled instead of a native select.
+    The chosen one in a Glacier fill, as DESIGN's group of choices has
+    it: the white chip with a hairline it used to be was the faintest
+    mark on the page for the one thing the control says. An option that
+    cannot apply stays, in Ardoise, and takes no click. */
 export function Segmented<T extends string>({
   value,
   options,
@@ -130,13 +134,11 @@ export function Segmented<T extends string>({
           disabled={option.disabled}
           onClick={() => onChange(option.value)}
           className={clsx(
-            "inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 font-ui text-sm font-medium transition-colors duration-150",
-            option.disabled
-              ? "cursor-not-allowed text-muted/45"
-              : "cursor-pointer",
+            "inline-flex h-9 items-center gap-1.5 rounded-[6px] px-3 font-ui text-sm font-medium transition-colors duration-150",
+            option.disabled ? "cursor-not-allowed text-muted" : "cursor-pointer",
             value === option.value
-              ? "bg-surface text-text shadow-[inset_0_0_0_1px_var(--color-border)]"
-              : !option.disabled && "text-muted hover:text-text",
+              ? "bg-primary text-on-primary"
+              : !option.disabled && "text-text hover:bg-border/60",
           )}
         >
           {option.icon && (
