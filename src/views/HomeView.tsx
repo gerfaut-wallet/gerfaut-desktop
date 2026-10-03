@@ -18,6 +18,7 @@ import { Balance, ListAmount } from "../components/Amount";
 import { BalanceChart } from "../components/BalanceChart";
 import { CoverageBadge } from "../components/CoverageBadge";
 import { LoadFailure } from "../components/LoadFailure";
+import { useRadioGroup } from "../components/radioGroup";
 import { NewDeviceBanner } from "../components/NewDeviceBanner";
 import { WatchOfflineBanner } from "../components/WatchOfflineBanner";
 import {
@@ -413,6 +414,7 @@ function PriceCard() {
   // price at every launch whatever the setting said, which tells a
   // third party this machine opened a bitcoin wallet just now.
   const history = usePriceHistory(range, fiatEnabled);
+  const radio = useRadioGroup(ranges, range, setPriceRange);
   const points = history.data?.points ?? [];
   const first = points[0];
   const last = points[points.length - 1];
@@ -435,12 +437,13 @@ function PriceCard() {
       label="Bitcoin price"
       action={
         <div role="radiogroup" aria-label="Price range" className="inline-flex rounded-md bg-sunken p-0.5">
-          {ranges.map((option) => (
+          {ranges.map((option, index) => (
             <button
               key={option}
               type="button"
               role="radio"
               aria-checked={range === option}
+              {...radio(option, index)}
               onClick={() => setPriceRange(option)}
               className={clsx(
                 "cursor-pointer rounded-[6px] px-2 py-0.5 font-ui text-[11px] font-medium transition-colors duration-150",

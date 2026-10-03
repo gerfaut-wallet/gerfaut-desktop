@@ -4,6 +4,7 @@
 import { clsx } from "clsx";
 import type { ReactNode, Ref } from "react";
 import { Notice } from "../../components/Notice";
+import { useRadioGroup } from "../../components/radioGroup";
 import { errorMessage } from "../../lib/ipc";
 
 /** What a setting that was not saved leaves under it: the amber note,
@@ -107,18 +108,25 @@ export function Segmented<T extends string>({
   onChange: (value: T) => void;
   label: string;
 }) {
+  const radio = useRadioGroup(
+    options.map((option) => option.value),
+    value,
+    onChange,
+    (candidate) => options.find((option) => option.value === candidate)?.disabled === true,
+  );
   return (
     <div
       role="radiogroup"
       aria-label={label}
       className="inline-flex rounded-md bg-sunken p-0.5"
     >
-      {options.map((option) => (
+      {options.map((option, index) => (
         <button
           key={option.value}
           type="button"
           role="radio"
           aria-checked={value === option.value}
+          {...radio(option.value, index)}
           disabled={option.disabled}
           onClick={() => onChange(option.value)}
           className={clsx(

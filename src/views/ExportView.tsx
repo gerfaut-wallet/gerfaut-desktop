@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { Button } from "../components/Button";
 import { LoadFailure } from "../components/LoadFailure";
+import { useRadioGroup } from "../components/radioGroup";
 import type { ExportDirection, ExportOptions, TxSummary } from "../lib/ipc";
 import { Notice } from "../components/Notice";
 import { errorMessage } from "../lib/ipc";
@@ -11,6 +12,12 @@ import { useExportCsv, useSnapshot } from "../state/queries";
 import { useUi } from "../state/store";
 
 type DirectionChoice = "all" | ExportDirection;
+
+const DIRECTIONS: { value: DirectionChoice; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "incoming", label: "Received" },
+  { value: "outgoing", label: "Sent" },
+];
 
 /** `2026-08-25` -> unix seconds at the UTC start (or end) of that day.
     UTC as the file is: its `date_utc` column then holds only days the
@@ -47,6 +54,11 @@ export function ExportView({ walletId }: { walletId: string }) {
   const [toDay, setToDay] = useState("");
   const [direction, setDirection] = useState<DirectionChoice>("all");
   const [includePending, setIncludePending] = useState(true);
+  const radio = useRadioGroup(
+    DIRECTIONS.map((option) => option.value),
+    direction,
+    setDirection,
+  );
 
   if (snapshot.isPending) {
     return <p className="px-1 py-4 font-ui text-sm text-muted">Loading wallet…</p>;
@@ -113,18 +125,13 @@ export function ExportView({ walletId }: { walletId: string }) {
 
           <Row title="Direction">
             <div role="radiogroup" aria-label="Direction" className="inline-flex rounded-md bg-sunken p-0.5">
-              {(
-                [
-                  { value: "all", label: "All" },
-                  { value: "incoming", label: "Received" },
-                  { value: "outgoing", label: "Sent" },
-                ] as { value: DirectionChoice; label: string }[]
-              ).map((option) => (
+              {DIRECTIONS.map((option, index) => (
                 <button
                   key={option.value}
                   type="button"
                   role="radio"
                   aria-checked={direction === option.value}
+                  {...radio(option.value, index)}
                   onClick={() => setDirection(option.value)}
                   className={clsx(
                     "cursor-pointer rounded-[6px] px-3 py-1.5 font-ui text-sm font-medium transition-colors duration-150",
