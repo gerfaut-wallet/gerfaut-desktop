@@ -4,13 +4,17 @@ import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { Button } from "../components/Button";
 import type { ExportDirection, ExportOptions, TxSummary } from "../lib/ipc";
-import { isCommandError } from "../lib/ipc";
+import { Notice } from "../components/Notice";
+import { errorMessage } from "../lib/ipc";
 import { useExportCsv, useSnapshot } from "../state/queries";
 import { useUi } from "../state/store";
 
 type DirectionChoice = "all" | ExportDirection;
 
-/** `2026-08-25` -> unix seconds at the UTC start (or end) of that day. */
+/** `2026-08-25` -> unix seconds at the UTC start (or end) of that day.
+    UTC as the file is: its `date_utc` column then holds only days the
+    range names, and the page says so beside the fields, since the rest
+    of the app shows the computer's time. */
 function dayBound(value: string, end: boolean): number | null {
   if (!value) return null;
   const [year, month, day] = value.split("-").map(Number);
@@ -73,8 +77,6 @@ export function ExportView({ walletId }: { walletId: string }) {
           if (rows === null) return;
           showToast(rows === 1 ? "1 transaction exported" : `${rows} transactions exported`);
         },
-        onError: (error) =>
-          showToast(isCommandError(error) ? error.message : "The export failed"),
       },
     );
   };
@@ -92,7 +94,10 @@ export function ExportView({ walletId }: { walletId: string }) {
 
       <div className="rounded-lg border border-border bg-surface p-6">
         <div className="flex flex-col gap-5">
-          <Row title="Date range" hint="Leave empty to export the full history.">
+          <Row
+            title="Date range"
+            hint="Days in UTC, as the file dates each transaction. Leave empty to export the full history."
+          >
             <div className="flex items-center gap-2">
               <DateInput label="From" value={fromDay} onChange={setFromDay} />
               <span aria-hidden className="text-muted">
@@ -207,6 +212,13 @@ export function ExportView({ walletId }: { walletId: string }) {
             {exportCsv.isPending ? "Exporting…" : "Export CSV…"}
           </Button>
         </div>
+        {/* Under the button that sent it, until the next try: a toast
+            would be gone before it is read. */}
+        {exportCsv.isError && (
+          <Notice tone="info" role="alert" className="mt-4">
+            The file was not written: {errorMessage(exportCsv.error)}
+          </Notice>
+        )}
       </div>
     </div>
   );

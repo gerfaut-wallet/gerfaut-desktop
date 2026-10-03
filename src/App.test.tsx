@@ -2475,6 +2475,53 @@ describe("export page", () => {
     expect(await screen.findByText("1 transaction exported")).toBeInTheDocument();
   });
 
+  /** The bounds are whole UTC days, the days of the file's
+      `date_utc` column, and the page says so beside the fields. */
+  it("bounds the range by UTC days, and says so", async () => {
+    const exported = vi.fn((_args: Record<string, unknown>) => undefined);
+    walletIpc({
+      export_transactions_csv: (args) => {
+        exported(args);
+        return 1;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Export" }));
+    expect(
+      await screen.findByText(
+        "Days in UTC, as the file dates each transaction. Leave empty to export the full history.",
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2025-01-01" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2025-12-31" } });
+    await user.click(screen.getByRole("button", { name: /export csv/i }));
+    await waitFor(() => expect(exported).toHaveBeenCalledTimes(1));
+    const options = exported.mock.calls[0][0].options as Record<string, unknown>;
+    expect(options.from).toBe(Date.UTC(2025, 0, 1) / 1000);
+    expect(options.to).toBe(Date.UTC(2025, 11, 31) / 1000 + 86_399);
+  });
+
+  /** A file that could not be written stays said under the button,
+      not in a toast gone before it is read. */
+  it("says under the button when the file was not written", async () => {
+    walletIpc({
+      export_transactions_csv: () => Promise.reject({ kind: "internal", message: "disk full" }),
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Export" }));
+    await screen.findByText(/1 of 1 transaction selected/);
+
+    await user.click(screen.getByRole("button", { name: /export csv/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The file was not written: disk full",
+    );
+  });
+
   it("says nothing when the save dialog is closed on nothing", async () => {
     walletIpc({ export_transactions_csv: () => null });
     renderApp();
