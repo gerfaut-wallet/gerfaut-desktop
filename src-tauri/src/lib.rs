@@ -319,10 +319,16 @@ fn parse_backend(input: String) -> CommandResult<ScannedBackend> {
     Ok(gerfaut_core::chain::connect::parse_backend(&input)?)
 }
 
-/// Assembles the QR frames scanned so far (plain, UR, BBQr).
+/// Assembles the QR frames scanned so far (plain, UR, BBQr). The core
+/// decodes every frame again at each call, and a synchronous command
+/// runs on the main thread: a code of a hundred parts made the window
+/// stutter while it was scanned. On a worker thread instead.
 #[tauri::command]
-fn assemble_qr(frames: Vec<String>) -> CommandResult<QrProgress> {
-    Ok(gerfaut_core::input::qr::assemble(&frames)?)
+async fn assemble_qr(frames: Vec<String>) -> CommandResult<QrProgress> {
+    tauri::async_runtime::spawn_blocking(move || gerfaut_core::input::qr::assemble(&frames))
+        .await
+        .map_err(|e| internal(format!("the QR assembly did not finish: {e}")))?
+        .map_err(CommandError::from)
 }
 
 #[tauri::command]
@@ -1304,7 +1310,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{CommandError, bare_file_name, wait_words};
+    use super::{CommandError, assemble_qr, bare_file_name, wait_words};
     use gerfaut_core::error::{CoreError, PremiumError};
 
     #[test]
@@ -1333,6 +1339,24 @@ mod tests {
             kind(PremiumError::InvalidCertificate("no".to_owned())),
             "premium_invalid"
         );
+    }
+
+    /// The assembly runs off the main thread and answers as before.
+    #[test]
+    fn a_scanned_frame_is_assembled_on_a_worker() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let plain = runtime
+            .block_on(assemble_qr(vec![
+                "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx".to_owned(),
+            ]))
+            .unwrap();
+        assert!(plain.complete);
+        assert_eq!(
+            plain.text.as_deref(),
+            Some("tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx")
+        );
+        let refused = runtime.block_on(assemble_qr(Vec::new())).unwrap_err();
+        assert_eq!(refused.kind, "invalid_input");
     }
 
     /// The server's sentence reaches the screen as it was written.
