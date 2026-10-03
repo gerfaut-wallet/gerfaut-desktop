@@ -3223,6 +3223,87 @@ describe("the welcome tour", () => {
   });
 });
 
+describe("restoring a backup", () => {
+  /** A desktop on mainnet restores the phone's backup, all signet: the
+      workspace follows the wallets, and what the backup's settings put
+      in place shows at once, not at the next launch. */
+  it("lands the wallets of another network in sight, with the settings applied", async () => {
+    let settings: Settings = { ...SETTINGS, active_network: "mainnet" };
+    let wallets: WalletMeta[] = [];
+    const calls: string[] = [];
+    walletIpc({
+      get_settings: () => settings,
+      list_wallets: (args) =>
+        wallets.filter((wallet) => args.network == null || wallet.network === args.network),
+      pick_backup_file: () => ({ name: "phone.gerfaut", data: "R0ZCQUNLVVA=" }),
+      preview_backup: () => ({
+        created_at: 1_755_000_000,
+        has_settings: true,
+        wallets: [
+          {
+            index: 0,
+            name: "Cold storage",
+            network: "signet",
+            kind: WALLET.kind,
+            already_watched: false,
+          },
+        ],
+        backends: [{ network: "signet", backend: "node.example.org" }],
+        electrum_hosts: [],
+      }),
+      import_backup: () => {
+        calls.push("import_backup");
+        wallets = [WALLET];
+        settings = {
+          ...settings,
+          gap_limit: 50,
+          backends: { signet: { type: "custom_electrum", url: "ssl://node.example.org:50002" } },
+        };
+        return { added: [WALLET], skipped: 0, settings_applied: true };
+      },
+      set_active_network: (args) => {
+        calls.push("set_active_network");
+        settings = { ...settings, active_network: args.network as Settings["active_network"] };
+        return undefined;
+      },
+      // The sync that follows is still running: its own toast would
+      // take the restore's place.
+      sync_all: (args) => {
+        calls.push(`sync_all ${String(args.network)}`);
+        return new Promise(() => {});
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    expect(await screen.findByText("No wallets watched yet")).toBeInTheDocument();
+
+    await openSettings(user, "Backup & sync");
+    await user.click(screen.getByRole("button", { name: "Restore…" }));
+    await user.click(await screen.findByRole("button", { name: /open a file/i }));
+    await user.type(await screen.findByLabelText("Password"), "correct horse");
+    await user.click(screen.getByRole("button", { name: "Open backup" }));
+    await user.click(await screen.findByRole("switch", { name: /apply node settings/i }));
+    await user.click(screen.getByRole("button", { name: "Restore 1 wallet" }));
+
+    expect(await screen.findByText("1 wallet restored · settings applied")).toBeInTheDocument();
+    expect(calls.slice(0, 2)).toEqual(["import_backup", "set_active_network"]);
+    // The first wallets of a fresh desktop also start the launch sync:
+    // every sync goes to the network they are on.
+    expect(calls.slice(2)).not.toHaveLength(0);
+    expect(calls.slice(2).every((call) => call === "sync_all signet")).toBe(true);
+    // The settings shown are the vault's, read again: the network the
+    // wallets are on, and the backend and gap limit the backup brought.
+    await openSettings(user, "Network");
+    expect(await screen.findByRole("button", { name: /^Signet/, pressed: true })).toBeInTheDocument();
+    expect(screen.getByLabelText("Host")).toHaveValue("node.example.org");
+    await openSettings(user, "Wallets");
+    expect(screen.getByLabelText("Gap limit")).toHaveValue("50");
+    // And the wallet is in sight, not filed under a network nobody shows.
+    await user.click(sidebar().getByRole("button", { name: "Overview" }));
+    expect(await screen.findByRole("heading", { name: "Cold storage" })).toBeInTheDocument();
+  });
+});
+
 describe("tor", () => {
   it("says which Tor a build carries, and refuses the one it does not", async () => {
     mockIPC((cmd) => {

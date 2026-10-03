@@ -21,7 +21,7 @@ import {
   useImportBackup,
   usePreviewBackup,
 } from "../state/backup";
-import { useInvalidateWallet, useSyncAll } from "../state/queries";
+import { useSyncAll } from "../state/queries";
 import { useUi } from "../state/store";
 import { FieldLabel, Segmented, Toggle } from "./settings/primitives";
 
@@ -355,10 +355,9 @@ export function BackupRestoreModal({
   activeNetwork: Network;
 }) {
   const { showToast } = useUi();
-  const invalidate = useInvalidateWallet();
   const syncAll = useSyncAll();
   const previewBackup = usePreviewBackup();
-  const importBackup = useImportBackup();
+  const importBackup = useImportBackup(activeNetwork);
   const [source, setSource] = useState<string | null>(null);
   const [from, setFrom] = useState<BackupSource | null>(null);
   const [password, setPassword] = useState("");
@@ -458,7 +457,7 @@ export function BackupRestoreModal({
   const restore = async () => {
     if (source === null || chosen.size === 0) return;
     try {
-      const report = await importBackup.mutateAsync({
+      const { report, network, elsewhere } = await importBackup.mutateAsync({
         source,
         password,
         choices: {
@@ -466,18 +465,12 @@ export function BackupRestoreModal({
           apply_settings: applySettings,
         },
       });
-      // The workspace follows the restored wallets when none of them is
-      // on the active network, otherwise they would land invisible.
-      let network = activeNetwork;
-      if (report.added.length > 0 && !report.added.some((w) => w.network === network)) {
-        network = report.added[0].network;
-        await ipc.setActiveNetwork(network);
-      }
-      invalidate();
       const count =
         report.added.length === 1 ? "1 wallet restored" : `${report.added.length} wallets restored`;
-      showToast(report.settings_applied ? `${count} · settings applied` : count);
-      syncAll.mutate(network);
+      const where = elsewhere ? ` on ${NETWORK_LABEL[report.added[0].network]}` : "";
+      showToast(report.settings_applied ? `${count}${where} · settings applied` : `${count}${where}`);
+      // The restored wallets get their first sync wherever they are.
+      syncAll.mutate(elsewhere ? report.added[0].network : network);
       close();
     } catch (error) {
       setProblem(restoreMessage(error));
