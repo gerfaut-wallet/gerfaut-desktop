@@ -39,6 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Export: you now type the date range as YYYY-MM-DD, and Gerfaut reads it as whole days in UTC, the days of the file's date_utc column, as the page now says. When it cannot read a day, it says so under the fields and exports nothing. The subtitle now adds that everything stays on this machine.
 - In every choice group (unit, price source, theme, Tor, export direction), the chosen option is now filled in the accent colour.
 - The hints under New transactions, Check for updates automatically and Currency are shorter.
+- Fiat values now group their thousands with a space, like amounts in BTC and sats: €74 074.07 instead of €74,074.07.
 - When every wallet is on the network shown, the backup export says "All wallets (N)" instead of offering a choice of one.
 
 ### Fixed
@@ -63,6 +64,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Placeholders in text fields were lighter than any other text. They now have the same contrast as secondary text.
 - The arrow keys now move through choice groups, Enter submits the app lock dialogs, and form errors are announced to screen readers.
 - Settings › Network no longer says that Electrum servers cannot watch a single address.
+- Policy › Descriptor showed and copied only the receive branch of a wallet, so a descriptor copied from there watched the wallet without its change. It now shows the whole wallet as one multipath descriptor, with /<0;1>/*.
+- In Add a wallet, the script type hints now give the address prefixes of the wallet's network, such as tb1q on signet and testnet4, instead of the mainnet ones.
+- In Add a wallet, a Taproot address no longer leaves a single character on a line of its own.
+- On the Broadcast page, the input and output lists now use the same icons as the diagram above them: an output to someone else points away, and change points back.
+- Choosing a Tor mode now shows at once, instead of about a second later. Turning on New transactions shows "Connecting…" while the live watch starts, instead of "Off".
+- When the server itself refuses addresses, Settings › Notifications now says so, instead of blaming the live watch's own limits.
 
 ### Security
 
