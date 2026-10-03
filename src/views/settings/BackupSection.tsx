@@ -2,7 +2,7 @@ import { Archive, Download, Upload } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../../components/Button";
 import type { Network } from "../../lib/ipc";
-import { useAllWallets } from "../../state/backup";
+import { useWallets } from "../../state/queries";
 import { BackupExportModal, BackupRestoreModal } from "../BackupModals";
 import { SectionCard } from "./primitives";
 
@@ -11,7 +11,9 @@ import { SectionCard } from "./primitives";
     makes is also how wallets travel between the desktop and the
     phone. */
 export function BackupSection({ activeNetwork }: { activeNetwork: Network }) {
-  const wallets = useAllWallets();
+  // Every wallet, on every network: a backup is not scoped to the
+  // workspace the settings happen to show.
+  const wallets = useWallets();
   const [exporting, setExporting] = useState(false);
   const [restoring, setRestoring] = useState(false);
 

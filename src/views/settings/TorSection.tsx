@@ -8,9 +8,8 @@ import { ipc, isCommandError } from "../../lib/ipc";
 import { keys } from "../../state/queries";
 import { FieldLabel, SectionCard, Segmented } from "./primitives";
 
-/** The Tor modes as the settings name them; the backend form borrows
-    the label when a scanned address turns out to be an onion. */
-export const TOR_MODES: { value: TorMode; label: string }[] = [
+/** The Tor modes as the settings name them. */
+const TOR_MODES: { value: TorMode; label: string }[] = [
   { value: "auto", label: "Automatic" },
   { value: "system", label: "System Tor" },
   { value: "embedded", label: "Built-in" },

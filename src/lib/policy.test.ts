@@ -14,13 +14,19 @@ import {
   conditionOutline,
   countdown,
   describePolicy,
-  digestText,
   hasTimeBasedLocks,
   orderBranches,
   policyDigest,
   remainingWords,
   timelockText,
 } from "./policy";
+import type { PolicyDigest } from "./policy";
+
+/** A digest as one string, the figure then the label, as the Overview
+    row reads it. */
+function digestText(digest: PolicyDigest): string {
+  return `${digest.figure} ${digest.label}`.trim();
+}
 
 const NOW = 1_755_000_000;
 const TIP = 200_000;

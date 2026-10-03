@@ -595,8 +595,3 @@ function stateWords(branch: PolicyBranch): string {
       return "needs a secret";
   }
 }
-
-/** The digest as one string, for an accessible name or a test. */
-export function digestText(digest: PolicyDigest): string {
-  return `${digest.figure} ${digest.label}`.trim();
-}

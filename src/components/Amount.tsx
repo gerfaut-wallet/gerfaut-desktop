@@ -99,16 +99,3 @@ export function StackedAmount({ sats }: { sats: number }) {
     </span>
   );
 }
-
-/** Inline amount for detail views: primary unit, fiat optional. */
-export function InlineAmount({ sats, withFiat = true }: { sats: number; withFiat?: boolean }) {
-  const { masked, unit } = useUi();
-  const fiat = useFiatValue(sats);
-  if (masked) return <span className="tabular text-[13px] text-text">{MASKED}</span>;
-  return (
-    <span className="selectable tabular text-[13px] text-text">
-      {formatAmount(sats, unit)}
-      {withFiat && fiat && <span className="text-muted"> · {fiat}</span>}
-    </span>
-  );
-}

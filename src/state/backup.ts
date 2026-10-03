@@ -1,16 +1,10 @@
 // The encrypted backup of the wallet list: the same file or QR code
 // that moves wallets between the desktop and the phone.
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { BackupOptions, ImportChoices, ImportReport, Network } from "../lib/ipc";
 import { ipc } from "../lib/ipc";
 import { keys, useInvalidateWallet } from "./queries";
-
-/** Every wallet, on every network: a backup is not scoped to the
-    workspace the settings happen to show. */
-export function useAllWallets() {
-  return useQuery({ queryKey: ["wallets", "all"], queryFn: () => ipc.listWallets() });
-}
 
 export function useExportBackup() {
   return useMutation({

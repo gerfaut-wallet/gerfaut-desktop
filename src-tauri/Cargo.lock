@@ -2657,7 +2657,6 @@ dependencies = [
  "arboard",
  "data-encoding",
  "gerfaut-core",
- "hex",
  "keyring",
  "notify-rust",
  "rand 0.9.5",

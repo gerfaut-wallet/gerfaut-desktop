@@ -939,20 +939,18 @@ async fn preview_backup(
 
 #[tauri::command]
 async fn import_backup(
-    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     source: String,
     password: String,
     choices: ImportChoices,
 ) -> CommandResult<ImportReport> {
     state.unlocked()?;
-    let report = state
+    // A backup carries no preference, so the alerts stay as they were;
+    // the backends it may bring, the core's watch follows by itself.
+    Ok(state
         .manager
         .import_backup(&source, &password, &choices)
-        .await?;
-    // A backup can carry the preferences, the alerts among them.
-    live::apply(&app).await;
-    Ok(report)
+        .await?)
 }
 
 // --- vault key ---------------------------------------------------------
@@ -1002,8 +1000,9 @@ fn vault_key(data_dir: &std::path::Path) -> Result<VaultKey, String> {
 fn key_from(entry: &keyring::Entry, vault_present: bool) -> Result<VaultKey, String> {
     match entry.get_password() {
         Ok(stored) => {
-            let bytes =
-                hex::decode(&stored).map_err(|_| "stored vault key is not valid hex".to_owned())?;
+            let bytes = data_encoding::HEXLOWER_PERMISSIVE
+                .decode(stored.as_bytes())
+                .map_err(|_| "stored vault key is not valid hex".to_owned())?;
             let key: [u8; 32] = bytes
                 .try_into()
                 .map_err(|_| "stored vault key has the wrong length".to_owned())?;
@@ -1018,7 +1017,7 @@ fn key_from(entry: &keyring::Entry, vault_present: bool) -> Result<VaultKey, Str
             use rand::RngCore;
             rand::rng().fill_bytes(&mut key);
             entry
-                .set_password(&hex::encode(key))
+                .set_password(&data_encoding::HEXLOWER.encode(&key))
                 .map_err(|e| format!("cannot store vault key: {e}"))?;
             Ok(VaultKey::Raw(key))
         }
