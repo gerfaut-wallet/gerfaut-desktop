@@ -48,9 +48,6 @@ notify-rust = "4.11"
 windows = { version = "0.61", features = ["Data_Xml_Dom", "Foundation_Collections", "UI_Notifications"] }
 
 [dev-dependencies]
-# The tests sign the licences they then read back; the app itself never
-# signs anything.
-ed25519-dalek = "2"
 # A vault of their own for the tests that open one.
 tempfile = "3"
 

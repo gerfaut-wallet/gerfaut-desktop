@@ -907,38 +907,40 @@ pub(crate) fn locked(state: &AppState) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use data_encoding::{BASE64URL_NOPAD, HEXLOWER};
-    use ed25519_dalek::{Signer, SigningKey};
     use gerfaut_core::input::ScriptKind;
     use gerfaut_core::premium::licence::LICENCE_PUBLIC_KEY_HEX;
-    use gerfaut_core::premium::{Claims, EventKind, WatchedWallet};
+    use gerfaut_core::premium::{EventKind, WatchedWallet};
 
     use super::*;
 
     const NOW: i64 = 1_790_000_000;
 
-    /// The server's side of the certificate, for these tests only.
-    fn issue(signing: &SigningKey, exp: i64) -> String {
-        let claims = Claims {
-            v: 1,
-            sub: "ab".repeat(32),
-            exp,
-            iat: NOW - 60,
-        };
-        let payload = serde_json::to_vec(&claims).unwrap();
-        let signature = signing.sign(&payload);
-        format!(
-            "{}.{}",
-            BASE64URL_NOPAD.encode(&payload),
-            BASE64URL_NOPAD.encode(&signature.to_bytes())
-        )
-    }
+    // The server's side of the protocol, done once and offline: nothing
+    // in this crate signs, not even a test. These are fixtures of
+    // gerfaut-core (`src/premium/licence.rs`, module `fixtures`), copied
+    // byte for byte: a throwaway Ed25519 key, drawn at random and
+    // discarded once they were printed, signed the exact texts named
+    // above each one. The recipe to make a new set is written there;
+    // replace them together with the key.
 
-    fn signer() -> (SigningKey, String) {
-        let signing = SigningKey::from_bytes(&[7u8; 32]);
-        let public = HEXLOWER.encode(&signing.verifying_key().to_bytes());
-        (signing, public)
-    }
+    /// The verifying key of the throwaway server key, hex.
+    const SERVER_PUBLIC_KEY_HEX: &str =
+        "4c506fd45f58d9ba24b9526fba8dac4021648531d3dd08a131aa1acca9d3cacd";
+
+    /// Over `{"v":1,"sub":"<ab × 32>","exp":1790086400,"iat":1789999940}`:
+    /// a day of paid time left at [`NOW`].
+    const VALID_CERTIFICATE: &str = "eyJ2IjoxLCJzdWIiOiJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiIiwiZXhwIjoxNzkwMDg2NDAwLCJpYXQiOjE3ODk5OTk5NDB9.agV86zDZGD4sf_rRL2bF1J19z_9somd00AiFZ-OKrd5rlmBjc5el5obcZbH06P5xXisCmGJR50VK1YONErH_Aw";
+
+    /// Over `{"v":1,"sub":"<ab × 32>","exp":1789996400,"iat":1789999940}`:
+    /// paid time that ended an hour before [`NOW`].
+    const EXPIRED_CERTIFICATE: &str = "eyJ2IjoxLCJzdWIiOiJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiIiwiZXhwIjoxNzg5OTk2NDAwLCJpYXQiOjE3ODk5OTk5NDB9.wHO7bYAQ4KzyCqi5UmnpUhrus-Jhhe6rdE9-xMWnJegedn7XZ7mcOypRtxnmBVCB9LXB0BNJbpw6KCvrPso4Bg";
+
+    /// A heartbeat at [`NOW`]: the exact text the server signed, and its
+    /// signature in hex.
+    const HEARTBEAT_AT_900000: (&str, &str) = (
+        r#"{"now":1790000000,"tip_height":900000}"#,
+        "f739acee9837abaab25189ad65f1ecf0e29b1f69ea8fb8bce15d8d71779d6727be2a29342dcfee6dffd4d5935ce3ce2c2a4edccc995653a3b0603b534d4e420f",
+    );
 
     #[test]
     fn an_empty_vault_reads_as_no_account() {
@@ -989,10 +991,10 @@ mod tests {
 
     #[test]
     fn the_stored_certificate_is_read_offline_and_the_key_shown_in_groups() {
-        let (signing, public) = signer();
+        let public = SERVER_PUBLIC_KEY_HEX;
         let mut state = PremiumState {
             key: Some("abcdefghijkmnpqr".to_owned()),
-            certificate: Some(issue(&signing, NOW + 86_400)),
+            certificate: Some(VALID_CERTIFICATE.to_owned()),
             watched: vec![WatchedWallet {
                 wallet_id: "w1".to_owned(),
                 consented_at: NOW,
@@ -1001,7 +1003,7 @@ mod tests {
             key_saved: true,
             ..PremiumState::default()
         };
-        let status = status_of(&state, &public, NOW);
+        let status = status_of(&state, public, NOW);
         assert!(status.key_saved);
         assert!(!status.checklist_hidden);
         assert_eq!(status.device, None);
@@ -1017,9 +1019,9 @@ mod tests {
         assert_eq!(status.acknowledged_offline_until, Some(NOW + 100));
 
         // Paid time that ended still reads, and says since when.
-        state.certificate = Some(issue(&signing, NOW - 3_600));
+        state.certificate = Some(EXPIRED_CERTIFICATE.to_owned());
         assert_eq!(
-            status_of(&state, &public, NOW).licence,
+            status_of(&state, public, NOW).licence,
             Some(LicenceState::Expired { since: NOW - 3_600 })
         );
     }
@@ -1028,10 +1030,9 @@ mod tests {
     /// nothing: the screen must not show "active" on its word.
     #[test]
     fn a_certificate_that_does_not_verify_reads_as_none() {
-        let (signing, _) = signer();
         let state = PremiumState {
             key: Some("abcdefghijkmnpqr".to_owned()),
-            certificate: Some(issue(&signing, NOW + 86_400)),
+            certificate: Some(VALID_CERTIFICATE.to_owned()),
             ..PremiumState::default()
         };
         assert_eq!(status_of(&state, LICENCE_PUBLIC_KEY_HEX, NOW).licence, None);
@@ -1726,10 +1727,9 @@ mod tests {
         requests.recv().unwrap();
         assert!(runtime.block_on(connection_owed(&state)));
 
-        let (signing, public) = signer();
-        let (base_url, requests) = stub_server(200, &signed_heartbeat(&signing, NOW));
+        let (base_url, requests) = stub_server(200, &signed_heartbeat(HEARTBEAT_AT_900000));
         let report = runtime
-            .block_on(heartbeat(&state, &base_url, &public, NOW))
+            .block_on(heartbeat(&state, &base_url, SERVER_PUBLIC_KEY_HEX, NOW))
             .unwrap();
         assert_eq!(report.heartbeat.now, NOW);
         let request = requests.recv().unwrap();
@@ -1812,12 +1812,12 @@ mod tests {
             .unwrap();
     }
 
-    /// `GET /v1/heartbeat` at `now`, signed the way the server signs it.
-    fn signed_heartbeat(signing: &SigningKey, now: i64) -> String {
-        let payload = format!(r#"{{"now":{now},"tip_height":900000}}"#);
-        let signature = HEXLOWER.encode(&signing.sign(payload.as_bytes()).to_bytes());
-        let public = HEXLOWER.encode(&signing.verifying_key().to_bytes());
-        format!(r#"{{"heartbeat":{payload},"signature":"{signature}","public_key":"{public}"}}"#)
+    /// `GET /v1/heartbeat` as the server answers it, around a heartbeat
+    /// signed offline.
+    fn signed_heartbeat((payload, signature): (&str, &str)) -> String {
+        format!(
+            r#"{{"heartbeat":{payload},"signature":"{signature}","public_key":"{SERVER_PUBLIC_KEY_HEX}"}}"#
+        )
     }
 
     /// The commands that ask for the secret only in some cases say so
