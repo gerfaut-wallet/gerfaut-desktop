@@ -68,6 +68,11 @@ export default function App() {
     tourDismissed,
   } = useUi();
   const hydrated = useRef(false);
+  // The shell waits for the whole set of preferences: behind the lock
+  // the vault answers the theme alone, and a wallet list that came back
+  // before the settings once drew the balances unmasked, "Hide amounts"
+  // on, for the length of a round trip.
+  const [prefsReady, setPrefsReady] = useState(false);
   const autosynced = useRef(false);
   const wasLocked = useRef(false);
   const client = useQueryClient();
@@ -96,6 +101,7 @@ export default function App() {
     if (!settings.data || hydrated.current) return;
     hydratePrefs(settings.data.app_prefs);
     hydrated.current = !useLock.getState().locked;
+    if (hydrated.current) setPrefsReady(true);
   }, [settings.data, hydratePrefs]);
 
   // Every page opens at its top. The canvas is one scrolling box for all
@@ -123,9 +129,20 @@ export default function App() {
       );
     } else if (wasLocked.current) {
       wasLocked.current = false;
-      void client.invalidateQueries({ queryKey: keys.settings });
+      // The settings read again are the whole set: taken here too, for
+      // the day they come back identical to the cut copy and the cache
+      // keeps the same object, which the effect above would not see.
+      void client.invalidateQueries({ queryKey: keys.settings }).then(() => {
+        // A refetch that failed keeps the cut copy: not that one.
+        if (client.getQueryState(keys.settings)?.status !== "success") return;
+        const fresh = client.getQueryData<Settings>(keys.settings);
+        if (!fresh || hydrated.current || useLock.getState().locked) return;
+        hydratePrefs(fresh.app_prefs);
+        hydrated.current = true;
+        setPrefsReady(true);
+      });
     }
-  }, [locked, client]);
+  }, [locked, client, hydratePrefs]);
 
   // One background refresh at startup; data stays visibly stamped. It
   // waits for the unlock because the vault answers nothing before it,
@@ -199,7 +216,7 @@ export default function App() {
   // is waited on, which behind the lock is never asked for at all.
   if (locked) return <LockScreen />;
 
-  if (wallets.isPending) {
+  if (wallets.isPending || !prefsReady) {
     return (
       <div className="shell-rail flex h-full items-center justify-center bg-shell">
         <p className="font-ui text-sm text-muted">Opening vault…</p>

@@ -2892,6 +2892,60 @@ describe("the app lock", () => {
     await waitFor(() => expect(syncs).toBe(1));
   });
 
+  /** Behind the lock the vault answers the theme alone. After the
+      unlock the whole set of preferences comes back slower than the
+      wallet list: the shell waits for it, and the balances never show
+      for a frame with "Hide amounts" on. */
+  it("keeps the amounts hidden from the first frame after the unlock", async () => {
+    let unlocked = false;
+    const pending: (() => void)[] = [];
+    const seen: string[] = [];
+    const full: Settings = { ...LOCKED, app_prefs: { "desktop.masked": "1" } };
+    mockIPC((cmd) => {
+      seen.push(cmd);
+      switch (cmd) {
+        case "get_settings":
+          if (!unlocked) return { ...LOCKED, app_prefs: {} };
+          return new Promise((resolve) => pending.push(() => resolve(full)));
+        case "app_lock":
+          return LOCKED.app_lock;
+        case "verify_app_lock":
+          unlocked = true;
+          return { unlocked: true, failures: 0, retry_after_secs: 0 };
+        case "list_wallets":
+          return [WALLET];
+        case "wallet_snapshot":
+          return SNAPSHOT;
+        case "utxos":
+          return [];
+        case "receive_addresses":
+          return receiveEntries(0);
+        case "fetch_price_history":
+          return PRICE_HISTORY;
+        case "set_app_pref":
+          return undefined;
+        case "sync_all":
+          return { reports: [], failures: [] };
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderApp();
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByLabelText("PIN"), "1234");
+    await user.click(screen.getByRole("button", { name: /unlock/i }));
+    await waitFor(() => expect(seen).toContain("list_wallets"));
+    await waitFor(() => expect(pending.length).toBeGreaterThan(0));
+    expect(screen.queryByRole("navigation", { name: "Navigation" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/0\.00150000/)).not.toBeInTheDocument();
+
+    act(() => pending.forEach((release) => release()));
+    await screen.findByRole("navigation", { name: "Navigation" });
+    expect(screen.queryByText(/0\.00150000/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/•••••/).length).toBeGreaterThan(0);
+  });
+
   it("says a wrong PIN plainly and stays", async () => {
     mockLocked([{ unlocked: false, failures: 1, retry_after_secs: 0 }]);
     renderApp();
