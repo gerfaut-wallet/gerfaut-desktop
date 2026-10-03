@@ -597,7 +597,9 @@ function IoList({
 }
 
 
-/** Role chips: 32px squares, the same vocabulary as the diagram. */
+/** Role chips: 32px squares, the same vocabulary as the diagram. The
+    role is said in words too, for a screen reader: whether a row is the
+    wallet's own was only a tooltip and a tinted border. */
 function RoleIcon({ io, side, coinbase }: { io: TxIo; side: "in" | "out"; coinbase: boolean }) {
   const common = { size: 15, strokeWidth: 1.75, "aria-hidden": true } as const;
   const chip = (title: string, tone: string, icon: ReactNode) => (
@@ -606,6 +608,7 @@ function RoleIcon({ io, side, coinbase }: { io: TxIo; side: "in" | "out"; coinba
       className={clsx("inline-flex size-8 shrink-0 items-center justify-center rounded-lg", tone)}
     >
       {icon}
+      <span className="sr-only">{title}:</span>
     </span>
   );
   if (coinbase) return chip("Newly minted coins", "bg-sunken text-muted", <Pickaxe {...common} />);

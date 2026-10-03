@@ -32,7 +32,7 @@ export function TxList({ txs }: { txs: TxSummary[] }) {
             <button
               type="button"
               onClick={() => selectTx(selected ? null : tx.txid)}
-              aria-expanded={selected}
+              aria-haspopup="dialog"
               className={clsx(
                 "group flex min-h-12 w-full cursor-pointer items-center gap-3 px-3 py-1.5 text-left transition-colors duration-100",
                 selected ? "bg-sunken" : "hover:bg-sunken/60",

@@ -9,19 +9,22 @@ import { useClearAppLock, useSetAppLock } from "../../state/queries";
 import { useUi } from "../../state/store";
 import { FieldLabel, SectionCard, Segmented, SettingRow, Toggle } from "./primitives";
 
-/** A secret field, hidden as it is typed. */
+/** A secret field, hidden as it is typed. `problem` names the line
+    that says what is wrong with it, read out with the field. */
 function SecretField({
   id,
   label,
   value,
   onChange,
   autoFocus,
+  problem,
 }: {
   id: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
   autoFocus?: boolean;
+  problem?: string;
 }) {
   return (
     <div>
@@ -32,6 +35,8 @@ function SecretField({
         value={value}
         autoFocus={autoFocus}
         autoComplete="off"
+        aria-invalid={problem !== undefined || undefined}
+        aria-describedby={problem}
         onChange={(event) => onChange(event.target.value)}
         className="field-focus h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-ui text-sm text-text"
       />
@@ -154,7 +159,14 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
         width={440}
         title={dialog === "change" ? "Change the app lock" : "Turn on the app lock"}
       >
-        <div className="flex flex-col gap-4">
+        {/* A form, so Enter in any field does what the button does. */}
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void save();
+          }}
+        >
           {dialog === "on" && (
             <div>
               <FieldLabel>Kind</FieldLabel>
@@ -192,6 +204,7 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
               setSecret(value);
               setProblem(null);
             }}
+            problem={problem ? "lock-problem" : undefined}
           />
           <SecretField
             id="lock-confirm"
@@ -201,17 +214,22 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
               setConfirm(value);
               setProblem(null);
             }}
+            problem={problem ? "lock-problem" : undefined}
           />
-          {problem && <p className="font-ui text-xs text-muted">{problem}</p>}
+          {problem && (
+            <p id="lock-problem" role="alert" className="font-ui text-xs text-muted">
+              {problem}
+            </p>
+          )}
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={close}>
+            <Button variant="ghost" type="button" onClick={close}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={() => void save()}>
+            <Button variant="primary" type="submit">
               {dialog === "change" ? "Change" : "Turn on"}
             </Button>
           </div>
-        </div>
+        </form>
       </Modal>
 
       <Modal
@@ -221,7 +239,13 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
         width={440}
         title="Turn off the app lock"
       >
-        <div className="flex flex-col gap-4">
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void turnOff();
+          }}
+        >
           <SecretField
             id="lock-current-off"
             label={lock?.kind === "pin" ? "PIN" : "Password"}
@@ -231,17 +255,22 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
               setProblem(null);
             }}
             autoFocus
+            problem={problem ? "lock-off-problem" : undefined}
           />
-          {problem && <p className="font-ui text-xs text-muted">{problem}</p>}
+          {problem && (
+            <p id="lock-off-problem" role="alert" className="font-ui text-xs text-muted">
+              {problem}
+            </p>
+          )}
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={close}>
+            <Button variant="ghost" type="button" onClick={close}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={() => void turnOff()}>
+            <Button variant="primary" type="submit">
               Turn off
             </Button>
           </div>
-        </div>
+        </form>
       </Modal>
     </SectionCard>
   );

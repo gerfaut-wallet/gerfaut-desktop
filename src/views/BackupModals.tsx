@@ -280,7 +280,11 @@ export function BackupExportModal({
             recover it. This file can be copied and guessed offline: use a long
             passphrase, several words.
           </p>
-          {problem && <p className="font-ui text-xs text-muted">{problem}</p>}
+          {problem && (
+            <p role="alert" className="font-ui text-xs text-muted">
+              {problem}
+            </p>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={close}>
               Cancel
@@ -521,7 +525,11 @@ export function BackupRestoreModal({
               setProblem(null);
             }}
           />
-          {problem && <p className="font-ui text-xs text-muted">{problem}</p>}
+          {problem && (
+            <p role="alert" className="font-ui text-xs text-muted">
+              {problem}
+            </p>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={close}>
               Cancel
@@ -618,7 +626,11 @@ export function BackupRestoreModal({
               <SettingsPreview preview={preview} />
             </div>
           )}
-          {problem && <p className="font-ui text-xs text-muted">{problem}</p>}
+          {problem && (
+            <p role="alert" className="font-ui text-xs text-muted">
+              {problem}
+            </p>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={close}>
               Cancel

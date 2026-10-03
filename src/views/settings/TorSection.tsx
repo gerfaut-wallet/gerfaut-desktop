@@ -138,7 +138,11 @@ export function TorSection({ tor }: { tor: TorSettings }) {
             </>
           )}
         </p>
-        {problem && <p className="font-ui text-xs text-muted">{problem}</p>}
+        {problem && (
+          <p role="alert" className="font-ui text-xs text-muted">
+            {problem}
+          </p>
+        )}
 
         <div>
           <Button

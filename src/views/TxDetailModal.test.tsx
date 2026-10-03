@@ -113,6 +113,14 @@ describe("TxDetailModal", () => {
     expect(opener.openUrl).toHaveBeenCalledWith(`https://mempool.space/signet/tx/${TXID}`);
   });
 
+  /** Whether a row is the wallet's own is said in words, not only by a
+      tooltip and a tinted border. */
+  it("names each row's role for a screen reader", async () => {
+    open();
+    const outputs = within(await screen.findByRole("region", { name: "Outputs" }));
+    expect(outputs.getByText("Change back to this wallet:")).toHaveClass("sr-only");
+  });
+
   it("says a transfer to oneself by its name", async () => {
     open({
       ...DETAIL,

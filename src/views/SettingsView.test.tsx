@@ -1150,3 +1150,39 @@ describe("a setting the vault refuses", () => {
     expect(useUi.getState().notifyNewTx).toBe(false);
   });
 });
+
+describe("turning the app lock on", () => {
+  beforeEach(() => {
+    useUi.setState({ view: "settings", settingsSection: "general", toast: null });
+  });
+
+  /** A form: Enter sends it from any field, and what is wrong is read
+      out with the fields it is about. */
+  it("sends on Enter and says what is wrong out loud", async () => {
+    const calls = mockSettingsIpc({ set_app_lock: () => undefined, get_settings: () => SETTINGS });
+    act(() => useUi.getState().openSettings("security"));
+    renderSettings();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("switch", { name: "App lock" }));
+    const dialog = await screen.findByRole("dialog", { name: "Turn on the app lock" });
+    const pin = within(dialog).getByLabelText("New PIN");
+    const confirm = within(dialog).getByLabelText("Confirm");
+    await user.type(pin, "246813");
+    await user.type(confirm, "246812{Enter}");
+
+    const problem = await within(dialog).findByRole("alert");
+    expect(problem).toHaveTextContent("The two entries differ.");
+    expect(confirm).toHaveAttribute("aria-invalid", "true");
+    expect(confirm).toHaveAccessibleDescription("The two entries differ.");
+    expect(calls.filter((call) => call.cmd === "set_app_lock")).toHaveLength(0);
+
+    await user.clear(confirm);
+    await user.type(confirm, "246813{Enter}");
+    await waitFor(() =>
+      expect(calls.filter((call) => call.cmd === "set_app_lock")).toEqual([
+        { cmd: "set_app_lock", args: { kind: "pin", secret: "246813", current: null } },
+      ]),
+    );
+  });
+});
