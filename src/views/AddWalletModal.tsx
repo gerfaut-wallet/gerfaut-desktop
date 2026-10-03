@@ -299,8 +299,11 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
                 <> · {SCRIPT_LABEL[parsed.payload.script]}</>
               )}
             </p>
+            {/* Balanced: a 62-character Taproot address is a hair wider
+                than the card, and left to itself it put one character on
+                a line of its own. */}
             {parsed.payload.type === "address" && (
-              <p className="selectable mt-1 break-all font-data text-[13px] text-muted">
+              <p className="selectable mt-1 break-all text-balance font-data text-[13px] text-muted">
                 {parsed.payload.address}
               </p>
             )}
@@ -309,7 +312,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
                 <span>First address</span>
                 <span
                   data-testid="preview-address"
-                  className="selectable break-all font-data text-[13px] text-text"
+                  className="selectable break-all text-balance font-data text-[13px] text-text"
                 >
                   {parsed.preview_address}
                 </span>
