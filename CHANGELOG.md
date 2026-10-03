@@ -21,7 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - When the vault cannot be opened at startup, the window now says why and offers a Try again button. Before, the app closed without a word. This covers a vault that another copy of Gerfaut holds, for example a second installation that uses the same data folder: two copies can no longer open the same vault and save over each other's changes.
 - The Broadcast preview now warns in red when an input is signed with SIGHASH_NONE or SIGHASH_SINGLE. Such a signature does not fix where all of the money goes, so anyone who relays the transaction before it is mined can send some or all of it somewhere else. The confirmation dialog repeats the warning.
 - A "This is my node" switch under the address of your own Electrum or Esplora server, in Settings › Network. When it is on, Live follows up to 20 000 addresses instead of 2 000. Leave it off for a server you do not run: it would refuse most of them, and learn every one. Saving the server address again keeps the switch as it was.
-- When Live cannot follow every address, Settings › Notifications says how many addresses of how many wallets wait for the next sync, and how to lift the limit. Each wallet then shows "Live", "Partly live" or "At next sync" in Settings › Wallets and on its Overview. On your own node, if the server itself refuses addresses, the note names the setting of that server that lets it take more.
+- When Live cannot follow every address, Settings › Notifications says how many addresses of how many wallets wait for the next sync, and how to lift the limit. Each wallet then shows "Live", "Partly live" or "At next sync" in Settings › Wallets and on its Overview. On your own node, if the server itself refuses addresses, the note names the server setting that lets it follow more.
 - Settings › Wallets › Advanced › "Always watch live first" picks the wallets Live follows before the others when it cannot follow every address.
 - A Premium channel that has delivered nothing for an hour now shows "Not delivering", with the server's reason and what to do: send a test once it is fixed, or remove the channel and add it again.
 - When a screen fails to render, the window says so and offers Reload, instead of going blank.
@@ -64,11 +64,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Placeholders in text fields were lighter than any other text. They now have the same contrast as secondary text.
 - The arrow keys now move through choice groups, Enter submits the app lock dialogs, and form errors are announced to screen readers.
 - Settings › Network no longer says that Electrum servers cannot watch a single address.
-- Policy › Descriptor showed and copied only the receive branch of a wallet, so a descriptor copied from there watched the wallet without its change. It now shows the whole wallet as one multipath descriptor, with /<0;1>/*.
+- Policy › Descriptor showed and copied only the receive branch of a wallet, so a descriptor copied from there would watch the wallet without its change. It now shows the whole wallet as one multipath descriptor, with /<0;1>/*.
 - In Add a wallet, the script type hints now give the address prefixes of the wallet's network, such as tb1q on signet and testnet4, instead of the mainnet ones.
 - In Add a wallet, a Taproot address no longer leaves a single character on a line of its own.
 - On the Broadcast page, the input and output lists now use the same icons as the diagram above them: an output to someone else points away, and change points back.
-- Choosing a Tor mode now shows at once, instead of about a second later. Turning on New transactions shows "Connecting…" while the live watch starts, instead of "Off".
+- The Tor mode you pick now shows as selected at once, instead of about a second later. Turning on New transactions shows "Connecting…" while the live watch starts, instead of "Off".
 - When the server itself refuses addresses, Settings › Notifications now says so, instead of blaming the live watch's own limits.
 
 ### Security
