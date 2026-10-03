@@ -1255,6 +1255,9 @@ mod tests {
             linked_at: None,
             enabled: true,
             created_at: NOW,
+            last_sent_at: None,
+            failing_since: None,
+            last_failure: None,
         }
     }
 
@@ -2180,12 +2183,31 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (state, _) = state_with_account(dir.path());
         let runtime = tokio::runtime::Runtime::new().unwrap();
+        // A wallet of this vault: the core keeps no yes for one it does
+        // not hold. The BIP 173 example address, public, valid on signet.
+        let options = gerfaut_core::input::ImportOptions {
+            script: None,
+            derivation: None,
+        };
+        let parsed = gerfaut_core::input::parse_input_with_options(
+            "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
+            &options,
+        )
+        .unwrap();
+        let watched = runtime
+            .block_on(state.manager.add_wallet(
+                "Cold",
+                &parsed,
+                gerfaut_core::network::Network::Signet,
+            ))
+            .unwrap()
+            .id;
         let mut premium = runtime.block_on(state.manager.premium_state());
-        premium.consent("w-watched", NOW);
+        premium.consent(&watched, NOW);
         runtime
             .block_on(state.manager.set_premium_state(premium))
             .unwrap();
-        assert!(runtime.block_on(watched_by_server(&state, "w-watched")));
+        assert!(runtime.block_on(watched_by_server(&state, &watched)));
         assert!(!runtime.block_on(watched_by_server(&state, "w-local")));
 
         let none = runtime
@@ -2215,7 +2237,7 @@ mod tests {
         runtime
             .block_on(state.manager.premium_log_out("http://127.0.0.1:9"))
             .unwrap();
-        assert!(!runtime.block_on(watched_by_server(&state, "w-watched")));
+        assert!(!runtime.block_on(watched_by_server(&state, &watched)));
     }
 
     /// `GET /v1/channels` with a Telegram chat not linked yet, an ntfy
