@@ -32,9 +32,14 @@ use crate::{AppState, CommandError, CommandResult, devices};
 
 /// How many events the "Recent alerts" card shows.
 const RECENT_EVENTS: usize = 20;
-/// How many events are asked of the server to find the recent ones: its
-/// own cap. The route pages forward from an id; the latest are the tail.
+/// How many events are asked of the server at a time: its own cap. The
+/// route pages forward from an id, oldest first, and the server keeps
+/// the log whole, so the latest are the tail of the last page.
 const EVENTS_PAGE: u32 = 500;
+/// The most pages read to find that tail: half a million events, far
+/// past any account, and an end to a server that keeps answering full
+/// pages.
+const MAX_EVENT_PAGES: usize = 1_000;
 /// How long a dismissed "watch is offline" banner stays quiet: a day.
 /// A heartbeat that verifies again clears it sooner; an outage that
 /// outlives it is worth a second look.
@@ -789,8 +794,34 @@ pub async fn premium_test_channel(
 #[tauri::command]
 pub async fn premium_events(state: tauri::State<'_, AppState>) -> CommandResult<Vec<Event>> {
     state.unlocked()?;
-    let events = client(&state).await?.events(0, EVENTS_PAGE).await?;
-    Ok(latest_events(events, RECENT_EVENTS))
+    recent_events(&state, &base_url()).await
+}
+
+/// The last [`RECENT_EVENTS`] events of the account, newest first. The
+/// server serves its log oldest first and a page at a time, so every
+/// page is read, the cursor on the last id of the one before, until a
+/// page comes back short; only the tail is kept on the way.
+async fn recent_events(state: &AppState, base_url: &str) -> CommandResult<Vec<Event>> {
+    let client = client_at(state, base_url).await?;
+    let mut tail: Vec<Event> = Vec::new();
+    let mut after = 0;
+    for _ in 0..MAX_EVENT_PAGES {
+        let page = client.events(after, EVENTS_PAGE).await?;
+        let full = page.len() >= EVENTS_PAGE as usize;
+        let Some(last) = page.iter().map(|event| event.id).max() else {
+            break;
+        };
+        tail.extend(page);
+        // The newest, without doubles, back in the server's order.
+        tail = latest_events(tail, RECENT_EVENTS);
+        tail.reverse();
+        // A cursor that did not move would read the same page again.
+        if !full || last <= after {
+            break;
+        }
+        after = last;
+    }
+    Ok(latest_events(tail, RECENT_EVENTS))
 }
 
 /// The server's heartbeat, verified against the trusted key and this
@@ -1094,6 +1125,81 @@ mod tests {
             .collect();
         assert_eq!(few, vec![2, 1]);
         assert!(latest_events(vec![], 20).is_empty());
+    }
+
+    /// `GET /v1/events` holding the events `ids`, in that order.
+    fn events_page(ids: std::ops::RangeInclusive<i64>) -> String {
+        let events: Vec<String> = ids
+            .map(|id| {
+                format!(
+                    r#"{{"id":{id},"kind":"receive_detected","wallet":"w1","wallet_name":"Cold","at":{},"data":{{}}}}"#,
+                    NOW + id
+                )
+            })
+            .collect();
+        format!(r#"{{"events":[{}]}}"#, events.join(","))
+    }
+
+    /// Past one page of events, the recent ones are on the last page:
+    /// every page is read, and the card shows the newest twenty, not the
+    /// end of the first five hundred.
+    #[test]
+    fn recent_alerts_read_every_page() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, _) = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        let (base_url, requests) = stub_answers(vec![
+            (200, events_page(1..=500)),
+            (200, events_page(501..=501)),
+        ]);
+        let recent = runtime.block_on(recent_events(&state, &base_url)).unwrap();
+        let ids: Vec<i64> = recent.iter().map(|event| event.id).collect();
+        assert_eq!(ids, (482..=501).rev().collect::<Vec<_>>());
+        let first = requests.recv().unwrap();
+        assert!(
+            first.starts_with("GET /v1/events?after=0&limit=500 HTTP/1.1"),
+            "{first}"
+        );
+        let second = requests.recv().unwrap();
+        assert!(
+            second.starts_with("GET /v1/events?after=500&limit=500 HTTP/1.1"),
+            "{second}"
+        );
+        assert!(requests.try_recv().is_err(), "a short page is the last");
+
+        // A short first page is the whole log; an empty one, no events.
+        let (base_url, requests) = stub_server(200, &events_page(1..=3));
+        let few = runtime.block_on(recent_events(&state, &base_url)).unwrap();
+        assert_eq!(
+            few.iter().map(|event| event.id).collect::<Vec<_>>(),
+            vec![3, 2, 1]
+        );
+        requests.recv().unwrap();
+        assert!(requests.try_recv().is_err());
+        let (base_url, _) = stub_server(200, r#"{"events":[]}"#);
+        assert!(
+            runtime
+                .block_on(recent_events(&state, &base_url))
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    /// A server that answers the same full page whatever the cursor is
+    /// read once, not forever.
+    #[test]
+    fn a_cursor_that_does_not_move_ends_the_reading() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, _) = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (base_url, requests) = stub_server(200, &events_page(1..=500));
+        let recent = runtime.block_on(recent_events(&state, &base_url)).unwrap();
+        assert_eq!(recent.len(), RECENT_EVENTS);
+        assert_eq!(recent[0].id, 500);
+        requests.recv().unwrap();
+        requests.recv().unwrap();
+        assert!(requests.try_recv().is_err());
     }
 
     fn channel(kind: ChannelKind, linked: bool, code: Option<&str>) -> Channel {
