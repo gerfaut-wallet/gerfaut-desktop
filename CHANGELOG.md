@@ -20,6 +20,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Opening Gerfaut while it is already running now brings the open window to the front instead of starting a second copy.
 - When the vault cannot be opened at startup, the window now says why and offers a Try again button. Before, the app closed without a word. This covers a vault that another copy of Gerfaut holds, for example a second installation that uses the same data folder: two copies can no longer open the same vault and save over each other's changes.
 - The Broadcast preview now warns in red when an input is signed with SIGHASH_NONE or SIGHASH_SINGLE. Such a signature does not fix where all of the money goes, so anyone who relays the transaction before it is mined can send some or all of it somewhere else. The confirmation dialog repeats the warning.
+- A "This is my node" switch under the address of your own Electrum or Esplora server, in Settings › Network. When it is on, Live follows up to 20 000 addresses instead of 2 000. Leave it off for a server you do not run: it would refuse most of them, and learn every one. Saving the server address again keeps the switch as it was.
+- When Live cannot follow every address, Settings › Notifications says how many addresses of how many wallets wait for the next sync, and how to lift the limit. Each wallet then shows "Live", "Partly live" or "At next sync" in Settings › Wallets and on its Overview. On your own node, if the server itself refuses addresses, the note names the software it runs and the setting that lets it take more.
+- Settings › Wallets › Advanced › "Always watch live first" picks the wallets Live follows before the others when it cannot follow every address.
+- A Premium channel that has delivered nothing for an hour now shows "Not delivering", with the server's reason and what to do: send a test once it is fixed, or remove the channel and add it again.
+- When a screen fails to render, the window says so and offers Reload, instead of going blank.
+- The first screen of an empty vault and the first page of the welcome tour show the Gerfaut wordmark.
 
 ### Changed
 
@@ -30,6 +36,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - On the Receive page, Next address now goes through at most 200 unused addresses past the next one, skips any address another app already received a payment on, and stops on the last one with a line that explains why. A descriptor without a wildcard shows its single address, with nothing to skip to. The gap limit warning now counts the unused addresses since the last used one, instead of how many times you pressed Next address.
 - When the outputs of a transaction pay more than its inputs bring in, the Broadcast confirmation now says there is no fee instead of calling it unknown.
 - Premium requests now go through Tor as soon as the backend of any network is an onion address, and no longer only when the backend of the network on screen is one. The message shown when Tor is out of reach says so, and so does the note about the update check in Settings › About.
+- Export: you now type the date range as YYYY-MM-DD, and Gerfaut reads it as whole days in UTC, the days of the file's date_utc column, as the page now says. When it cannot read a day, it says so under the fields and exports nothing. The subtitle now adds that everything stays on this machine.
+- In every choice group (unit, price source, theme, Tor, export direction), the chosen option is now filled in the accent colour.
+- Settings hints are one sentence each.
+- When every wallet is on the network shown, the backup export says "All wallets (N)" instead of offering a choice of one.
 
 ### Fixed
 
@@ -38,6 +48,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - When the Telegram link cannot carry the link code, the channel now shows the /start message to send the bot by hand, with a Copy button. In that case the link only opens the bot.
 - Restoring a backup that holds a private key, or a descriptor Gerfaut cannot watch, now says so, and says that nothing was restored.
 - If the system's key store says it has no vault key while a vault is already on disk, Gerfaut no longer creates a new key that could never open it. The startup screen says the key is missing, and Try again asks the store again.
+- Recent alerts showed the oldest alerts of an account with more than 500 events. Gerfaut now reads every page.
+- Restoring a backup whose wallets are all on another network left them out of sight until a restart, and the restored settings did not show either. The workspace now moves to the wallets' network, and everything shows at once.
+- With "Hide amounts" on, unlocking could show the balances for an instant.
+- When the vault refused to save a setting, on a full disk or while an antivirus held the file, the setting looked saved anyway. It now goes back to what the vault holds, with the reason under it. If this happens when you turn on transaction notifications, the switch stays off.
+- A link that nothing on the computer can open, such as an ntfy link without the ntfy app, now says so and shows the address to copy.
+- A wallet page that could not be loaded now says why, with a Try again button. A list of UTXOs that failed to load no longer reads as an empty one.
+- In Add a wallet, Back keeps what you pasted. A wallet added on another network closes the dialog even when switching to that network fails, and the confirmation names the network.
+- The System theme now follows the system when it switches between light and dark.
+- Scanning a long animated QR code no longer makes the window stutter.
+- The network badge in the sidebar was hard to read. It now uses the colours of the dark sidebar.
+- In Settings › Wallets, wallet names could shrink to nothing in a narrow window. A row now puts its actions under the name when both do not fit.
+- The UTXO and transaction lists no longer stretch to the bottom of the window when they are short.
+- Placeholders in text fields were lighter than any other text. They now have the same contrast as secondary text.
+- The arrow keys now move through choice groups, Enter submits the app lock dialogs, and form errors are announced to screen readers.
+- Settings › Network no longer says that Electrum servers cannot watch a single address.
 
 ### Security
 
@@ -48,6 +73,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - An Electrum address whose host still contains a port is refused, so an onion name can no longer reach the system resolver in the clear.
 - The Broadcast preview checks each previous transaction it fetches against its txid, flags a time lock only when an input's sequence enables it, and adds up amounts with overflow checks.
 - The Premium client follows no redirect and reads at most 2 MiB of an answer.
+- Copying the account key, a descriptor, a Telegram link code or an ntfy address now keeps it out of the clipboard history and the cloud clipboard on Windows, and out of clipboard managers that honour the same flag on macOS and Linux. Gerfaut also clears it from the clipboard after a minute, unless you have copied something else since. The confirmation says "for 1 minute".
+- Showing the link code of a Telegram channel again now asks for the app lock's PIN or password first, as adding one does.
+- Renaming a wallet the Premium server watches now renames it there too, so alerts and Recent alerts use the new name. Gerfaut only sends the new name for a wallet the server lists and watches at that moment.
+- The window can no longer call Tauri's window, webview, menu, tray and path commands, or emit events. It listens to the events Gerfaut sends, opens its short list of addresses, and calls Gerfaut's own commands.
+- On macOS, a second launch now finds the first one through a socket in your own temporary folder, instead of the /tmp folder that every account on the Mac shares.
 
 ## [0.1.0] - 2026-09-12
 
