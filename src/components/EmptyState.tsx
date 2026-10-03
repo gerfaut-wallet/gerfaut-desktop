@@ -20,7 +20,7 @@ export function EmptyState({
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 px-6 py-10 text-center">
       {lockup ? (
-        <Lockup className="mb-3" />
+        <Lockup label="Gerfaut" className="mb-3" />
       ) : (
         <Mark className="mb-2 h-12 w-auto text-text opacity-[0.08]" />
       )}

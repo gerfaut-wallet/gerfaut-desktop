@@ -757,7 +757,9 @@ describe("empty workspace", () => {
     const first = renderApp();
     const main = () => within(screen.getByRole("main"));
     await screen.findByText("No wallets watched yet");
-    await waitFor(() => expect(main().getByText("GERFAUT")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(main().getByRole("img", { name: "Gerfaut" })).toBeInTheDocument(),
+    );
     first.unmount();
 
     mockIPC((cmd, args) => {
@@ -773,7 +775,7 @@ describe("empty workspace", () => {
     });
     renderApp();
     await screen.findByText("No wallets watched yet");
-    await waitFor(() => expect(main().queryByText("GERFAUT")).not.toBeInTheDocument());
+    expect(main().queryByRole("img", { name: "Gerfaut" })).not.toBeInTheDocument();
   });
 });
 

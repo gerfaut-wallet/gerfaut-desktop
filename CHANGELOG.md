@@ -25,7 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Settings › Wallets › Advanced › "Always watch live first" picks the wallets Live follows before the others when it cannot follow every address.
 - A Premium channel that has delivered nothing for an hour now shows "Not delivering", with the server's reason and what to do: send a test once it is fixed, or remove the channel and add it again.
 - When a screen fails to render, the window says so and offers Reload, instead of going blank.
-- The first screen of an empty vault and the first page of the welcome tour show the Gerfaut wordmark.
+- The first screen of an empty vault and the first page of the welcome tour show the full Gerfaut logo, the falcon over its name.
 
 ### Changed
 
