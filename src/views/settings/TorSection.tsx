@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../../components/Button";
 import { OnionIcon } from "../../components/icons/OnionIcon";
@@ -27,6 +27,12 @@ export function TorSection({ tor }: { tor: TorSettings }) {
   const [proxy, setProxy] = useState(tor.socks_proxy ?? "");
   const [problem, setProblem] = useState<string | null>(null);
   const [route, setRoute] = useState<TorRoute | null>(null);
+  // The mode chosen shows at once. The vault answers once the live
+  // watch has taken the new route, a second or more when it talks to a
+  // remote server, and a group left on the old choice that long reads
+  // as a click that was lost. A refusal puts the vault's back.
+  const [mode, setMode] = useState(tor.mode);
+  useEffect(() => setMode(tor.mode), [tor.mode]);
 
   const save = useMutation({
     mutationFn: (next: TorSettings) => ipc.setTorSettings(next),
@@ -67,11 +73,14 @@ export function TorSection({ tor }: { tor: TorSettings }) {
   const apply = (next: Partial<TorSettings>) => {
     setRoute(null);
     setProblem(null);
+    if (next.mode) setMode(next.mode);
     save.mutate(
-      { mode: tor.mode, socks_proxy: tor.socks_proxy, ...next },
+      { mode, socks_proxy: tor.socks_proxy, ...next },
       {
-        onError: (error) =>
-          setProblem(isCommandError(error) ? error.message : String(error)),
+        onError: (error) => {
+          setMode(tor.mode);
+          setProblem(isCommandError(error) ? error.message : String(error));
+        },
       },
     );
   };
@@ -89,7 +98,7 @@ export function TorSection({ tor }: { tor: TorSettings }) {
           <FieldLabel>Tor</FieldLabel>
           <Segmented
             label="Tor"
-            value={tor.mode}
+            value={mode}
             onChange={(value) => apply({ mode: value as TorMode })}
             options={TOR_MODES.map((mode) => ({
               ...mode,
@@ -97,10 +106,10 @@ export function TorSection({ tor }: { tor: TorSettings }) {
               disabled: !embedded && mode.value === "embedded",
             }))}
           />
-          <p className="mt-1.5 font-ui text-xs text-muted">{HINT[tor.mode]}</p>
+          <p className="mt-1.5 font-ui text-xs text-muted">{HINT[mode]}</p>
         </div>
 
-        {tor.mode !== "embedded" && (
+        {mode !== "embedded" && (
           <div>
             <FieldLabel htmlFor="tor-proxy">SOCKS address</FieldLabel>
             <input
