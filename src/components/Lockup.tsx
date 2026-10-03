@@ -1,19 +1,33 @@
 import { clsx } from "clsx";
 
+/** The box the brand kit draws the lockup in. */
+const BOX = { width: 1100, height: 703 };
+
 /** The mark stacked over GERFAUT, the wordmark already outlined: the
     app presenting itself, which it does in two places only, the first
     screen of an empty vault and the first page of the welcome tour.
     Paths from brand/logo/gerfaut-lockup.svg, in the accent colour
-    through `currentColor`. 160px wide unless `className` says
-    otherwise. */
-export function Lockup({ className, label }: { className?: string; label?: string }) {
+    through `currentColor`. Sized by `width`, in pixels, its height
+    following; `className` is for placing it, not sizing it: a size
+    class passed in once lost to a default one. */
+export function Lockup({
+  className,
+  label,
+  width = 160,
+}: {
+  className?: string;
+  label?: string;
+  width?: number;
+}) {
   return (
     <svg
-      viewBox="0 0 1100 703"
+      viewBox={`0 0 ${BOX.width} ${BOX.height}`}
+      width={width}
+      height={Math.round((width * BOX.height) / BOX.width)}
       role={label ? "img" : undefined}
       aria-label={label}
       aria-hidden={label ? undefined : true}
-      className={clsx("h-auto w-40 shrink-0 text-primary", className)}
+      className={clsx("shrink-0 text-primary", className)}
       fill="currentColor"
     >
       <g transform="translate(340.24 50.00) scale(0.688666)">

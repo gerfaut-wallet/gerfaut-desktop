@@ -70,7 +70,7 @@ export function WelcomeTour({ open, onClose }: { open: boolean; onClose: () => v
             disc: every page keeps the same 64px slot, so the dialog
             does not jump. */}
         {step === 0 ? (
-          <Lockup label="Gerfaut" className="h-16 w-auto" />
+          <Lockup label="Gerfaut" width={100} />
         ) : (
           <span className="flex size-16 items-center justify-center rounded-full bg-sunken text-primary">
             {current.icon}
