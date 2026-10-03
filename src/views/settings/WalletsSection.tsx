@@ -82,7 +82,7 @@ function GapLimitField({
       }}
       inputMode="numeric"
       aria-label="Gap limit"
-      className="field-focus selectable h-11 w-24 rounded-sm border border-transparent bg-sunken px-3 text-right font-data text-[13px] text-text"
+      className="field-focus selectable tabular h-11 w-24 rounded-sm border border-transparent bg-sunken px-3 text-right font-ui text-sm text-text"
     />
   );
 }
