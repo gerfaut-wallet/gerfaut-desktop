@@ -1704,11 +1704,11 @@ describe("display settings", () => {
       }),
     );
 
-    // An Electrum server cannot serve a single-address wallet, and says so.
+    // An Electrum server serves a single-address wallet as Esplora does:
+    // nothing is said against choosing one.
     await choose(user, "Public server", "mempool.space:60602");
-    expect(
-      screen.getByText(/Electrum servers cannot serve a single-address wallet/),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Only this server is asked for chain data.")).toBeInTheDocument();
+    expect(screen.queryByText(/single-address/)).not.toBeInTheDocument();
 
     // Back to automatic: the stored shape carries no operator.
     await choose(user, "Public server", "Automatic");

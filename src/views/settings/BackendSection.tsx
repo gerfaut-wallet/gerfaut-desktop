@@ -246,7 +246,6 @@ export function BackendSection({
     });
   };
 
-  const chosenProtocol = servers.data?.find((server) => server.id === chosen)?.protocol;
   const networkLabel = NETWORKS.find((option) => option.value === network)?.label;
 
   /** The field the selected source needs, rendered under its own option
@@ -283,8 +282,6 @@ export function BackendSection({
           {chosen
             ? "Only this server is asked for chain data."
             : "Every public server is tried in turn until one answers."}
-          {chosenProtocol === "electrum" &&
-            " Electrum servers cannot serve a single-address wallet."}
         </p>
       </>
     ),
