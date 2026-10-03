@@ -1,7 +1,5 @@
 import {
   AlertTriangle,
-  ArrowDownLeft,
-  ArrowUpRight,
   Ban,
   Check,
   CircleHelp,
@@ -33,8 +31,8 @@ import { Modal } from "../components/Modal";
 import { Pill } from "../components/StatusPill";
 import { Notice } from "../components/Notice";
 import { ScanQrModal } from "../components/ScanQrModal";
-import { TxDiagram } from "../components/TxDiagram";
-import type { TxBranch } from "../components/TxDiagram";
+import { BRANCH_ROLES, TxDiagram } from "../components/TxDiagram";
+import type { BranchRole, TxBranch } from "../components/TxDiagram";
 import type {
   Network,
   TxInputPreview,
@@ -437,12 +435,24 @@ function Claimed() {
   );
 }
 
+/** What an input is to the watched wallets, in the diagram's words. */
+function inputRole(input: TxInputPreview): BranchRole {
+  return input.wallet !== null ? "wallet-in" : "external-in";
+}
+
+/** What an output is to the watched wallets, in the diagram's words. */
+function outputRole(output: TxOutputPreview): BranchRole {
+  if (output.op_return) return "op-return";
+  if (output.wallet === null) return "external-out";
+  return output.change ? "change" : "received";
+}
+
 /** The inputs of a transaction waiting to be sent, as diagram branches:
     an input is named by the outpoint it spends. */
 function previewInputBranches(inputs: TxInputPreview[]): TxBranch[] {
   return inputs.map(
     (input): TxBranch => ({
-      role: input.wallet !== null ? "wallet-in" : "external-in",
+      role: inputRole(input),
       label: `${input.txid}:${input.vout}`,
       amount: input.value_sats,
       isMine: input.wallet !== null,
@@ -453,13 +463,7 @@ function previewInputBranches(inputs: TxInputPreview[]): TxBranch[] {
 function previewOutputBranches(outputs: TxOutputPreview[]): TxBranch[] {
   return outputs.map(
     (output): TxBranch => ({
-      role: output.op_return
-        ? "op-return"
-        : output.wallet !== null
-          ? output.change
-            ? "change"
-            : "received"
-          : "external-out",
+      role: outputRole(output),
       label: output.op_return
         ? opReturnPreview(output.op_return)
         : (output.address ?? "Script output"),
@@ -540,8 +544,8 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <IoList title="Inputs" side="in" ios={preview.inputs} claimed={claimed} />
-        <IoList title="Outputs" side="out" ios={preview.outputs} />
+        <IoList title="Inputs" ios={preview.inputs} claimed={claimed} />
+        <IoList title="Outputs" ios={preview.outputs} />
       </div>
 
       {/* The fee node carries the amount; the rate belongs here. */}
@@ -577,12 +581,10 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
 
 function IoList({
   title,
-  side,
   ios,
   claimed = false,
 }: {
   title: string;
-  side: "in" | "out";
   ios: (TxInputPreview | TxOutputPreview)[];
   /** A value on this side is the PSBT's own word, so the total is too.
       Which row it is the core does not say, and a mark on the wrong
@@ -609,6 +611,9 @@ function IoList({
           const mine = io.wallet !== null;
           const input = "signed" in io ? io : null;
           const output = "op_return" in io ? io : null;
+          // The diagram's glyph for the same row: an output to someone
+          // else points away, one back to the wallet points in.
+          const role = BRANCH_ROLES[input ? inputRole(input) : outputRole(output!)];
           return (
             <li
               key={index}
@@ -622,15 +627,16 @@ function IoList({
                 aria-hidden
                 className={clsx(
                   "inline-flex size-7 shrink-0 items-center justify-center rounded-md",
-                  mine ? "bg-primary/10 text-primary" : "bg-sunken text-muted",
+                  output?.op_return
+                    ? "bg-pending-surface text-pending"
+                    : mine
+                      ? "bg-primary/10 text-primary"
+                      : "bg-sunken text-muted",
                 )}
               >
-                {side === "in" ? (
-                  <ArrowUpRight size={14} strokeWidth={1.75} />
-                ) : (
-                  <ArrowDownLeft size={14} strokeWidth={1.75} />
-                )}
+                {role.icon}
               </span>
+              <span className="sr-only">{role.title}:</span>
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 {output?.op_return ? (
                   <>

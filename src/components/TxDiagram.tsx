@@ -50,7 +50,9 @@ const COMPACT_WIDTH = 620;
 
 const ICON = { size: 14, strokeWidth: 1.5, "aria-hidden": true } as const;
 
-const ROLES: Record<BranchRole, { title: string; tone: string; icon: ReactNode }> = {
+/** Each role's name, tone and glyph: the diagram's, and the lists' that
+    name the same inputs and outputs. */
+export const BRANCH_ROLES: Record<BranchRole, { title: string; tone: string; icon: ReactNode }> = {
   "wallet-in": {
     title: "Spent from this wallet",
     tone: "text-primary",
@@ -412,7 +414,7 @@ function BranchBox({
   rowRef: (element: HTMLLIElement | null) => void;
 }) {
   const { masked, unit } = useUi();
-  const role = row.kind === "branch" ? ROLES[row.branch.role] : null;
+  const role = row.kind === "branch" ? BRANCH_ROLES[row.branch.role] : null;
   const amount = rowAmount(row);
   const name = row.kind === "branch" ? row.branch.label : `+${row.count} more ${row.side}`;
   const figure = amount === null ? "n/a" : masked ? MASKED : formatAmount(amount, unit);

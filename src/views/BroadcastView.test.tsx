@@ -136,6 +136,26 @@ describe("BroadcastView", () => {
     expect(screen.queryByText(/descriptor/i)).not.toBeInTheDocument();
   });
 
+  /** The lists name each row with the diagram's glyph: an output to
+      someone else points away, never in, as the diagram drew it. */
+  it("gives each input and output the diagram's glyph and role", async () => {
+    const user = mount();
+    await preview(user);
+
+    const [spent] = within(screen.getByRole("region", { name: "Inputs" })).getAllByRole("listitem");
+    expect(spent.querySelector(".lucide-wallet")).toBeInTheDocument();
+    expect(spent).toHaveTextContent("Spent from this wallet:");
+
+    const [theirs, change] = within(screen.getByRole("region", { name: "Outputs" })).getAllByRole(
+      "listitem",
+    );
+    expect(theirs.querySelector(".lucide-arrow-up-right")).toBeInTheDocument();
+    expect(theirs.querySelector(".lucide-arrow-down-left")).not.toBeInTheDocument();
+    expect(theirs).toHaveTextContent("External output:");
+    expect(change.querySelector(".lucide-undo-2")).toBeInTheDocument();
+    expect(change).toHaveTextContent("Change back to this wallet:");
+  });
+
   it("reads the tone of a caution off the core, never off a local table", async () => {
     const user = mount({
       ...PREVIEW,
