@@ -466,6 +466,36 @@ const PRICE_HISTORY = {
   at: 1_755_000_000,
 };
 
+/** The live watch as the core reports it while it does not run. */
+const LIVE_OFF = {
+  state: "off",
+  transport: null,
+  server: null,
+  detail: null,
+  watched_scripts: 0,
+  pushed_scripts: 0,
+  left_out_scripts: 0,
+  left_out_wallets: 0,
+  wallets: [],
+};
+
+/** The live watch short of room: this wallet heard in part, another
+    one not at all. */
+const LIVE_SHORT = {
+  ...LIVE_OFF,
+  state: "connected",
+  transport: "electrum",
+  server: "electrum.example.org",
+  watched_scripts: 2_000,
+  pushed_scripts: 2_000,
+  left_out_scripts: 1_240,
+  left_out_wallets: 2,
+  wallets: [
+    { wallet_id: "w-1", coverage: "partial", watched_scripts: 200, left_out_scripts: 1_040 },
+    { wallet_id: "w-2", coverage: "sync_only", watched_scripts: 0, left_out_scripts: 200 },
+  ],
+};
+
 /** What the core publishes for signet, the workspace network here. */
 const PUBLIC_SERVERS = [
   {
@@ -569,6 +599,9 @@ function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => 
         return { rate: 100_000, currency: "eur", source: "coingecko", at: 1_755_000_000 };
       case "fetch_price_history":
         return PRICE_HISTORY;
+      // The live watch is off unless a test turns it on.
+      case "live_status":
+        return { enabled: false, status: LIVE_OFF };
       case "address_list":
         return {
           external: [
@@ -953,6 +986,34 @@ describe("overview", () => {
     );
     expect(useUi.getState().view).toBe("settings");
     expect(useUi.getState().settingsSection).toBe("wallets");
+  });
+
+  it("says how much of the wallet the live watch hears, only while it is short of room", async () => {
+    walletIpc({ live_status: () => ({ enabled: true, status: LIVE_SHORT }) });
+    const first = renderApp();
+    const status = within(await screen.findByRole("region", { name: "Watch status" }));
+    expect(await status.findByText("Live watch")).toBeInTheDocument();
+    expect(status.getByText("Partly live")).toBeInTheDocument();
+    expect(status.getByText("1 040 addresses wait for the next sync.")).toBeInTheDocument();
+    first.unmount();
+
+    // Room for every address: every wallet is live, and nothing is said.
+    walletIpc({
+      live_status: () => ({
+        enabled: true,
+        status: {
+          ...LIVE_SHORT,
+          left_out_scripts: 0,
+          left_out_wallets: 0,
+          wallets: [{ wallet_id: "w-1", coverage: "live", watched_scripts: 36, left_out_scripts: 0 }],
+        },
+      }),
+    });
+    renderApp();
+    const calm = within(await screen.findByRole("region", { name: "Watch status" }));
+    await waitFor(() => expect(calm.getByText("Block")).toBeInTheDocument());
+    expect(calm.queryByText("Live watch")).not.toBeInTheDocument();
+    expect(calm.queryByText("Live")).not.toBeInTheDocument();
   });
 
   it("leads from the watch status to the node settings", async () => {

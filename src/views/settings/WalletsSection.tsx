@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { Button, IconButton } from "../../components/Button";
+import { CoverageBadge } from "../../components/CoverageBadge";
 import { DropLine, useDragReorder } from "../../components/DragReorder";
 import { Notice } from "../../components/Notice";
 import { isCommandError } from "../../lib/ipc";
@@ -20,6 +21,7 @@ import type { PremiumState, WalletMeta, WalletWatch } from "../../lib/ipc";
 import { moveItem } from "../../lib/reorder";
 import { premiumFailure } from "../../lib/premium";
 import { walletGlyph } from "../../lib/walletIcons";
+import { coverageOf, useLiveStatus } from "../../state/live";
 import { usePremiumWallets } from "../../state/premiumQueries";
 import {
   useRemoveWallet,
@@ -119,6 +121,9 @@ export function WalletsSection({
   const rescan = useRescanWallet();
   const { shown, reorder } = useWalletOrder(wallets);
   const drag = useDragReorder(shown, reorder);
+  // How much of each wallet the live watch hears: a badge on the rows
+  // only while it is short of room.
+  const live = useLiveStatus();
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   /** The removal whose yes was given and waits for the secret. */
   const [identity, setIdentity] = useState<string | null>(null);
@@ -163,6 +168,7 @@ export function WalletsSection({
             {shown.map((wallet, index) => {
               const single = wallet.kind.type === "single_address";
               const Glyph = walletGlyph(wallet.icon);
+              const coverage = coverageOf(live.data?.status, wallet.id);
               const dragging = drag.dragging === index;
               const first = index === 0;
               const last = index === shown.length - 1;
@@ -228,8 +234,11 @@ export function WalletsSection({
                         </span>
                       ) : (
                         <span className="flex min-w-0 flex-col">
-                          <span className="truncate font-ui text-sm font-medium text-text">
-                            {wallet.name}
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className="truncate font-ui text-sm font-medium text-text">
+                              {wallet.name}
+                            </span>
+                            {coverage && <CoverageBadge coverage={coverage} />}
                           </span>
                           <span className="font-ui text-xs text-muted">
                             {single ? "Single address" : "Descriptor wallet"}

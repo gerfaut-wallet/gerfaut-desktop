@@ -2,12 +2,51 @@ import { Bell, CircleOff, Clock, Radio, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Button } from "../../components/Button";
+import { Notice } from "../../components/Notice";
 import { ipc, isCommandError } from "../../lib/ipc";
-import type { Settings, WatchState } from "../../lib/ipc";
-import { liveStatusLine, useLiveStatus, usesAutomaticBackend } from "../../state/live";
+import type { Settings, WatchState, WatchStatus } from "../../lib/ipc";
+import {
+  isOwnNode,
+  liveStatusLine,
+  shortOfRoom,
+  shortOfRoomWords,
+  useLiveStatus,
+  usesAutomaticBackend,
+} from "../../state/live";
 import { notifier } from "../../state/notifications";
 import { useUi } from "../../state/store";
+import { GHOST_ON_TINT } from "./premium/shared";
 import { SectionCard, SettingRow, Toggle } from "./primitives";
+
+/** What the live watch leaves to the syncs when it is short of room, and
+    the way out: a node of one's own, where it follows ten times more.
+    Amber, under the status: nothing is at risk, a payment to those
+    addresses only shows later. Which wallets, the badges in Settings ›
+    Wallets and on each Overview say. */
+function ShortOfRoomNote({ status, ownNode }: { status: WatchStatus; ownNode: boolean }) {
+  const openSettings = useUi((state) => state.openSettings);
+  const words = shortOfRoomWords(status, ownNode);
+  return (
+    <Notice
+      tone="info"
+      className="mt-2.5 max-w-2xl"
+      action={
+        words.remedy !== null ? (
+          <Button
+            variant="ghost"
+            className={GHOST_ON_TINT}
+            onClick={() => openSettings("network")}
+          >
+            Node settings
+          </Button>
+        ) : undefined
+      }
+    >
+      {words.limits} {words.waiting}
+      {words.remedy !== null && ` ${words.remedy}`}
+    </Notice>
+  );
+}
 
 /** The state is never said by colour alone: a glyph, then the words. */
 const STATE_ICON: Record<WatchState, ReactNode> = {
@@ -65,6 +104,7 @@ export function NotificationsSection({
 
   const status = live.data?.status;
   const automatic = usesAutomaticBackend(settings.backends, settings.active_network);
+  const ownNode = isOwnNode(settings.backends[settings.active_network]);
 
   return (
     <SectionCard icon={<Bell size={18} strokeWidth={1.5} />} title="Notifications">
@@ -101,6 +141,9 @@ export function NotificationsSection({
           </p>
           {notifyNewTx && status?.state === "reconnecting" && status.detail && (
             <p className="mt-1 break-words font-ui text-xs text-muted">{status.detail}</p>
+          )}
+          {notifyNewTx && status && shortOfRoom(status) && (
+            <ShortOfRoomNote status={status} ownNode={ownNode} />
           )}
           <p className="mt-1.5 max-w-xl font-ui text-xs text-muted">
             While this is on, Gerfaut keeps one connection open to your backend. The server

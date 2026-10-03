@@ -156,6 +156,64 @@ describe("Settings › Notifications", () => {
     expect(screen.queryByText(/With the Automatic backend/)).not.toBeInTheDocument();
   });
 
+  /** Short of room, the watch says what it leaves to the syncs and the
+      way out; on the user's own node there is no further way out. */
+  it("says what it leaves to the syncs, and offers the own node", async () => {
+    useUi.setState({ notifyNewTx: true, settingsSection: "notifications" });
+    const short: WatchStatus = {
+      ...OFF,
+      state: "connected",
+      transport: "electrum",
+      server: "electrum.example.org",
+      watched_scripts: 2_000,
+      pushed_scripts: 2_000,
+      left_out_scripts: 1_240,
+      left_out_wallets: 2,
+      wallets: [],
+    };
+    const desk = mockDesk(short);
+    desk.prefs["notify.new_tx"] = "1";
+    const first = renderCard({}, "mainnet");
+    expect(
+      await screen.findByText(
+        // The matcher reads a no-break space as a space.
+        "The live watch follows at most 200 addresses per wallet and 2 000 in all. 1 240 addresses of 2 wallets are checked at the next sync instead. Connect your own node and turn on \"This is my node\" to follow up to 20 000.",
+      ),
+    ).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Node settings" }));
+    expect(useUi.getState().view).toBe("settings");
+    expect(useUi.getState().settingsSection).toBe("network");
+    first.unmount();
+
+    desk.status = { ...short, left_out_scripts: 1, left_out_wallets: 1 };
+    renderCard({
+      mainnet: { type: "custom_electrum", url: "ssl://node.example:50002", own_node: true },
+    });
+    expect(
+      await screen.findByText(
+        "The live watch follows at most 20 000 addresses, even on your own node. 1 address of 1 wallet is checked at the next sync instead.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Node settings" })).not.toBeInTheDocument();
+  });
+
+  it("says nothing of room while every address is followed, or the watch is off", async () => {
+    const desk = mockDesk({
+      ...OFF,
+      state: "connected",
+      transport: "electrum",
+      server: "electrum.example.org",
+      watched_scripts: 36,
+      pushed_scripts: 36,
+    });
+    useUi.setState({ notifyNewTx: true });
+    desk.prefs["notify.new_tx"] = "1";
+    renderCard();
+    await waitFor(() => expect(statusLine()).toHaveTextContent("Connected"));
+    expect(screen.queryByText(/checked at the next sync/)).not.toBeInTheDocument();
+  });
+
   it("sends a test notification and says what to check, or what the system answered", async () => {
     const desk = mockDesk();
     renderCard();

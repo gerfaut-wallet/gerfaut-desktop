@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Balance, ListAmount } from "../components/Amount";
 import { BalanceChart } from "../components/BalanceChart";
+import { CoverageBadge } from "../components/CoverageBadge";
 import { NewDeviceBanner } from "../components/NewDeviceBanner";
 import { WatchOfflineBanner } from "../components/WatchOfflineBanner";
 import {
@@ -38,6 +39,7 @@ import {
   useUtxos,
   useWalletPolicy,
 } from "../state/queries";
+import { coverageOf, useLiveStatus, waitingWords } from "../state/live";
 import { useUi } from "../state/store";
 
 const RANGE_LABEL: Record<PriceRange, string> = {
@@ -505,6 +507,10 @@ function ShortcutsCard() {
 function StatusCard({ snapshot, error }: { snapshot: WalletSnapshot; error: string | null }) {
   const { openSettings } = useUi();
   const { meta, tip_height } = snapshot;
+  // Said only while the live watch is short of room: with room for
+  // every address, every wallet is live and the row would say nothing.
+  const live = useLiveStatus();
+  const coverage = coverageOf(live.data?.status, meta.id);
   const rows: { label: string; value: ReactNode; detail?: string }[] = [
     {
       label: "Last sync",
@@ -539,6 +545,15 @@ function StatusCard({ snapshot, error }: { snapshot: WalletSnapshot; error: stri
           "—"
         ),
     },
+    ...(coverage
+      ? [
+          {
+            label: "Live watch",
+            value: <CoverageBadge coverage={coverage} said={coverage.coverage !== "live"} />,
+            detail: coverage.coverage === "live" ? undefined : waitingWords(coverage),
+          },
+        ]
+      : []),
   ];
   return (
     <Card

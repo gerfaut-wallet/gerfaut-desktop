@@ -10,8 +10,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
+import { groupThousands } from "../lib/format";
 import { ipc } from "../lib/ipc";
-import type { BackendConfig, Network, WatchStatus } from "../lib/ipc";
+import type { BackendConfig, Coverage, Network, WalletCoverage, WatchStatus } from "../lib/ipc";
 import { keys, useInvalidateWallet } from "./queries";
 import { useUi } from "./store";
 
@@ -128,6 +129,63 @@ export const WATCH_LIMITS = {
     node"). A public backend never is. */
 export function isOwnNode(config: BackendConfig | undefined): boolean {
   return config !== undefined && config.type !== "public_esplora" && config.own_node === true;
+}
+
+/** Whether the live watch, running, leaves addresses to the syncs: the
+    one case where how much of a wallet it hears is worth a word. */
+export function shortOfRoom(status: WatchStatus | undefined): boolean {
+  return status !== undefined && status.state !== "off" && status.left_out_scripts > 0;
+}
+
+/** How much of one wallet the live watch hears, or null when there is
+    nothing to say: the watch is off, or it has room for every address,
+    and then every wallet is live. */
+export function coverageOf(
+  status: WatchStatus | undefined,
+  walletId: string,
+): WalletCoverage | null {
+  if (!shortOfRoom(status) || status!.left_out_wallets === 0) return null;
+  return status!.wallets.find((wallet) => wallet.wallet_id === walletId) ?? null;
+}
+
+/** A wallet's coverage in the words of its badge. */
+export const COVERAGE_WORDS: Record<Coverage, string> = {
+  live: "Live",
+  partial: "Partly live",
+  sync_only: "At next sync",
+};
+
+function count(n: number, one: string, many: string): string {
+  return `${groupThousands(String(n))} ${n === 1 ? one : many}`;
+}
+
+/** What a wallet's badge leaves out: how many of its addresses wait. */
+export function waitingWords(coverage: WalletCoverage): string {
+  return coverage.left_out_scripts === 0
+    ? "Every address is followed live."
+    : `${count(coverage.left_out_scripts, "address waits", "addresses wait")} for the next sync.`;
+}
+
+/** The note under the status when the live watch is short of room: its
+    limits, what they leave to the syncs, and the way out, which is the
+    user's own node; already there, the limit is all there is to say. */
+export function shortOfRoomWords(status: WatchStatus, ownNode: boolean): {
+  limits: string;
+  waiting: string;
+  remedy: string | null;
+} {
+  const limits = ownNode
+    ? `The live watch follows at most ${groupThousands(String(WATCH_LIMITS.ownNode.total))} addresses, even on your own node.`
+    : `The live watch follows at most ${groupThousands(String(WATCH_LIMITS.any.perWallet))} addresses per wallet and ${groupThousands(String(WATCH_LIMITS.any.total))} in all.`;
+  const waiting = `${count(status.left_out_scripts, "address", "addresses")} of ${count(
+    status.left_out_wallets,
+    "wallet",
+    "wallets",
+  )} ${status.left_out_scripts === 1 ? "is" : "are"} checked at the next sync instead.`;
+  const remedy = ownNode
+    ? null
+    : `Connect your own node and turn on "This is my node" to follow up to ${groupThousands(String(WATCH_LIMITS.ownNode.total))}.`;
+  return { limits, waiting, remedy };
 }
 
 /** Whether the live connection goes to a server the person did not

@@ -8,7 +8,10 @@ import {
   LIVE_STATUS,
   LIVE_SYNC_FAILED,
   LIVE_WALLET_SYNCED,
+  coverageOf,
+  isOwnNode,
   liveStatusLine,
+  shortOfRoom,
   useLiveEvents,
   useLiveStatus,
   usesAutomaticBackend,
@@ -65,6 +68,44 @@ describe("the status line", () => {
     expect(
       usesAutomaticBackend({ mainnet: { type: "custom_electrum", url: "ssl://n:50002" } }, "mainnet"),
     ).toBe(false);
+  });
+});
+
+describe("room in the live watch", () => {
+  const partial = {
+    wallet_id: "w-1",
+    coverage: "partial" as const,
+    watched_scripts: 200,
+    left_out_scripts: 40,
+  };
+
+  it("is the user's own node only for a custom server they said is theirs", () => {
+    expect(isOwnNode(undefined)).toBe(false);
+    expect(isOwnNode({ type: "public_esplora" })).toBe(false);
+    expect(isOwnNode({ type: "custom_electrum", url: "ssl://n:50002" })).toBe(false);
+    expect(isOwnNode({ type: "custom_electrum", url: "ssl://n:50002", own_node: true })).toBe(true);
+    expect(isOwnNode({ type: "custom_esplora", url: "https://n/api", own_node: true })).toBe(true);
+  });
+
+  it("says a wallet's coverage only while the running watch leaves some out", () => {
+    const short: WatchStatus = {
+      ...OFF,
+      state: "connected",
+      left_out_scripts: 40,
+      left_out_wallets: 1,
+      wallets: [partial],
+    };
+    expect(shortOfRoom(short)).toBe(true);
+    expect(coverageOf(short, "w-1")).toEqual(partial);
+    expect(coverageOf(short, "w-other")).toBe(null);
+    // Off, the counters mean nothing: no badge, whatever they hold.
+    expect(shortOfRoom({ ...short, state: "off" })).toBe(false);
+    expect(coverageOf({ ...short, state: "off" }, "w-1")).toBe(null);
+    // Room for everything: every wallet is live, and nothing is said.
+    const roomy = { ...short, left_out_scripts: 0, left_out_wallets: 0 };
+    expect(shortOfRoom(roomy)).toBe(false);
+    expect(coverageOf(roomy, "w-1")).toBe(null);
+    expect(coverageOf(undefined, "w-1")).toBe(null);
   });
 });
 

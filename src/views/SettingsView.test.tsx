@@ -490,6 +490,21 @@ function mockSettingsIpc(
         return [WALLET];
       case "set_app_pref":
         return undefined;
+      case "live_status":
+        return {
+          enabled: false,
+          status: {
+            state: "off",
+            transport: null,
+            server: null,
+            detail: null,
+            watched_scripts: 0,
+            pushed_scripts: 0,
+            left_out_scripts: 0,
+            left_out_wallets: 0,
+            wallets: [],
+          },
+        };
       case "premium_status":
         return {
           key: null,
@@ -932,6 +947,63 @@ describe("settings sections", () => {
         "The server stops watching",
       ),
     );
+  });
+
+  it("badges each wallet with what the live watch hears, only while it is short of room", async () => {
+    const short = {
+      state: "connected",
+      transport: "electrum",
+      server: "electrum.example.org",
+      detail: null,
+      watched_scripts: 2_000,
+      pushed_scripts: 2_000,
+      left_out_scripts: 1_240,
+      left_out_wallets: 2,
+      wallets: [
+        { wallet_id: "w-1", coverage: "partial", watched_scripts: 200, left_out_scripts: 1_040 },
+        { wallet_id: "w-2", coverage: "sync_only", watched_scripts: 0, left_out_scripts: 200 },
+        { wallet_id: "w-3", coverage: "live", watched_scripts: 12, left_out_scripts: 0 },
+      ],
+    };
+    mockSettingsIpc({ live_status: () => ({ enabled: true, status: short }) });
+    useUi.setState({ settingsSection: "wallets" });
+    renderSettings([
+      WALLET,
+      { ...WALLET, id: "w-2", name: "Savings" },
+      { ...WALLET, id: "w-3", name: "Spending" },
+    ]);
+    const row = (name: string) => within(screen.getByText(name).closest("li")!);
+    expect(await row("Cold storage").findByText("Partly live")).toBeInTheDocument();
+    expect(row("Savings").getByText("At next sync")).toBeInTheDocument();
+    expect(row("Spending").getByText("Live")).toBeInTheDocument();
+    // The count rides along for a pointer, and is read out with the badge.
+    expect(row("Savings").getByTitle("200 addresses wait for the next sync.")).toBeInTheDocument();
+    expect(row("Spending").getByTitle("Every address is followed live.")).toBeInTheDocument();
+  });
+
+  it("puts no badge on a wallet while the live watch has room, or is off", async () => {
+    mockSettingsIpc({
+      live_status: () => ({
+        enabled: false,
+        status: {
+          state: "off",
+          transport: null,
+          server: null,
+          detail: null,
+          watched_scripts: 0,
+          pushed_scripts: 0,
+          left_out_scripts: 0,
+          left_out_wallets: 0,
+          wallets: [],
+        },
+      }),
+    });
+    useUi.setState({ settingsSection: "wallets" });
+    renderSettings();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Advanced/ })).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/^(Live|Partly live|At next sync)$/)).not.toBeInTheDocument();
   });
 
   /** An advanced setting, out of the way: folded until asked for. */
