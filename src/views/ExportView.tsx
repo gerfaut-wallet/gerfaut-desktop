@@ -1,15 +1,15 @@
-import { FileDown, Gem } from "lucide-react";
+import { FileDown } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { clsx } from "clsx";
 import { Button } from "../components/Button";
+import { PremiumPill } from "../components/PremiumPill";
 import { LoadFailure } from "../components/LoadFailure";
-import { useRadioGroup } from "../components/radioGroup";
 import type { ExportDirection, ExportOptions, TxSummary } from "../lib/ipc";
 import { Notice } from "../components/Notice";
 import { errorMessage } from "../lib/ipc";
 import { useExportCsv, useSnapshot } from "../state/queries";
 import { useUi } from "../state/store";
+import { Segmented, Toggle } from "./settings/primitives";
 
 type DirectionChoice = "all" | ExportDirection;
 
@@ -24,11 +24,23 @@ const DIRECTIONS: { value: DirectionChoice; label: string }[] = [
     range names, and the page says so beside the fields, since the rest
     of the app shows the computer's time. */
 function dayBound(value: string, end: boolean): number | null {
-  if (!value) return null;
-  const [year, month, day] = value.split("-").map(Number);
-  if (!year || !month || !day) return null;
-  const start = Date.UTC(year, month - 1, day) / 1000;
-  return end ? start + 86_399 : start;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const [year, month, day] = match.slice(1).map(Number);
+  const start = Date.UTC(year, month - 1, day);
+  // 2026-02-31 is no day: Date.UTC would roll it into March.
+  const back = new Date(start);
+  if (back.getUTCMonth() !== month - 1 || back.getUTCDate() !== day) return null;
+  return end ? start / 1000 + 86_399 : start / 1000;
+}
+
+/** What is wrong with the range as typed, or null. */
+function rangeProblem(fromDay: string, toDay: string): string | null {
+  const from = fromDay.trim() === "" ? undefined : dayBound(fromDay, false);
+  const to = toDay.trim() === "" ? undefined : dayBound(toDay, true);
+  if (from === null || to === null) return "Write each day as YYYY-MM-DD, for example 2026-01-31.";
+  if (from !== undefined && to !== undefined && to < from) return "The range ends before it starts.";
+  return null;
 }
 
 /** Mirror of `gerfaut_core::export::passes`, for the live row count. */
@@ -54,11 +66,6 @@ export function ExportView({ walletId }: { walletId: string }) {
   const [toDay, setToDay] = useState("");
   const [direction, setDirection] = useState<DirectionChoice>("all");
   const [includePending, setIncludePending] = useState(true);
-  const radio = useRadioGroup(
-    DIRECTIONS.map((option) => option.value),
-    direction,
-    setDirection,
-  );
 
   if (snapshot.isPending) {
     return <p className="px-1 py-4 font-ui text-sm text-muted">Loading wallet…</p>;
@@ -81,6 +88,9 @@ export function ExportView({ walletId }: { walletId: string }) {
     include_pending: includePending,
   };
   const selected = txs.filter((tx) => matchesExport(tx, options)).length;
+  // A day the bounds cannot read is said, and nothing is exported: a
+  // bound dropped in silence would write a file of the whole history.
+  const problem = rangeProblem(fromDay, toDay);
 
   // The save dialog opens on the Rust side: the page suggests a name
   // and hears back how many rows were written, never where.
@@ -104,7 +114,7 @@ export function ExportView({ walletId }: { walletId: string }) {
           Export
         </h1>
         <p className="mt-1 font-ui text-sm text-muted">
-          This wallet's transaction history as a CSV file.
+          This wallet's transaction history as a CSV file. Everything stays on this machine.
         </p>
       </header>
 
@@ -114,61 +124,49 @@ export function ExportView({ walletId }: { walletId: string }) {
             title="Date range"
             hint="Days in UTC, as the file dates each transaction. Leave empty to export the full history."
           >
-            <div className="flex items-center gap-2">
-              <DateInput label="From" value={fromDay} onChange={setFromDay} />
-              <span aria-hidden className="text-muted">
-                –
-              </span>
-              <DateInput label="To" value={toDay} onChange={setToDay} />
+            <div>
+              <div className="flex items-center gap-2">
+                <DateInput
+                  label="From"
+                  value={fromDay}
+                  onChange={setFromDay}
+                  invalid={problem !== null}
+                />
+                <span aria-hidden className="text-muted">
+                  –
+                </span>
+                <DateInput label="To" value={toDay} onChange={setToDay} invalid={problem !== null} />
+              </div>
+              {problem && (
+                <p
+                  id="export-range-problem"
+                  role="alert"
+                  className="mt-1.5 max-w-xs font-ui text-xs text-muted"
+                >
+                  {problem}
+                </p>
+              )}
             </div>
           </Row>
 
           <Row title="Direction">
-            <div role="radiogroup" aria-label="Direction" className="inline-flex rounded-md bg-sunken p-0.5">
-              {DIRECTIONS.map((option, index) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={direction === option.value}
-                  {...radio(option.value, index)}
-                  onClick={() => setDirection(option.value)}
-                  className={clsx(
-                    "cursor-pointer rounded-[6px] px-3 py-1.5 font-ui text-sm font-medium transition-colors duration-150",
-                    direction === option.value
-                      ? "bg-surface text-text shadow-[inset_0_0_0_1px_var(--color-border)]"
-                      : "text-muted hover:text-text",
-                  )}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              label="Direction"
+              value={direction}
+              onChange={setDirection}
+              options={DIRECTIONS}
+            />
           </Row>
 
           <Row
             title="Include pending"
             hint="Pending transactions have no date yet: they only export without date bounds."
           >
-            <button
-              type="button"
-              role="switch"
-              aria-checked={includePending}
-              aria-label="Include pending transactions"
-              onClick={() => setIncludePending(!includePending)}
-              className={clsx(
-                "relative h-6 w-11 cursor-pointer rounded-full transition-colors duration-150",
-                includePending ? "bg-primary" : "bg-border",
-              )}
-            >
-              <span
-                aria-hidden
-                className={clsx(
-                  "absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow-[0_1px_2px_rgba(13,19,23,0.25)] transition-transform duration-150",
-                  includePending && "translate-x-5",
-                )}
-              />
-            </button>
+            <Toggle
+              checked={includePending}
+              onChange={setIncludePending}
+              label="Include pending transactions"
+            />
           </Row>
 
           <div aria-hidden className="h-px bg-border/60" />
@@ -177,27 +175,17 @@ export function ExportView({ walletId }: { walletId: string }) {
             title={
               <span className="flex items-center gap-2">
                 Fiat value at transaction time
-                <span className="inline-flex items-center gap-1 rounded-full border border-premium/25 bg-premium-surface px-2 py-0.5 font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-premium">
-                  <Gem size={11} strokeWidth={1.75} aria-hidden />
-                  Premium
-                </span>
+                <PremiumPill />
               </span>
             }
             hint="Adds the price at each transaction's date to the file."
           >
-            <button
-              type="button"
-              role="switch"
-              aria-checked={false}
+            <Toggle
+              checked={false}
+              onChange={() => {}}
               disabled
-              aria-label="Fiat value at transaction time (premium)"
-              className="relative h-6 w-11 cursor-default rounded-full bg-border opacity-50"
-            >
-              <span
-                aria-hidden
-                className="absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow-[0_1px_2px_rgba(13,19,23,0.25)]"
-              />
-            </button>
+              label="Fiat value at transaction time (premium)"
+            />
           </Row>
         </div>
 
@@ -217,7 +205,7 @@ export function ExportView({ walletId }: { walletId: string }) {
           <Button
             variant="primary"
             onClick={run}
-            disabled={exportCsv.isPending || selected === 0}
+            disabled={exportCsv.isPending || selected === 0 || problem !== null}
           >
             <FileDown size={16} strokeWidth={1.5} aria-hidden />
             {exportCsv.isPending ? "Exporting…" : "Export CSV…"}
@@ -255,14 +243,20 @@ function Row({
   );
 }
 
+/** A day as YYYY-MM-DD, typed. Not the browser's date field: it
+    writes and reads the day in the language of the system, "jj/mm/aaaa"
+    on a French machine, and Gerfaut speaks one language. A date is a
+    number, not an identifier: tabular figures, not the mono face. */
 function DateInput({
   label,
   value,
   onChange,
+  invalid,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  invalid: boolean;
 }) {
   return (
     <label className="flex items-center gap-2">
@@ -270,10 +264,17 @@ function DateInput({
         {label}
       </span>
       <input
-        type="date"
+        type="text"
+        inputMode="numeric"
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="field-focus selectable h-10 rounded-sm border border-transparent bg-sunken px-2.5 font-data text-[13px] text-text"
+        maxLength={10}
+        placeholder="YYYY-MM-DD"
+        autoComplete="off"
+        spellCheck={false}
+        aria-invalid={invalid || undefined}
+        aria-describedby={invalid ? "export-range-problem" : undefined}
+        onChange={(event) => onChange(event.target.value.replace(/[^\d-]/g, ""))}
+        className="field-focus selectable tabular h-10 w-32 rounded-sm border border-transparent bg-sunken px-2.5 font-ui text-sm text-text"
       />
     </label>
   );

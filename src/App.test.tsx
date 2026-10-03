@@ -2540,6 +2540,33 @@ describe("export page", () => {
     expect(options.to).toBe(Date.UTC(2025, 11, 31) / 1000 + 86_399);
   });
 
+  /** The days are typed, in the app's one language, never the system's
+      date field; one that does not read is said, and nothing exports
+      rather than a file of the whole history. */
+  it("says a day it cannot read, and exports nothing", async () => {
+    walletIpc();
+    renderApp();
+    await screen.findByText("Bitcoin price");
+    await userEvent.setup().click(sidebar().getByRole("button", { name: "Export" }));
+    const from = await screen.findByLabelText("From");
+    expect(from).toHaveAttribute("type", "text");
+    expect(from).toHaveAttribute("placeholder", "YYYY-MM-DD");
+
+    fireEvent.change(from, { target: { value: "2026-02-31" } });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Write each day as YYYY-MM-DD, for example 2026-01-31.",
+    );
+    expect(from).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("button", { name: /export csv/i })).toBeDisabled();
+
+    fireEvent.change(from, { target: { value: "2026-03-01" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-02-01" } });
+    expect(screen.getByRole("alert")).toHaveTextContent("The range ends before it starts.");
+
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "" } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   /** A file that could not be written stays said under the button,
       not in a toast gone before it is read. */
   it("says under the button when the file was not written", async () => {
