@@ -126,6 +126,18 @@
   --color-primary: #7dd3e8;
   --color-primary-hover: #a5e1f0;
   --color-on-primary: #06232b;
+  /* The signals too: the network badge and a failed sync are written
+     on the dark island, where the light values fall to about 2:1. */
+  --color-alert: #ff706d;
+  --color-alert-surface: #1f2933;
+  --color-confirmed: #50b771;
+  --color-confirmed-surface: #1f2933;
+  --color-pending: #c1983a;
+  --color-pending-surface: #1f2933;
+  --color-premium: #c4b5fd;
+  --color-premium-hover: #ddd6fe;
+  --color-on-premium: #0b0f14;
+  --color-premium-surface: #1f2933;
 }
 /* No dark override for the rail: the island keeps the exact same values
    in both themes. In dark the canvas ramp moves up one step instead, so
