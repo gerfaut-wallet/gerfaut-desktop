@@ -42,9 +42,12 @@ export function useRadioGroup<T>(
     }
     event.preventDefault();
     const target = enabled[next];
-    if (!target) return;
+    if (!target || target.index === from) return;
     buttons.current[target.index]?.focus();
-    if (target.candidate !== value) onChange(target.candidate);
+    // Chosen whatever `value` says: a choice saved in the vault comes
+    // back a round trip later, and the value rendered may still be the
+    // one before the last key.
+    onChange(target.candidate);
   };
 
   return (option: T, index: number) => ({
