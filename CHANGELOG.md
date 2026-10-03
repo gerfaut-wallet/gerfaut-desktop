@@ -38,7 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Premium requests now go through Tor as soon as the backend of any network is an onion address, and no longer only when the backend of the network on screen is one. The message shown when Tor is out of reach says so, and so does the note about the update check in Settings › About.
 - Export: you now type the date range as YYYY-MM-DD, and Gerfaut reads it as whole days in UTC, the days of the file's date_utc column, as the page now says. When it cannot read a day, it says so under the fields and exports nothing. The subtitle now adds that everything stays on this machine.
 - In every choice group (unit, price source, theme, Tor, export direction), the chosen option is now filled in the accent colour.
-- Settings hints are one sentence each.
+- The hints under New transactions, Check for updates automatically and Currency are shorter.
 - When every wallet is on the network shown, the backup export says "All wallets (N)" instead of offering a choice of one.
 
 ### Fixed
@@ -51,7 +51,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Recent alerts showed the oldest alerts of an account with more than 500 events. Gerfaut now reads every page.
 - Restoring a backup whose wallets are all on another network left them out of sight until a restart, and the restored settings did not show either. The workspace now moves to the wallets' network, and everything shows at once.
 - With "Hide amounts" on, unlocking could show the balances for an instant.
-- When the vault refused to save a setting, on a full disk or while an antivirus held the file, the setting looked saved anyway. It now goes back to what the vault holds, with the reason under it. If this happens when you turn on transaction notifications, the switch stays off.
+- When the vault refused to save the network, a trusted certificate, the gap limit, a wallet's name or icon, or transaction notifications, on a full disk or while an antivirus held the file, the setting looked saved anyway. It now goes back to what the vault holds, with the reason under it. If this happens when you turn on transaction notifications, the switch stays off.
 - A link that nothing on the computer can open, such as an ntfy link without the ntfy app, now says so and shows the address to copy.
 - A wallet page that could not be loaded now says why, with a Try again button. A list of UTXOs that failed to load no longer reads as an empty one.
 - In Add a wallet, Back keeps what you pasted. A wallet added on another network closes the dialog even when switching to that network fails, and the confirmation names the network.
