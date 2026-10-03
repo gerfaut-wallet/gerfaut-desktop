@@ -76,7 +76,9 @@ export function SettingRow({
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
-      <div className="min-w-0 max-w-xl">
+      {/* The words give way before the control does: a hint at its full
+          measure pushed a 96px field onto a line of its own. */}
+      <div className="min-w-0 max-w-xl flex-[1_1_20rem]">
         <p className="font-ui text-sm font-medium text-text">{title}</p>
         {hint && <p className="mt-0.5 font-ui text-xs text-muted">{hint}</p>}
       </div>
