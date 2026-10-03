@@ -478,14 +478,17 @@ function LivePins({ wallets }: { wallets: WalletMeta[] }) {
         ) : (
           <ChevronDown size={14} strokeWidth={1.5} aria-hidden />
         )}
-        Advanced
-        {/* A space for the name read out; the gap already draws one. */}
-        {!open && pinned > 0 && " "}
-        {!open && pinned > 0 && (
-          <span className="font-normal">
-            · {pinned === 1 ? "1 wallet" : `${pinned} wallets`} watched live first
-          </span>
-        )}
+        {/* One run of text, so the dot sits between two equal spaces
+            and the name read out is the line as written. */}
+        <span>
+          Advanced
+          {!open && pinned > 0 && " "}
+          {!open && pinned > 0 && (
+            <span className="font-normal">
+              · {pinned === 1 ? "1 wallet" : `${pinned} wallets`} watched live first
+            </span>
+          )}
+        </span>
       </Button>
       {open && (
         <div id="live-pins" className="mt-2">
