@@ -24,6 +24,7 @@ import { Pill } from "../../../components/StatusPill";
 import type { Channel, ChannelKind, NewChannel } from "../../../lib/ipc";
 import {
   useAddChannel,
+  useChannelLink,
   useConfirmChannel,
   useDeleteChannel,
   useTestChannel,
@@ -246,6 +247,13 @@ export function ChannelsCard({
   const [removing, setRemoving] = useState<string | null>(null);
   /** The yes was given: the secret is asked before it goes. */
   const [identity, setIdentity] = useState<Channel | null>(null);
+  const lock = useLock((state) => state.lock);
+  const link = useChannelLink();
+  /** The Telegram channel whose code waits for the app lock's secret. */
+  const [unlocking, setUnlocking] = useState<Channel | null>(null);
+  /** The Telegram channel whose code is shown again, as the server
+      handed it over. */
+  const [linking, setLinking] = useState<Channel | null>(null);
   /** Where the focus lands once a row, and the button that removed it,
       are gone. */
   const heading = useRef<HTMLHeadingElement>(null);
@@ -261,6 +269,18 @@ export function ChannelsCard({
       onError: (problem) => setFailure(problem),
       onSettled: () => setTesting(null),
     });
+  };
+
+  /** Shows a Telegram channel's code again. The list never carries it:
+      whoever sends it to the bot receives every alert, so with an app
+      lock on it takes the lock's secret, as adding a channel does. */
+  const askLink = (channel: Channel) => {
+    setFailure(undefined);
+    if (lock !== null) {
+      setUnlocking(channel);
+      return;
+    }
+    link.mutate({ id: channel.id }, { onSuccess: setLinking, onError: setFailure });
   };
 
   const askRemoval = (channel: Channel) => {
@@ -295,7 +315,6 @@ export function ChannelsCard({
               const entry = kindOf(channel.kind);
               const Glyph = entry.icon;
               const waiting = waitingWord(channel);
-              const toType = startToType(channel);
               // The server turned this one off and delivers nothing to
               // it, whatever else the row would have said: that state
               // comes first, and the way back is not the one it was
@@ -342,14 +361,15 @@ export function ChannelsCard({
                         Linked
                       </Pill>
                     )}
-                    {!off && waiting !== null && channel.telegram_url && (
+                    {!off && waiting !== null && channel.kind === "telegram" && (
                       <Button
                         variant="ghost"
                         className="h-9"
-                        onClick={() => void openUrl(channel.telegram_url!)}
+                        disabled={link.isPending}
+                        aria-busy={(link.isPending && link.variables?.id === channel.id) || undefined}
+                        onClick={() => askLink(channel)}
                       >
-                        <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
-                        Open Telegram
+                        Link code
                       </Button>
                     )}
                     {!off && waiting !== null && channel.kind === "email" && (
@@ -377,14 +397,6 @@ export function ChannelsCard({
                       onConfirm={() => setIdentity(channel)}
                       onCancel={() => cancelRemoval(channel.id)}
                     />
-                  )}
-                  {!off && toType !== null && (
-                    // Under the name, where the code would otherwise be
-                    // missing: the link opens the bot and no more.
-                    <p className="mt-1 pl-11 font-ui text-xs text-muted">
-                      Open Telegram and send the bot{" "}
-                      <span className="selectable break-all font-data text-text">{toType}</span>
-                    </p>
                   )}
                   {off && (
                     // Amber, and the words say it on their own: nothing
@@ -427,6 +439,33 @@ export function ChannelsCard({
           }}
           onCancel={() => setIdentity(null)}
         />
+      )}
+      {unlocking !== null && (
+        <IdentityModal
+          action="Show the code"
+          busyLabel="Checking…"
+          tone="premium"
+          run={(secret) =>
+            link.mutateAsync({ id: unlocking.id, identity: secret }).then(setLinking)
+          }
+          onDone={() => setUnlocking(null)}
+          onFailure={(problem) => {
+            setUnlocking(null);
+            setFailure(problem);
+          }}
+          onCancel={() => setUnlocking(null)}
+        />
+      )}
+      {linking !== null && (
+        <Modal open onClose={() => setLinking(null)} centered width={520} title="Link Telegram">
+          <TelegramLink
+            channel={linking}
+            linked={
+              (channels ?? []).find((channel) => channel.id === linking.id)?.linked ?? false
+            }
+            onDone={() => setLinking(null)}
+          />
+        </Modal>
       )}
       {confirming !== null && (
         <Modal
@@ -496,6 +535,101 @@ function RemoveNote({
     >
       Remove this channel? Gerfaut stops sending alerts to it at once.
     </Notice>
+  );
+}
+
+/** What linking a Telegram chat takes: the code, or the message to send
+    by hand when the link cannot carry it, the link that opens the bot,
+    and the state the list reports, which turns to "Linked" on its own
+    once the bot has answered. Shown after a channel is created, and
+    again from its row. */
+function TelegramLink({
+  channel,
+  linked,
+  onDone,
+}: {
+  /** The channel with its code: the one just created, or the one the
+      row asked for again. */
+  channel: Channel;
+  linked: boolean;
+  onDone: () => void;
+}) {
+  const { showToast } = useUi();
+  const [copied, setCopied] = useState(false);
+  /** The message to send the bot by hand, when the link cannot carry
+      the code. */
+  const typed = startToType(channel);
+
+  const copy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      showToast("Copied");
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // The clipboard refused; the message stays selectable on screen.
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      {typed === null ? (
+        <>
+          <p className="font-ui text-sm text-text">
+            Send this to <span className="font-medium">@GerfautAlertsBot</span>, or open
+            Telegram with the code already in place.
+          </p>
+          <p className="selectable rounded-sm bg-sunken px-3 py-3 text-center font-data text-[22px] tracking-[0.12em] text-text">
+            {channel.link_code ?? "—"}
+          </p>
+        </>
+      ) : (
+        // The link could not carry this code: it opens the bot, and the
+        // message is typed, or pasted, there.
+        <>
+          <p className="font-ui text-sm text-text">
+            Open Telegram and send this message to{" "}
+            <span className="font-medium">@GerfautAlertsBot</span>. The code could not go
+            into the link, so it has to be sent by hand.
+          </p>
+          <div className="flex items-center gap-2 rounded-sm bg-sunken py-2 pl-3 pr-2">
+            <p className="selectable min-w-0 flex-1 break-all font-data text-[17px] text-text">
+              {typed}
+            </p>
+            <Button variant="ghost" className="h-9" onClick={() => void copy(typed)}>
+              {copied ? (
+                <Check size={14} strokeWidth={2} aria-hidden />
+              ) : (
+                <Copy size={14} strokeWidth={1.5} aria-hidden />
+              )}
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          </div>
+        </>
+      )}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {linked ? (
+          <Pill tone="neutral" icon={<Check size={12} strokeWidth={2} aria-hidden className="shrink-0" />}>
+            Linked
+          </Pill>
+        ) : (
+          <p role="status" className="font-ui text-xs text-muted">
+            Waiting for the bot…
+          </p>
+        )}
+        <span className="flex items-center gap-2">
+          {!linked && channel.telegram_url && (
+            <Button variant="secondary" onClick={() => void openUrl(channel.telegram_url!)}>
+              <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
+              Open Telegram
+            </Button>
+          )}
+          <Button variant="premium" onClick={onDone}>
+            Done
+          </Button>
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -598,10 +732,6 @@ function AddChannelModal({
             : step.kind === "ntfy"
               ? "Subscribe to this topic in the ntfy app"
               : "Link Telegram";
-
-  /** The message to send the bot by hand, when the link cannot carry
-      the code. */
-  const telegramTyped = step.kind === "telegram" ? startToType(step.created.channel) : null;
 
   const linked =
     step.kind === "telegram" &&
@@ -743,67 +873,7 @@ function AddChannelModal({
           )}
 
           {step.kind === "telegram" && (
-            <>
-              {telegramTyped === null ? (
-                <>
-                  <p className="font-ui text-sm text-text">
-                    Send this to <span className="font-medium">@GerfautAlertsBot</span>, or
-                    open Telegram with the code already in place.
-                  </p>
-                  <p className="selectable rounded-sm bg-sunken px-3 py-3 text-center font-data text-[22px] tracking-[0.12em] text-text">
-                    {step.created.channel.link_code ?? "—"}
-                  </p>
-                </>
-              ) : (
-                // The link could not carry this code: it opens the bot,
-                // and the message is typed, or pasted, there.
-                <>
-                  <p className="font-ui text-sm text-text">
-                    Open Telegram and send this message to{" "}
-                    <span className="font-medium">@GerfautAlertsBot</span>. The code could
-                    not go into the link, so it has to be sent by hand.
-                  </p>
-                  <div className="flex items-center gap-2 rounded-sm bg-sunken py-2 pl-3 pr-2">
-                    <p className="selectable min-w-0 flex-1 break-all font-data text-[17px] text-text">
-                      {telegramTyped}
-                    </p>
-                    <Button variant="ghost" className="h-9" onClick={() => void copy(telegramTyped)}>
-                      {copied ? (
-                        <Check size={14} strokeWidth={2} aria-hidden />
-                      ) : (
-                        <Copy size={14} strokeWidth={1.5} aria-hidden />
-                      )}
-                      {copied ? "Copied" : "Copy"}
-                    </Button>
-                  </div>
-                </>
-              )}
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                {linked ? (
-                  <Pill tone="neutral" icon={<Check size={12} strokeWidth={2} aria-hidden className="shrink-0" />}>
-                    Linked
-                  </Pill>
-                ) : (
-                  <p role="status" className="font-ui text-xs text-muted">
-                    Waiting for the bot…
-                  </p>
-                )}
-                <span className="flex items-center gap-2">
-                  {!linked && step.created.channel.telegram_url && (
-                    <Button
-                      variant="secondary"
-                      onClick={() => void openUrl(step.created.channel.telegram_url!)}
-                    >
-                      <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
-                      Open Telegram
-                    </Button>
-                  )}
-                  <Button variant="premium" onClick={onClose}>
-                    Done
-                  </Button>
-                </span>
-              </div>
-            </>
+            <TelegramLink channel={step.created.channel} linked={linked} onDone={onClose} />
           )}
 
           {failure !== undefined && <FailureNote error={failure} />}

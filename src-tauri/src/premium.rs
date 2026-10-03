@@ -196,6 +196,19 @@ fn view_of(channel: Channel) -> ChannelView {
     }
 }
 
+/// A channel as the list carries it: without the code a Telegram chat
+/// links with, nor any link that holds it. Whoever sends the bot that
+/// code receives every alert of the account, so it reaches the window
+/// only through [`premium_channel_link`], behind the app lock's secret.
+fn listed(mut channel: Channel) -> ChannelView {
+    channel.link_code = None;
+    channel.link_url = None;
+    ChannelView {
+        channel,
+        telegram_url: None,
+    }
+}
+
 /// The platform this device connects as. The desktop builds for three,
 /// all of which the server takes.
 fn platform() -> CommandResult<DevicePlatform> {
@@ -601,13 +614,55 @@ pub async fn premium_unwatch_wallet(
     Ok(state.manager.premium_unwatch_wallet(&base_url, &id).await?)
 }
 
+/// The account's channels, each without the code a Telegram chat not
+/// linked yet waits for: see [`listed`].
 #[tauri::command]
 pub async fn premium_channels(
     state: tauri::State<'_, AppState>,
 ) -> CommandResult<Vec<ChannelView>> {
     state.unlocked()?;
-    let channels = client(&state).await?.channels().await?;
-    Ok(channels.into_iter().map(view_of).collect())
+    channels(&state, &base_url()).await
+}
+
+async fn channels(state: &AppState, base_url: &str) -> CommandResult<Vec<ChannelView>> {
+    let channels = client_at(state, base_url).await?.channels().await?;
+    Ok(channels.into_iter().map(listed).collect())
+}
+
+/// The code a Telegram channel not linked yet waits for, and the link
+/// that carries it, to send the bot again. With an app lock on, it
+/// takes the lock's secret, `identity`, as adding a channel does:
+/// someone at the unlocked app would otherwise link a chat of their own
+/// and receive every alert. The page that follows a channel's creation
+/// shows the code it was created with, and asks nothing more.
+#[tauri::command]
+pub async fn premium_channel_link(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    identity: Option<String>,
+) -> CommandResult<ChannelView> {
+    state.unlocked()?;
+    if state.manager.app_lock().await.is_some() {
+        confirm_identity_given(&state, identity.as_deref()).await?;
+    }
+    channel_link(&state, &base_url(), &id).await
+}
+
+async fn channel_link(state: &AppState, base_url: &str, id: &str) -> CommandResult<ChannelView> {
+    let channel = client_at(state, base_url)
+        .await?
+        .channels()
+        .await?
+        .into_iter()
+        .find(|channel| channel.id == id)
+        .ok_or_else(|| CommandError::new("premium_rejected", "this channel no longer exists"))?;
+    if channel.kind != ChannelKind::Telegram || channel.linked || channel.link_code.is_none() {
+        return Err(CommandError::new(
+            "invalid_input",
+            "this channel waits for no code",
+        ));
+    }
+    Ok(view_of(channel))
 }
 
 /// Adds a channel. An ntfy topic is drawn here, long and random, and
@@ -1799,6 +1854,14 @@ mod tests {
                 ],
             ),
             (
+                premium,
+                "premium_channel_link",
+                [
+                    "state.unlocked()?;",
+                    "if state.manager.app_lock().await.is_some() {",
+                ],
+            ),
+            (
                 lib,
                 "remove_wallet",
                 [
@@ -1919,6 +1982,53 @@ mod tests {
             .block_on(state.manager.premium_log_out("http://127.0.0.1:9"))
             .unwrap();
         assert!(!runtime.block_on(watched_by_server(&state, "w-watched")));
+    }
+
+    /// `GET /v1/channels` with a Telegram chat not linked yet, an ntfy
+    /// topic and a linked e-mail address.
+    const CHANNELS: &str = r#"{"channels":[{"id":"c-tg","kind":"telegram","target":"","linked":false,"link_code":"K7QM2XRA","link_url":"https://t.me/GerfautAlertsBot?start=K7QM2XRA","enabled":true,"created_at":1789000001},{"id":"c-ntfy","kind":"ntfy","target":"abc…xyz","linked":true,"link_code":null,"link_url":null,"enabled":true,"created_at":1789000002},{"id":"c-mail","kind":"email","target":"a…@example.org","linked":true,"link_code":null,"link_url":null,"enabled":true,"created_at":1789000003}]}"#;
+
+    /// The list never carries the code a Telegram chat links with, nor a
+    /// link that holds it: it reaches the window one channel at a time,
+    /// asked for. A channel that waits for no code has none to give.
+    #[test]
+    fn the_link_code_of_a_telegram_chat_stays_out_of_the_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, _) = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        let (base_url, _) = stub_server(200, CHANNELS);
+        let listed = runtime.block_on(channels(&state, &base_url)).unwrap();
+        assert_eq!(listed.len(), 3);
+        let shown = serde_json::to_string(&listed).unwrap();
+        assert!(!shown.contains("K7QM2XRA"), "{shown}");
+        let telegram = &listed[0];
+        assert_eq!(telegram.channel.kind, ChannelKind::Telegram);
+        assert!(!telegram.channel.linked);
+        assert_eq!(telegram.telegram_url, None);
+
+        let (base_url, requests) = stub_server(200, CHANNELS);
+        let link = runtime
+            .block_on(channel_link(&state, &base_url, "c-tg"))
+            .unwrap();
+        assert_eq!(link.channel.link_code.as_deref(), Some("K7QM2XRA"));
+        assert_eq!(
+            link.telegram_url.as_deref(),
+            Some("https://t.me/GerfautAlertsBot?start=K7QM2XRA")
+        );
+        let request = requests.recv().unwrap();
+        assert!(
+            request.starts_with("GET /v1/channels HTTP/1.1"),
+            "{request}"
+        );
+        assert!(request.contains(&format!("Bearer {TOKEN}")), "{request}");
+
+        for (id, kind) in [("c-ntfy", "invalid_input"), ("c-gone", "premium_rejected")] {
+            let refused = runtime
+                .block_on(channel_link(&state, &base_url, id))
+                .unwrap_err();
+            assert_eq!(refused.kind, kind, "{id}");
+        }
     }
 
     const EMAIL_CHANNEL: &str = r#"{"id":"4f8f5252-b152-4fae-b142-5e6f70819203","kind":"email","target":"a…@example.org","linked":true,"link_code":null,"link_url":null,"linked_name":null,"enabled":true,"created_at":1789000004}"#;

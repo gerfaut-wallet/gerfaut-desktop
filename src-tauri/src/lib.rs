@@ -1234,6 +1234,7 @@ pub fn run() {
             premium::premium_watch_wallet,
             premium::premium_unwatch_wallet,
             premium::premium_channels,
+            premium::premium_channel_link,
             premium::premium_add_channel,
             premium::premium_delete_channel,
             premium::premium_confirm_channel,

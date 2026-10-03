@@ -171,6 +171,14 @@ const TELEGRAM_WAITING: Channel = {
   telegram_url: "https://t.me/GerfautAlertsBot?start=0123456789ab",
 };
 
+/** The same channel as the list carries it: never with its code. */
+const TELEGRAM_LISTED: Channel = {
+  ...TELEGRAM_WAITING,
+  link_code: null,
+  link_url: null,
+  telegram_url: null,
+};
+
 const EMAIL_WAITING: Channel = {
   id: "c-mail",
   kind: "email",
@@ -876,7 +884,7 @@ describe("the watched wallets card", () => {
 
 describe("the channels card", () => {
   it("lists the channels with their state and their glyph", async () => {
-    mockPremium({ premium_channels: () => [NTFY, TELEGRAM_WAITING] });
+    mockPremium({ premium_channels: () => [NTFY, TELEGRAM_LISTED] });
     renderSection();
     await screen.findByText("abc…xyz");
     const channels = card("Channels");
@@ -887,7 +895,68 @@ describe("the channels card", () => {
     expect(rows[1].querySelector("svg.lucide-send")).not.toBeNull();
     const waiting = within(rows[1]).getByText("Waiting for the bot");
     expect(waiting.closest("[data-tone]")).toHaveAttribute("data-tone", "pending");
-    expect(within(rows[1]).getByRole("button", { name: "Open Telegram" })).toBeInTheDocument();
+    expect(within(rows[1]).getByRole("button", { name: "Link code" })).toBeInTheDocument();
+  });
+
+  /** Whoever sends the bot a waiting code receives every alert of the
+      account: the list never carries it, and with the app lock on the
+      row asks the lock's secret before showing it again. */
+  it("shows a waiting Telegram code again only behind the app lock", async () => {
+    const calls = mockPremium({
+      premium_channels: () => [NTFY, TELEGRAM_LISTED],
+      premium_channel_link: () => TELEGRAM_WAITING,
+    });
+    renderSection();
+    const user = userEvent.setup();
+    await screen.findByText("abc…xyz");
+    const row = card("Channels").getAllByRole("listitem")[1];
+    expect(row).not.toHaveTextContent("0123456789ab");
+
+    await user.click(within(row).getByRole("button", { name: "Link code" }));
+    expect(of("premium_channel_link", calls)).toEqual([]);
+    await confirmIdentity(user, "Show the code");
+    await waitFor(() =>
+      expect(of("premium_channel_link", calls)).toEqual([{ id: "c-tg", identity: PIN }]),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Link Telegram" });
+    expect(dialog).toHaveTextContent("0123456789ab");
+    await user.click(within(dialog).getByRole("button", { name: "Open Telegram" }));
+    expect(opened.urls).toEqual(["https://t.me/GerfautAlertsBot?start=0123456789ab"]);
+    await user.click(within(dialog).getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("says a wrong PIN and shows no code", async () => {
+    const calls = mockPremium({
+      premium_channels: () => [NTFY, TELEGRAM_LISTED],
+      premium_channel_link: refused("identity_refused", "the PIN or password did not match"),
+    });
+    renderSection();
+    const user = userEvent.setup();
+    await screen.findByText("abc…xyz");
+    await user.click(screen.getByRole("button", { name: "Link code" }));
+    await confirmIdentity(user, "Show the code");
+    const identity = await screen.findByRole("dialog", { name: "Confirm it's you" });
+    expect(await within(identity).findByText("Wrong PIN")).toBeInTheDocument();
+    expect(of("premium_channel_link", calls)).toHaveLength(1);
+    expect(screen.queryByRole("dialog", { name: "Link Telegram" })).not.toBeInTheDocument();
+  });
+
+  it("shows a waiting Telegram code again at once with no app lock", async () => {
+    useLock.setState({ lock: null });
+    const calls = mockPremium({
+      premium_channels: () => [NTFY, TELEGRAM_LISTED],
+      premium_channel_link: () => TELEGRAM_WAITING,
+    });
+    renderSection();
+    const user = userEvent.setup();
+    await screen.findByText("abc…xyz");
+    await user.click(screen.getByRole("button", { name: "Link code" }));
+    expect(screen.queryByRole("dialog", { name: "Confirm it's you" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Link Telegram" })).toHaveTextContent(
+      "0123456789ab",
+    );
+    expect(of("premium_channel_link", calls)).toEqual([{ id: "c-tg", identity: null }]);
   });
 
   it("adds an ntfy channel in one step, shows the topic once, and tests the first channel", async () => {
@@ -947,7 +1016,7 @@ describe("the channels card", () => {
     const calls = mockPremium({
       premium_channels: () => channels,
       premium_add_channel: () => {
-        channels = [NTFY, TELEGRAM_WAITING];
+        channels = [NTFY, TELEGRAM_LISTED];
         return { channel: TELEGRAM_WAITING, subscribe_url: null };
       },
     });
@@ -973,7 +1042,7 @@ describe("the channels card", () => {
     expect(of("premium_test_channel", calls)).toEqual([]);
 
     // The bot answered: the list, asked again, says so in the dialog.
-    channels = [NTFY, { ...TELEGRAM_WAITING, linked: true, link_code: null, telegram_url: null }];
+    channels = [NTFY, { ...TELEGRAM_LISTED, linked: true }];
     expect(await within(dialog).findByText("Linked")).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Open Telegram" })).not.toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Done" }));
@@ -982,7 +1051,7 @@ describe("the channels card", () => {
 
   /** A code Telegram would not take in a link: the core leaves it out,
       the link only opens the bot, and the screen gives the message to
-      send by hand, in the dialog and on the channel's row. */
+      send by hand, in the dialog and when the row shows it again. */
   it("gives the message to send when the link cannot carry the code", async () => {
     const odd: Channel = {
       ...TELEGRAM_WAITING,
@@ -993,9 +1062,10 @@ describe("the channels card", () => {
     mockPremium({
       premium_channels: () => channels,
       premium_add_channel: () => {
-        channels = [NTFY, odd];
+        channels = [NTFY, TELEGRAM_LISTED];
         return { channel: odd, subscribe_url: null };
       },
+      premium_channel_link: () => odd,
     });
     useLock.setState({ lock: null });
     renderSection();
@@ -1015,11 +1085,14 @@ describe("the channels card", () => {
     await user.click(within(dialog).getByRole("button", { name: "Done" }));
 
     const row = card("Channels").getAllByRole("listitem")[1];
-    expect(row).toHaveTextContent("Open Telegram and send the bot /start ab cd#1");
+    expect(row).not.toHaveTextContent("ab cd#1");
+    await user.click(within(row).getByRole("button", { name: "Link code" }));
+    const again = await screen.findByRole("dialog", { name: "Link Telegram" });
+    expect(within(again).getByText("/start ab cd#1")).toBeInTheDocument();
   });
 
   it("asks nothing to be typed when the link carries the code", async () => {
-    mockPremium({ premium_channels: () => [NTFY, TELEGRAM_WAITING] });
+    mockPremium({ premium_channels: () => [NTFY, TELEGRAM_LISTED] });
     renderSection();
     await screen.findByText("abc…xyz");
     expect(card("Channels").queryByText(/send the bot/)).not.toBeInTheDocument();

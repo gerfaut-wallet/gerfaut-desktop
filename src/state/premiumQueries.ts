@@ -289,6 +289,15 @@ export function useAddChannel() {
   });
 }
 
+/** The code a Telegram channel still waits for, asked for again: the
+    list never carries it. Nothing changes on the server. */
+export function useChannelLink() {
+  return useMutation({
+    mutationFn: (args: { id: string; identity?: string }) =>
+      ipc.premiumChannelLink(args.id, args.identity),
+  });
+}
+
 /** Sends back the code the server e-mailed, which is what turns an
     e-mail channel on: nothing is written to an address before its owner
     proved they read it. */

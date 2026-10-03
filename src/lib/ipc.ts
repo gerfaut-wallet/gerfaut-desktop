@@ -628,6 +628,9 @@ export interface Channel {
   /** Masked except for webhooks. */
   target: string;
   linked: boolean;
+  /** The code a Telegram chat links with: null in the list, which never
+      carries it; set on the channel just created, and on the one
+      `premiumChannelLink` hands over. */
   link_code: string | null;
   link_url: string | null;
   /** What the channel is linked to, when the server knows a name for it:
@@ -1182,6 +1185,11 @@ export const ipc = {
   premiumUnwatchWallet: (id: string, secret: string) =>
     invoke<void>("premium_unwatch_wallet", { id, secret }),
   premiumChannels: () => invoke<Channel[]>("premium_channels"),
+  /** A Telegram channel not linked yet, with its code and the link that
+      carries it; `identity`, the app lock's secret, needed while a lock
+      is on. */
+  premiumChannelLink: (id: string, identity?: string) =>
+    invoke<Channel>("premium_channel_link", { id, identity: identity ?? null }),
   /** `secret` is a webhook's own; `identity`, the app lock's, needed
       while a lock is on. */
   premiumAddChannel: (kind: ChannelKind, target?: string, secret?: string, identity?: string) =>
