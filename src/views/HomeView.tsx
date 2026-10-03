@@ -22,9 +22,9 @@ import { useRadioGroup } from "../components/radioGroup";
 import { NewDeviceBanner } from "../components/NewDeviceBanner";
 import { WatchOfflineBanner } from "../components/WatchOfflineBanner";
 import {
-  LOCALE,
   MASKED,
   formatAmountSigned,
+  formatCurrency,
   formatTimestamp,
   groupThousands,
   relativeTime,
@@ -461,11 +461,7 @@ function PriceCard() {
       {last ? (
         <div className="flex flex-wrap items-center gap-2.5">
           <span className="tabular text-[22px] font-semibold leading-tight text-text">
-            {new Intl.NumberFormat(LOCALE, {
-              style: "currency",
-              currency: fiatCurrency.toUpperCase(),
-              maximumFractionDigits: 0,
-            }).format(last.rate)}
+            {formatCurrency(last.rate, fiatCurrency, { maximumFractionDigits: 0 })}
           </span>
           {change !== null && (
             <span

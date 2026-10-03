@@ -210,6 +210,25 @@ export function formatAmountSigned(sats: number, unit: Unit): string {
   return sats < 0 ? formatSats(sats) : `+${formatSats(sats)}`;
 }
 
+/** A sum in a currency: its symbol and its precision from the currency
+    formatter, in the app's one language, and its thousands grouped like
+    every other number on screen, with no-break spaces. The formatter's
+    commas put "€74,074" beside "1 297 812 sats". */
+export function formatCurrency(
+  value: number,
+  currency: string,
+  options: Pick<Intl.NumberFormatOptions, "maximumFractionDigits"> = {},
+): string {
+  return new Intl.NumberFormat(LOCALE, {
+    style: "currency",
+    currency: currency.toUpperCase(),
+    ...options,
+  })
+    .formatToParts(value)
+    .map((part) => (part.type === "group" ? GROUP : part.value))
+    .join("");
+}
+
 /** Fiat value of an amount at a given BTC rate. */
 export function formatFiat(sats: number, rate: number, currency: string): string {
   const value = (sats / 100_000_000) * rate;
@@ -217,9 +236,5 @@ export function formatFiat(sats: number, rate: number, currency: string): string
   // decimals, and forcing two on them reads as an error. Under one unit
   // the ceiling is raised to four so a small amount does not collapse
   // to zero, whatever the currency.
-  return new Intl.NumberFormat(LOCALE, {
-    style: "currency",
-    currency: currency.toUpperCase(),
-    ...(Math.abs(value) < 1 ? { maximumFractionDigits: 4 } : {}),
-  }).format(value);
+  return formatCurrency(value, currency, Math.abs(value) < 1 ? { maximumFractionDigits: 4 } : {});
 }

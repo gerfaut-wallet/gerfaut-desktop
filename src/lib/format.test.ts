@@ -4,7 +4,9 @@ import {
   formatBlocks,
   formatBtc,
   formatBtcSigned,
+  formatCurrency,
   formatDate,
+  formatFiat,
   formatDuration,
   formatLocktime,
   formatSats,
@@ -168,5 +170,26 @@ describe("relativeTime", () => {
     expect(relativeTime(now / 1000 - 120, now)).toBe("2 min ago");
     expect(relativeTime(now / 1000 - 7200, now)).toBe("2 h ago");
     expect(relativeTime(now / 1000 - 172_800, now)).toBe("2 d ago");
+  });
+});
+
+/** Every number on screen groups its thousands the same way, with a
+    no-break space: a fiat value too, beside amounts in sats. */
+describe("fiat values", () => {
+  const NBSP = " ";
+
+  it("group their thousands with no-break spaces, not commas", () => {
+    expect(formatCurrency(74_074.07, "eur")).toBe(`€74${NBSP}074.07`);
+    expect(formatCurrency(1_234_567.5, "usd")).toBe(`$1${NBSP}234${NBSP}567.50`);
+    expect(formatCurrency(61_250, "eur", { maximumFractionDigits: 0 })).toBe(`€61${NBSP}250`);
+    expect(formatFiat(123_456_789, 60_000, "eur")).toBe(`€74${NBSP}074.07`);
+    expect(formatFiat(123_456_789, 60_000, "eur")).not.toContain(",");
+  });
+
+  it("keep each currency's own precision, and small sums readable", () => {
+    expect(formatCurrency(1_500_000, "jpy")).toBe(`¥1${NBSP}500${NBSP}000`);
+    expect(formatFiat(1_000, 60_000, "eur")).toBe("€0.60");
+    expect(formatFiat(20, 60_000, "eur")).toBe("€0.012");
+    expect(formatFiat(-150_000, 60_000, "eur")).toBe("-€90.00");
   });
 });
