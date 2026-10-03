@@ -104,7 +104,10 @@ interface UiState {
   setFiatSource: (source: PriceSource) => void;
   setPriceRange: (range: PriceRange) => void;
   setExplorerAck: (acknowledged: boolean) => void;
-  setNotifyNewTx: (enabled: boolean) => void;
+  /** Rejects, and puts the switch back, when the vault refuses: the
+      Rust side starts the watch on what the vault holds, so a switch
+      left on over a refused write would promise alerts nobody sends. */
+  setNotifyNewTx: (enabled: boolean) => Promise<void>;
   setOnboardingSeen: (seen: boolean) => void;
   markTourSeen: () => void;
   showToast: (message: string) => void;
@@ -117,6 +120,12 @@ interface UiState {
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
+/** Writes a preference the window alone reads, and lets a refusal go:
+    what it changes is already on screen for this session, and putting
+    it back would undo what was asked — amounts shown again under "Hide
+    amounts". Only the next launch misses it. The one preference the
+    Rust side acts on, the alerts, is written by `setNotifyNewTx`, which
+    says a refusal. */
 function persist(key: string, value: string) {
   void ipc.setAppPref(key, value).catch(() => {});
 }
@@ -231,9 +240,15 @@ export const useUi = create<UiState>((set, get) => ({
     set({ explorerAck });
     persist("privacy.explorer_ack", explorerAck ? "1" : "0");
   },
-  setNotifyNewTx: (notifyNewTx) => {
+  setNotifyNewTx: async (notifyNewTx) => {
+    const before = get().notifyNewTx;
     set({ notifyNewTx });
-    persist("notify.new_tx", notifyNewTx ? "1" : "0");
+    try {
+      await ipc.setAppPref("notify.new_tx", notifyNewTx ? "1" : "0");
+    } catch (error) {
+      set({ notifyNewTx: before });
+      throw error;
+    }
   },
   setOnboardingSeen: (onboardingSeen) => {
     set({ onboardingSeen });

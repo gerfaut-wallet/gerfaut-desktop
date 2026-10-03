@@ -34,12 +34,19 @@ import {
 import { useUi } from "../../state/store";
 import { useWalletOrder } from "../../state/walletOrder";
 import { IdentityModal } from "./premium/IdentityModal";
-import { SectionCard, SettingRow, Toggle } from "./primitives";
+import { SaveFailure, SectionCard, SettingRow, Toggle } from "./primitives";
 import { WalletIconPicker } from "./WalletIconPicker";
 
 /** Numeric gap-limit field: commits on blur or Enter, clamped to what
-    the backend accepts, shared by every wallet. */
-function GapLimitField({ gapLimit }: { gapLimit: number }) {
+    the backend accepts, shared by every wallet. A value the vault
+    refused goes back to the one it holds. */
+function GapLimitField({
+  gapLimit,
+  onFailure,
+}: {
+  gapLimit: number;
+  onFailure: (error: unknown) => void;
+}) {
   const { showToast } = useUi();
   const setGapLimit = useSetGapLimit();
   const [draft, setDraft] = useState(String(gapLimit));
@@ -54,7 +61,14 @@ function GapLimitField({ gapLimit }: { gapLimit: number }) {
       return;
     }
     if (value === gapLimit) return;
-    void setGapLimit.mutateAsync(value).then(() => showToast("Setting saved"));
+    onFailure(null);
+    void setGapLimit.mutateAsync(value).then(
+      () => showToast("Setting saved"),
+      (error) => {
+        setDraft(String(gapLimit));
+        onFailure(error);
+      },
+    );
   };
 
   return (
@@ -72,6 +86,9 @@ function GapLimitField({ gapLimit }: { gapLimit: number }) {
     />
   );
 }
+
+/** Where a refused gap limit is said, among the rows' wallet ids. */
+const GAP_LIMIT = "gap-limit";
 
 /** Whether removing a wallet also ends the server's watch of it. The
     core queues the unwatch when a key is set and the wallet was agreed
@@ -133,17 +150,25 @@ export function WalletsSection({
   );
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [rescanning, setRescanning] = useState<string | null>(null);
+  /** A change the vault refused, under the row it was for: the gap
+      limit's, or a wallet's name or icon. */
+  const [saveFailure, setSaveFailure] = useState<{ id: string; error: unknown } | null>(null);
+  const failureOf = (id: string) => (saveFailure?.id === id ? saveFailure.error : null);
   // One wallet has no order to speak of.
   const movable = shown.length > 1;
 
   const commitRename = () => {
     if (!renaming || renaming.name.trim().length === 0) return;
-    void renameWallet
-      .mutateAsync({ id: renaming.id, name: renaming.name.trim() })
-      .then(() => {
+    const { id } = renaming;
+    setSaveFailure(null);
+    // Refused, the field stays open on the name typed.
+    void renameWallet.mutateAsync({ id, name: renaming.name.trim() }).then(
+      () => {
         setRenaming(null);
         showToast("Setting saved");
-      });
+      },
+      (error) => setSaveFailure({ id, error }),
+    );
   };
 
   return (
@@ -156,8 +181,12 @@ export function WalletsSection({
           title="Gap limit"
           hint="How many unused addresses Gerfaut scans past the last used one. Rescan a wallet to look again from its first address."
         >
-          <GapLimitField gapLimit={gapLimit} />
+          <GapLimitField
+            gapLimit={gapLimit}
+            onFailure={(error) => setSaveFailure(error === null ? null : { id: GAP_LIMIT, error })}
+          />
         </SettingRow>
+        <SaveFailure error={failureOf(GAP_LIMIT)} />
       </div>
       {shown.length === 0 ? (
         <p className="font-ui text-sm text-muted">No wallets on this network yet.</p>
@@ -270,11 +299,13 @@ export function WalletsSection({
                           name={wallet.name}
                           value={wallet.icon}
                           disabled={rescanning !== null}
-                          onChoose={(icon) =>
-                            void setIcon
-                              .mutateAsync({ id: wallet.id, icon })
-                              .then(() => showToast("Icon changed"))
-                          }
+                          onChoose={(icon) => {
+                            setSaveFailure(null);
+                            void setIcon.mutateAsync({ id: wallet.id, icon }).then(
+                              () => showToast("Icon changed"),
+                              (error) => setSaveFailure({ id: wallet.id, error }),
+                            );
+                          }}
                         />
                         <Button
                           variant="ghost"
@@ -326,6 +357,7 @@ export function WalletsSection({
                       {syncErrors[wallet.id]}
                     </p>
                   )}
+                  <SaveFailure error={failureOf(wallet.id)} />
                   {confirmRemove === wallet.id && (
                     <Notice
                       tone="info"

@@ -1055,6 +1055,12 @@ export function isCommandError(error: unknown): error is CommandError {
   );
 }
 
+/** What a failed call says: the command's own message, or the error as
+    text when it did not come from a command. */
+export function errorMessage(error: unknown): string {
+  return isCommandError(error) ? error.message : String(error);
+}
+
 // --- commands ----------------------------------------------------------
 
 export const ipc = {

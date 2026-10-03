@@ -1082,3 +1082,71 @@ describe("settings sections", () => {
     expect(heading("About")).toBeInTheDocument();
   });
 });
+
+/** A write the vault refuses — a full disk, a file an antivirus holds
+    during the rename — is said under the setting, and the control shows
+    what the vault holds, not what was asked. */
+describe("a setting the vault refuses", () => {
+  const refused = () => Promise.reject({ kind: "vault", message: "the vault could not be written" });
+
+  beforeEach(() => {
+    useUi.setState({ view: "settings", settingsSection: "general", notifyNewTx: false, toast: null });
+  });
+
+  it("puts the gap limit back and says why", async () => {
+    mockSettingsIpc({ set_gap_limit: refused });
+    act(() => useUi.getState().openSettings("wallets"));
+    renderSettings();
+    const user = userEvent.setup();
+    const field = screen.getByRole("textbox", { name: "Gap limit" });
+
+    await user.clear(field);
+    await user.type(field, "50{Enter}");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Not saved: the vault could not be written",
+    );
+    expect(field).toHaveValue(String(SETTINGS.gap_limit));
+    expect(useUi.getState().toast).toBeNull();
+  });
+
+  it("keeps the rename open on the name typed", async () => {
+    mockSettingsIpc({ rename_wallet: refused });
+    act(() => useUi.getState().openSettings("wallets"));
+    renderSettings();
+    const user = userEvent.setup();
+    const row = screen.getByText("Cold storage").closest("li")!;
+
+    await user.click(within(row).getByRole("button", { name: "Rename" }));
+    const name = within(row).getByRole("textbox", { name: "Wallet name" });
+    await user.clear(name);
+    await user.type(name, "Savings{Enter}");
+    expect(await within(row).findByRole("alert")).toHaveTextContent("Not saved:");
+    expect(within(row).getByRole("textbox", { name: "Wallet name" })).toHaveValue("Savings");
+  });
+
+  it("stays on the network the vault holds", async () => {
+    mockSettingsIpc({ set_active_network: refused });
+    act(() => useUi.getState().openSettings("network"));
+    renderSettings();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /^Signet/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Not saved:");
+    expect(screen.getByRole("button", { name: /^Mainnet/ })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  /** The Rust side starts the watch on what the vault holds: a switch
+      left on over a refused write would promise alerts nobody sends. */
+  it("turns the alerts switch back off", async () => {
+    mockSettingsIpc({ set_app_pref: refused });
+    act(() => useUi.getState().openSettings("notifications"));
+    renderSettings();
+    const user = userEvent.setup();
+    const alerts = screen.getByRole("switch", { name: "Notify about new transactions" });
+
+    await user.click(alerts);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Not saved:");
+    expect(alerts).not.toBeChecked();
+    expect(useUi.getState().notifyNewTx).toBe(false);
+  });
+});

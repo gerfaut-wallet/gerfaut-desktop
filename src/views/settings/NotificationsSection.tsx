@@ -15,7 +15,7 @@ import {
 } from "../../state/live";
 import { useUi } from "../../state/store";
 import { GHOST_ON_TINT } from "./premium/shared";
-import { SectionCard, SettingRow, Toggle } from "./primitives";
+import { SaveFailure, SectionCard, SettingRow, Toggle } from "./primitives";
 
 /** What the live watch leaves to the syncs when it is short of room, and
     the way out: a node of one's own, where it follows ten times more.
@@ -68,6 +68,8 @@ export function NotificationsSection({
   settings: Pick<Settings, "backends" | "active_network">;
 }) {
   const { notifyNewTx, setNotifyNewTx } = useUi();
+  /** The vault refused the switch: it went back, and this says why. */
+  const [saveFailure, setSaveFailure] = useState<unknown>(null);
   const live = useLiveStatus();
   const [test, setTest] = useState<TestResult>(null);
   const [testing, setTesting] = useState(false);
@@ -98,10 +100,14 @@ export function NotificationsSection({
           >
             <Toggle
               checked={notifyNewTx}
-              onChange={setNotifyNewTx}
+              onChange={(on) => {
+                setSaveFailure(null);
+                setNotifyNewTx(on).catch(setSaveFailure);
+              }}
               label="Notify about new transactions"
             />
           </SettingRow>
+          <SaveFailure error={saveFailure} />
         </div>
 
         <div>

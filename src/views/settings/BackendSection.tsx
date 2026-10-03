@@ -6,7 +6,7 @@ import { ScanQrModal } from "../../components/ScanQrModal";
 import { Select } from "../../components/Select";
 import { OnionIcon } from "../../components/icons/OnionIcon";
 import { groupThousands } from "../../lib/format";
-import { ipc, isCommandError } from "../../lib/ipc";
+import { errorMessage, ipc, isCommandError } from "../../lib/ipc";
 import type { BackendConfig, CertificateReport, Network, Settings } from "../../lib/ipc";
 import {
   useInspectCertificate,
@@ -240,10 +240,17 @@ export function BackendSection({
 
   const accept = (fingerprint: string) => {
     if (!pending) return;
-    void trust.mutateAsync({ url: pending.url, fingerprint }).then(() => {
-      void store(pending.config);
-      setPending(null);
-    });
+    void trust.mutateAsync({ url: pending.url, fingerprint }).then(
+      () => {
+        void store(pending.config);
+        setPending(null);
+      },
+      // Not trusted, so not stored: said under the button that saves.
+      (error) => {
+        setPending(null);
+        setSaveError(errorMessage(error));
+      },
+    );
   };
 
   const networkLabel = NETWORKS.find((option) => option.value === network)?.label;

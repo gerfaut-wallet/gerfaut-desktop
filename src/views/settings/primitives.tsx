@@ -3,6 +3,23 @@
 
 import { clsx } from "clsx";
 import type { ReactNode, Ref } from "react";
+import { Notice } from "../../components/Notice";
+import { errorMessage } from "../../lib/ipc";
+
+/** What a setting that was not saved leaves under it: the amber note,
+    in the core's words, until the next try. Never a toast, which would
+    be gone before it is read, and never a control left showing a value
+    the vault does not hold. */
+export function SaveFailure({ error, className }: { error: unknown; className?: string }) {
+  if (error === null || error === undefined) return null;
+  // `className` replaces the margin above, for a parent that spaces
+  // its children itself.
+  return (
+    <Notice tone="info" role="alert" className={className ?? "mt-2"}>
+      Not saved: {errorMessage(error)}
+    </Notice>
+  );
+}
 
 export function SectionCard({
   icon,

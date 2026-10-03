@@ -9,7 +9,7 @@ import type { CertificateReport } from "../../lib/ipc";
 import { LOCALE } from "../../lib/format";
 import { useForgetCertificate } from "../../state/queries";
 import { useUi } from "../../state/store";
-import { SectionCard } from "./primitives";
+import { SaveFailure, SectionCard } from "./primitives";
 
 /** A fingerprint laid out to be compared by eye: two rows of sixteen
     bytes, in the same uppercase hex pairs `openssl` prints. */
@@ -178,6 +178,8 @@ export function CertificatesSection({ certs }: { certs: Record<string, string> }
   const forget = useForgetCertificate();
   const { showToast } = useUi();
   const [pending, setPending] = useState<string | null>(null);
+  /** A forget the vault refused, said in the dialog that asked it. */
+  const [failure, setFailure] = useState<unknown>(null);
   const hosts = Object.keys(certs).sort();
   if (hosts.length === 0) return null;
 
@@ -209,24 +211,41 @@ export function CertificatesSection({ certs }: { certs: Record<string, string> }
         again the next time it connects.
       </p>
       {pending && (
-        <Modal open onClose={() => setPending(null)} centered width={440} title="Forget this certificate?">
+        <Modal
+          open
+          onClose={() => {
+            setPending(null);
+            setFailure(null);
+          }}
+          centered
+          width={440}
+          title="Forget this certificate?"
+        >
           <p className="font-ui text-sm text-text">
             Gerfaut will ask again the next time it connects to {pending}, and refuse until the
             certificate is accepted.
           </p>
+          <SaveFailure error={failure} className="mt-3" />
           <div className="mt-4 flex items-center justify-end gap-3">
-            <Button variant="ghost" onClick={() => setPending(null)}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setPending(null);
+                setFailure(null);
+              }}
+            >
               Cancel
             </Button>
             <Button
               variant="primary"
               disabled={forget.isPending}
-              onClick={() =>
+              onClick={() => {
+                setFailure(null);
                 void forget.mutateAsync(pending).then(() => {
                   setPending(null);
                   showToast("Certificate forgotten");
-                })
-              }
+                }, setFailure);
+              }}
             >
               Forget it
             </Button>
