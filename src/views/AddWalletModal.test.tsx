@@ -78,6 +78,49 @@ describe("AddWalletModal", () => {
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
+  /** Whoever goes back does so to correct what they pasted. */
+  it("goes back to the field with the input still in it", async () => {
+    const user = await confirmStep(PARSED_TPUB);
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByLabelText(/descriptor, extended public key/i)).toHaveValue(
+      "tpubDDnGNapGEY6...",
+    );
+  });
+
+  /** The wallet is in once `add_wallet` answered: a failed move to its
+      network closes the dialog all the same, and says where it went. A
+      second click would only have heard "already watched". */
+  it("closes on a wallet added, even when the network could not follow", async () => {
+    const calls: string[] = [];
+    mockIPC((cmd) => {
+      calls.push(cmd);
+      switch (cmd) {
+        case "parse_input":
+          return { ...PARSED_TPUB, networks: ["testnet4"] };
+        case "add_wallet":
+          return { id: "w-new", network: "testnet4" };
+        case "set_active_network":
+          return Promise.reject({ kind: "vault", message: "the vault could not be written" });
+        default:
+          return undefined;
+      }
+    });
+    useUi.setState({ addWalletOpen: true, toast: null });
+    renderModal();
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText(/descriptor, extended public key/i),
+      "tpubDDnGNapGEY6...",
+    );
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await user.type(await screen.findByLabelText(/name/i), "Cold storage");
+    await user.click(screen.getByRole("button", { name: "Add wallet" }));
+
+    await vi.waitFor(() => expect(useUi.getState().addWalletOpen).toBe(false));
+    expect(useUi.getState().toast).toBe("Wallet added on Testnet 4");
+    expect(calls.filter((cmd) => cmd === "add_wallet")).toHaveLength(1);
+  });
+
   it("drops the notice once the key no longer needs one", async () => {
     await confirmStep({ ...PARSED_TPUB, warnings: [] });
     expect(screen.queryByText(/carries no script type/i)).not.toBeInTheDocument();

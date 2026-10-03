@@ -95,6 +95,14 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
     setName("");
     addWallet.reset();
   };
+  /** Back to the field, with what was pasted still in it: whoever goes
+      back does so to correct it, not to type it again. */
+  const back = () => {
+    setError(null);
+    setParsed(null);
+    setScript(null);
+    addWallet.reset();
+  };
   const close = () => {
     setAddWalletOpen(false);
     reset();
@@ -161,20 +169,28 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
 
   const submit = async () => {
     if (!parsed || name.trim().length === 0) return;
+    let meta;
     try {
-      const meta = await addWallet.mutateAsync({ name, parsed, network });
-      // The workspace follows the wallet that was just added, otherwise
-      // it would land invisible on another network.
-      if (network !== activeNetwork) {
-        await setActiveNetwork.mutateAsync(network);
-      }
-      showToast("Wallet added");
-      close();
-      openWallet(meta.id);
-      sync.mutate(meta.id);
+      meta = await addWallet.mutateAsync({ name, parsed, network });
     } catch (err) {
       setError(isCommandError(err) ? err.message : String(err));
+      return;
     }
+    // The wallet is in from here on: whatever follows, the dialog
+    // closes, or a second click would only hear "already watched".
+    // The workspace follows it to its network, otherwise it would land
+    // out of sight; when that move fails, the toast says where it is.
+    let shown = true;
+    if (network !== activeNetwork) {
+      shown = await setActiveNetwork.mutateAsync(network).then(
+        () => true,
+        () => false,
+      );
+    }
+    showToast(shown ? "Wallet added" : `Wallet added on ${NETWORK_LABEL[network]}`);
+    close();
+    openWallet(meta.id);
+    sync.mutate(meta.id);
   };
 
   return (
@@ -432,7 +448,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
           )}
 
           <div className="flex justify-between">
-            <Button variant="ghost" onClick={reset}>
+            <Button variant="ghost" onClick={back}>
               Back
             </Button>
             <Button
