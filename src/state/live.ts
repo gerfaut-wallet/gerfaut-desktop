@@ -166,22 +166,36 @@ export function waitingWords(coverage: WalletCoverage): string {
     : `${count(coverage.left_out_scripts, "address waits", "addresses wait")} for the next sync.`;
 }
 
-/** The note under the status when the live watch is short of room: its
-    limits, what they leave to the syncs, and the way out. Elsewhere it
-    is the user's own node; on it, the setting of the node that takes
-    more when the node refused addresses, and nothing once the cap is
-    reached. */
+/** Whether the server the watch last spoke to refused part of the list:
+    the wallets then hear fewer scripts than the list holds. A script two
+    wallets share counts for each of them, so this can miss a refusal but
+    never makes one up. Without the wallets, nothing can be told. */
+export function serverRefused(status: WatchStatus): boolean {
+  if (status.wallets.length === 0) return false;
+  const heard = status.wallets.reduce((sum, wallet) => sum + wallet.watched_scripts, 0);
+  return heard < status.watched_scripts;
+}
+
+/** The note under the status when the live watch is short of room: why,
+    what that leaves to the syncs, and the way out. The why is the
+    server's refusal when it refused part of the list, the watch's own
+    limits otherwise. The way out is the user's own node; on it, the
+    setting of the node that takes more when the node refused addresses,
+    and nothing once the cap is reached. */
 export function shortOfRoomWords(status: WatchStatus, ownNode: boolean): {
   limits: string;
   waiting: string;
   remedy: string | null;
 } {
   // On the user's own node, a list below the cap that still leaves
-  // addresses out is the server refusing them: its own limit, which
+  // addresses out is the server refusing them too: its own limit, which
   // its owner can raise.
-  const refused = ownNode && status.watched_scripts < WATCH_LIMITS.ownNode.total;
+  const refused =
+    serverRefused(status) || (ownNode && status.watched_scripts < WATCH_LIMITS.ownNode.total);
   const limits = refused
-    ? "Your node refuses some of the addresses the live watch asks it to follow."
+    ? ownNode
+      ? "Your node refuses some of the addresses the live watch asks it to follow."
+      : "The server refuses some of the addresses the live watch asks it to follow."
     : ownNode
       ? `The live watch follows at most ${groupThousands(String(WATCH_LIMITS.ownNode.total))} addresses, even on your own node.`
       : `The live watch follows at most ${groupThousands(String(WATCH_LIMITS.any.perWallet))} addresses per wallet and ${groupThousands(String(WATCH_LIMITS.any.total))} in all.`;
@@ -190,11 +204,11 @@ export function shortOfRoomWords(status: WatchStatus, ownNode: boolean): {
     "wallet",
     "wallets",
   )} ${status.left_out_scripts === 1 ? "is" : "are"} checked at the next sync instead.`;
-  const remedy = refused
-    ? raiseWords(status.server_software ?? null)
-    : ownNode
-      ? null
-      : `Connect your own node and turn on "This is my node" to follow up to ${groupThousands(String(WATCH_LIMITS.ownNode.total))}.`;
+  const remedy = ownNode
+    ? refused
+      ? raiseWords(status.server_software ?? null)
+      : null
+    : `Connect your own node and turn on "This is my node" to follow up to ${groupThousands(String(WATCH_LIMITS.ownNode.total))}.`;
   return { limits, waiting, remedy };
 }
 

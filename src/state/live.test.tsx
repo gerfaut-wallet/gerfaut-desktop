@@ -12,6 +12,7 @@ import {
   isOwnNode,
   liveStatusLine,
   raiseWords,
+  serverRefused,
   shortOfRoom,
   shortOfRoomWords,
   useLiveEvents,
@@ -153,6 +154,59 @@ describe("room in the live watch", () => {
         "Raise COST_SOFT_LIMIT and COST_HARD_LIMIT in the ElectrumX settings to follow them all.",
     });
     expect(shortOfRoomWords({ ...refused, watched_scripts: 20_000 }, true).remedy).toBe(null);
+  });
+
+  /** The Electrum server of mempool.space takes 100 subscriptions per
+      connection: a list of 150, far below the watch's own limits, leaves
+      50 out because the server refused them, and the note says so. */
+  it("blames the server, not the watch's limits, for what it refused", () => {
+    const refusing: WatchStatus = {
+      ...OFF,
+      state: "connected",
+      watched_scripts: 150,
+      pushed_scripts: 100,
+      left_out_scripts: 50,
+      left_out_wallets: 1,
+      wallets: [{ wallet_id: "w-1", coverage: "partial", watched_scripts: 100, left_out_scripts: 50 }],
+    };
+    expect(serverRefused(refusing)).toBe(true);
+    expect(shortOfRoomWords(refusing, false)).toEqual({
+      limits: "The server refuses some of the addresses the live watch asks it to follow.",
+      waiting: "50 addresses of 1 wallet are checked at the next sync instead.",
+      remedy: 'Connect your own node and turn on "This is my node" to follow up to 20\u00a0000.',
+    });
+
+    // The list full on the user's own node, and the node took half of
+    // it: its own limit, Blockstream's electrs here, not the watch's.
+    const halfTaken: WatchStatus = {
+      ...refusing,
+      watched_scripts: 20_000,
+      pushed_scripts: 10_000,
+      left_out_scripts: 10_000,
+      wallets: [
+        { wallet_id: "w-1", coverage: "partial", watched_scripts: 10_000, left_out_scripts: 10_000 },
+      ],
+      server_software: "electrs-esplora 0.4.1",
+    };
+    expect(shortOfRoomWords(halfTaken, true)).toMatchObject({
+      limits: "Your node refuses some of the addresses the live watch asks it to follow.",
+      remedy: "Raise --electrum-subscription-limit on this electrs to follow them all.",
+    });
+
+    // Every script heard, one of them by two wallets: past the caps,
+    // not refused.
+    const capped: WatchStatus = {
+      ...refusing,
+      watched_scripts: 3,
+      wallets: [
+        { wallet_id: "w-1", coverage: "partial", watched_scripts: 2, left_out_scripts: 50 },
+        { wallet_id: "w-2", coverage: "live", watched_scripts: 2, left_out_scripts: 0 },
+      ],
+    };
+    expect(serverRefused(capped)).toBe(false);
+    expect(shortOfRoomWords(capped, false).limits).toBe(
+      "The live watch follows at most 200 addresses per wallet and 2\u00a0000 in all.",
+    );
   });
 });
 
