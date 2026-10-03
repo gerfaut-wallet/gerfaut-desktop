@@ -1,7 +1,7 @@
 import { Compass, Info, RefreshCw } from "lucide-react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../components/Button";
+import { OpenFailure, useOpenExternal } from "../../components/ExternalLink";
 import { isCommandError } from "../../lib/ipc";
 import { isUpdate } from "../../lib/version";
 import { useCheckUpdate } from "../../state/queries";
@@ -32,6 +32,7 @@ export function AboutSection() {
   const heading = useRef<HTMLHeadingElement>(null);
   const available = latest !== null && isUpdate(latest, APP_VERSION);
   const torUnavailable = useUpdate((state) => state.torUnavailable);
+  const link = useOpenExternal();
 
   // Sent here by the update notice, whose button is gone by now: the
   // card's heading takes the focus it held.
@@ -64,7 +65,7 @@ export function AboutSection() {
                     : ""}
             </span>
             {available && (
-              <Button variant="primary" onClick={() => void openUrl(RELEASES_URL)}>
+              <Button variant="primary" onClick={() => void link.open(RELEASES_URL)}>
                 Get {latest}
               </Button>
             )}
@@ -98,6 +99,7 @@ export function AboutSection() {
             </Button>
           </span>
         </div>
+        <OpenFailure url={link.failed} className="" />
         <div>
           <SettingRow
             title="Check for updates automatically"

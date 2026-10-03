@@ -1,8 +1,8 @@
 import { Copy, ExternalLink, KeyRound } from "lucide-react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Button } from "../../../components/Button";
+import { OpenFailure, useOpenExternal } from "../../../components/ExternalLink";
 import { Notice } from "../../../components/Notice";
 import { PremiumPill } from "../../../components/PremiumPill";
 import type { PremiumStatus } from "../../../lib/ipc";
@@ -270,6 +270,7 @@ function KeyForm({
   onForget?: () => void;
   forgetting?: boolean;
 }) {
+  const link = useOpenExternal();
   const submit = (event: FormEvent) => {
     event.preventDefault();
     onSubmit();
@@ -309,7 +310,7 @@ function KeyForm({
         </p>
       </div>
       <div className="-ml-3 flex flex-wrap items-center gap-1">
-        <Button variant="premium-ghost" onClick={() => void openUrl(PREMIUM_URL)}>
+        <Button variant="premium-ghost" onClick={() => void link.open(PREMIUM_URL)}>
           <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
           Get Premium
         </Button>
@@ -324,6 +325,7 @@ function KeyForm({
           </Button>
         )}
       </div>
+      <OpenFailure url={link.failed} className="" />
     </form>
   );
 }
@@ -333,6 +335,7 @@ function KeyForm({
     lives in the waiting card while this device waits for approval. */
 function KeyInPlace({ status, access }: { status: PremiumStatus; access: DeviceAccess }) {
   const { showToast } = useUi();
+  const link = useOpenExternal();
   // The key's toast is said here: the renewal adds where to paste it.
   const clipboard = useClipboard({ sensitive: true, toast: null });
   const [changing, setChanging] = useState(false);
@@ -358,7 +361,7 @@ function KeyInPlace({ status, access }: { status: PremiumStatus; access: DeviceA
   const renew = async () => {
     const copied = unfinished ? null : await clipboard.copy(key);
     if (copied) showToast(`${copiedWords("Key copied", copied)}, paste it on the renewal page`);
-    await openUrl(RENEW_URL);
+    await link.open(RENEW_URL);
   };
 
   const copyKey = async () => {
@@ -421,6 +424,7 @@ function KeyInPlace({ status, access }: { status: PremiumStatus; access: DeviceA
           Could not copy the key.
         </Notice>
       )}
+      <OpenFailure url={link.failed} className="" />
       {forgetting && canForget && (
         <ForgetKey
           allowDelete={full}

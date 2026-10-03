@@ -14,10 +14,10 @@ import {
   Webhook,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Button } from "../../../components/Button";
+import { OpenFailure, useOpenExternal } from "../../../components/ExternalLink";
 import { Modal } from "../../../components/Modal";
 import { Notice } from "../../../components/Notice";
 import { Pill } from "../../../components/StatusPill";
@@ -558,6 +558,7 @@ function TelegramLink({
   // The code links a chat to the account's alerts: it stays out of the
   // clipboard history. Refused, the message stays selectable on screen.
   const { copy, copied } = useClipboard({ sensitive: true });
+  const link = useOpenExternal();
   /** The message to send the bot by hand, when the link cannot carry
       the code. */
   const typed = startToType(channel);
@@ -610,7 +611,7 @@ function TelegramLink({
         )}
         <span className="flex items-center gap-2">
           {!linked && channel.telegram_url && (
-            <Button variant="secondary" onClick={() => void openUrl(channel.telegram_url!)}>
+            <Button variant="secondary" onClick={() => void link.open(channel.telegram_url!)}>
               <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
               Open Telegram
             </Button>
@@ -620,6 +621,7 @@ function TelegramLink({
           </Button>
         </span>
       </div>
+      <OpenFailure url={link.failed} className="" />
     </div>
   );
 }
@@ -701,6 +703,7 @@ function AddChannelModal({
   // Whoever has the topic reads the alerts: it stays out of the
   // clipboard history. Refused, the URL stays selectable on screen.
   const { copy, copied } = useClipboard({ sensitive: true });
+  const link = useOpenExternal();
 
   // A channel is complete once made: closing the summary keeps it.
   const title =
@@ -842,7 +845,7 @@ function AddChannelModal({
                 <Button
                   variant="secondary"
                   onClick={() =>
-                    void openUrl(step.created.subscribe_url!.replace(/^https?:\/\//, "ntfy://"))
+                    void link.open(step.created.subscribe_url!.replace(/^https?:\/\//, "ntfy://"))
                   }
                 >
                   <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
@@ -852,6 +855,7 @@ function AddChannelModal({
                   Done
                 </Button>
               </div>
+              <OpenFailure url={link.failed} className="" />
             </>
           )}
 

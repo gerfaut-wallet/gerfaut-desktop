@@ -16,7 +16,6 @@ import {
   Undo2,
   Wallet as WalletIcon,
 } from "lucide-react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
@@ -39,8 +38,8 @@ import { useUi } from "../state/store";
 import { AddressChip } from "../components/AddressChip";
 import { UnitAmount, useAmountText, useFiatValue } from "../components/Amount";
 import { Button, IconButton } from "../components/Button";
+import { OpenFailure, useExplorer } from "../components/ExternalLink";
 import { Modal } from "../components/Modal";
-import { Notice } from "../components/Notice";
 import { StatusPill } from "../components/StatusPill";
 import { TxDiagram } from "../components/TxDiagram";
 import type { TxBranch } from "../components/TxDiagram";
@@ -51,23 +50,14 @@ import type { TxBranch } from "../components/TxDiagram";
     bytes — the order the questions come in, not the order the chain
     serializes. */
 export function TxDetailModal({ walletId, network }: { walletId: string; network: Network }) {
-  const { selectedTxid, selectTx, explorerAck, setExplorerAck } = useUi();
+  const { selectedTxid, selectTx } = useUi();
   const detail = useTxDetail(walletId, selectedTxid);
-  const [confirmExplorer, setConfirmExplorer] = useState(false);
-  const [skipNextTime, setSkipNextTime] = useState(false);
 
   const explorerUrl = detail.data ? explorerTxUrl(network, detail.data.summary.txid) : "";
-
-  const openExplorer = () => {
-    if (explorerUrl) void openUrl(explorerUrl);
-  };
-
   // The warning stands between the page and the explorer wherever the
   // button sits: moving it up the page does not move it out of the way.
-  const askExplorer = () => {
-    if (explorerAck) openExplorer();
-    else setConfirmExplorer(true);
-  };
+  // Over this dialog, so a step higher.
+  const explorer = useExplorer(explorerUrl, { z: 60 });
 
   return (
     <Modal open={selectedTxid !== null} onClose={() => selectTx(null)} title="Transaction" width={960}>
@@ -77,7 +67,8 @@ export function TxDetailModal({ walletId, network }: { walletId: string; network
       )}
       {detail.data && (
         <div className="flex flex-col gap-6">
-          <Summary detail={detail.data} onExplorer={explorerUrl === "" ? null : askExplorer} />
+          <Summary detail={detail.data} onExplorer={explorerUrl === "" ? null : explorer.ask} />
+          <OpenFailure url={explorer.failed} className="" />
 
           <TxDiagram
             inputs={inputBranches(detail.data)}
@@ -112,52 +103,7 @@ export function TxDetailModal({ walletId, network }: { walletId: string; network
         </div>
       )}
 
-      <Modal
-        open={confirmExplorer}
-        onClose={() => setConfirmExplorer(false)}
-        title="Open an external explorer"
-        width={460}
-        z={60}
-        centered
-      >
-        <div className="flex flex-col gap-4">
-          {/* Handing an operator the link between this transaction and
-              an IP address is a privacy loss: red, by the rule. */}
-          <Notice tone="alert">
-            <span className="font-medium">
-              This opens the transaction on mempool.space, a third-party website. Its
-              operator can link this transaction to your IP address.
-            </span>
-          </Notice>
-          <p className="font-ui text-sm text-muted">
-            Consider a VPN or Tor if that link matters to you.
-          </p>
-          <label className="flex cursor-pointer items-center gap-2 font-ui text-sm text-text">
-            <input
-              type="checkbox"
-              checked={skipNextTime}
-              onChange={(event) => setSkipNextTime(event.target.checked)}
-              className="size-4 accent-(--color-primary)"
-            />
-            Do not show this warning again
-          </label>
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setConfirmExplorer(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                if (skipNextTime) setExplorerAck(true);
-                setConfirmExplorer(false);
-                openExplorer();
-              }}
-            >
-              Open explorer
-            </Button>
-          </div>
-        </div>
-      </Modal>
+      {explorer.warning}
     </Modal>
   );
 }

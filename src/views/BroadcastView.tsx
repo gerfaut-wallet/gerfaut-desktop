@@ -22,13 +22,13 @@ import {
   Wallet as WalletIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { AddressChip } from "../components/AddressChip";
 import { UnitAmount, useAmountText } from "../components/Amount";
 import { Button } from "../components/Button";
+import { OpenFailure, useExplorer } from "../components/ExternalLink";
 import { Modal } from "../components/Modal";
 import { Pill } from "../components/StatusPill";
 import { Notice } from "../components/Notice";
@@ -755,17 +755,11 @@ function StatusCard({
   /** The one just sent: polled from the start, shown large. */
   live?: boolean;
 }) {
-  const { explorerAck, setExplorerAck } = useUi();
   const [watching, setWatching] = useState(live);
   const status = useTransactionStatus(entry.network, watching ? entry.hex : null);
-  const [confirmExplorer, setConfirmExplorer] = useState(false);
   const [confirmForget, setConfirmForget] = useState(false);
-  const [skipNextTime, setSkipNextTime] = useState(false);
   const url = explorerTxUrl(entry.network, entry.txid);
-
-  const openExplorer = () => {
-    if (url) void openUrl(url);
-  };
+  const explorer = useExplorer(url);
 
   const standing = status.data;
   // A transaction the backend has not seen is most often one it has not
@@ -861,7 +855,7 @@ function StatusCard({
           <Button
             variant="ghost"
             className="h-8"
-            onClick={() => (explorerAck ? openExplorer() : setConfirmExplorer(true))}
+            onClick={explorer.ask}
           >
             <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
             View on mempool.space
@@ -879,48 +873,9 @@ function StatusCard({
           </Button>
         )}
       </div>
+      <OpenFailure url={explorer.failed} />
 
-      <Modal
-        open={confirmExplorer}
-        onClose={() => setConfirmExplorer(false)}
-        title="Open an external explorer?"
-        centered
-      >
-        {/* Handing an operator the link between this transaction and an
-            IP address is a privacy loss: red, by the rule. */}
-        <Notice tone="alert">
-          <span className="font-medium">
-            The explorer's operator can link this transaction to your IP address.
-          </span>
-          <span className="mt-0.5 block text-xs text-muted">
-            Use a VPN or Tor if that matters to you.
-          </span>
-        </Notice>
-        <label className="mt-4 flex cursor-pointer items-center gap-2 font-ui text-sm text-text">
-          <input
-            type="checkbox"
-            checked={skipNextTime}
-            onChange={(event) => setSkipNextTime(event.target.checked)}
-            className="accent-(--color-primary)"
-          />
-          Do not show this warning again
-        </label>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => setConfirmExplorer(false)}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-              if (skipNextTime) setExplorerAck(true);
-              setConfirmExplorer(false);
-              openExplorer();
-            }}
-          >
-            Open
-          </Button>
-        </div>
-      </Modal>
+      {explorer.warning}
 
       <Modal
         open={confirmForget}
