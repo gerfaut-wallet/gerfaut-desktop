@@ -30,6 +30,7 @@ import {
   useTestChannel,
 } from "../../../state/premiumQueries";
 import { useLock } from "../../../state/lock";
+import { useClipboard } from "../../../state/clipboard";
 import { useUi } from "../../../state/store";
 import { FieldLabel, SectionCard } from "../primitives";
 import { IdentityModal } from "./IdentityModal";
@@ -554,22 +555,12 @@ function TelegramLink({
   linked: boolean;
   onDone: () => void;
 }) {
-  const { showToast } = useUi();
-  const [copied, setCopied] = useState(false);
+  // The code links a chat to the account's alerts: it stays out of the
+  // clipboard history. Refused, the message stays selectable on screen.
+  const { copy, copied } = useClipboard({ sensitive: true });
   /** The message to send the bot by hand, when the link cannot carry
       the code. */
   const typed = startToType(channel);
-
-  const copy = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      showToast("Copied");
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // The clipboard refused; the message stays selectable on screen.
-    }
-  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -662,7 +653,6 @@ function AddChannelModal({
   const [failure, setFailure] = useState<unknown>(undefined);
   const [target, setTarget] = useState("");
   const [secret, setSecret] = useState("");
-  const [copied, setCopied] = useState(false);
   const first = channels.length === 0;
 
   const lock = useLock((state) => state.lock);
@@ -708,16 +698,9 @@ function AddChannelModal({
       });
   };
 
-  const copy = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      showToast("Copied");
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // The clipboard refused; the URL stays selectable on screen.
-    }
-  };
+  // Whoever has the topic reads the alerts: it stays out of the
+  // clipboard history. Refused, the URL stays selectable on screen.
+  const { copy, copied } = useClipboard({ sensitive: true });
 
   // A channel is complete once made: closing the summary keeps it.
   const title =

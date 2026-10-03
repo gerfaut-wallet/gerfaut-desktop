@@ -1,6 +1,5 @@
 import { clsx } from "clsx";
 import { Check, ChevronRight, Clock, Coins, Copy, Lock } from "lucide-react";
-import { useState } from "react";
 import type { ReactNode } from "react";
 import { AddressChip } from "../components/AddressChip";
 import { IconButton } from "../components/Button";
@@ -22,7 +21,7 @@ import {
   timelockText,
 } from "../lib/policy";
 import { useSnapshot, useWalletPolicy } from "../state/queries";
-import { useUi } from "../state/store";
+import { useClipboard } from "../state/clipboard";
 
 /** The `label` style: section names, roles, the estimated date. */
 const LABEL = "font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted";
@@ -277,15 +276,10 @@ function KeysSection({ keys }: { keys: PolicyKey[] }) {
 /** The descriptor as imported, folded by default, with the normalized
     policy under it: the keys named, the locks as consensus values. */
 function DescriptorSection({ snapshot }: { snapshot: PolicySnapshot }) {
-  const [copied, setCopied] = useState(false);
-  const showToast = useUi((s) => s.showToast);
-
-  const copy = async () => {
-    await navigator.clipboard.writeText(snapshot.descriptor);
-    setCopied(true);
-    showToast("Copied");
-    setTimeout(() => setCopied(false), 1500);
-  };
+  // The descriptor is what lets anyone watch the wallet: it leaves the
+  // clipboard history out, and the clipboard a minute later.
+  const { copy: copyText, copied } = useClipboard({ sensitive: true });
+  const copy = () => copyText(snapshot.descriptor);
 
   return (
     <details className="group px-1">

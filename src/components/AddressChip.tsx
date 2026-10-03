@@ -1,8 +1,7 @@
 import { clsx } from "clsx";
 import { Check, Copy } from "lucide-react";
-import { useState } from "react";
 import { truncateMiddle } from "../lib/format";
-import { useUi } from "../state/store";
+import { useClipboard } from "../state/clipboard";
 
 /** Inline identifier chip: mono, middle-truncated, click to copy with
     explicit feedback. The full value stays available via `title` and in
@@ -24,15 +23,9 @@ export function AddressChip({
       no one wants spelled letter by letter. */
   label?: string;
 }) {
-  const [copied, setCopied] = useState(false);
-  const showToast = useUi((s) => s.showToast);
-
-  const copy = async () => {
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    showToast("Copied");
-    setTimeout(() => setCopied(false), 1500);
-  };
+  const clipboard = useClipboard();
+  const copied = clipboard.copied;
+  const copy = () => void clipboard.copy(value);
 
   return (
     <button

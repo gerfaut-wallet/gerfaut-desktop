@@ -20,6 +20,7 @@ import {
   useChangeKey,
   useReconnectPremium,
 } from "../../../state/premiumQueries";
+import { copiedWords, useClipboard } from "../../../state/clipboard";
 import { useUi } from "../../../state/store";
 import { FieldLabel, SectionCard } from "../primitives";
 import { ChangeKeyModal } from "./ChangeKeyModal";
@@ -332,12 +333,14 @@ function KeyForm({
     lives in the waiting card while this device waits for approval. */
 function KeyInPlace({ status, access }: { status: PremiumStatus; access: DeviceAccess }) {
   const { showToast } = useUi();
+  // The key's toast is said here: the renewal adds where to paste it.
+  const clipboard = useClipboard({ sensitive: true, toast: null });
   const [changing, setChanging] = useState(false);
   const [forgetting, setForgetting] = useState(false);
   /** The clipboard refused the key: said under the buttons, where it
       was asked, and not in a toast that would be gone before it is
       read. */
-  const [copyFailed, setCopyFailed] = useState(false);
+  const copyFailed = clipboard.failed;
   const key = status.key ?? "";
   const licence = status.licence;
   const connected = status.device !== null && !status.disconnected;
@@ -349,25 +352,18 @@ function KeyInPlace({ status, access }: { status: PremiumStatus; access: DeviceA
   const unfinished = status.key_change_pending;
   const canForget = access !== "pending" && !(unfinished && connected);
 
-  const copy = async (): Promise<boolean> => {
-    const copied = await navigator.clipboard
-      .writeText(key)
-      .then(() => true)
-      .catch(() => false);
-    setCopyFailed(!copied);
-    return copied;
-  };
-
   // The key goes to the clipboard, not into the address: see RENEW_URL.
   // The page opens either way — someone who has the key in hand can
   // still type it. Not a key that may be dead, though.
   const renew = async () => {
-    if (!unfinished && (await copy())) showToast("Key copied, paste it on the renewal page");
+    const copied = unfinished ? null : await clipboard.copy(key);
+    if (copied) showToast(`${copiedWords("Key copied", copied)}, paste it on the renewal page`);
     await openUrl(RENEW_URL);
   };
 
   const copyKey = async () => {
-    if (await copy()) showToast("Key copied");
+    const copied = await clipboard.copy(key);
+    if (copied) showToast(copiedWords("Key copied", copied));
   };
 
   return (

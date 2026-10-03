@@ -34,6 +34,7 @@ import {
 } from "../lib/format";
 import { explorerTxUrl } from "../lib/explorer";
 import { useTxDetail } from "../state/queries";
+import { useClipboard } from "../state/clipboard";
 import { useUi } from "../state/store";
 import { AddressChip } from "../components/AddressChip";
 import { UnitAmount, useAmountText, useFiatValue } from "../components/Amount";
@@ -519,15 +520,8 @@ function Flags({ extras, outputs }: { extras: TxExtras; outputs: TxIo[] }) {
 /** The raw serialized transaction, collapsed by default. */
 function RawTransaction({ hex }: { hex: string }) {
   const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const showToast = useUi((s) => s.showToast);
-
-  const copy = async () => {
-    await navigator.clipboard.writeText(hex);
-    setCopied(true);
-    showToast("Copied");
-    setTimeout(() => setCopied(false), 1500);
-  };
+  const { copy: copyText, copied } = useClipboard();
+  const copy = () => copyText(hex);
 
   return (
     <div className="min-w-0 flex-1">

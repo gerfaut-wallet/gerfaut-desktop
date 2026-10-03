@@ -238,9 +238,17 @@ type Answer = (args: Record<string, unknown>) => unknown;
 
 /** The server as the section sees it, one answer per command, each
     replaceable by a test; every call is kept for the assertions. */
+/** What went to the Rust side's clipboard, which keeps a secret out of
+    the clipboard history and clears it a minute later. */
+const copiedSecrets: string[] = [];
+
 function mockPremium(overrides: Record<string, Answer> = {}) {
   const calls: { cmd: string; args: Record<string, unknown> }[] = [];
   const answers: Record<string, Answer> = {
+    copy_sensitive: (args) => {
+      copiedSecrets.push(String(args.text));
+      return 60;
+    },
     premium_status: () => ACTIVE,
     premium_device: () => THIS_DEVICE,
     premium_devices: () => [THIS_DEVICE],
@@ -298,6 +306,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  copiedSecrets.length = 0;
   TIMING.walletPollMs = 5_000;
   TIMING.telegramPollMs = 3_000;
 });
@@ -443,8 +452,10 @@ describe("the licence card", () => {
     await waitFor(() =>
       expect(opened.urls).toEqual(["https://gerfaut-wallet.com/premium#renew"]),
     );
-    expect(await navigator.clipboard.readText()).toBe("abcd-efgh-ijkm-npqr");
-    expect(useUi.getState().toast).toBe("Key copied, paste it on the renewal page");
+    expect(copiedSecrets).toEqual(["abcd-efgh-ijkm-npqr"]);
+    expect(useUi.getState().toast).toBe(
+      "Key copied for 1 minute, paste it on the renewal page",
+    );
 
     await user.click(screen.getByRole("button", { name: "Forget this key" }));
     expect(of("premium_forget", calls)).toEqual([]);
@@ -1079,7 +1090,7 @@ describe("the channels card", () => {
     expect(within(dialog).getByText("/start ab cd#1")).toBeInTheDocument();
     expect(dialog).not.toHaveTextContent("with the code already in place");
     await user.click(within(dialog).getByRole("button", { name: "Copy" }));
-    expect(await navigator.clipboard.readText()).toBe("/start ab cd#1");
+    await waitFor(() => expect(copiedSecrets).toEqual(["/start ab cd#1"]));
     await user.click(within(dialog).getByRole("button", { name: "Open Telegram" }));
     expect(opened.urls).toEqual(["https://t.me/GerfautAlertsBot"]);
     await user.click(within(dialog).getByRole("button", { name: "Done" }));

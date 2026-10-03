@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { Button } from "../../../components/Button";
 import { Notice } from "../../../components/Notice";
+import { useClipboard } from "../../../state/clipboard";
 import { useHideChecklist, useSetKeySaved } from "../../../state/premiumQueries";
 import { useUi } from "../../../state/store";
 import { SectionCard } from "../primitives";
@@ -39,23 +40,17 @@ export function ProtectCard({
   keyText: string | null;
   protection: Protection;
 }) {
-  const { showToast, openSettings } = useUi();
+  const { openSettings } = useUi();
   const hide = useHideChecklist();
   const saved = useSetKeySaved();
   const [failure, setFailure] = useState<unknown>(undefined);
 
-  /** The clipboard refused the key: said under the step, not in a
-      toast gone before it is read. */
-  const [copyFailed, setCopyFailed] = useState(false);
+  /** `failed`: the clipboard refused the key, said under the step and
+      not in a toast gone before it is read. */
+  const { copy, failed: copyFailed } = useClipboard({ sensitive: true, toast: "Key copied" });
 
   const copyKey = async () => {
-    if (keyText === null) return;
-    const copied = await navigator.clipboard
-      .writeText(keyText)
-      .then(() => true)
-      .catch(() => false);
-    setCopyFailed(!copied);
-    if (copied) showToast("Key copied");
+    if (keyText !== null) await copy(keyText);
   };
 
   return (

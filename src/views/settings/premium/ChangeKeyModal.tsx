@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/Button";
 import { Modal } from "../../../components/Modal";
 import { Notice } from "../../../components/Notice";
+import { useClipboard } from "../../../state/clipboard";
 import { useChangeKey, useSetKeySaved } from "../../../state/premiumQueries";
-import { useUi } from "../../../state/store";
 import { FieldLabel } from "../primitives";
 import { IdentityModal } from "./IdentityModal";
 import { FailureNote } from "./shared";
@@ -33,13 +33,17 @@ export function ChangeKeyModal({
 }) {
   const change = useChangeKey();
   const saved = useSetKeySaved();
-  const { showToast } = useUi();
   const [identity, setIdentity] = useState(false);
   const [failure, setFailure] = useState<unknown>(undefined);
   const [newKey, setNewKey] = useState<string | null>(finished);
   const [stored, setStored] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [copyFailed, setCopyFailed] = useState(false);
+  // Said under the key when the clipboard refuses it, where it is to
+  // be copied from by hand now, and not in a toast gone before it is
+  // read.
+  const { copy: copyText, copied, failed: copyFailed } = useClipboard({
+    sensitive: true,
+    toast: "Key copied",
+  });
   const keyHeading = useRef<HTMLParagraphElement>(null);
 
   // The new key is the one thing on screen now: the focus goes to it,
@@ -49,18 +53,7 @@ export function ChangeKeyModal({
   }, [newKey]);
 
   const copy = async () => {
-    if (newKey === null) return;
-    try {
-      await navigator.clipboard.writeText(newKey);
-      setCopyFailed(false);
-      setCopied(true);
-      showToast("Key copied");
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Said under the key, where it is to be copied from by hand now,
-      // and not in a toast gone before it is read.
-      setCopyFailed(true);
-    }
+    if (newKey !== null) await copyText(newKey);
   };
 
   const done = () => {

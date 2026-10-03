@@ -30,6 +30,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
 
+mod clipboard;
 mod devices;
 mod live;
 mod notice;
@@ -1155,6 +1156,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .manage(clipboard::SensitiveClipboard::default())
         .setup(|app| {
             // A vault that would not open leaves the window to say why,
             // and every command that needs it answers an error until it
@@ -1244,7 +1246,8 @@ pub fn run() {
             premium::premium_heartbeat,
             premium::premium_acknowledge_offline,
             live::live_status,
-            live::send_test_notification
+            live::send_test_notification,
+            clipboard::copy_sensitive
         ])
         .build(context)
         .expect("error while running tauri application")
@@ -1256,6 +1259,11 @@ pub fn run() {
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
             ) {
                 live::shutdown(app);
+            }
+            // A secret copied less than a minute ago does not outlive
+            // the app.
+            if matches!(event, tauri::RunEvent::Exit) {
+                app.state::<clipboard::SensitiveClipboard>().expire_now();
             }
         });
 }

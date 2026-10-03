@@ -1590,8 +1590,18 @@ describe("policy page", () => {
     expect(await main.findByRole("button", { name: /^Policy$/ })).toBeInTheDocument();
   });
 
-  it("copies the descriptor from its folded section", async () => {
-    walletIpc({ wallet_policy: () => LIANA_POLICY });
+  /** The descriptor lets anyone watch the wallet: it goes through the
+      Rust side, out of the clipboard history and off the clipboard a
+      minute later, and the toast says so. */
+  it("copies the descriptor from its folded section, for a minute", async () => {
+    const copied: unknown[] = [];
+    walletIpc({
+      wallet_policy: () => LIANA_POLICY,
+      copy_sensitive: (args) => {
+        copied.push(args.text);
+        return 60;
+      },
+    });
     renderApp();
     const user = userEvent.setup();
     await screen.findByText("Bitcoin price");
@@ -1599,7 +1609,8 @@ describe("policy page", () => {
     await screen.findByText(/A recovery key can spend/);
     await user.click(screen.getByText("Descriptor"));
     await user.click(screen.getByRole("button", { name: "Copy descriptor" }));
-    expect(await navigator.clipboard.readText()).toBe(LIANA_POLICY.descriptor);
+    await waitFor(() => expect(copied).toEqual([LIANA_POLICY.descriptor]));
+    expect(await screen.findByText("Copied for 1 minute")).toBeInTheDocument();
   });
 });
 

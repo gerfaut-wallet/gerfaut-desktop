@@ -1128,6 +1128,10 @@ export const ipc = {
   checkUpdate: () => invoke<UpdateCheck>("check_update"),
   liveStatus: () => invoke<LiveStatus>("live_status"),
   sendTestNotification: () => invoke<void>("send_test_notification"),
+  /** Copies a secret out of sight of the clipboard history, and takes
+      it off the clipboard later unless something else was copied
+      since; the seconds it stays. */
+  copySensitive: (text: string) => invoke<number>("copy_sensitive", { text }),
   appLock: () => invoke<AppLock | null>("app_lock"),
   setAppLock: (kind: LockKind, secret: string, current?: string) =>
     invoke<void>("set_app_lock", { kind, secret, current: current ?? null }),

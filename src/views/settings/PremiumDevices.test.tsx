@@ -73,6 +73,11 @@ const STRANGER: Device = {
 
 type Answer = (args: Record<string, unknown>) => unknown;
 
+/** What the key's copy buttons sent to the Rust side's clipboard, which
+    keeps it out of the clipboard history and clears it a minute later;
+    and whether that clipboard refuses, for the tests that say so. */
+const clipboard = { copied: [] as string[], refuses: false };
+
 function mockPremium(overrides: Record<string, Answer> = {}) {
   const calls: { cmd: string; args: Record<string, unknown> }[] = [];
   const answers: Record<string, Answer> = {
@@ -84,6 +89,11 @@ function mockPremium(overrides: Record<string, Answer> = {}) {
     premium_wallets: () => [],
     premium_channels: () => [],
     premium_events: () => [],
+    copy_sensitive: (args) => {
+      if (clipboard.refuses) return Promise.reject({ kind: "internal", message: "denied" });
+      clipboard.copied.push(String(args.text));
+      return 60;
+    },
     ...overrides,
   };
   mockIPC((cmd, args) => {
@@ -131,6 +141,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  clipboard.copied = [];
+  clipboard.refuses = false;
 });
 
 // --- the devices card --------------------------------------------------------
@@ -970,7 +982,8 @@ describe("changing the key", () => {
     expect(screen.getByRole("dialog", { name: "Change your Premium key" })).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Copy" }));
-    expect(await navigator.clipboard.readText()).toBe("wxyz-2345-6789-abcd");
+    await waitFor(() => expect(clipboard.copied).toEqual(["wxyz-2345-6789-abcd"]));
+    expect(useUi.getState().toast).toBe("Key copied for 1 minute");
 
     const done = within(dialog).getByRole("button", { name: "Done" });
     expect(done).toBeDisabled();
@@ -1184,7 +1197,7 @@ describe("the protect your premium account card", () => {
     );
 
     await user.click(within(steps[2]).getByRole("button", { name: "Copy key" }));
-    expect(await navigator.clipboard.readText()).toBe("abcd-efgh-ijkm-npqr");
+    await waitFor(() => expect(clipboard.copied).toEqual(["abcd-efgh-ijkm-npqr"]));
     await user.click(within(steps[2]).getByRole("button", { name: "Mark as done" }));
     await waitFor(() => expect(of("premium_set_key_saved", calls)).toEqual([{ saved: true }]));
     await waitFor(() =>
@@ -1230,10 +1243,15 @@ describe("the protect your premium account card", () => {
 // --- copying the key --------------------------------------------------------------
 
 describe("copying the key", () => {
-  /** A clipboard that refuses, for the length of one test. */
+  /** A clipboard that refuses, on both sides, until restored: the
+      Rust side's, then the webview's plain one it falls back to. */
   function refusingClipboard() {
+    clipboard.refuses = true;
     const spy = vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("denied"));
-    return () => spy.mockRestore();
+    return () => {
+      clipboard.refuses = false;
+      spy.mockRestore();
+    };
   }
 
   it("offers the key on the licence card until it is saved, and says a refusal under it", async () => {
@@ -1255,7 +1273,7 @@ describe("copying the key", () => {
     restore();
 
     await user.click(copy);
-    expect(await navigator.clipboard.readText()).toBe("abcd-efgh-ijkm-npqr");
+    await waitFor(() => expect(clipboard.copied).toEqual(["abcd-efgh-ijkm-npqr"]));
     await waitFor(() =>
       expect(within(licence.closest("section")!).queryByRole("alert")).not.toBeInTheDocument(),
     );
