@@ -21,6 +21,7 @@ import { OpenFailure, useOpenExternal } from "../../../components/ExternalLink";
 import { Modal } from "../../../components/Modal";
 import { Notice } from "../../../components/Notice";
 import { Pill } from "../../../components/StatusPill";
+import { formatTimestamp } from "../../../lib/format";
 import type { Channel, ChannelKind, NewChannel } from "../../../lib/ipc";
 import {
   useAddChannel,
@@ -121,6 +122,26 @@ function offReason(channel: Channel): string {
   return channel.kind === "webhook"
     ? "This webhook points at an address that is not reachable from the internet, so nothing is delivered to it. Point it at a public address and add it again."
     : "The server turned this channel off, so nothing is delivered to it. Remove it and add it again.";
+}
+
+/** How long deliveries may fail before the row says so: a server or a
+    phone off for a few minutes is no channel gone dead. */
+export const FAILING_AFTER_SECS = 3600;
+
+/** Since when nothing has reached a channel, or null while it delivers
+    or has failed for less than [`FAILING_AFTER_SECS`]. A channel the
+    server turned off says so through its own state instead. */
+export function failingSince(channel: Channel, nowSecs: number): number | null {
+  const since = channel.failing_since ?? null;
+  if (!channel.enabled || since === null) return null;
+  return nowSecs - since >= FAILING_AFTER_SECS ? since : null;
+}
+
+/** What failing deliveries mean, and the way back: fix what it points
+    at and send a test, or start the channel over. */
+function failingReason(since: number, failure: string | null | undefined): string {
+  const why = failure ? ` (${failure})` : "";
+  return `Nothing has reached this channel since ${formatTimestamp(since)}${why}. Send a test once it is fixed, or remove the channel and add it again.`;
 }
 
 /** Why a test on this channel would not go through, or null when it
@@ -321,6 +342,10 @@ export function ChannelsCard({
               // comes first, and the way back is not the one it was
               // waiting for.
               const off = !channel.enabled;
+              // Every delivery failing for an hour or more: the server
+              // still writes to it, and nothing arrives. It looks as
+              // dead as it is, never "Linked".
+              const failing = failingSince(channel, Date.now() / 1000);
               return (
                 <li
                   key={channel.id}
@@ -346,7 +371,7 @@ export function ChannelsCard({
                         {targetOf(channel)}
                       </span>
                     </span>
-                    {off ? (
+                    {off || failing !== null ? (
                       <Pill
                         tone="pending"
                         icon={<AlertTriangle size={12} strokeWidth={2} aria-hidden className="shrink-0" />}
@@ -405,6 +430,11 @@ export function ChannelsCard({
                     // the alerts to arrive again.
                     <Notice tone="info" role="status" className="mt-2">
                       {offReason(channel)}
+                    </Notice>
+                  )}
+                  {failing !== null && (
+                    <Notice tone="info" role="status" className="mt-2">
+                      {failingReason(failing, channel.last_failure)}
                     </Notice>
                   )}
                 </li>

@@ -638,6 +638,14 @@ export interface Channel {
   linked_name: string | null;
   enabled: boolean;
   created_at: number;
+  /** When the server last delivered an alert to it. Null when it never
+      has, and from a server that predates delivery tracking. */
+  last_sent_at?: number | null;
+  /** Since when every delivery has failed; null while they go through. */
+  failing_since?: number | null;
+  /** The last failure in the server's words: "the channel answered
+      404", "the channel could not be reached". */
+  last_failure?: string | null;
   telegram_url: string | null;
 }
 

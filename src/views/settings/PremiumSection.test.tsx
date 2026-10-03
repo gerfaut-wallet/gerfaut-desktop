@@ -12,6 +12,7 @@ import type {
   WalletMeta,
   WalletWatch,
 } from "../../lib/ipc";
+import { formatTimestamp } from "../../lib/format";
 import { TIMING } from "../../lib/premium";
 import { useLock } from "../../state/lock";
 import { useUi } from "../../state/store";
@@ -1353,6 +1354,46 @@ describe("the channels card", () => {
     // The menu stays open, and what can still be done is still offered.
     const remove = within(screen.getByRole("menu")).getByRole("menuitem", { name: "Remove" });
     expect(remove).not.toHaveAttribute("aria-disabled");
+  });
+
+  /** Every delivery failing for an hour: the server still writes to the
+      channel, nothing arrives, and the row says so, with the server's
+      words and the way back. Failing for less is a blip, and the row
+      stays as it was. */
+  it("says a channel that stopped delivering, after an hour", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const dead: Channel = {
+      ...NTFY,
+      id: "c-ntfy-dead",
+      target: "dea…ead",
+      last_sent_at: now - 86_400,
+      failing_since: now - 7_200,
+      last_failure: "the channel answered 404",
+    };
+    const blip: Channel = { ...NTFY, id: "c-ntfy-blip", target: "bli…lip", failing_since: now - 600 };
+    const calls = mockPremium({
+      premium_channels: () => [dead, blip],
+      premium_test_channel: () => undefined,
+    });
+    renderSection();
+    const user = userEvent.setup();
+    await screen.findByText("dea…ead");
+    const rows = card("Channels").getAllByRole("listitem");
+
+    const state = within(rows[0]).getByText("Not delivering");
+    expect(state.closest("[data-tone]")).toHaveAttribute("data-tone", "pending");
+    expect(within(rows[0]).queryByText("Linked")).not.toBeInTheDocument();
+    expect(within(rows[0]).getByRole("status")).toHaveTextContent(
+      `Nothing has reached this channel since ${formatTimestamp(now - 7_200)} (the channel answered 404). Send a test once it is fixed, or remove the channel and add it again.`,
+    );
+    // The test it suggests is there to send.
+    await user.click(screen.getByRole("button", { name: /^More for ntfy dea/ }));
+    await user.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: /^Send a test/ }));
+    await waitFor(() => expect(of("premium_test_channel", calls)).toHaveLength(1));
+
+    // Ten minutes of failures change nothing.
+    expect(within(rows[1]).getByText("Linked")).toBeInTheDocument();
+    expect(within(rows[1]).queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("says a channel the server turned off delivers nothing", async () => {
