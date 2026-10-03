@@ -219,22 +219,27 @@ export function BackupExportModal({
         <div className="flex flex-col gap-4">
           <div>
             <FieldLabel>Wallets</FieldLabel>
-            <Segmented
-              label="Wallets"
-              value={scope}
-              onChange={(value) => setScope(value as "all" | "network")}
-              options={[
-                { value: "all", label: `All wallets (${wallets.length})` },
-                ...(onNetwork.length === wallets.length
-                  ? []
-                  : [
-                      {
-                        value: "network",
-                        label: `${NETWORK_LABEL[activeNetwork]} only (${onNetwork.length})`,
-                      },
-                    ]),
-              ]}
-            />
+            {/* With every wallet on the network shown there is no choice
+                to make: a group of one option read as a second primary
+                button. The count is said plainly. */}
+            {onNetwork.length === wallets.length ? (
+              <p className="font-ui text-sm text-text">
+                All wallets <span className="tabular text-muted">({wallets.length})</span>
+              </p>
+            ) : (
+              <Segmented
+                label="Wallets"
+                value={scope}
+                onChange={(value) => setScope(value as "all" | "network")}
+                options={[
+                  { value: "all", label: `All wallets (${wallets.length})` },
+                  {
+                    value: "network",
+                    label: `${NETWORK_LABEL[activeNetwork]} only (${onNetwork.length})`,
+                  },
+                ]}
+              />
+            )}
           </div>
           <div className="flex items-center justify-between gap-6">
             <div>

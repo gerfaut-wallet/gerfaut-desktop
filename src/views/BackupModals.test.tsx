@@ -301,6 +301,21 @@ describe("exporting a backup", () => {
     expect((sent as { options: { wallet_ids: string[] } }).options.wallet_ids).toEqual(["w1"]);
   });
 
+  /** Every wallet on the network shown: nothing to choose, so no group
+      of one option that would read as a second primary button. */
+  it("says the scope plainly when there is no choice to make", () => {
+    renderModal(
+      <BackupExportModal
+        open
+        onClose={() => {}}
+        wallets={[WALLETS[0]]}
+        activeNetwork="signet"
+      />,
+    );
+    expect(screen.queryByRole("radiogroup", { name: "Wallets" })).not.toBeInTheDocument();
+    expect(screen.getByText("All wallets")).toHaveTextContent("All wallets (1)");
+  });
+
   it("saving the file hands Rust the bytes and a name, and says when it is written", async () => {
     let saved: unknown = null;
     mockIPC((cmd, args) => {
