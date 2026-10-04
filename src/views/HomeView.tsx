@@ -35,6 +35,7 @@ import type { PriceRange, TxSummary, WalletMeta, WalletSnapshot } from "../lib/i
 import { policyDigest } from "../lib/policy";
 import { balanceSeries } from "../lib/series";
 import {
+  torDown,
   usePriceHistory,
   useRenameWallet,
   useSnapshot,
@@ -479,7 +480,11 @@ function PriceCard() {
         </div>
       ) : (
         <p className="font-ui text-sm text-muted">
-          {history.isPending ? "Loading…" : "The price source did not answer."}
+          {history.isPending
+            ? "Loading…"
+            : torDown(history.error)
+              ? "Tor is not available, so no price was asked."
+              : "The price source did not answer."}
         </p>
       )}
     </Card>

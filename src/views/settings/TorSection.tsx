@@ -21,6 +21,12 @@ const HINT: Record<TorMode, string> = {
   embedded: "Only the built-in Tor. The first connection takes a little longer while it starts.",
 };
 
+/** The price takes the route of the syncs, as the update check does:
+    the core sends it through Tor as soon as a backend, on any network,
+    is an onion address, and not at all while Tor cannot be had. */
+export const PRICE_ROUTE =
+  "When a backend is a .onion address, the price goes through Tor too, or is not fetched while Tor is out of reach.";
+
 /** The settings card for how `.onion` backends reach Tor. */
 export function TorSection({ tor }: { tor: TorSettings }) {
   const client = useQueryClient();
@@ -90,7 +96,8 @@ export function TorSection({ tor }: { tor: TorSettings }) {
       <p className="max-w-2xl font-ui text-sm text-muted">
         {embedded
           ? "An address ending in .onion goes through Tor. Gerfaut uses the Tor already running on this machine when there is one, and starts its own otherwise."
-          : "An address ending in .onion goes through Tor. This build has no Tor of its own: start Tor or the Tor Browser first."}
+          : "An address ending in .onion goes through Tor. This build has no Tor of its own: start Tor or the Tor Browser first."}{" "}
+        {PRICE_ROUTE}
       </p>
 
       <div className="mt-4 flex flex-col gap-4">

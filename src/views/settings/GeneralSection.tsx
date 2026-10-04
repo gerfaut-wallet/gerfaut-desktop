@@ -3,7 +3,7 @@ import { Select } from "../../components/Select";
 import { COINGECKO_ONLY_CURRENCIES, SHARED_CURRENCIES, quotesCurrency } from "../../lib/ipc";
 import type { FiatCurrency, PriceSource } from "../../lib/ipc";
 import { formatFiat, relativeTime } from "../../lib/format";
-import { useFiatRate } from "../../state/queries";
+import { torDown, useFiatRate } from "../../state/queries";
 import { useUi } from "../../state/store";
 import type { ThemePref } from "../../state/store";
 import { SectionCard, Segmented, SettingRow, Toggle } from "./primitives";
@@ -195,7 +195,9 @@ function RatePreview() {
   if (rate.isError || !rate.data) {
     return (
       <p className="font-ui text-xs text-pending">
-        The price source did not answer. Amounts show without fiat until it does.
+        {torDown(rate.error)
+          ? "Tor is not available, so no price was asked. Amounts show without fiat until it is."
+          : "The price source did not answer. Amounts show without fiat until it does."}
       </p>
     );
   }

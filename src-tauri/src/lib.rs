@@ -729,21 +729,32 @@ fn public_servers(network: Network) -> Vec<gerfaut_core::chain::public::PublicSe
     gerfaut_core::chain::public::public_servers(network)
 }
 
+/// The current BTC price, by the route the syncs take: through Tor
+/// when a backend is an onion address, and not at all when Tor is
+/// required and cannot be had. That case answers `tor`.
 #[tauri::command]
 async fn fetch_price(
+    state: tauri::State<'_, AppState>,
     source: gerfaut_core::price::PriceSource,
     currency: gerfaut_core::price::FiatCurrency,
 ) -> CommandResult<gerfaut_core::price::PriceQuote> {
-    Ok(gerfaut_core::price::fetch_price(source, currency).await?)
+    state.unlocked()?;
+    Ok(state.manager.fetch_price(source, currency).await?)
 }
 
+/// A BTC price series, by the same route as [`fetch_price`].
 #[tauri::command]
 async fn fetch_price_history(
+    state: tauri::State<'_, AppState>,
     source: gerfaut_core::price::PriceSource,
     currency: gerfaut_core::price::FiatCurrency,
     range: gerfaut_core::price::PriceRange,
 ) -> CommandResult<gerfaut_core::price::PriceHistory> {
-    Ok(gerfaut_core::price::fetch_price_history(source, currency, range).await?)
+    state.unlocked()?;
+    Ok(state
+        .manager
+        .fetch_price_history(source, currency, range)
+        .await?)
 }
 
 /// The repository whose releases the app compares itself with.

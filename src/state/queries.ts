@@ -258,6 +258,12 @@ export function useExportCsv() {
   });
 }
 
+/** Whether a price was not asked because Tor is required and cannot
+    be had: with an onion backend the core sends nothing in the clear. */
+export function torDown(error: unknown): boolean {
+  return isCommandError(error) && error.kind === "tor";
+}
+
 /** Current BTC price, refreshed every minute while fiat display is on. */
 export function useFiatRate() {
   const { fiatEnabled, fiatSource, fiatCurrency } = useUi();
@@ -275,11 +281,11 @@ export function useFiatRate() {
     the configured currency.
  *
  *  `enabled` is the fiat setting and nothing else. A price request is a
- *  request to a third party, in the clear, from this machine at the
- *  moment Gerfaut opened — and with a `.onion` backend it goes out
- *  beside the Tor circuit rather than through it. Fiat display is off
- *  by default because of exactly that, so the chart asks for nothing
- *  until the setting says yes. */
+ *  request to a third party from this machine at the moment Gerfaut
+ *  opened, in the clear unless a backend is a `.onion` address, when
+ *  the core sends it through Tor. Fiat display is off by default
+ *  because of exactly that, so the chart asks for nothing until the
+ *  setting says yes. */
 export function usePriceHistory(range: PriceRange, enabled: boolean) {
   const { fiatSource, fiatCurrency } = useUi();
   return useQuery({

@@ -42,6 +42,18 @@ function mount() {
 
 const radio = (name: string) => screen.getByRole("radio", { name });
 
+describe("the Tor card", () => {
+  /** The price is one more request that follows the syncs. */
+  it("says the price goes through Tor too", () => {
+    mount();
+    expect(
+      screen.getByText(
+        /When a backend is a \.onion address, the price goes through Tor too, or is not fetched while Tor is out of reach\./,
+      ),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("the Tor mode", () => {
   /** The vault answers once the live watch has taken the new route, a
       second or more on a remote server: the choice does not wait. */

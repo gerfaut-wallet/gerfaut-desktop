@@ -901,6 +901,23 @@ describe("overview", () => {
     expect(screen.getByRole("radio", { name: "1Y" })).toBeInTheDocument();
   });
 
+  /** With an onion backend the core sends the price through Tor, and
+      nothing at all while Tor cannot be had: the card says that, not
+      that the source failed to answer. */
+  it("says Tor is out of reach instead of blaming the price source", async () => {
+    withFiat({
+      fetch_price_history: () =>
+        Promise.reject({ kind: "tor", message: "tor: no Tor proxy answers at 127.0.0.1:9050" }),
+    });
+    renderApp();
+    expect(
+      await screen.findByText("Tor is not available, so no price was asked.", undefined, {
+        timeout: 5000,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("The price source did not answer.")).not.toBeInTheDocument();
+  });
+
   it("charts the wallet balance over its life", async () => {
     renderApp();
     expect(
