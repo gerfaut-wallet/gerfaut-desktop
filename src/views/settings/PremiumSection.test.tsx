@@ -1384,7 +1384,7 @@ describe("the channels card", () => {
     expect(state.closest("[data-tone]")).toHaveAttribute("data-tone", "pending");
     expect(within(rows[0]).queryByText("Linked")).not.toBeInTheDocument();
     expect(within(rows[0]).getByRole("status")).toHaveTextContent(
-      `Nothing has reached this channel since ${formatTimestamp(now - 7_200)} (the channel answered 404). Send a test once it is fixed, or remove the channel and add it again.`,
+      `Nothing has reached this channel since ${formatTimestamp(now - 7_200)} (the channel answered 404). Send a test to try again, or remove the channel and add it again.`,
     );
     // The test it suggests is there to send.
     await user.click(screen.getByRole("button", { name: /^More for ntfy dea/ }));
@@ -1394,6 +1394,50 @@ describe("the channels card", () => {
     // Ten minutes of failures change nothing.
     expect(within(rows[1]).getByText("Linked")).toBeInTheDocument();
     expect(within(rows[1]).queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  /** The way back depends on what is at the other end, in the words
+      the Android app uses. */
+  it("says what to do for each kind of channel that stopped delivering", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const failing = { failing_since: now - 7_200, last_failure: null };
+    const bot: Channel = {
+      ...TELEGRAM_WAITING,
+      id: "c-tg-dead",
+      target: "tg…dead",
+      linked: true,
+      link_code: null,
+      telegram_url: null,
+      ...failing,
+    };
+    const mail: Channel = {
+      ...EMAIL_WAITING,
+      id: "c-mail-dead",
+      target: "ma…ead",
+      linked: true,
+      ...failing,
+    };
+    const hook: Channel = {
+      ...WEBHOOK_OFF,
+      id: "c-hook-dead",
+      target: "https://hooks.example.org/dead",
+      enabled: true,
+      ...failing,
+    };
+    mockPremium({ premium_channels: () => [bot, mail, hook] });
+    renderSection();
+    await screen.findByText("tg…dead");
+    const rows = card("Channels").getAllByRole("listitem");
+    const since = `Nothing has reached this channel since ${formatTimestamp(now - 7_200)}.`;
+    expect(within(rows[0]).getByRole("status")).toHaveTextContent(
+      `${since} If the bot was blocked in Telegram, unblock it, then send a test. Otherwise remove the channel and add it again.`,
+    );
+    expect(within(rows[1]).getByRole("status")).toHaveTextContent(
+      `${since} Check that the address still takes mail, then send a test, or remove the channel and add it again.`,
+    );
+    expect(within(rows[2]).getByRole("status")).toHaveTextContent(
+      `${since} Check that the address answers, then send a test, or remove the channel and add it again.`,
+    );
   });
 
   it("says a channel the server turned off delivers nothing", async () => {

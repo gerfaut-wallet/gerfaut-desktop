@@ -137,12 +137,24 @@ export function failingSince(channel: Channel, nowSecs: number): number | null {
   return nowSecs - since >= FAILING_AFTER_SECS ? since : null;
 }
 
-/** What failing deliveries mean, and the way back: fix what it points
-    at and send a test, or start the channel over. */
-function failingReason(since: number, failure: string | null | undefined): string {
-  const why = failure ? ` (${failure})` : "";
-  return `Nothing has reached this channel since ${formatTimestamp(since)}${why}. Send a test once it is fixed, or remove the channel and add it again.`;
+/** What failing deliveries mean, and the way back, which depends on
+    what is at the other end: a bot unblocked, an address that takes
+    mail or answers again, then a test; or the channel started over.
+    The same words as the Android app's. */
+function failingReason(channel: Channel, since: number): string {
+  const why = channel.last_failure ? ` (${channel.last_failure})` : "";
+  return `Nothing has reached this channel since ${formatTimestamp(since)}${why}. ${FAILING_REMEDY[channel.kind]}`;
 }
+
+const FAILING_REMEDY: Record<ChannelKind, string> = {
+  telegram:
+    "If the bot was blocked in Telegram, unblock it, then send a test. Otherwise remove the channel and add it again.",
+  email:
+    "Check that the address still takes mail, then send a test, or remove the channel and add it again.",
+  webhook:
+    "Check that the address answers, then send a test, or remove the channel and add it again.",
+  ntfy: "Send a test to try again, or remove the channel and add it again.",
+};
 
 /** Why a test on this channel would not go through, or null when it
     would. The server writes nothing to a channel it has no target for
@@ -434,7 +446,7 @@ export function ChannelsCard({
                   )}
                   {failing !== null && (
                     <Notice tone="info" role="status" className="mt-2">
-                      {failingReason(failing, channel.last_failure)}
+                      {failingReason(channel, failing)}
                     </Notice>
                   )}
                 </li>
