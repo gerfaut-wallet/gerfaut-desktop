@@ -284,22 +284,22 @@ describe("AddWalletModal", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /scan a qr code/i }));
     await user.click(screen.getByRole("button", { name: "Code seen" }));
-    expect(await screen.findByText(/carries no derivation path/i)).toHaveTextContent(
-      "This QR code carries no derivation path, so Gerfaut assumes receive and change addresses. Compare the first address with your signer.",
+    expect(await screen.findByText(/carries no receive or change path/i)).toHaveTextContent(
+      "This QR code carries no receive or change path, so Gerfaut assumes the usual 0/* and 1/*. Compare the first address with your signer.",
     );
 
     await user.click(screen.getByRole("combobox", { name: "Network" }));
     const list = await screen.findByRole("listbox", { name: "Network" });
     await user.click(within(list).getByRole("option", { name: /^Regtest/ }));
     await vi.waitFor(() => expect(asked).toHaveLength(2));
-    expect(screen.getByText(/carries no derivation path/i)).toBeInTheDocument();
+    expect(screen.getByText(/carries no receive or change path/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Back" }));
     await user.type(screen.getByLabelText(/descriptor, extended public key/i), " ");
     await user.click(screen.getByRole("button", { name: /continue/i }));
     await vi.waitFor(() => expect(asked).toHaveLength(3));
     await screen.findByText(/recognized as/i);
-    expect(screen.queryByText(/carries no derivation path/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/carries no receive or change path/i)).not.toBeInTheDocument();
   });
 
   it("drops the notice once the key no longer needs one", async () => {

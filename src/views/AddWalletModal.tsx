@@ -46,7 +46,7 @@ const WARNING_LABEL: Record<InputWarning, string> = {
   non_standard_derivation:
     "The paths chosen are not the usual 0/* and 1/*: compare the first address with your wallet.",
   assumed_branches:
-    "This QR code carries no derivation path, so Gerfaut assumes receive and change addresses. Compare the first address with your signer.",
+    "This QR code carries no receive or change path, so Gerfaut assumes the usual 0/* and 1/*. Compare the first address with your signer.",
 };
 
 /** How the addresses of each single-key script type start on each
