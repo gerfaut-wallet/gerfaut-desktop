@@ -118,6 +118,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
   const setActiveNetwork = useSetActiveNetwork();
 
   const reset = () => {
+    dropPending();
     scanned.current = null;
     setRaw("");
     setError(null);
@@ -129,6 +130,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
   /** Back to the field, with what was pasted still in it: whoever goes
       back does so to correct it, not to type it again. */
   const back = () => {
+    dropPending();
     setError(null);
     setParsed(null);
     setScript(null);
@@ -167,6 +169,11 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
   const shownOn = useRef<Network>(activeNetwork);
   /** A parse is out: the address on screen may not be the network's. */
   const [parsing, setParsing] = useState(false);
+  /** An answer still on its way is for an input left behind. */
+  const dropPending = () => {
+    latest.current += 1;
+    setParsing(false);
+  };
 
   /** `on` is the network picked; without one this is a new input, and
       it starts on the network on screen when the input allows it. The
