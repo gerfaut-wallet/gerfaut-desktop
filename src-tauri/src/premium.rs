@@ -1317,7 +1317,7 @@ mod tests {
         // The BIP 173 example addresses: public, valid on signet.
         let watched = add(
             "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
-            "Coffre de Paul",
+            "Paul's vault",
         );
         let local = add(
             "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7",
@@ -1333,7 +1333,7 @@ mod tests {
                 .iter()
                 .map(|id| {
                     format!(
-                        r#"{{"id":"{id}","name":"Coffre de Paul","script_kind":"wpkh","watched_since":1790000000,"baseline_at":1790000100,"baseline_height":200000,"coins":1,"value_sats":1000}}"#
+                        r#"{{"id":"{id}","name":"Paul's vault","script_kind":"wpkh","watched_since":1790000000,"baseline_at":1790000100,"baseline_height":200000,"coins":1,"value_sats":1000}}"#
                     )
                 })
                 .collect();

@@ -246,7 +246,7 @@ function Row({
 }
 
 /** A day as YYYY-MM-DD, typed. Not the browser's date field: it
-    writes and reads the day in the language of the system, "jj/mm/aaaa"
+    writes and reads the day in the language of the system, day first
     on a French machine, and Gerfaut speaks one language. A date is a
     number, not an identifier: tabular figures, not the mono face. */
 function DateInput({
