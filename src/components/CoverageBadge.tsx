@@ -28,7 +28,7 @@ export function CoverageBadge({
 }) {
   const waiting = waitingWords(coverage);
   return (
-    <span title={waiting} data-coverage={coverage.coverage} className="inline-flex">
+    <span title={waiting} data-coverage={coverage.coverage} className="inline-flex shrink-0">
       <Pill tone={coverage.coverage === "live" ? "neutral" : "pending"} icon={GLYPH[coverage.coverage]}>
         {COVERAGE_WORDS[coverage.coverage]}
         {!said && <span className="sr-only">. {waiting}</span>}

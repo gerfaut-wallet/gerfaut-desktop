@@ -214,9 +214,16 @@ export function WalletsSection({
                 >
                   {/* The name takes the room there is, and the actions go
                       under it when the row is too narrow for both: a row
-                      that squeezed the name to nothing named nothing. */}
+                      that squeezed the name to nothing named nothing. A
+                      coverage badge beside the name asks for that much
+                      more before the actions may stay on its line. */}
                   <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                    <span className="flex min-w-0 flex-[1_1_10rem] items-center gap-2.5">
+                    <span
+                      className={clsx(
+                        "flex min-w-0 items-center gap-2.5",
+                        coverage ? "flex-[1_1_20rem]" : "flex-[1_1_10rem]",
+                      )}
+                    >
                       {movable && (
                         <span
                           aria-hidden
