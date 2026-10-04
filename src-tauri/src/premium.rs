@@ -1307,10 +1307,7 @@ mod tests {
         let (state, _) = state_with_account(dir.path());
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let add = |address: &str, name: &str| {
-            let options = ImportOptions {
-                script: None,
-                derivation: None,
-            };
+            let options = ImportOptions::default();
             let parsed = gerfaut_core::input::parse_input_with_options(address, &options).unwrap();
             runtime
                 .block_on(state.manager.add_wallet(name, &parsed, Network::Signet))
@@ -2185,10 +2182,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         // A wallet of this vault: the core keeps no yes for one it does
         // not hold. The BIP 173 example address, public, valid on signet.
-        let options = gerfaut_core::input::ImportOptions {
-            script: None,
-            derivation: None,
-        };
+        let options = gerfaut_core::input::ImportOptions::default();
         let parsed = gerfaut_core::input::parse_input_with_options(
             "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
             &options,

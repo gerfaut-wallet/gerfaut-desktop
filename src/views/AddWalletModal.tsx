@@ -148,18 +148,27 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
     setOrigin(result.derivation.origin ?? "");
   };
 
+  /** What the last parse that went through was asked, so a network
+      picked afterwards rebuilds that same wallet on it. */
+  const asked = useRef<{ chosen?: ScriptKind; paths?: DerivationChoice }>({});
+
+  /** `on` is the network picked; without one this is a new input, and
+      it starts on the network on screen when the input allows it. The
+      core derives the first address for the same network. */
   const parse = async (
     input: string,
     chosen?: ScriptKind,
     paths?: DerivationChoice,
+    on?: Network,
   ) => {
     setError(null);
     try {
-      const result = await ipc.parseInput(input, chosen, paths);
+      const result = await ipc.parseInput(input, chosen, paths, on ?? activeNetwork);
       setParsed(result);
       seedDerivation(result);
       setDerivationError(null);
-      if (chosen === undefined && paths === undefined) {
+      asked.current = { chosen, paths };
+      if (on === undefined) {
         setNetwork(
           result.networks.includes(activeNetwork) ? activeNetwork : result.networks[0],
         );
@@ -178,7 +187,16 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
       The derivation goes along, or picking a script would undo it. */
   const chooseScript = (chosen: ScriptKind) => {
     setScript(chosen);
-    void parse(raw, chosen, advanced ? derivation() : undefined);
+    void parse(raw, chosen, advanced ? derivation() : undefined, network);
+  };
+
+  /** The first address belongs to a network: picking another one asks
+      the core for it again, on the wallet as it stands. A regtest
+      wallet shown a signet address would be compared with the wrong
+      one. */
+  const chooseNetwork = (next: Network) => {
+    setNetwork(next);
+    void parse(raw, asked.current.chosen, asked.current.paths, next);
   };
 
   const importFile = async (file: File) => {
@@ -412,7 +430,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
                     <Button
                       variant="secondary"
                       onClick={() =>
-                        void parse(raw, script ?? undefined, derivation())
+                        void parse(raw, script ?? undefined, derivation(), network)
                       }
                     >
                       Apply
@@ -458,7 +476,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
                 label="Network"
                 className="w-40"
                 value={network}
-                onChange={setNetwork}
+                onChange={chooseNetwork}
                 disabled={parsed.networks.length === 1}
                 options={parsed.networks.map((candidate) => ({
                   value: candidate,

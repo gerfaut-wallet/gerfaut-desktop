@@ -299,13 +299,20 @@ pub struct PickedBackup {
 
 /// Classifies pasted or scanned material. `script` and `derivation`
 /// only apply to a lone extended key; everything else fixes its own.
+/// `network` is the one the wallet is about to be added on, which the
+/// first address shown is derived for.
 #[tauri::command]
 fn parse_input(
     input: String,
     script: Option<ScriptKind>,
     derivation: Option<DerivationChoice>,
+    network: Option<Network>,
 ) -> CommandResult<ParsedInput> {
-    let options = ImportOptions { script, derivation };
+    let options = ImportOptions {
+        script,
+        derivation,
+        network,
+    };
     Ok(gerfaut_core::input::parse_input_with_options(
         &input, &options,
     )?)
@@ -1785,10 +1792,7 @@ mod tests {
         // The BIP 173 example address: public, and valid on signet.
         let parsed = gerfaut_core::input::parse_input_with_options(
             "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
-            &ImportOptions {
-                script: None,
-                derivation: None,
-            },
+            &ImportOptions::default(),
         )
         .unwrap();
         runtime
@@ -1833,14 +1837,9 @@ mod tests {
             .unwrap();
         crate::testkit::connect(&state.manager);
         let add = |address: &str, name: &str| {
-            let parsed = gerfaut_core::input::parse_input_with_options(
-                address,
-                &ImportOptions {
-                    script: None,
-                    derivation: None,
-                },
-            )
-            .unwrap();
+            let parsed =
+                gerfaut_core::input::parse_input_with_options(address, &ImportOptions::default())
+                    .unwrap();
             runtime
                 .block_on(state.manager.add_wallet(name, &parsed, Network::Signet))
                 .unwrap()

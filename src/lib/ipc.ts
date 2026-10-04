@@ -51,7 +51,8 @@ export interface ParsedInput {
   warnings: InputWarning[];
   /** Script types the user may switch to; empty when the input fixes it. */
   script_options: ScriptKind[];
-  /** First receive address on the first candidate network, when derivable. */
+  /** First receive address, when derivable: on the network asked for
+      when the input allows it, on the first candidate otherwise. */
   preview_address: string | null;
   /** The derivation in effect; set only for a lone extended key. */
   derivation: DerivationChoice | null;
@@ -1079,11 +1080,19 @@ export const ipc = {
   startupFailure: () => invoke<CommandError | null>("startup_failure"),
   /** Tries the open again after a startup failure. */
   retryOpen: () => invoke<void>("retry_open"),
-  parseInput: (input: string, script?: ScriptKind, derivation?: DerivationChoice) =>
+  /** `network` is the one the wallet is about to be added on: the
+      first address comes back derived for it when the input allows it. */
+  parseInput: (
+    input: string,
+    script?: ScriptKind,
+    derivation?: DerivationChoice,
+    network?: Network,
+  ) =>
     invoke<ParsedInput>("parse_input", {
       input,
       script: script ?? null,
       derivation: derivation ?? null,
+      network: network ?? null,
     }),
   assembleQr: (frames: string[]) => invoke<QrProgress>("assemble_qr", { frames }),
   parseBackend: (input: string) => invoke<ScannedBackend>("parse_backend", { input }),

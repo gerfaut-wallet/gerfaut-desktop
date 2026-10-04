@@ -900,10 +900,7 @@ mod tests {
         // The BIP 173 example address: public, and valid on signet.
         let parsed = gerfaut_core::input::parse_input_with_options(
             "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
-            &ImportOptions {
-                script: None,
-                derivation: None,
-            },
+            &ImportOptions::default(),
         )
         .unwrap();
         let wallet = runtime

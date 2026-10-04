@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ParsedInput } from "../lib/ipc";
@@ -67,6 +67,44 @@ describe("AddWalletModal", () => {
     expect(listbox).toHaveTextContent("P2TR, addresses starting with tb1p");
     expect(listbox).toHaveTextContent("P2SH-P2WPKH, addresses starting with 2");
     expect(listbox).not.toHaveTextContent(/bc1q|bc1p/);
+  });
+
+  /** The first address is the network's own: regtest was shown the
+      signet one, which no regtest wallet ever gives. The core derives
+      it for the network asked, and a network picked asks again, on the
+      same wallet. */
+  it("shows the first address of the network picked", async () => {
+    const asked: Record<string, unknown>[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd !== "parse_input") return undefined;
+      const payload = args as Record<string, unknown>;
+      asked.push(payload);
+      return {
+        ...PARSED_TPUB,
+        preview_address:
+          payload.network === "regtest"
+            ? "bcrt1qpreview0segwit0000000000000000000000"
+            : PARSED_TPUB.preview_address,
+      };
+    });
+    useUi.setState({ addWalletOpen: true });
+    renderModal();
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText(/descriptor, extended public key/i),
+      "tpubDDnGNapGEY6...",
+    );
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await screen.findByText(/recognized as/i);
+    expect(asked.at(-1)).toMatchObject({ network: "signet", script: null, derivation: null });
+    expect(screen.getByTestId("preview-address")).toHaveTextContent(/^tb1q/);
+
+    await user.click(screen.getByRole("combobox", { name: "Network" }));
+    const list = await screen.findByRole("listbox", { name: "Network" });
+    await user.click(within(list).getByRole("option", { name: /^Regtest/ }));
+    expect(await screen.findByText("bcrt1qpreview0segwit0000000000000000000000")).toBeInTheDocument();
+    expect(asked.at(-1)).toMatchObject({ network: "regtest", script: null, derivation: null });
+    expect(screen.getByRole("combobox", { name: "Network" })).toHaveTextContent("Regtest");
   });
 
   it("writes each network's prefixes", () => {
