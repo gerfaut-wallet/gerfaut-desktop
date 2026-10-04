@@ -193,7 +193,7 @@ describe("Settings › Notifications", () => {
     expect(
       await screen.findByText(
         // The matcher reads a no-break space as a space.
-        "The live watch follows at most 200 addresses per wallet and 2 000 in all. 1 240 addresses of 2 wallets are checked at the next sync instead. Connect your own node and turn on \"This is my node\" to follow up to 20 000.",
+        "The live watch follows at most 200 addresses per wallet and 2 000 in all. 1 240 addresses of 2 wallets are checked at the next sync instead. Connect your own node and turn on \"This is my node\" in Network to follow up to 20 000.",
       ),
     ).toBeInTheDocument();
     const user = userEvent.setup();

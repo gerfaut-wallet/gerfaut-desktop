@@ -173,7 +173,7 @@ describe("room in the live watch", () => {
     expect(shortOfRoomWords(refusing, false)).toEqual({
       limits: "The server refuses some of the addresses the live watch asks it to follow.",
       waiting: "50 addresses of 1 wallet are checked at the next sync instead.",
-      remedy: 'Connect your own node and turn on "This is my node" to follow up to 20\u00a0000.',
+      remedy: 'Connect your own node and turn on "This is my node" in Network to follow up to 20\u00a0000.',
     });
 
     // The list full on the user's own node, and the node took half of

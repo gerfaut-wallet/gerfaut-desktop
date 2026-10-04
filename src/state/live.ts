@@ -208,7 +208,7 @@ export function shortOfRoomWords(status: WatchStatus, ownNode: boolean): {
     ? refused
       ? raiseWords(status.server_software ?? null)
       : null
-    : `Connect your own node and turn on "This is my node" to follow up to ${groupThousands(String(WATCH_LIMITS.ownNode.total))}.`;
+    : `Connect your own node and turn on "This is my node" in Network to follow up to ${groupThousands(String(WATCH_LIMITS.ownNode.total))}.`;
   return { limits, waiting, remedy };
 }
 
