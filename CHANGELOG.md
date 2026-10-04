@@ -23,7 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A "This is my node" switch under the address of your own Electrum or Esplora server, in Settings › Network. When it is on, Live follows up to 20 000 addresses instead of 2 000. Leave it off for a server you do not run: it would refuse most of them, and learn every one. Saving the server address again keeps the switch as it was.
 - When Live cannot follow every address, Settings › Notifications says how many addresses of how many wallets wait for the next sync, and how to lift the limit. Each wallet then shows "Live", "Partly live" or "At next sync" in Settings › Wallets and on its Overview. On your own node, if the server itself refuses addresses, the note names the server setting that lets it follow more.
 - Settings › Wallets › Advanced › "Always watch live first" picks the wallets Live follows before the others when it cannot follow every address.
-- A Premium channel that has delivered nothing for an hour now shows "Not delivering", with the server's reason and what to do: send a test once it is fixed, or remove the channel and add it again.
+- A Premium channel that has delivered nothing for an hour now shows "Not delivering", with the server's reason and what to do for that kind of channel: unblock the bot in Telegram, check that the address still takes mail or still answers, then send a test, or remove the channel and add it again.
 - When a screen fails to render, the window says so and offers Reload, instead of going blank.
 - The first screen of an empty vault and the first page of the welcome tour show the full Gerfaut logo, the falcon over its name.
 
@@ -70,6 +70,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - On the Broadcast page, the input and output lists now use the same icons as the diagram above them: an output to someone else points away, and change points back.
 - The Tor mode you pick now shows as selected at once, instead of about a second later. Turning on New transactions shows "Connecting…" while the live watch starts, instead of "Off".
 - When the server itself refuses addresses, Settings › Notifications now says so, instead of blaming the live watch's own limits.
+- In Add a wallet, the first address now belongs to the network you pick, and changes when you pick another one. A key added on regtest shows its bcrt1 address, not the tb1 address of signet.
 
 ### Security
 
@@ -85,6 +86,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Renaming a wallet the Premium server watches now renames it there too, so alerts and Recent alerts use the new name. Gerfaut only sends the new name for a wallet the server lists and watches at that moment.
 - The window can no longer call Tauri's window, webview, menu, tray and path commands, or emit events. It listens to the events Gerfaut sends, opens its short list of addresses, and calls Gerfaut's own commands.
 - On macOS, a second launch now finds the first one through a socket in your own temporary folder, instead of the /tmp folder that every account on the Mac shares.
+- With fiat value on and an onion backend on any network, the price now goes through Tor too, and is not asked at all while Tor is out of reach. Before, the price source saw this computer's IP address every minute, at the same times as the Tor circuits. The Tor card in Settings › Network now says so, and when Tor is out of reach the price lines say "Tor is not available, so no price was asked."
 
 ## [0.1.0] - 2026-09-12
 
