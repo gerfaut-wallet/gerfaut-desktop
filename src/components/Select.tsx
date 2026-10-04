@@ -29,6 +29,7 @@ export function Select<T extends string>({
   label,
   disabled = false,
   size = "md",
+  align = "start",
   className,
 }: {
   id?: string;
@@ -39,6 +40,10 @@ export function Select<T extends string>({
   disabled?: boolean;
   /** `md` is the form gabarit (44px); `sm` sits in a settings row. */
   size?: "md" | "sm";
+  /** The edge of the button the list keeps to when it is the wider:
+      `end` for a narrow select at the right of a dialog, whose list
+      would otherwise run past it and shift the dialog sideways. */
+  align?: "start" | "end";
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -233,7 +238,10 @@ export function Select<T extends string>({
           role="listbox"
           aria-label={label}
           tabIndex={-1}
-          className="absolute left-0 right-0 top-full z-40 mt-1.5 max-h-[320px] min-w-[220px] overflow-y-auto rounded-lg border border-border bg-surface p-1.5 shadow-overlay"
+          className={clsx(
+            "absolute top-full z-40 mt-1.5 max-h-[320px] min-w-[220px] overflow-y-auto rounded-lg border border-border bg-surface p-1.5 shadow-overlay",
+            align === "end" ? "right-0" : "left-0 right-0",
+          )}
         >
           {rows}
         </div>

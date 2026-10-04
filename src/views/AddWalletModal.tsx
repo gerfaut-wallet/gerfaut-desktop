@@ -506,6 +506,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
               <Select
                 id="wallet-network"
                 label="Network"
+                align="end"
                 className="w-40"
                 value={network}
                 onChange={chooseNetwork}
