@@ -1398,6 +1398,70 @@ describe("the channels card", () => {
     expect(within(rows[1]).queryByRole("status")).not.toBeInTheDocument();
   });
 
+  /** The server keeps what a test did on the channel: the list is read
+      again after one it answered, so a channel that delivers again
+      drops its warning at once, and one that still fails gives the new
+      reason. Before, "Not delivering" stayed until the next read. */
+  it("reads the channels again after a test the server answered", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const dead: Channel = {
+      ...NTFY,
+      id: "c-ntfy-dead",
+      target: "dea…ead",
+      last_sent_at: now - 86_400,
+      failing_since: now - 7_200,
+      last_failure: "the channel answered 404",
+    };
+    let channels: Channel[] = [dead];
+    let outcome: "unreachable" | "fails" | "delivers" = "unreachable";
+    const calls = mockPremium({
+      premium_channels: () => channels,
+      premium_test_channel: () => {
+        if (outcome === "unreachable") return refused("premium_unreachable")();
+        if (outcome === "fails") {
+          channels = [{ ...dead, last_failure: "the channel answered 502" }];
+          return refused("premium_rejected", "the channel answered 502")();
+        }
+        channels = [{ ...dead, last_sent_at: now, failing_since: null, last_failure: null }];
+        return undefined;
+      },
+    });
+    renderSection();
+    const user = userEvent.setup();
+    await screen.findByText("dea…ead");
+    const row = () => card("Channels").getByRole("listitem");
+    expect(within(row()).getByText("Not delivering")).toBeInTheDocument();
+    const read = of("premium_channels", calls).length;
+
+    const sendTest = async () => {
+      await user.click(screen.getByRole("button", { name: /^More for ntfy dea/ }));
+      await user.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: /^Send a test/ }));
+    };
+
+    // Never reached the server: nothing changed there, nothing is asked.
+    await sendTest();
+    expect(await screen.findByText("Could not reach the Gerfaut server.")).toBeInTheDocument();
+    expect(of("premium_channels", calls).length).toBe(read);
+
+    // Still failing: the row keeps its warning, with the latest reason.
+    outcome = "fails";
+    await sendTest();
+    await waitFor(() =>
+      expect(within(row()).getByRole("status")).toHaveTextContent("(the channel answered 502)"),
+    );
+    expect(of("premium_channels", calls).length).toBe(read + 1);
+    expect(within(row()).getByText("Not delivering")).toBeInTheDocument();
+
+    // Through: the warning goes without waiting for the next read.
+    outcome = "delivers";
+    await sendTest();
+    await waitFor(() => expect(within(row()).getByText("Linked")).toBeInTheDocument());
+    expect(within(row()).queryByText("Not delivering")).not.toBeInTheDocument();
+    expect(within(row()).queryByRole("status")).not.toBeInTheDocument();
+    expect(of("premium_channels", calls).length).toBe(read + 2);
+    expect(useUi.getState().toast).toBe("Test sent");
+  });
+
   /** The way back depends on what is at the other end, in the words
       the Android app uses. */
   it("says what to do for each kind of channel that stopped delivering", async () => {

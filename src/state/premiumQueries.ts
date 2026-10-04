@@ -325,8 +325,23 @@ export function useDeleteChannel() {
   });
 }
 
+/** Sends a test to a channel. The server keeps what the test did on the
+    channel, clearing its failing when it went through and giving the
+    reason when it did not, so the list is read again whenever the
+    server answered: a channel that delivers again drops "Not
+    delivering" at once, not at the next read. A test that never reached
+    it changed nothing there, and asking again would only add a second
+    "could not reach" under the card. */
 export function useTestChannel() {
-  return useMutation({ mutationFn: (id: string) => ipc.premiumTestChannel(id) });
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => ipc.premiumTestChannel(id),
+    onSettled: (_, error) => {
+      const answered =
+        error === null || (isCommandError(error) && error.kind === "premium_rejected");
+      if (answered) void client.invalidateQueries({ queryKey: premiumKeys.channels });
+    },
+  });
 }
 
 /** Connects this device again with the key the vault keeps, after the
