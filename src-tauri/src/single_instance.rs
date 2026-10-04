@@ -84,15 +84,19 @@ fn socket_path(dir: &Path, identifier: &str) -> Option<PathBuf> {
     (path.as_os_str().len() < MAX_SOCKET_PATH).then_some(path)
 }
 
+/// The name is taken first and knocked on only when it is in use: two
+/// launches at once cannot both take a free name, where knocking first
+/// let the second clear the socket the first had just made and listen
+/// in its place.
 fn claim_at(path: PathBuf) -> Claim {
+    match UnixListener::bind(&path) {
+        Ok(listener) => return Claim::First(Listener { listener, path }),
+        Err(error) if error.kind() == ErrorKind::AddrInUse => {}
+        Err(_) => return Claim::Unavailable,
+    }
     match UnixStream::connect(&path) {
         Ok(_) => Claim::Second,
-        Err(error)
-            if matches!(
-                error.kind(),
-                ErrorKind::NotFound | ErrorKind::ConnectionRefused
-            ) =>
-        {
+        Err(error) if error.kind() == ErrorKind::ConnectionRefused => {
             // Left by a Gerfaut that did not close cleanly: nobody
             // answers on it any more.
             let _ = std::fs::remove_file(&path);
@@ -162,6 +166,28 @@ mod tests {
         knocks.recv_timeout(Duration::from_secs(5)).unwrap();
         release(&path);
         assert!(!path.exists());
+    }
+
+    /// Two launches at once: one takes the name, the other knocks on
+    /// it, never both listening.
+    #[test]
+    fn two_launches_at_once_make_one_first() {
+        let private = dir(0o700);
+        let path = socket_path(private.path(), "gerfaut").unwrap();
+        let claims: Vec<Claim> = (0..8)
+            .map(|_| {
+                let path = path.clone();
+                std::thread::spawn(move || claim_at(path))
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|launch| launch.join().unwrap())
+            .collect();
+        let first = claims
+            .iter()
+            .filter(|claim| matches!(claim, Claim::First(_)))
+            .count();
+        assert_eq!(first, 1, "{claims:?}");
     }
 
     /// A Gerfaut that crashed left its socket behind: the next launch
