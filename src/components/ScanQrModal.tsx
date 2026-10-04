@@ -1,6 +1,6 @@
 import jsQR from "jsqr";
 import { useEffect, useRef, useState } from "react";
-import type { QrProgress } from "../lib/ipc";
+import type { InputWarning, QrProgress } from "../lib/ipc";
 import { ipc, isCommandError } from "../lib/ipc";
 import { Modal } from "./Modal";
 
@@ -18,8 +18,9 @@ export function ScanQrModal({
 }: {
   open: boolean;
   onClose: () => void;
-  /** Called once with the assembled text; the modal closes itself. */
-  onScan: (text: string) => void;
+  /** Called once with the assembled text, and what the core assumed
+      reading the code; the modal closes itself. */
+  onScan: (text: string, warnings: InputWarning[]) => void;
   /** What this scan expects to see. The wallet import and the backend
       settings both open this modal, and telling someone to point at a
       descriptor when they are holding their node's server QR is worse
@@ -88,7 +89,7 @@ export function ScanQrModal({
         if (result.complete) {
           if (result.text) {
             done = true;
-            onScanRef.current(result.text);
+            onScanRef.current(result.text, result.warnings);
             onCloseRef.current();
           } else {
             // Every part arrived and they add up to nothing. Closing on

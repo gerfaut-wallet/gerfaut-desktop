@@ -45,6 +45,8 @@ const WARNING_LABEL: Record<InputWarning, string> = {
   multiple_accounts_in_file: "The file holds several account types; the preferred one was selected.",
   non_standard_derivation:
     "The paths chosen are not the usual 0/* and 1/*: compare the first address with your wallet.",
+  assumed_branches:
+    "This QR code carries no derivation path, so Gerfaut assumes receive and change addresses. Compare the first address with your signer.",
 };
 
 /** How the addresses of each single-key script type start on each
@@ -107,11 +109,16 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
   const [origin, setOrigin] = useState("");
   const [derivationError, setDerivationError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  /** What the core assumed reading the last code scanned, which the
+      text it gave no longer shows: said with that text's own warnings
+      for as long as the field holds it. */
+  const scanned = useRef<{ text: string; warnings: InputWarning[] } | null>(null);
   const addWallet = useAddWallet();
   const sync = useSyncWallet();
   const setActiveNetwork = useSetActiveNetwork();
 
   const reset = () => {
+    scanned.current = null;
     setRaw("");
     setError(null);
     setParsed(null);
@@ -163,7 +170,15 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
   ) => {
     setError(null);
     try {
-      const result = await ipc.parseInput(input, chosen, paths, on ?? activeNetwork);
+      const parsedInput = await ipc.parseInput(input, chosen, paths, on ?? activeNetwork);
+      const assumed = scanned.current?.text === input ? scanned.current.warnings : [];
+      const result = {
+        ...parsedInput,
+        warnings: [
+          ...parsedInput.warnings,
+          ...assumed.filter((warning) => !parsedInput.warnings.includes(warning)),
+        ],
+      };
       setParsed(result);
       seedDerivation(result);
       setDerivationError(null);
@@ -509,7 +524,8 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
       <ScanQrModal
         open={scanOpen}
         onClose={() => setScanOpen(false)}
-        onScan={(text) => {
+        onScan={(text, warnings) => {
+          scanned.current = { text, warnings };
           setRaw(text);
           void parse(text);
         }}

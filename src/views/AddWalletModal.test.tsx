@@ -7,6 +7,37 @@ import type { ParsedInput } from "../lib/ipc";
 import { useUi } from "../state/store";
 import { AddWalletModal, MAX_WALLET_FILE_BYTES, scriptHint } from "./AddWalletModal";
 
+// The camera is out of reach here: the scanner hands over at once the
+// text and warnings the core gives for a crypto-output whose key names
+// no child path.
+vi.mock("../components/ScanQrModal", async () => {
+  const { createElement } = await import("react");
+  return {
+    ScanQrModal: ({
+      open,
+      onScan,
+      onClose,
+    }: {
+      open: boolean;
+      onScan: (text: string, warnings: string[]) => void;
+      onClose: () => void;
+    }) =>
+      open
+        ? createElement(
+            "button",
+            {
+              type: "button",
+              onClick: () => {
+                onScan("wpkh([9a6a2580/84h/1h/0h]tpub.../<0;1>/*)", ["assumed_branches"]);
+                onClose();
+              },
+            },
+            "Code seen",
+          )
+        : null,
+  };
+});
+
 /** A lone tpub: the core keeps Native SegWit and says it assumed it. */
 const PARSED_TPUB: ParsedInput = {
   kind: "extended_key",
@@ -181,6 +212,39 @@ describe("AddWalletModal", () => {
     await vi.waitFor(() => expect(useUi.getState().addWalletOpen).toBe(false));
     expect(useUi.getState().toast).toBe("Wallet added on Testnet 4");
     expect(calls.filter((cmd) => cmd === "add_wallet")).toHaveLength(1);
+  });
+
+  /** The core read a scanned code's missing path as receive and
+      change. The notice stays with the text scanned, through a network
+      picked, and goes once the field holds something else. */
+  it("says a scanned code's branches were assumed", async () => {
+    const asked: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd !== "parse_input") return undefined;
+      asked.push((args as { input: unknown }).input);
+      return { ...PARSED_TPUB, warnings: [] };
+    });
+    useUi.setState({ addWalletOpen: true });
+    renderModal();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /scan a qr code/i }));
+    await user.click(screen.getByRole("button", { name: "Code seen" }));
+    expect(await screen.findByText(/carries no derivation path/i)).toHaveTextContent(
+      "This QR code carries no derivation path, so Gerfaut assumes receive and change addresses. Compare the first address with your signer.",
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Network" }));
+    const list = await screen.findByRole("listbox", { name: "Network" });
+    await user.click(within(list).getByRole("option", { name: /^Regtest/ }));
+    await vi.waitFor(() => expect(asked).toHaveLength(2));
+    expect(screen.getByText(/carries no derivation path/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    await user.type(screen.getByLabelText(/descriptor, extended public key/i), " ");
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await vi.waitFor(() => expect(asked).toHaveLength(3));
+    await screen.findByText(/recognized as/i);
+    expect(screen.queryByText(/carries no derivation path/i)).not.toBeInTheDocument();
   });
 
   it("drops the notice once the key no longer needs one", async () => {

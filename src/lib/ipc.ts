@@ -28,7 +28,8 @@ export type InputWarning =
   | "slip132_converted"
   | "change_not_tracked"
   | "multiple_accounts_in_file"
-  | "non_standard_derivation";
+  | "non_standard_derivation"
+  | "assumed_branches";
 
 /** Where a lone extended key derives its addresses: receive and change
     branches under the key (`0/*`, `1/*`), and the key origin. */
@@ -69,6 +70,9 @@ export interface QrProgress {
   total: number;
   complete: boolean;
   text: string | null;
+  /** What the core assumed reading the code, which `text` no longer
+      shows: said with the warnings of that text. */
+  warnings: InputWarning[];
 }
 
 export type WalletKind =
