@@ -282,8 +282,8 @@ pub(crate) async fn flush_unwatch(state: &AppState, base_url: &str) {
 }
 
 /// Taken by whatever writes a wallet on the server from this device: a
-/// rename, which registers again what the server does not find, and
-/// the removals. One at a time, a removal made while a rename was on
+/// registration, a rename, which registers again what the server does
+/// not find, and the removals. One at a time, a removal made while a rename was on
 /// its way lands after it, and is not undone by it.
 static WALLET_WRITES: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -591,6 +591,9 @@ pub async fn premium_watch_wallet(
     id: String,
 ) -> CommandResult<()> {
     state.unlocked()?;
+    // A removal asked meanwhile is told after this registration, not
+    // before it, which would leave the server watching it.
+    let _held = WALLET_WRITES.lock().await;
     let wallet = state
         .manager
         .list_wallets(None)
