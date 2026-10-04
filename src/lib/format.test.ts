@@ -20,11 +20,10 @@ import {
 
 describe("formatDate", () => {
   it("names the day in the voice of the timestamps, without a time", () => {
-    const at = Date.UTC(2030, 2, 17, 12, 0) / 1000;
-    const local = new Date(at * 1000);
-    const dd = String(local.getDate()).padStart(2, "0");
-    expect(formatDate(at)).toBe(`Mar ${dd}, 2030`);
-    expect(formatDate(at)).not.toMatch(/\d{2}:\d{2}/);
+    // A local date, not a UTC one: UTC noon is already the next day in
+    // UTC+13 and UTC+14, and what is under test is the wording.
+    const at = new Date(2030, 2, 7, 12, 0).getTime() / 1000;
+    expect(formatDate(at)).toBe("Mar 07, 2030");
   });
 });
 
@@ -69,20 +68,16 @@ describe("formatBlocks", () => {
 });
 
 describe("formatTimestamp", () => {
+  // Local dates, not UTC ones: a UTC moment falls on another day in the
+  // zones far from it, and what is under test is the wording.
   it("prints one language, whatever the host speaks", () => {
-    // Local time, so the assertion is built the same way rather than
-    // pinned to a zone: what is under test is the wording.
-    const at = Date.UTC(2026, 7, 28, 18, 56) / 1000;
-    const local = new Date(at * 1000);
-    const hh = String(local.getHours()).padStart(2, "0");
-    const mm = String(local.getMinutes()).padStart(2, "0");
-    expect(formatTimestamp(at)).toBe(`Aug 28, 2026, ${hh}:${mm}`);
+    const at = new Date(2026, 7, 28, 18, 56).getTime() / 1000;
+    expect(formatTimestamp(at)).toBe("Aug 28, 2026, 18:56");
   });
 
   it("keeps a 24-hour clock and pads the day", () => {
-    expect(formatTimestamp(Date.UTC(2026, 0, 5, 12, 0) / 1000)).toMatch(
-      /^Jan 05, 2026, \d{2}:\d{2}$/,
-    );
+    const at = new Date(2026, 0, 5, 9, 5).getTime() / 1000;
+    expect(formatTimestamp(at)).toBe("Jan 05, 2026, 09:05");
   });
 });
 
