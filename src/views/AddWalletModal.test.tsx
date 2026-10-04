@@ -138,6 +138,61 @@ describe("AddWalletModal", () => {
     expect(screen.getByRole("combobox", { name: "Network" })).toHaveTextContent("Regtest");
   });
 
+  /** Two networks picked in a row: the answer for the first may land
+      last, and must not put that network and its address back. A
+      network the core refuses leaves the one shown, with its address. */
+  it("keeps to the last network picked, whatever answers first", async () => {
+    const answers: Record<string, (value: ParsedInput) => void> = {};
+    mockIPC((cmd, args) => {
+      if (cmd !== "parse_input") return undefined;
+      const network = (args as { network: string }).network;
+      if (network === "signet") return PARSED_TPUB;
+      if (network === "testnet4") {
+        return Promise.reject({ kind: "invalid_input", message: "No." });
+      }
+      return new Promise<ParsedInput>((resolve) => {
+        answers[network] = resolve;
+      });
+    });
+    useUi.setState({ addWalletOpen: true });
+    renderModal();
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText(/descriptor, extended public key/i),
+      "tpubDDnGNapGEY6...",
+    );
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await screen.findByText(/recognized as/i);
+    const network = () => screen.getByRole("combobox", { name: "Network" });
+    const pick = async (name: RegExp) => {
+      await user.click(network());
+      const list = await screen.findByRole("listbox", { name: "Network" });
+      await user.click(within(list).getByRole("option", { name }));
+    };
+
+    await pick(/^Testnet 4/);
+    expect(await screen.findByText("No.")).toBeInTheDocument();
+    expect(network()).toHaveTextContent("Signet");
+    expect(screen.getByTestId("preview-address")).toHaveTextContent(/^tb1qpreview0segwit/);
+
+    // Regtest is asked, then signet; signet answers at once, regtest
+    // last. Until an answer, nothing can be added.
+    await user.type(screen.getByLabelText(/^name$/i), "Cold");
+    await pick(/^Regtest/);
+    expect(network()).toHaveTextContent("Regtest");
+    expect(screen.getByRole("button", { name: "Add wallet" })).toBeDisabled();
+    mockIPC((cmd) => (cmd === "parse_input" ? PARSED_TPUB : undefined));
+    await pick(/^Signet/);
+    expect(await screen.findByRole("button", { name: "Add wallet" })).toBeEnabled();
+    answers.regtest({
+      ...PARSED_TPUB,
+      preview_address: "bcrt1qpreview0segwit0000000000000000000000",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(network()).toHaveTextContent("Signet");
+    expect(screen.getByTestId("preview-address")).toHaveTextContent(/^tb1qpreview0segwit/);
+  });
+
   it("writes each network's prefixes", () => {
     expect(scriptHint("segwit", "mainnet")).toBe("P2WPKH, addresses starting with bc1q");
     expect(scriptHint("taproot", "mainnet")).toBe("P2TR, addresses starting with bc1p");

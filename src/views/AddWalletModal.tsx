@@ -158,6 +158,15 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
   /** What the last parse that went through was asked, so a network
       picked afterwards rebuilds that same wallet on it. */
   const asked = useRef<{ chosen?: ScriptKind; paths?: DerivationChoice }>({});
+  /** The last parse asked for: an answer to an earlier one, landing
+      after it, is stale, and would put back a network or a first
+      address the person has already moved away from. */
+  const latest = useRef(0);
+  /** The network of the first address on screen, which a refused pick
+      goes back to. */
+  const shownOn = useRef<Network>(activeNetwork);
+  /** A parse is out: the address on screen may not be the network's. */
+  const [parsing, setParsing] = useState(false);
 
   /** `on` is the network picked; without one this is a new input, and
       it starts on the network on screen when the input allows it. The
@@ -168,9 +177,13 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
     paths?: DerivationChoice,
     on?: Network,
   ) => {
+    const ticket = ++latest.current;
     setError(null);
+    setParsing(true);
     try {
       const parsedInput = await ipc.parseInput(input, chosen, paths, on ?? activeNetwork);
+      if (ticket !== latest.current) return;
+      setParsing(false);
       const assumed = scanned.current?.text === input ? scanned.current.warnings : [];
       const result = {
         ...parsedInput,
@@ -183,12 +196,15 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
       seedDerivation(result);
       setDerivationError(null);
       asked.current = { chosen, paths };
-      if (on === undefined) {
-        setNetwork(
-          result.networks.includes(activeNetwork) ? activeNetwork : result.networks[0],
-        );
-      }
+      const shown =
+        on ?? (result.networks.includes(activeNetwork) ? activeNetwork : result.networks[0]);
+      shownOn.current = shown;
+      setNetwork(shown);
     } catch (err) {
+      if (ticket !== latest.current) return;
+      setParsing(false);
+      // The address on screen is still the one of the network before.
+      setNetwork(shownOn.current);
       const message = isCommandError(err) ? err.message : String(err);
       // A refused path belongs under the fields that caused it; the
       // card above keeps the parse that did work.
@@ -208,7 +224,8 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
   /** The first address belongs to a network: picking another one asks
       the core for it again, on the wallet as it stands. A regtest
       wallet shown a signet address would be compared with the wrong
-      one. */
+      one: until the answer, nothing is added, and a network the core
+      refuses goes back to the one the address belongs to. */
   const chooseNetwork = (next: Network) => {
     setNetwork(next);
     void parse(raw, asked.current.chosen, asked.current.paths, next);
@@ -225,7 +242,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
   };
 
   const submit = async () => {
-    if (!parsed || name.trim().length === 0) return;
+    if (!parsed || parsing || name.trim().length === 0) return;
     let meta;
     try {
       meta = await addWallet.mutateAsync({ name, parsed, network });
@@ -513,7 +530,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
             </Button>
             <Button
               variant="primary"
-              disabled={name.trim().length === 0 || addWallet.isPending}
+              disabled={name.trim().length === 0 || parsing || addWallet.isPending}
               onClick={() => void submit()}
             >
               {addWallet.isPending ? "Adding…" : "Add wallet"}
