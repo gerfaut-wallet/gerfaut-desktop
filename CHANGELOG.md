@@ -70,7 +70,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - On the Broadcast page, the input and output lists now use the same icons as the diagram above them: an output to someone else points away, and change points back.
 - The Tor mode you pick now shows as selected at once, instead of about a second later. Turning on New transactions shows "Connecting…" while the live watch starts, instead of "Off".
 - When the server itself refuses addresses, Settings › Notifications now says so, instead of blaming the live watch's own limits.
+- When a server refuses some of your addresses, Live now asks it again for all of them a day later, or an hour later when it refused every one. Before, it waited until you changed the server or restarted Gerfaut, so a server that refused every address could leave Live off for days.
 - In Add a wallet, the first address now belongs to the network you pick, and changes when you pick another one. A key added on regtest shows its bcrt1 address, not the tb1 address of signet.
+- In Add a wallet, a QR code that gives no derivation path now says that Gerfaut assumes receive and change addresses, and asks you to compare the first address with your signer.
 
 ### Security
 
