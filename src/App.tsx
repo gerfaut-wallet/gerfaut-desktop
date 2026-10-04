@@ -58,8 +58,9 @@ export default function App() {
   // a curtain over a cache full of descriptors and balances.
   const wallets = useWallets(network, lockSeen && !locked);
   // Every network's: the first screen of an empty vault is not the
-  // first screen of a network that only lacks wallets.
-  const everyWallet = useWallets(undefined, lockSeen && !locked);
+  // first screen of a network that only lacks wallets. Asked only when
+  // this network has none, the one case it decides.
+  const everyWallet = useWallets(undefined, lockSeen && !locked && wallets.data?.length === 0);
   const syncAll = useSyncAll();
   // Any sync in flight, not only this hook's: the one a fresh wallet
   // starts, or a single wallet's refresh, must turn the sidebar icon.
