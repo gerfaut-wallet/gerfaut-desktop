@@ -371,6 +371,33 @@ describe("this is my node", () => {
     );
   });
 
+  /** A code read is another server, unless it is the one stored: the
+      switch does not carry over to it. */
+  it("goes off for another server read from a code", async () => {
+    const STORED: Settings = {
+      ...SETTINGS,
+      backends: {
+        mainnet: { type: "custom_electrum", url: "ssl://node.local:50002", own_node: true },
+      },
+    };
+    mockBackendIpc(TRUSTED);
+    const { unmount } = renderBackend(undefined, STORED);
+    const user = userEvent.setup();
+    await scanCode(user, "node.local:50002:s");
+    expect(toggle("This is my node")).toHaveAttribute("aria-checked", "true");
+    unmount();
+
+    mockBackendIpc({
+      ...TRUSTED,
+      url: "ssl://electrum.example.org:50002",
+      host: "electrum.example.org",
+    });
+    renderBackend(undefined, STORED);
+    await scanCode(user, "electrum.example.org:50002:s");
+    expect(field("Host")).toHaveValue("electrum.example.org");
+    expect(toggle("This is my node")).toHaveAttribute("aria-checked", "false");
+  });
+
   it("is not offered for the public servers", async () => {
     mockBackendIpc(TRUSTED);
     renderBackend();

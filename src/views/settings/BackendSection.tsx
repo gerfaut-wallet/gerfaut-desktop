@@ -167,6 +167,10 @@ export function BackendSection({
       setScanError(null);
       setSaveError(null);
       setOnion(backend.onion);
+      // Another server is not the user's node until they say so: left
+      // on, the switch would have the live watch hand it up to 20 000
+      // addresses. The stored server read again keeps it.
+      setOwnNode(isOwnNode(current) && "url" in current && current.url === backend.url);
       if (backend.kind === "esplora") {
         setKind("custom_esplora");
         setEsploraUrl(backend.url);
