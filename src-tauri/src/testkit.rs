@@ -23,7 +23,7 @@ pub(crate) const KEY: &str = "abcd-efgh-ijkm-npqr";
 
 /// One HTTP request, read whole: the head, then as much body as its
 /// `Content-Length` announces.
-fn read_request(stream: &mut std::net::TcpStream) -> String {
+pub(crate) fn read_request(stream: &mut std::net::TcpStream) -> String {
     let mut bytes = Vec::new();
     let mut buf = [0u8; 4096];
     loop {

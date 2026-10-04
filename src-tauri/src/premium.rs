@@ -277,8 +277,15 @@ async fn client(state: &AppState) -> CommandResult<PremiumClient> {
 /// queued in the vault for the next call, and whatever the caller came
 /// to do does not depend on it.
 pub(crate) async fn flush_unwatch(state: &AppState, base_url: &str) {
+    let _held = WALLET_WRITES.lock().await;
     let _ = state.manager.premium_flush_unwatch(base_url).await;
 }
+
+/// Taken by whatever writes a wallet on the server from this device: a
+/// rename, which registers again what the server does not find, and
+/// the removals. One at a time, a removal made while a rename was on
+/// its way lands after it, and is not undone by it.
+static WALLET_WRITES: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// Tells the server about the connections this device dropped while it
 /// could not be reached: a key forgotten offline, an account left for
@@ -614,8 +621,11 @@ pub async fn premium_watch_wallet(
 /// ended from another device, and the consents of a key forgotten for
 /// another. A `PUT` registers what it does not find, so it goes only
 /// for a wallet the server lists right now, and watches: a rename must
-/// never send a descriptor the user took off the server.
+/// never send a descriptor the user took off the server. A removal
+/// asked meanwhile waits for it ([`WALLET_WRITES`]), and one made
+/// before it is read here, wallet gone or consent withdrawn.
 pub(crate) async fn rename_on_server(state: &AppState, base_url: &str, id: &str) {
+    let _held = WALLET_WRITES.lock().await;
     if !state.manager.premium_state().await.is_consented(id) || !connected(state).await {
         return;
     }
@@ -657,6 +667,7 @@ pub async fn premium_unwatch_wallet(
     confirm_identity(&state, &secret).await?;
     let base_url = base_url();
     ensure_device(&state, &base_url).await?;
+    let _held = WALLET_WRITES.lock().await;
     Ok(state.manager.premium_unwatch_wallet(&base_url, &id).await?)
 }
 
@@ -1315,10 +1326,7 @@ mod tests {
                 .id
         };
         // The BIP 173 example addresses: public, valid on signet.
-        let watched = add(
-            "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
-            "Paul's vault",
-        );
+        let watched = add("tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx", "Paul's vault");
         let local = add(
             "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7",
             "Spending",
@@ -1377,6 +1385,98 @@ mod tests {
             "{}",
             sent[0]
         );
+    }
+
+    /// A wallet removed while its new name is on the way to the server
+    /// is told to the server after the rename: the rename registers the
+    /// descriptor again, and the removal then takes it off for good,
+    /// rather than the other way round.
+    #[test]
+    fn a_removal_made_during_a_rename_lands_after_it() {
+        use gerfaut_core::input::ImportOptions;
+        use gerfaut_core::network::Network;
+        use std::io::Write;
+        use std::sync::mpsc;
+
+        let dir = tempfile::tempdir().unwrap();
+        let (state, _) = state_with_account(dir.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let parsed = gerfaut_core::input::parse_input_with_options(
+            "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
+            &ImportOptions::default(),
+        )
+        .unwrap();
+        let id = runtime
+            .block_on(
+                state
+                    .manager
+                    .add_wallet("Paul's vault", &parsed, Network::Signet),
+            )
+            .unwrap()
+            .id;
+        let mut premium = runtime.block_on(state.manager.premium_state());
+        premium.consent(&id, 1_790_000_000);
+        runtime
+            .block_on(state.manager.set_premium_state(premium))
+            .unwrap();
+        runtime
+            .block_on(state.manager.rename_wallet(&id, "Savings"))
+            .unwrap();
+
+        // A server that holds its list of wallets back until it is told.
+        let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let (release, held) = mpsc::channel::<()>();
+        let (seen, requests) = mpsc::channel::<String>();
+        let listing = format!(
+            r#"{{"wallets":[{{"id":"{id}","name":"Paul's vault","script_kind":"wpkh","watched_since":1790000000,"baseline_at":1790000100,"baseline_height":200000,"coins":1,"value_sats":1000}}]}}"#
+        );
+        std::thread::spawn(move || {
+            for (index, stream) in listener.incoming().enumerate() {
+                let Ok(mut stream) = stream else { break };
+                let request = crate::testkit::read_request(&mut stream);
+                let _ = seen.send(request.lines().next().unwrap_or_default().to_owned());
+                if index == 0 {
+                    let _ = held.recv();
+                }
+                let body = if index == 0 {
+                    listing.clone()
+                } else {
+                    "{}".to_owned()
+                };
+                let response = format!(
+                    "HTTP/1.1 200 Stub\r\nContent-Type: application/json\r\n\
+                     Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+
+        let mut lines = Vec::new();
+        runtime.block_on(async {
+            let removal = async {
+                // The rename has asked for the list: remove the wallet
+                // now, while the answer is held back.
+                loop {
+                    if let Ok(line) = requests.try_recv() {
+                        lines.push(line);
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                state.manager.remove_wallet(&id).await.unwrap();
+                release.send(()).unwrap();
+                super::flush_unwatch(&state, &base_url).await;
+            };
+            tokio::join!(super::rename_on_server(&state, &base_url, &id), removal);
+        });
+        lines.extend(requests.try_iter());
+        let order: Vec<&str> = lines
+            .iter()
+            .map(|line| line.split_whitespace().next().unwrap_or_default())
+            .collect();
+        assert_eq!(order, ["GET", "PUT", "DELETE"], "{lines:?}");
     }
 
     fn app_state(manager: WalletManager) -> AppState {
