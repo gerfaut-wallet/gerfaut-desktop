@@ -567,7 +567,7 @@ describe("a device waiting for approval", () => {
     expect(question).toHaveTextContent(/disconnects this device from your Premium account/);
     expect(screen.queryByLabelText("Also delete everything on the server")).not.toBeInTheDocument();
     // Waiting, the device leaves without the secret: nothing depends on it.
-    await user.click(within(question).getByRole("button", { name: "Forget the key" }));
+    await user.click(within(question).getByRole("button", { name: "Forget this key" }));
     await waitFor(() => expect(of("premium_forget", calls)).toEqual([{ secret: null }]));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -596,9 +596,9 @@ describe("a device waiting for approval", () => {
       within(waiting.closest("section")!).getByRole("button", { name: "Forget this key" }),
     );
     await user.click(
-      within(screen.getByRole("status")).getByRole("button", { name: "Forget the key" }),
+      within(screen.getByRole("status")).getByRole("button", { name: "Forget this key" }),
     );
-    await confirmIdentity(user, "Forget the key");
+    await confirmIdentity(user, "Forget this key");
     await waitFor(() =>
       expect(of("premium_forget", calls)).toEqual([{ secret: null }, { secret: PIN }]),
     );
@@ -623,7 +623,7 @@ describe("a device waiting for approval", () => {
       within(waiting.closest("section")!).getByRole("button", { name: "Forget this key" }),
     );
     await user.click(
-      within(screen.getByRole("status")).getByRole("button", { name: "Forget the key" }),
+      within(screen.getByRole("status")).getByRole("button", { name: "Forget this key" }),
     );
     const dialog = await screen.findByRole("dialog", { name: "Confirm it's you" });
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
@@ -842,7 +842,7 @@ describe("a disconnected device", () => {
     await user.click(licence.getByRole("button", { name: "Forget this key" }));
     // Disconnected already: nothing depends on this device, no secret.
     await user.click(
-      within(licence.getByRole("status")).getByRole("button", { name: "Forget the key" }),
+      within(licence.getByRole("status")).getByRole("button", { name: "Forget this key" }),
     );
     await waitFor(() => expect(of("premium_forget", calls)).toEqual([{ secret: null }]));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

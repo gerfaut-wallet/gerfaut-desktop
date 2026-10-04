@@ -118,7 +118,7 @@ export function ForgetKey({
                   : "Delete the account"
                 : forget.isPending
                   ? "Forgetting…"
-                  : "Forget the key"}
+                  : "Forget this key"}
             </Button>
           </span>
         }
@@ -163,7 +163,7 @@ export function ForgetKey({
       )}
       {identity === "forget" && (
         <IdentityModal
-          action="Forget the key"
+          action="Forget this key"
           busyLabel="Forgetting…"
           tone="premium"
           run={(secret) => forget.mutateAsync(secret)}

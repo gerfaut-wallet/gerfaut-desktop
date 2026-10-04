@@ -470,9 +470,9 @@ describe("the licence card", () => {
     // A device with full access leaves behind the app lock's secret:
     // coming back takes an approval or ten days.
     await user.click(screen.getByRole("button", { name: "Forget this key" }));
-    await user.click(within(screen.getByRole("status")).getByRole("button", { name: "Forget the key" }));
+    await user.click(within(screen.getByRole("status")).getByRole("button", { name: "Forget this key" }));
     expect(of("premium_forget", calls)).toEqual([]);
-    await confirmIdentity(user, "Forget the key");
+    await confirmIdentity(user, "Forget this key");
     await waitFor(() => expect(of("premium_forget", calls)).toEqual([{ secret: PIN }]));
     expect(await screen.findByLabelText("Account key")).toBeInTheDocument();
   });
@@ -503,7 +503,9 @@ describe("the licence card", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       /disconnects this device from your Premium account/,
     );
-    const forgetButton = screen.getByRole("button", { name: "Forget the key" });
+    const forgetButton = within(screen.getByRole("status")).getByRole("button", {
+      name: "Forget this key",
+    });
     expect(forgetButton).toBeInTheDocument();
     expect(forgetButton).toHaveClass("bg-premium");
 
