@@ -79,7 +79,7 @@ impl From<CoreError> for CommandError {
             CoreError::BackendUnavailable(_) => "backend_unavailable",
             CoreError::Descriptor(_) => "descriptor",
             CoreError::Tor(_) => "tor",
-            CoreError::Premium(_) | CoreError::Internal(_) => "internal",
+            CoreError::Internal(_) => "internal",
         };
         CommandError::new(kind, error.to_string())
     }
