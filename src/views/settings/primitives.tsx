@@ -33,15 +33,11 @@ export function SectionCard({
   children,
   className,
   headingRef,
-  premium = false,
 }: {
   icon: ReactNode;
   title: string;
   children: ReactNode;
   className?: string;
-  /** A card of the paid service: its glyph takes the premium colour,
-      as the entry that leads here does. */
-  premium?: boolean;
   /** The heading, for a section that moves the focus there once what
       held it is gone — a question answered, a row removed. Given a
       ref, the heading takes the focus from a script and never from
@@ -60,7 +56,7 @@ export function SectionCard({
         tabIndex={headingRef ? -1 : undefined}
         className="mb-4 flex items-center gap-2 font-display text-base font-semibold text-text"
       >
-        <span className={premium ? "text-premium" : "text-muted"}>{icon}</span>
+        <span className="text-muted">{icon}</span>
         {title}
       </h2>
       {children}
@@ -166,7 +162,6 @@ export function Toggle({
   label,
   disabled = false,
   busy = false,
-  tone = "primary",
   describedBy,
   ref,
 }: {
@@ -176,9 +171,6 @@ export function Toggle({
   /** The id of the line that says what the switch does, read out after
       its name. */
   describedBy?: string;
-  /** What the switch acts on when it is on: the app, or the paid
-      service. */
-  tone?: "primary" | "premium";
   /** Greyed and inert, but still there: a switch that cannot be used
       says more than a switch that is gone. */
   disabled?: boolean;
@@ -200,7 +192,7 @@ export function Toggle({
       onClick={() => onChange(!checked)}
       className={clsx(
         "relative h-6 w-11 rounded-full transition-colors duration-150",
-        checked ? (tone === "premium" ? "bg-premium" : "bg-primary") : "bg-border",
+        checked ? "bg-primary" : "bg-border",
         disabled ? "cursor-not-allowed opacity-45" : busy ? "cursor-wait" : "cursor-pointer",
       )}
     >
