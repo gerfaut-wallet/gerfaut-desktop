@@ -1,12 +1,12 @@
-//! Copying what identifies a wallet or opens its alerts.
+//! Copying what identifies a wallet.
 //!
-//! A descriptor, the account key, a Telegram link code or an ntfy topic
-//! put on the clipboard stays there until something else takes its
-//! place: for hours, in the clipboard history Windows keeps, synced to
-//! the cloud clipboard, read by any app that looks. What goes through
-//! here is marked so the system keeps it out of its history and its
-//! cloud, and taken off the clipboard after [`CLEAR_AFTER`] — but only
-//! if it is still there: whatever the person copied since is theirs.
+//! A descriptor put on the clipboard stays there until something else
+//! takes its place: for hours, in the clipboard history Windows keeps,
+//! synced to the cloud clipboard, read by any app that looks. What goes
+//! through here is marked so the system keeps it out of its history and
+//! its cloud, and taken off the clipboard after [`CLEAR_AFTER`] — but
+//! only if it is still there: whatever the person copied since is
+//! theirs.
 //!
 //! An address and a transaction are on the chain for anyone to read,
 //! so they keep the webview's plain clipboard: a flag spent on things
@@ -272,7 +272,7 @@ mod tests {
     #[test]
     fn what_the_person_copied_since_is_left_alone() {
         let (clipboard, board) = fake();
-        let generation = clipboard.copy("GERFAUT-KEY").unwrap();
+        let generation = clipboard.copy("wpkh(DESCRIPTOR)").unwrap();
         board.user_copies("a note of their own");
         assert_eq!(clipboard.expire(generation), Expiry::LeftAlone);
         assert_eq!(board.holds().as_deref(), Some("a note of their own"));
@@ -283,10 +283,10 @@ mod tests {
     #[test]
     fn an_older_timer_leaves_a_newer_copy_its_time() {
         let (clipboard, board) = fake();
-        let first = clipboard.copy("/start 1234").unwrap();
-        let second = clipboard.copy("/start 5678").unwrap();
+        let first = clipboard.copy("wpkh(FIRST)").unwrap();
+        let second = clipboard.copy("wpkh(SECOND)").unwrap();
         assert_eq!(clipboard.expire(first), Expiry::LeftAlone);
-        assert_eq!(board.holds().as_deref(), Some("/start 5678"));
+        assert_eq!(board.holds().as_deref(), Some("wpkh(SECOND)"));
         assert_eq!(clipboard.expire(second), Expiry::Cleared);
     }
 
@@ -295,7 +295,7 @@ mod tests {
     #[test]
     fn a_busy_clipboard_is_tried_again() {
         let (clipboard, board) = fake();
-        let generation = clipboard.copy("GERFAUT-KEY").unwrap();
+        let generation = clipboard.copy("wpkh(DESCRIPTOR)").unwrap();
         *board.busy.lock().unwrap() = true;
         assert_eq!(clipboard.expire(generation), Expiry::Busy);
         *board.busy.lock().unwrap() = false;
@@ -306,12 +306,12 @@ mod tests {
     #[test]
     fn closing_the_app_clears_its_own_copy_only() {
         let (clipboard, board) = fake();
-        clipboard.copy("GERFAUT-KEY").unwrap();
+        clipboard.copy("wpkh(DESCRIPTOR)").unwrap();
         clipboard.expire_now();
         assert_eq!(board.holds(), None);
 
         let (clipboard, board) = fake();
-        clipboard.copy("GERFAUT-KEY").unwrap();
+        clipboard.copy("wpkh(DESCRIPTOR)").unwrap();
         board.user_copies("theirs");
         clipboard.expire_now();
         assert_eq!(board.holds().as_deref(), Some("theirs"));
@@ -322,10 +322,10 @@ mod tests {
     #[test]
     fn a_cleared_copy_is_forgotten() {
         let (clipboard, board) = fake();
-        let generation = clipboard.copy("GERFAUT-KEY").unwrap();
+        let generation = clipboard.copy("wpkh(DESCRIPTOR)").unwrap();
         assert_eq!(clipboard.expire(generation), Expiry::Cleared);
-        board.user_copies("GERFAUT-KEY");
+        board.user_copies("wpkh(DESCRIPTOR)");
         clipboard.expire_now();
-        assert_eq!(board.holds().as_deref(), Some("GERFAUT-KEY"));
+        assert_eq!(board.holds().as_deref(), Some("wpkh(DESCRIPTOR)"));
     }
 }

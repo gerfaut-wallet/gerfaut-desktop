@@ -287,11 +287,6 @@ pub(crate) fn within_budget(
     let mut out = Vec::new();
     for notice in notices {
         let (budget, last_call) = match notice.kind {
-            // Announced once each, never in a flood: nothing to count.
-            NoticeKind::Device => {
-                out.push(notice);
-                continue;
-            }
             NoticeKind::Transaction => (
                 &mut budgets.transactions,
                 "More transactions are coming in. Open Gerfaut to see them.",
@@ -895,7 +890,6 @@ mod tests {
             manager: WalletManager::open(dir.path(), VaultKey::Raw([7u8; 32])).unwrap(),
             locked: AtomicBool::new(false),
             live: LiveAlerts::default(),
-            devices: crate::devices::DeviceWatch::default(),
         };
         // The BIP 173 example address: public, and valid on signet.
         let parsed = gerfaut_core::input::parse_input_with_options(

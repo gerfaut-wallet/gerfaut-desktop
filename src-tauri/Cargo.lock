@@ -2623,7 +2623,6 @@ dependencies = [
  "notify-rust",
  "rand 0.9.5",
  "serde",
- "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

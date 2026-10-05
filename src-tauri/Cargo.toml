@@ -56,8 +56,6 @@ windows = { version = "0.61", features = ["Data_Xml_Dom", "Foundation_Collection
 [dev-dependencies]
 # A vault of their own for the tests that open one.
 tempfile = "3"
-# The tests read back what the commands hand the window.
-serde_json = "1"
 
 # Cargo only honours [patch] in the root manifest: the same pin as in
 # gerfaut-core, see the note there.
