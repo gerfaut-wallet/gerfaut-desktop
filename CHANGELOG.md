@@ -119,6 +119,6 @@ Gerfaut watches Bitcoin wallets it cannot spend from. There is no key generation
 
 ### Verifying a download
 
-Every release carries a `SHA256SUMS` manifest signed with minisign. The key and the two commands are in [README.md](README.md). The workflow that builds a release pins every action and packaging tool by hash and holds no token that could write to the repository.
+Every release carries a `SHA256SUMS` manifest signed with minisign. The key and the two commands are in [README.md](README.md). The workflow that builds a release pins every action and packaging tool by hash. Every job runs with a read-only token, except the last one, which only drafts the release from the files the others built.
 
 [0.1.0]: https://github.com/gerfaut-wallet/gerfaut-desktop/releases/tag/v0.1.0
