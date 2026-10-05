@@ -7,6 +7,11 @@ import { Notice } from "../../components/Notice";
 import { useRadioGroup } from "../../components/radioGroup";
 import { errorMessage } from "../../lib/ipc";
 
+/** A ghost on a tinted panel: hover in Neige with a hairline rather
+    than the Givre that would read dirty there; Givre again in dark. */
+export const GHOST_ON_TINT =
+  "h-9 hover:bg-surface hover:shadow-[inset_0_0_0_1px_var(--color-border)] dark:hover:bg-sunken dark:hover:shadow-none";
+
 /** What a setting that was not saved leaves under it: the amber note,
     in the core's words, until the next try. Never a toast, which would
     be gone before it is read, and never a control left showing a value

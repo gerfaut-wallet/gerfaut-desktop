@@ -19,8 +19,6 @@ import { BalanceChart } from "../components/BalanceChart";
 import { CoverageBadge } from "../components/CoverageBadge";
 import { LoadFailure } from "../components/LoadFailure";
 import { useRadioGroup } from "../components/radioGroup";
-import { NewDeviceBanner } from "../components/NewDeviceBanner";
-import { WatchOfflineBanner } from "../components/WatchOfflineBanner";
 import {
   MASKED,
   formatAmountSigned,
@@ -77,10 +75,6 @@ export function HomeView({ walletId }: { walletId: string }) {
 
   return (
     <div className="flex h-full min-h-[560px] flex-col pb-2">
-      {/* The server's watch gone quiet is said before anything else,
-          and so is a stranger's device asking into the account. */}
-      <WatchOfflineBanner className="mb-4 mt-2" />
-      <NewDeviceBanner className="mb-4 mt-2" />
       {/* No freshness line here: Watch status carries it below. */}
       <header className="px-1 pb-4 pt-2">
         <WalletTitle key={meta.id} meta={meta} />

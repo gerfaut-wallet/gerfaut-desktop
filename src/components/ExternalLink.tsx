@@ -6,9 +6,9 @@ import { Modal } from "./Modal";
 import { Notice } from "./Notice";
 
 /** Opens a link in the app the system picks for it, and remembers the
-    one that nothing opened: a Linux desktop with no handler for
-    `ntfy://`, a browser that would not start. The call used to fail
-    without a word, and the button looked broken. */
+    one that nothing opened: a desktop with no browser set, a browser
+    that would not start. The call used to fail without a word, and the
+    button looked broken. */
 export function useOpenExternal() {
   const [failed, setFailed] = useState<string | null>(null);
   const open = useCallback(async (url: string): Promise<boolean> => {

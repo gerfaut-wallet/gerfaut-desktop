@@ -8,7 +8,6 @@ import { BackupSection } from "./settings/BackupSection";
 import { GeneralSection } from "./settings/GeneralSection";
 import { NetworkSection } from "./settings/NetworkSection";
 import { NotificationsSection } from "./settings/NotificationsSection";
-import { PremiumSection } from "./settings/PremiumSection";
 import { SecuritySection } from "./settings/SecuritySection";
 import { SettingsNav } from "./settings/SettingsNav";
 import { WalletsSection } from "./settings/WalletsSection";
@@ -30,14 +29,11 @@ export function SettingsView({
   const content: Record<SettingsSection, ReactNode> = {
     general: <GeneralSection />,
     network: <NetworkSection settings={settings} />,
-    wallets: (
-      <WalletsSection wallets={wallets} gapLimit={settings.gap_limit} premium={settings.premium} />
-    ),
+    wallets: <WalletsSection wallets={wallets} gapLimit={settings.gap_limit} />,
     security: <SecuritySection lock={settings.app_lock} />,
     notifications: <NotificationsSection settings={settings} />,
     backup: <BackupSection activeNetwork={settings.active_network} />,
     about: <AboutSection />,
-    premium: <PremiumSection wallets={wallets} />,
   };
 
   const select = (next: SettingsSection) => {

@@ -16,13 +16,11 @@ import { Button, IconButton } from "../../components/Button";
 import { CoverageBadge } from "../../components/CoverageBadge";
 import { DropLine, useDragReorder } from "../../components/DragReorder";
 import { Notice } from "../../components/Notice";
-import { isCommandError } from "../../lib/ipc";
-import type { PremiumState, WalletMeta, WalletWatch } from "../../lib/ipc";
+import { errorMessage, isCommandError } from "../../lib/ipc";
+import type { WalletMeta } from "../../lib/ipc";
 import { moveItem } from "../../lib/reorder";
-import { premiumFailure } from "../../lib/premium";
 import { walletGlyph } from "../../lib/walletIcons";
 import { coverageOf, useLiveStatus } from "../../state/live";
-import { usePremiumWallets } from "../../state/premiumQueries";
 import {
   useRemoveWallet,
   useRenameWallet,
@@ -33,8 +31,7 @@ import {
 } from "../../state/queries";
 import { useUi } from "../../state/store";
 import { useWalletOrder } from "../../state/walletOrder";
-import { IdentityModal } from "./premium/IdentityModal";
-import { SaveFailure, SectionCard, SettingRow, Toggle } from "./primitives";
+import { GHOST_ON_TINT, SaveFailure, SectionCard, SettingRow, Toggle } from "./primitives";
 import { WalletIconPicker } from "./WalletIconPicker";
 
 /** Numeric gap-limit field: commits on blur or Enter, clamped to what
@@ -90,49 +87,18 @@ function GapLimitField({
 /** Where a refused gap limit is said, among the rows' wallet ids. */
 const GAP_LIMIT = "gap-limit";
 
-/** Whether removing a wallet also ends the server's watch of it. The
-    core queues the unwatch when a key is set and the wallet was agreed
-    to, so that is the rule read here; the server's own list, when the
-    Premium section already fetched it, narrows the answer — a wallet
-    switched off there was agreed to once and is watched no more. */
-function watchedByServer(
-  premium: PremiumState,
-  server: WalletWatch[] | undefined,
-  id: string,
-): boolean {
-  if (premium.key === null || !premium.watched.some((wallet) => wallet.wallet_id === id)) {
-    return false;
-  }
-  return server === undefined || server.some((wallet) => wallet.id === id);
-}
-
-/** Whether removing a wallet takes the app lock's secret: the rule the
-    Rust side holds to, a key set and the wallet agreed to. Ending the
-    server's watch by removing the wallet must not be the way around the
-    secret that unwatching it asks for. */
-function removalNeedsIdentity(premium: PremiumState, id: string): boolean {
-  return premium.key !== null && premium.watched.some((wallet) => wallet.wallet_id === id);
-}
-
 /** The shared gap limit, then every wallet of the shown network in the
     order it is listed everywhere, with what can be done to it: move,
     change its icon, rescan, rename, remove. */
 export function WalletsSection({
   wallets,
   gapLimit,
-  premium,
 }: {
   wallets: WalletMeta[];
   gapLimit: number;
-  /** The account as the vault keeps it: enough to know, with no
-      network, which removal the server will hear about. */
-  premium: PremiumState;
 }) {
   const { showToast, syncErrors } = useUi();
   const removeWallet = useRemoveWallet();
-  // What the server said it watches, if the Premium section asked it
-  // this session. Read from the cache only: this section asks nothing.
-  const server = usePremiumWallets(false);
   const renameWallet = useRenameWallet();
   const setIcon = useSetWalletIcon();
   const rescan = useRescanWallet();
@@ -142,8 +108,6 @@ export function WalletsSection({
   // only while it is short of room.
   const live = useLiveStatus();
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
-  /** The removal whose yes was given and waits for the secret. */
-  const [identity, setIdentity] = useState<string | null>(null);
   /** What a removal left behind, under its row. */
   const [removeFailure, setRemoveFailure] = useState<{ id: string; error: unknown } | null>(
     null,
@@ -381,7 +345,7 @@ export function WalletsSection({
                       action={<span className="flex items-center gap-2">
                         <Button
                           variant="ghost"
-                          className="h-9 hover:bg-surface hover:shadow-[inset_0_0_0_1px_var(--color-border)] dark:hover:bg-sunken dark:hover:shadow-none"
+                          className={GHOST_ON_TINT}
                           onClick={() => setConfirmRemove(null)}
                         >
                           Cancel
@@ -393,20 +357,13 @@ export function WalletsSection({
                           aria-busy={removeWallet.isPending || undefined}
                           onClick={() => {
                             setRemoveFailure(null);
-                            if (removalNeedsIdentity(premium, wallet.id)) {
-                              setIdentity(wallet.id);
-                              return;
-                            }
-                            removeWallet.mutate(
-                              { id: wallet.id },
-                              {
-                                onSuccess: () => {
-                                  setConfirmRemove(null);
-                                  showToast("Wallet removed");
-                                },
-                                onError: (error) => setRemoveFailure({ id: wallet.id, error }),
+                            removeWallet.mutate(wallet.id, {
+                              onSuccess: () => {
+                                setConfirmRemove(null);
+                                showToast("Wallet removed");
                               },
-                            );
+                              onError: (error) => setRemoveFailure({ id: wallet.id, error }),
+                            });
                           }}
                         >
                           Remove wallet
@@ -416,16 +373,11 @@ export function WalletsSection({
                       Removing "{wallet.name}" deletes its labels and cached
                       history from Gerfaut, and cannot be undone. It only stops
                       watching: nothing moves on chain.
-                      {/* The terms promise it, the server cascades it: the
-                          alert history goes with the wallet. Said here,
-                          where the decision is made. */}
-                      {watchedByServer(premium, server.data, wallet.id) &&
-                        " The server stops watching it too, and deletes its alert history."}
                     </Notice>
                   )}
                   {confirmRemove === wallet.id && removeFailure?.id === wallet.id && (
                     <p role="alert" className="mt-2 font-ui text-xs text-muted">
-                      {premiumFailure(removeFailure.error).message}
+                      Not removed: {errorMessage(removeFailure.error)}
                     </p>
                   )}
                 </li>
@@ -436,24 +388,6 @@ export function WalletsSection({
         </div>
       )}
       {shown.length > 0 && <LivePins wallets={shown} />}
-      {identity !== null && (
-        <IdentityModal
-          action="Remove wallet"
-          busyLabel="Removing…"
-          tone="danger"
-          run={(secret) => removeWallet.mutateAsync({ id: identity, secret })}
-          onDone={() => {
-            setIdentity(null);
-            setConfirmRemove(null);
-            showToast("Wallet removed");
-          }}
-          onFailure={(error) => {
-            setRemoveFailure({ id: identity, error });
-            setIdentity(null);
-          }}
-          onCancel={() => setIdentity(null)}
-        />
-      )}
     </SectionCard>
   );
 }

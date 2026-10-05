@@ -2,13 +2,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "./components/Button";
 import { EmptyState } from "./components/EmptyState";
-import { NewDeviceBanner } from "./components/NewDeviceBanner";
 import { Toast } from "./components/Toast";
 import { UpdateNotice } from "./components/UpdateNotice";
 import { Sidebar } from "./shell/Sidebar";
 import { useLiveEvents } from "./state/live";
 import { isLockedError, lockedSettings, useLock, useLockShortcut } from "./state/lock";
-import { useDeviceWatch, usePremiumWatch } from "./state/premium";
 import { useUpdateCheck } from "./state/update";
 import { LockScreen } from "./views/LockScreen";
 import { WelcomeTour } from "./views/WelcomeTour";
@@ -33,19 +31,6 @@ import { SettingsView } from "./views/SettingsView";
 import { TransactionsView } from "./views/TransactionsView";
 import { TxDetailModal } from "./views/TxDetailModal";
 import { UtxosView } from "./views/UtxosView";
-
-/** Keeps the server's heartbeat coming while there is something to
-    watch: a key is set and at least one wallet was agreed to; and the
-    account's devices current while a key is set, or while a connection
-    whose answer was lost waits to go again. Its own component, so it
-    can sit behind the lock check without a hook running
-    conditionally. */
-function PremiumWatch({ settings }: { settings: Settings }) {
-  const { premium } = settings;
-  usePremiumWatch(premium.key !== null && premium.watched.length > 0);
-  useDeviceWatch(premium.key !== null || premium.pending_connect != null);
-  return null;
-}
 
 export default function App() {
   const startup = useStartupFailure();
@@ -112,8 +97,7 @@ export default function App() {
   // Every page opens at its top. The canvas is one scrolling box for all
   // of them, and it used to keep the offset of the page left behind: the
   // Overview came back from a long Settings section scrolled past its
-  // first card, and the red banner of a device asking into the account
-  // stood out of view. Another wallet's page is another page too. Done
+  // first card. Another wallet's page is another page too. Done
   // before the paint, and before any page's own effects, so a section
   // that brings a card into view on arrival still has the last word.
   useLayoutEffect(() => {
@@ -122,7 +106,7 @@ export default function App() {
 
   // What the cache is allowed to hold is decided by the lock, in one
   // place. The curtain falling empties it of everything the vault
-  // answered — descriptors, balances, addresses, the account key —
+  // answered — descriptors, balances, addresses —
   // and cuts the settings entry down to the theme rather than dropping
   // it, which would lose the ramp the lock screen is painted in.
   useEffect(() => {
@@ -258,26 +242,19 @@ export default function App() {
               {view === "settings" ? (
                 <SettingsView settings={settings.data} wallets={walletList} />
               ) : walletList.length === 0 ? (
-                // With no wallet there is no Overview, and a stranger's
-                // device asking into the account is still said first.
-                <div className="flex h-full flex-col">
-                  <NewDeviceBanner className="mb-4 mt-2" />
-                  <div className="min-h-0 flex-1">
-                    <EmptyState
-                      lockup={everyWallet.data?.length === 0}
-                      title="No wallets watched yet"
-                      hint="Add a descriptor, an extended public key, or an address. Gerfaut watches it and never touches a private key."
-                      action={
-                        <Button
-                          variant="primary"
-                          onClick={() => useUi.getState().setAddWalletOpen(true)}
-                        >
-                          Add a wallet
-                        </Button>
-                      }
-                    />
-                  </div>
-                </div>
+                <EmptyState
+                  lockup={everyWallet.data?.length === 0}
+                  title="No wallets watched yet"
+                  hint="Add a descriptor, an extended public key, or an address. Gerfaut watches it and never touches a private key."
+                  action={
+                    <Button
+                      variant="primary"
+                      onClick={() => useUi.getState().setAddWalletOpen(true)}
+                    >
+                      Add a wallet
+                    </Button>
+                  }
+                />
               ) : activeWallet ? (
                 <>
                   {view === "home" && <HomeView walletId={activeWallet.id} />}
@@ -298,7 +275,6 @@ export default function App() {
         </div>
       </main>
 
-      <PremiumWatch settings={settings.data} />
       {view !== "settings" && activeWallet && (
         <TxDetailModal walletId={activeWallet.id} network={activeWallet.network} />
       )}

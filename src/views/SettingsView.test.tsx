@@ -3,16 +3,8 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  BackendConfig,
-  ScannedBackend,
-  Settings,
-  WalletMeta,
-  WalletWatch,
-} from "../lib/ipc";
-import { useLock } from "../state/lock";
-import { premiumKeys } from "../state/premiumQueries";
-import { useSettings, useWallets } from "../state/queries";
+import type { BackendConfig, ScannedBackend, Settings, WalletMeta } from "../lib/ipc";
+import { useWallets } from "../state/queries";
 import { useUi } from "../state/store";
 import { BackendSection } from "./settings/BackendSection";
 import { SettingsView } from "./SettingsView";
@@ -55,7 +47,6 @@ const SETTINGS: Settings = {
   electrum_certs: {},
   app_lock: null,
   tor: { mode: "auto", socks_proxy: null },
-  premium: { key: null, certificate: null, watched: [], acknowledged_offline_until: null },
 };
 
 function renderBackend(
@@ -478,27 +469,6 @@ function renderLiveSettings() {
   );
 }
 
-/** The view fed from the vault on both sides, settings included: what
-    a premium write changes there, the wallets section reads next. */
-function VaultSettings() {
-  const settings = useSettings();
-  const wallets = useWallets();
-  if (!settings.data) return null;
-  return <SettingsView settings={settings.data} wallets={wallets.data ?? []} />;
-}
-
-/** Renders the vault-fed view and hands back its cache, for a test that
-    lets part of it go the way time would. */
-function renderVaultSettings() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
-    <QueryClientProvider client={client}>
-      <VaultSettings />
-    </QueryClientProvider>,
-  );
-  return client;
-}
-
 /** Answers what the sections ask on their own, and records every call. */
 function mockSettingsIpc(
   overrides: Record<string, (args: Record<string, unknown>) => unknown> = {},
@@ -531,20 +501,6 @@ function mockSettingsIpc(
             left_out_wallets: 0,
             wallets: [],
           },
-        };
-      case "premium_status":
-        return {
-          key: null,
-          licence: null,
-          consented: [],
-          acknowledged_offline_until: null,
-          device: null,
-          disconnected: false,
-          key_saved: false,
-          checklist_hidden: false,
-          disconnected_reason: null,
-          key_change_pending: false,
-          connect_pending: false,
         };
       default:
         throw new Error(`unexpected command ${cmd}`);
@@ -601,21 +557,9 @@ describe("settings sections", () => {
     expect(
       screen.getByText(/A backup holds descriptors and addresses, never a private key or seed\.$/),
     ).toBeInTheDocument();
-
-    // Premium last: the licence card, and without a key nothing else.
-    await user.click(nav().getByRole("button", { name: "Premium" }));
-    expect(await screen.findByRole("heading", { name: "Licence" })).toBeInTheDocument();
-    expect(heading("About")).not.toBeInTheDocument();
-    expect(heading("Watched wallets")).not.toBeInTheDocument();
-    expect(nav().getByRole("button", { name: "Premium" })).toHaveAttribute("aria-current", "page");
-    // Selected, the entry marks itself in the premium colour, not the
-    // action blue every other section takes.
-    expect(
-      nav().getByRole("button", { name: "Premium" }).querySelector("span[aria-hidden]"),
-    ).toHaveClass("bg-premium");
   });
 
-  it("lists the eight sections in order, each with an icon, the gem in the premium colour", () => {
+  it("lists the seven sections in order, each with an icon", () => {
     mockSettingsIpc();
     renderSettings();
     const items = nav().getAllByRole("button");
@@ -627,10 +571,8 @@ describe("settings sections", () => {
       "Notifications",
       "Backup & sync",
       "About",
-      "Premium",
     ]);
     for (const item of items) expect(item.querySelector("svg")).not.toBeNull();
-    expect(items[7].querySelector("svg.lucide-gem")).toHaveClass("text-premium");
   });
 
   it("opens straight on the section asked for", () => {
@@ -764,8 +706,6 @@ describe("settings sections", () => {
     await user.click(remove);
     expect(calls.some((call) => call.cmd === "remove_wallet")).toBe(false);
     expect(within(row).getByText(/cannot be undone/)).toBeInTheDocument();
-    // No key, so the server has nothing of this wallet to forget.
-    expect(within(row).queryByText(/alert history/)).not.toBeInTheDocument();
     // The yes of a destructive confirmation is the one button that
     // wears red; the note around it keeps its amber, and reads Cancel
     // first, the yes last.
@@ -786,39 +726,13 @@ describe("settings sections", () => {
     await user.click(within(row).getByRole("button", { name: "Remove wallet" }));
     await waitFor(() =>
       expect(calls.filter((call) => call.cmd === "remove_wallet").map((call) => call.args)).toEqual([
-        // The server never had it: no secret to ask.
-        { id: "w-1", secret: null },
+        { id: "w-1" },
       ]),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("says the server forgets a watched wallet too, when removing it", async () => {
-    // A key and a yes for this wallet: the core will queue the unwatch,
-    // and the confirmation says what that deletes — without asking the
-    // server anything from here.
-    const calls = mockSettingsIpc();
-    act(() => useUi.getState().openSettings("wallets"));
-    renderSettings([WALLET], {
-      ...SETTINGS,
-      premium: {
-        ...SETTINGS.premium,
-        key: "abcdefghijkmnpqr",
-        watched: [{ wallet_id: "w-1", consented_at: 1_755_000_000 }],
-      },
-    });
-    const user = userEvent.setup();
-    const row = screen.getByText("Cold storage").closest("li")!;
-    await user.click(within(row).getByRole("button", { name: "Remove" }));
-    expect(within(row).getByText(/cannot be undone/)).toHaveTextContent(
-      "The server stops watching it too, and deletes its alert history.",
-    );
-    expect(calls.some((call) => call.cmd === "premium_wallets")).toBe(false);
-  });
-
-  it("asks the app lock's secret before a wallet the server watches goes", async () => {
-    // Removing the wallet ends the watch as unwatching it does: the
-    // same secret, or the one would be the way around the other.
+  it("says why a removal failed, under its row, and keeps the question for a retry", async () => {
     let refuse = true;
     const calls = mockSettingsIpc({
       remove_wallet: () => {
@@ -829,151 +743,20 @@ describe("settings sections", () => {
         return undefined;
       },
     });
-    useLock.setState({ lock: { kind: "pin", biometric: false } });
     act(() => useUi.getState().openSettings("wallets"));
-    renderSettings([WALLET], {
-      ...SETTINGS,
-      premium: {
-        ...SETTINGS.premium,
-        key: "abcdefghijkmnpqr",
-        watched: [{ wallet_id: "w-1", consented_at: 1_755_000_000 }],
-      },
-    });
+    renderSettings();
     const user = userEvent.setup();
     const row = screen.getByText("Cold storage").closest("li")!;
     await user.click(within(row).getByRole("button", { name: "Remove" }));
     await user.click(within(row).getByRole("button", { name: "Remove wallet" }));
-    expect(calls.some((call) => call.cmd === "remove_wallet")).toBe(false);
-    let dialog = screen.getByRole("dialog", { name: "Confirm it's you" });
-    await user.type(within(dialog).getByLabelText("PIN"), "2468");
-    await user.click(within(dialog).getByRole("button", { name: "Remove wallet" }));
 
-    // A failure closes the dialog and says why under the row; the
-    // question stays for the retry.
     expect(await within(row).findByRole("alert")).toHaveTextContent(
-      "Vault i/o error: disk full.",
+      "Not removed: vault i/o error: disk full",
     );
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-
     await user.click(within(row).getByRole("button", { name: "Remove wallet" }));
-    dialog = screen.getByRole("dialog", { name: "Confirm it's you" });
-    await user.type(within(dialog).getByLabelText("PIN"), "2468");
-    await user.click(within(dialog).getByRole("button", { name: "Remove wallet" }));
-    await waitFor(() =>
-      expect(calls.filter((call) => call.cmd === "remove_wallet").map((call) => call.args)).toEqual([
-        { id: "w-1", secret: "2468" },
-        { id: "w-1", secret: "2468" },
-      ]),
-    );
     await waitFor(() => expect(useUi.getState().toast).toBe("Wallet removed"));
-    useLock.setState({ lock: null });
-  });
-
-  it("stops saying the server forgets a wallet once it was unwatched", async () => {
-    // The vault's side: the core drops the wallet from the watched list
-    // along with the consent when the server has let it go, and the
-    // settings are read again for the sentence to follow.
-    let premium = {
-      ...SETTINGS.premium,
-      key: "abcdefghijkmnpqr",
-      watched: [{ wallet_id: "w-1", consented_at: 1_755_000_000 }],
-    };
-    let consented = ["w-1"];
-    let server: WalletWatch[] = [
-      {
-        id: "w-1",
-        name: "Cold storage",
-        script_kind: "p2wpkh",
-        watched_since: 1_755_000_000,
-        baseline_at: 1_755_000_100,
-        baseline_height: 910_000,
-        coins: 1,
-        value_sats: 150_000,
-      },
-    ];
-    const status = () => ({
-      key: "abcd-efgh-ijkm-npqr",
-      licence: { status: "active", until: 1_804_809_600 },
-      consented,
-      acknowledged_offline_until: null,
-      device: { id: "d-1", connected_at: 1_755_000_000 },
-      disconnected: false,
-      key_saved: true,
-      checklist_hidden: true,
-      disconnected_reason: null,
-      key_change_pending: false,
-      connect_pending: false,
-    });
-    const device = {
-      id: "d-1",
-      platform: "windows",
-      connected_at: 1_755_000_000,
-      access: "full",
-      pending_until: null,
-      approved_at: 1_755_000_000,
-      this_device: true,
-    };
-    mockSettingsIpc({
-      get_settings: () => ({ ...SETTINGS, premium }),
-      premium_status: status,
-      premium_device: () => device,
-      premium_devices: () => [device],
-      premium_account: () => ({
-        account: { active: true, paid_until: 1_804_809_600, wallets: 1, channels: 0, network: "bitcoin" },
-        status: status(),
-      }),
-      premium_wallets: () => server,
-      premium_channels: () => [],
-      premium_events: () => [],
-      premium_unwatch_wallet: () => {
-        server = [];
-        consented = [];
-        premium = { ...premium, watched: [] };
-        return undefined;
-      },
-    });
-    act(() => useUi.getState().openSettings("wallets"));
-    useLock.setState({ lock: { kind: "pin", biometric: false } });
-    const client = renderVaultSettings();
-    const user = userEvent.setup();
-
-    // Watched and agreed to: the removal says what the server does.
-    let row = (await screen.findByText("Cold storage")).closest("li")!;
-    await user.click(within(row).getByRole("button", { name: "Remove" }));
-    expect(within(row).getByText(/cannot be undone/)).toHaveTextContent(
-      "The server stops watching it too, and deletes its alert history.",
-    );
-    await user.click(within(row).getByRole("button", { name: "Cancel" }));
-
-    // Unwatched from the premium section.
-    act(() => useUi.getState().openSettings("premium"));
-    const cold = await screen.findByRole("switch", { name: "Watch Cold storage from the server" });
-    await waitFor(() => expect(cold).toHaveAttribute("aria-checked", "true"));
-    await waitFor(() => expect(cold).toBeEnabled());
-    await user.click(cold);
-    await user.click(screen.getByRole("button", { name: "Unwatch" }));
-    const identity = await screen.findByRole("dialog", { name: "Confirm it's you" });
-    await user.type(within(identity).getByLabelText("PIN"), "2468");
-    await user.click(within(identity).getByRole("button", { name: "Unwatch" }));
-    await waitFor(() => expect(cold).toHaveAttribute("aria-checked", "false"));
-
-    // Time passes elsewhere and the server's list leaves the cache, as
-    // it does minutes after the premium section is left: what the
-    // wallets section says then rests on the settings alone, and they
-    // were read again after the unwatch.
-    act(() => useUi.getState().openSettings("general"));
-    client.removeQueries({ queryKey: premiumKeys.wallets });
-
-    // Back in Wallets: the server has nothing of this wallet to forget
-    // any more, and the confirmation no longer says it does.
-    act(() => useUi.getState().openSettings("wallets"));
-    row = (await screen.findByText("Cold storage")).closest("li")!;
-    await user.click(within(row).getByRole("button", { name: "Remove" }));
-    await waitFor(() =>
-      expect(within(row).getByText(/cannot be undone/)).not.toHaveTextContent(
-        "The server stops watching",
-      ),
-    );
+    expect(calls.filter((call) => call.cmd === "remove_wallet")).toHaveLength(2);
+    expect(within(row).queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("badges each wallet with what the live watch hears, only while it is short of room", async () => {
@@ -1100,13 +883,13 @@ describe("settings sections", () => {
     await user.keyboard("{ArrowDown}");
     expect(nav().getByRole("button", { name: "Network" })).toHaveFocus();
     await user.keyboard("{End}");
-    expect(nav().getByRole("button", { name: "Premium" })).toHaveFocus();
+    expect(nav().getByRole("button", { name: "About" })).toHaveFocus();
     await user.keyboard("{ArrowRight}");
     expect(nav().getByRole("button", { name: "General" })).toHaveFocus();
     // Moving the focus is not choosing: Enter does that.
     expect(heading("Display")).toBeInTheDocument();
     await user.keyboard("{ArrowUp}{ArrowUp}{Enter}");
-    expect(heading("About")).toBeInTheDocument();
+    expect(heading("Backup & sync")).toBeInTheDocument();
   });
 });
 

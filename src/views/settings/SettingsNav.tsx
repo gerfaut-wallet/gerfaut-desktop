@@ -1,13 +1,10 @@
-import { Archive, Bell, Gem, Globe, Info, Lock, SlidersHorizontal, Wallet } from "lucide-react";
+import { Archive, Bell, Globe, Info, Lock, SlidersHorizontal, Wallet } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { clsx } from "clsx";
 import type { KeyboardEvent } from "react";
 import type { SettingsSection } from "../../state/store";
 
-/** The eight pages of Settings, in the order they are listed. Premium
-    comes last, and its gem keeps the premium colour whether the entry
-    is current or not; selected, its bar takes it too, so the paid
-    service reads as such from the navigation on. */
+/** The seven pages of Settings, in the order they are listed. */
 export const SECTIONS: { id: SettingsSection; label: string; icon: LucideIcon }[] = [
   { id: "general", label: "General", icon: SlidersHorizontal },
   { id: "network", label: "Network", icon: Globe },
@@ -16,7 +13,6 @@ export const SECTIONS: { id: SettingsSection; label: string; icon: LucideIcon }[
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "backup", label: "Backup & sync", icon: Archive },
   { id: "about", label: "About", icon: Info },
-  { id: "premium", label: "Premium", icon: Gem },
 ];
 
 /** The sub-navigation of Settings: a column beside the cards when the
@@ -82,20 +78,14 @@ export function SettingsNav({
                 {current && (
                   <span
                     aria-hidden
-                    className={clsx(
-                      "absolute left-0 top-1/2 hidden h-5 w-0.5 -translate-y-1/2 rounded-full @4xl:block",
-                      id === "premium" ? "bg-premium" : "bg-primary",
-                    )}
+                    className="absolute left-0 top-1/2 hidden h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary @4xl:block"
                   />
                 )}
                 <Icon
                   size={18}
                   strokeWidth={1.5}
                   aria-hidden
-                  className={clsx(
-                    "shrink-0",
-                    id === "premium" ? "text-premium" : current && "text-primary",
-                  )}
+                  className={clsx("shrink-0", current && "text-primary")}
                 />
                 <span className="truncate">{label}</span>
               </button>

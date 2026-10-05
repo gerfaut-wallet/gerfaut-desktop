@@ -1,9 +1,8 @@
 // Copying, with its confirmation: a check mark on the button for a
 // moment and a toast. Two kinds of text go to the clipboard.
 //
-// What identifies a wallet or opens its alerts — a descriptor, the
-// account key, a Telegram link code, an ntfy topic — goes through the
-// Rust side, which keeps it out of the clipboard history and the cloud
+// What identifies a wallet — a descriptor — goes through the Rust
+// side, which keeps it out of the clipboard history and the cloud
 // clipboard and takes it off the clipboard a minute later, unless the
 // person copied something else since. The webview can write the
 // clipboard but not read it back without a permission prompt, so it
@@ -50,8 +49,8 @@ export function stayWords(seconds: number): string {
   return `${seconds} seconds`;
 }
 
-/** The toast after a copy: "Key copied", or "Key copied for 1 minute"
-    when the clipboard lets go of it by itself. */
+/** The toast after a copy: "Copied", or "Copied for 1 minute" when the
+    clipboard lets go of it by itself. */
 export function copiedWords(words: string, copied: Exclude<Copied, null>): string {
   return copied.kept ? words : `${words} for ${stayWords(copied.seconds)}`;
 }

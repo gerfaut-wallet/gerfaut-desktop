@@ -11,13 +11,13 @@ const opener = vi.hoisted(() => ({
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: (url: string) => {
-    if (opener.refuses) return Promise.reject(new Error("no handler for ntfy://"));
+    if (opener.refuses) return Promise.reject(new Error("no browser"));
     opener.opened.push(url);
     return Promise.resolve();
   },
 }));
 
-const NTFY = "ntfy://ntfy.gerfaut-wallet.com/abcdefghijkmnpqrstuvwxyz23";
+const RELEASES = "https://github.com/gerfaut-wallet/gerfaut-desktop/releases/latest";
 const TX = `https://mempool.space/signet/tx/${"ab".repeat(32)}`;
 
 function Link({ url }: { url: string }) {
@@ -25,7 +25,7 @@ function Link({ url }: { url: string }) {
   return (
     <>
       <button type="button" onClick={() => void link.open(url)}>
-        Open in ntfy
+        Open the releases page
       </button>
       <OpenFailure url={link.failed} />
     </>
@@ -58,18 +58,18 @@ afterEach(() => {
 describe("a link nothing opens", () => {
   it("says so, with the address to copy by hand", async () => {
     opener.refuses = true;
-    render(<Link url={NTFY} />);
+    render(<Link url={RELEASES} />);
     const user = userEvent.setup();
 
-    await user.click(screen.getByRole("button", { name: "Open in ntfy" }));
+    await user.click(screen.getByRole("button", { name: "Open the releases page" }));
     const note = await screen.findByRole("alert");
     expect(note).toHaveTextContent("Nothing on this computer opened the link.");
-    expect(note).toHaveTextContent(NTFY);
+    expect(note).toHaveTextContent(RELEASES);
 
     // Opened the next time: the note goes.
     opener.refuses = false;
-    await user.click(screen.getByRole("button", { name: "Open in ntfy" }));
-    expect(opener.opened).toEqual([NTFY]);
+    await user.click(screen.getByRole("button", { name: "Open the releases page" }));
+    expect(opener.opened).toEqual([RELEASES]);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

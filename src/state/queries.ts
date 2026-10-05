@@ -338,19 +338,11 @@ export function useAddWallet() {
   });
 }
 
-/** A wallet the server watched is unwatched on the way out, so the
-    premium section is read again: the server's list, the consents the
-    vault holds, and the settings that carry them for the heartbeat. */
 export function useRemoveWallet() {
   const invalidate = useInvalidateWallet();
-  const client = useQueryClient();
   return useMutation({
-    mutationFn: (args: { id: string; secret?: string }) => ipc.removeWallet(args.id, args.secret),
-    onSuccess: () => {
-      invalidate();
-      void client.invalidateQueries({ queryKey: ["premium"] });
-      void client.invalidateQueries({ queryKey: keys.settings });
-    },
+    mutationFn: (id: string) => ipc.removeWallet(id),
+    onSuccess: () => invalidate(),
   });
 }
 

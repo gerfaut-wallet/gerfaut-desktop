@@ -16,8 +16,7 @@ import {
   usesAutomaticBackend,
 } from "../../state/live";
 import { useUi } from "../../state/store";
-import { GHOST_ON_TINT } from "./premium/shared";
-import { SaveFailure, SectionCard, SettingRow, Toggle } from "./primitives";
+import { GHOST_ON_TINT, SaveFailure, SectionCard, SettingRow, Toggle } from "./primitives";
 
 /** What the live watch leaves to the syncs when it is short of room, and
     the way out: a node of one's own, where it follows ten times more,

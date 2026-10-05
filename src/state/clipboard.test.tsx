@@ -30,18 +30,18 @@ describe("copying", () => {
   it("sends a secret to the Rust side and says how long it stays", async () => {
     const sent = rust(() => 60);
     const write = vi.spyOn(navigator.clipboard, "writeText");
-    const { result } = renderHook(() => useClipboard({ sensitive: true, toast: "Key copied" }));
+    const { result } = renderHook(() => useClipboard({ sensitive: true, toast: "Descriptor copied" }));
 
     let copied: unknown;
     await act(async () => {
-      copied = await result.current.copy("abcd-efgh-ijkm-npqr");
+      copied = await result.current.copy("wpkh([d34db33f/84h/0h/0h]xpub/0/*)");
     });
     expect(copied).toEqual({ kept: false, seconds: 60 });
-    expect(sent).toEqual(["abcd-efgh-ijkm-npqr"]);
+    expect(sent).toEqual(["wpkh([d34db33f/84h/0h/0h]xpub/0/*)"]);
     // Never the webview's clipboard as well: it would keep the secret.
     expect(write).not.toHaveBeenCalled();
     expect(result.current.copied).toBe(true);
-    expect(useUi.getState().toast).toBe("Key copied for 1 minute");
+    expect(useUi.getState().toast).toBe("Descriptor copied for 1 minute");
   });
 
   /** The Rust side could not open the clipboard: a plain copy still
@@ -52,9 +52,9 @@ describe("copying", () => {
     const { result } = renderHook(() => useClipboard({ sensitive: true }));
 
     await act(async () => {
-      await result.current.copy("/start 1234");
+      await result.current.copy("wpkh([d34db33f/84h/0h/0h]xpub/1/*)");
     });
-    expect(await navigator.clipboard.readText()).toBe("/start 1234");
+    expect(await navigator.clipboard.readText()).toBe("wpkh([d34db33f/84h/0h/0h]xpub/1/*)");
     expect(useUi.getState().toast).toBe("Copied");
   });
 
@@ -104,8 +104,8 @@ describe("the words", () => {
 
   it("adds the stay only to a copy that will be cleared", () => {
     expect(copiedWords("Copied", { kept: true })).toBe("Copied");
-    expect(copiedWords("Key copied", { kept: false, seconds: 60 })).toBe(
-      "Key copied for 1 minute",
+    expect(copiedWords("Descriptor copied", { kept: false, seconds: 60 })).toBe(
+      "Descriptor copied for 1 minute",
     );
   });
 });

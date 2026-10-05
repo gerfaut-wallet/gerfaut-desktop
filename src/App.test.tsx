@@ -40,7 +40,6 @@ const SETTINGS: Settings = {
   electrum_certs: {},
   app_lock: null,
   tor: { mode: "auto", socks_proxy: null },
-  premium: { key: null, certificate: null, watched: [], acknowledged_offline_until: null },
 };
 
 /** A SHA-256 fingerprint in the shape openssl prints, as the core sends it. */
@@ -1365,8 +1364,7 @@ describe("navigation", () => {
   });
 
   // The canvas scrolls as one box for every page: a page reached from
-  // another one starts at its top, where the Overview keeps the banner
-  // of a device asking into the account.
+  // another one starts at its top.
   it("opens every page at its top, whatever the last one was scrolled to", async () => {
     renderApp();
     const user = userEvent.setup();
@@ -3166,8 +3164,8 @@ describe("the app lock", () => {
 
   it("asks the vault for nothing of a wallet while it is shut", async () => {
     // The lock screen used to be a curtain in front of a cache the
-    // vault had already filled: the wallet list, its balances, the
-    // account key. Behind the curtain nothing is asked for at all.
+    // vault had already filled: the wallet list, its balances, its
+    // descriptors. Behind the curtain nothing is asked for at all.
     const seen: string[] = [];
     mockLocked([{ unlocked: true, failures: 0, retry_after_secs: 0 }], undefined, seen);
     renderApp();
@@ -3210,7 +3208,6 @@ describe("the app lock", () => {
     expect(client.getQueryData(["snapshot", WALLET.id])).toBeUndefined();
     const kept = client.getQueryData<Settings>(["settings"]);
     expect(kept?.app_lock).toEqual(LOCKED.app_lock);
-    expect(kept?.premium.key).toBeNull();
     expect(kept?.electrum_certs).toEqual({});
   });
 

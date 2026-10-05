@@ -6,7 +6,7 @@ import { Modal } from "./Modal";
 describe("the modal", () => {
   it("never lands the focus on a field that cannot take it", async () => {
     render(
-      <Modal open onClose={() => {}} title="Confirm it's you">
+      <Modal open onClose={() => {}} title="Enter your PIN">
         <input aria-label="PIN" disabled />
         <button type="button">Cancel</button>
         <button type="button">Approve</button>
@@ -23,7 +23,7 @@ describe("the modal", () => {
   it("holds while it must not be dismissed, and lets go otherwise", async () => {
     const onClose = vi.fn();
     const { rerender } = render(
-      <Modal open onClose={onClose} dismissible={false} title="Change your Premium key">
+      <Modal open onClose={onClose} dismissible={false} title="Restore a backup">
         <button type="button">Done</button>
       </Modal>,
     );
@@ -33,7 +33,7 @@ describe("the modal", () => {
     expect(onClose).not.toHaveBeenCalled();
 
     rerender(
-      <Modal open onClose={onClose} title="Change your Premium key">
+      <Modal open onClose={onClose} title="Restore a backup">
         <button type="button">Done</button>
       </Modal>,
     );

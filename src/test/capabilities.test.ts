@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { explorerTxUrl } from "../lib/explorer";
-import { PREMIUM_URL, RENEW_URL } from "../lib/premium";
 import { RELEASES_URL } from "../state/update";
 
 const files = import.meta.glob(
@@ -52,9 +51,8 @@ describe("permissions of the window", () => {
 });
 
 /** What the window can make the system open is a short list written
-    here, not any address a page gone wrong could name: the explorer,
-    the releases page, the Premium page, the alerts bot and the ntfy
-    topic. */
+    here, not any address a page gone wrong could name: the explorer
+    and the releases page. */
 describe("addresses the window may open", () => {
   it("names no scope wider than its own list", () => {
     expect(permissions).not.toContain("opener:allow-default-urls");
@@ -70,13 +68,6 @@ describe("addresses the window may open", () => {
       explorerTxUrl("signet", txid),
       explorerTxUrl("testnet4", txid),
       RELEASES_URL,
-      PREMIUM_URL,
-      RENEW_URL,
-      "https://t.me/GerfautAlertsBot?start=K7QM2XRA",
-      // A code Telegram would not take as a start parameter stays out
-      // of the link, which then only opens the bot.
-      "https://t.me/GerfautAlertsBot",
-      "ntfy://ntfy.gerfaut-wallet.com/abcdefghijkmnpqrstuvwxyz23456789",
     ]) {
       expect(opens(url), url).toBe(true);
     }
@@ -90,11 +81,7 @@ describe("addresses the window may open", () => {
       "https://mempool.space@evil.example/tx/ab",
       "https://mempoolxspace/tx/ab",
       "https://github.com/someone/else/releases/latest",
-      "https://gerfaut-wallet.com.evil.example/premium",
-      "https://t.me/SomeoneElsesBot?start=K7QM2XRA",
-      "https://t.me/GerfautAlertsBotX",
-      "https://t.me/GerfautAlertsBot/other",
-      "ntfy://evil.example/topic",
+      "https://github.com/gerfaut-wallet/gerfaut-desktop/releases/latest/other",
       "file:///C:/Windows/System32/calc.exe",
       "mailto:someone@example.com",
     ]) {

@@ -12,12 +12,7 @@
       "identifier": "opener:allow-open-url",
       "allow": [
         { "url": "https://mempool.space/*" },
-        { "url": "https://github.com/gerfaut-wallet/gerfaut-desktop/releases/latest" },
-        { "url": "https://gerfaut-wallet.com/premium" },
-        { "url": "https://gerfaut-wallet.com/premium#renew" },
-        { "url": "https://t.me/GerfautAlertsBot?start=*" },
-        { "url": "https://t.me/GerfautAlertsBot" },
-        { "url": "ntfy://ntfy.gerfaut-wallet.com/*" }
+        { "url": "https://github.com/gerfaut-wallet/gerfaut-desktop/releases/latest" }
       ]
     }
   ]
