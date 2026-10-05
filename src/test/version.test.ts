@@ -37,9 +37,20 @@ describe("version", () => {
     expect(/APP_VERSION = "(.+)"/.exec(read("AboutSection.tsx"))?.[1]).toBe(npm);
   });
 
-  it("is a version the changelog has an entry for", () => {
+  /* A version is in the changelog once it ships. Until then its notes
+     are the [Unreleased] section, and it is newer than every release the
+     changelog lists, so a version left behind a release still fails. */
+  it("is a version the changelog has an entry for, or the next one", () => {
     const changelog = read("CHANGELOG.md");
     const headings = [...changelog.matchAll(/^## \[(\d+\.\d+\.\d+)]/gm)].map((m) => m[1]);
-    expect(headings).toContain(current());
+    if (headings.includes(current())) return;
+    expect(changelog).toMatch(/^## \[Unreleased]$/m);
+    const parts = (version: string) => version.split(".").map(Number);
+    const older = (a: string, b: string) => {
+      const [x, y] = [parts(a), parts(b)];
+      const at = x.findIndex((n, i) => n !== y[i]);
+      return at >= 0 && x[at] < y[at];
+    };
+    for (const released of headings) expect(older(released, current())).toBe(true);
   });
 });
