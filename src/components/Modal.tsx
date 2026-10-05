@@ -17,7 +17,6 @@ export function Modal({
   width = 520,
   z = 50,
   centered = false,
-  dismissible = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -28,10 +27,6 @@ export function Modal({
   /** Vertically centered instead of anchored near the top: for short
       confirmations that should sit in the middle of the window. */
   centered?: boolean;
-  /** False while the dialog holds something that must not be lost to a
-      stray Escape or click beside it: the one way out is the dialog's
-      own button. The close button goes too. */
-  dismissible?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const previous = useRef<Element | null>(null);
@@ -41,8 +36,6 @@ export function Modal({
   // re-renders would steal focus mid-typing.
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
-  const dismissibleRef = useRef(dismissible);
-  dismissibleRef.current = dismissible;
 
   useEffect(() => {
     if (!open) return;
@@ -62,7 +55,7 @@ export function Modal({
       if (modalStack[modalStack.length - 1] !== id.current) return;
       if (event.key === "Escape") {
         event.stopPropagation();
-        if (dismissibleRef.current) onCloseRef.current();
+        onCloseRef.current();
       }
       if (event.key === "Tab" && node) {
         const focusables = [
@@ -102,7 +95,7 @@ export function Modal({
       }
       style={{ zIndex: z }}
       onMouseDown={(event) => {
-        if (dismissible && event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) onClose();
       }}
     >
       <div
@@ -115,15 +108,9 @@ export function Modal({
       >
         <header className="flex items-center justify-between border-b border-border px-6 py-4">
           <h1 className="font-display text-lg font-semibold text-text">{title}</h1>
-          {dismissible ? (
-            <IconButton label="Close" onClick={onClose}>
-              <X size={20} strokeWidth={1.5} aria-hidden />
-            </IconButton>
-          ) : (
-            // Holds the header's height, so the title does not jump
-            // when the close button goes.
-            <span aria-hidden className="size-10" />
-          )}
+          <IconButton label="Close" onClick={onClose}>
+            <X size={20} strokeWidth={1.5} aria-hidden />
+          </IconButton>
         </header>
         <div className="max-h-[76vh] overflow-y-auto px-6 py-5">{children}</div>
       </div>

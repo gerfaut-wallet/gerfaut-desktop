@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { Modal } from "./Modal";
 
 describe("the modal", () => {
@@ -18,26 +18,5 @@ describe("the modal", () => {
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
     await user.tab();
     expect(screen.getByRole("button", { name: "Approve" })).toHaveFocus();
-  });
-
-  it("holds while it must not be dismissed, and lets go otherwise", async () => {
-    const onClose = vi.fn();
-    const { rerender } = render(
-      <Modal open onClose={onClose} dismissible={false} title="Restore a backup">
-        <button type="button">Done</button>
-      </Modal>,
-    );
-    const user = userEvent.setup();
-    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
-    await user.keyboard("{Escape}");
-    expect(onClose).not.toHaveBeenCalled();
-
-    rerender(
-      <Modal open onClose={onClose} title="Restore a backup">
-        <button type="button">Done</button>
-      </Modal>,
-    );
-    await user.keyboard("{Escape}");
-    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
