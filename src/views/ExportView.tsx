@@ -2,7 +2,6 @@ import { FileDown } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { Button } from "../components/Button";
-import { PremiumPill } from "../components/PremiumPill";
 import { LoadFailure } from "../components/LoadFailure";
 import type { ExportDirection, ExportOptions, TxSummary } from "../lib/ipc";
 import { Notice } from "../components/Notice";
@@ -168,25 +167,6 @@ export function ExportView({ walletId }: { walletId: string }) {
               checked={includePending}
               onChange={setIncludePending}
               label="Include pending transactions"
-            />
-          </Row>
-
-          <div aria-hidden className="h-px bg-border/60" />
-
-          <Row
-            title={
-              <span className="flex items-center gap-2">
-                Fiat value at transaction time
-                <PremiumPill />
-              </span>
-            }
-            hint="Adds the price at each transaction's date to the file."
-          >
-            <Toggle
-              checked={false}
-              onChange={() => {}}
-              disabled
-              label="Fiat value at transaction time (premium)"
             />
           </Row>
         </div>

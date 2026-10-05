@@ -2533,11 +2533,6 @@ describe("export page", () => {
     await user.click(sidebar().getByRole("button", { name: "Export" }));
 
     expect(await screen.findByText(/1 of 1 transaction selected/)).toBeInTheDocument();
-    // The premium teaser is visible but inert.
-    expect(screen.getByText("Premium")).toBeInTheDocument();
-    expect(
-      screen.getByRole("switch", { name: /fiat value at transaction time/i }),
-    ).toBeDisabled();
 
     // Filtering to outgoing leaves nothing: the export button locks.
     await user.click(screen.getByRole("radio", { name: "Sent" }));
