@@ -334,14 +334,21 @@ describe("BroadcastView", () => {
     ).toHaveClass("text-sm", "leading-5");
   });
 
-  it("calls a transaction that cannot be sent unsigned, in red", async () => {
-    const user = mount({ ...PREVIEW, ready: false, hex: null });
+  it("says a transaction is not fully signed in amber, and keeps it", async () => {
+    const user = mount({
+      ...PREVIEW,
+      ready: false,
+      hex: null,
+      warnings: [warning("unsigned", "alert", "Some inputs carry no signature yet.")],
+    });
     await preview(user);
-    const pill = screen.getByText("Unsigned");
-    expect(screen.queryByText("Not fully signed")).not.toBeInTheDocument();
-    // Believing a transaction went out when it cannot is one of the
-    // four cases red is kept for.
-    expect(pill).toHaveClass("bg-alert-surface", "text-alert");
+    const pill = screen.getByText("Not fully signed");
+    expect(screen.queryByText("Unsigned")).not.toBeInTheDocument();
+    // The pill is a status: nothing leaves while Broadcast is off. The
+    // red belongs to the core's caution, which says why.
+    expect(pill).toHaveAttribute("data-tone", "pending");
+    const caution = screen.getByText(/Some inputs carry no signature yet\./);
+    expect(caution.parentElement).toHaveClass("bg-alert-surface", "text-alert");
     expect(screen.getByRole("button", { name: "Broadcast" })).toBeDisabled();
   });
 

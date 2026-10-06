@@ -2496,7 +2496,7 @@ describe("broadcast page", () => {
     const field = await screen.findByLabelText("Signed transaction");
     await user.type(field, "unsigned");
     await user.click(screen.getByRole("button", { name: "Preview" }));
-    expect(await screen.findByText("Unsigned")).toBeInTheDocument();
+    expect(await screen.findByText("Not fully signed")).toBeInTheDocument();
     expect(screen.getByText(/carry no signature/)).toBeInTheDocument();
     const main = within(screen.getByRole("main"));
     expect(main.getByRole("button", { name: "Broadcast" })).toBeDisabled();

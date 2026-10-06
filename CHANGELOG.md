@@ -18,7 +18,7 @@ Gerfaut watches Bitcoin wallets it cannot spend from. There is no key generation
 - Balance, transaction history, transaction detail with its inputs and outputs, unspent outputs in a table of their own, and the next receive addresses.
 - A wallet whose descriptor holds a Miniscript policy gets a page for it: every spending path, who can take it, and the countdown left on the ones that wait for a timelock.
 - Export the history of a wallet as CSV.
-- Broadcast a transaction someone else signed. Paste its hex, open the file a signing device wrote, or scan its QR code. Gerfaut shows what the transaction does before it sends anything.
+- Broadcast a transaction someone else signed. Paste its hex, open the file a signing device wrote, or scan its QR code. Gerfaut shows what the transaction does before it sends anything. When a signature is still missing, the preview says "Not fully signed" and the Broadcast button stays off.
 - When no backend confirms a coin a PSBT spends, the preview says so in amber and marks the fee and the input total as what the PSBT claims: check them on a backend you trust, or on the signing device, before you send.
 - Mainnet, signet, testnet4 and regtest.
 - Public Esplora servers by default, or your own node over Esplora or Electrum.

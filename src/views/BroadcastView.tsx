@@ -501,10 +501,11 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
               Ready to broadcast
             </Pill>
           ) : (
-            // A transaction believed ready that the network cannot take
-            // is one of the four cases red is kept for.
-            <Pill tone="alert" icon={<AlertTriangle size={12} strokeWidth={2} aria-hidden />}>
-              Unsigned
+            // A status, in amber: nothing is at risk while the Broadcast
+            // button stays off. The red is the core's `unsigned` caution
+            // in the list below, so it is said once, where the reason is.
+            <Pill tone="pending" icon={<PenOff size={12} strokeWidth={2} aria-hidden />}>
+              Not fully signed
             </Pill>
           )}
           {preview.rbf && <Pill tone="neutral">RBF</Pill>}
