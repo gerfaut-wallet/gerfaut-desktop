@@ -229,9 +229,19 @@ export function formatCurrency(
     .join("");
 }
 
-/** Fiat value of an amount at a given BTC rate. */
-export function formatFiat(sats: number, rate: number, currency: string): string {
-  const value = (sats / 100_000_000) * rate;
+/** Fiat value of a wallet's amount at a given BTC rate. The rate is what
+    mainnet bitcoin fetches; the coins of a test network fetch nothing,
+    so on signet, testnet4 or regtest the value is zero, in the same
+    currency and format as any other. */
+export function formatFiat(
+  sats: number,
+  rate: number,
+  currency: string,
+  network: Network,
+): string {
+  // A plain zero, not the amount times zero: a payment out would read
+  // "-€0.00".
+  const value = network === "mainnet" ? (sats / 100_000_000) * rate : 0;
   // Each currency sets its own precision: yen, won and dong carry no
   // decimals, and forcing two on them reads as an error. Under one unit
   // the ceiling is raised to four so a small amount does not collapse

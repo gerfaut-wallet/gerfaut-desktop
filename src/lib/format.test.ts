@@ -177,14 +177,31 @@ describe("fiat values", () => {
     expect(formatCurrency(74_074.07, "eur")).toBe(`€74${NBSP}074.07`);
     expect(formatCurrency(1_234_567.5, "usd")).toBe(`$1${NBSP}234${NBSP}567.50`);
     expect(formatCurrency(61_250, "eur", { maximumFractionDigits: 0 })).toBe(`€61${NBSP}250`);
-    expect(formatFiat(123_456_789, 60_000, "eur")).toBe(`€74${NBSP}074.07`);
-    expect(formatFiat(123_456_789, 60_000, "eur")).not.toContain(",");
+    expect(formatFiat(123_456_789, 60_000, "eur", "mainnet")).toBe(`€74${NBSP}074.07`);
+    expect(formatFiat(123_456_789, 60_000, "eur", "mainnet")).not.toContain(",");
   });
 
   it("keep each currency's own precision, and small sums readable", () => {
     expect(formatCurrency(1_500_000, "jpy")).toBe(`¥1${NBSP}500${NBSP}000`);
-    expect(formatFiat(1_000, 60_000, "eur")).toBe("€0.60");
-    expect(formatFiat(20, 60_000, "eur")).toBe("€0.012");
-    expect(formatFiat(-150_000, 60_000, "eur")).toBe("-€90.00");
+    expect(formatFiat(1_000, 60_000, "eur", "mainnet")).toBe("€0.60");
+    expect(formatFiat(20, 60_000, "eur", "mainnet")).toBe("€0.012");
+    expect(formatFiat(-150_000, 60_000, "eur", "mainnet")).toBe("-€90.00");
+  });
+
+  /** A test coin is worth nothing: whatever the amount and the rate,
+      its value is zero in the chosen currency, written the way that
+      currency writes any other sum. */
+  it("are zero on a test network, in the chosen currency", () => {
+    for (const network of ["signet", "testnet4", "regtest"] as const) {
+      expect(formatFiat(123_456_789, 60_000, "eur", network)).toBe("€0.00");
+      expect(formatFiat(123_456_789, 60_000, "usd", network)).toBe("$0.00");
+      expect(formatFiat(123_456_789, 9_000_000, "jpy", network)).toBe("¥0");
+    }
+    expect(formatFiat(123_456_789, 60_000, "eur", "mainnet")).not.toBe("€0.00");
+  });
+
+  it("are a plain zero for a payment out on a test network, with no sign", () => {
+    expect(formatFiat(-150_000, 60_000, "eur", "signet")).toBe("€0.00");
+    expect(formatFiat(0, 60_000, "eur", "mainnet")).toBe("€0.00");
   });
 });

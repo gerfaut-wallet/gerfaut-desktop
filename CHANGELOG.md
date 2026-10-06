@@ -58,6 +58,7 @@ Gerfaut watches Bitcoin wallets it cannot spend from. There is no key generation
 - In every choice group (unit, price source, theme, Tor, export direction), the chosen option is now filled in the accent colour.
 - The hints under New transactions, Check for updates automatically and Currency are shorter.
 - Fiat values now group their thousands with a space, like amounts in BTC and sats: €74 074.07 instead of €74,074.07.
+- With fiat value on, a wallet on signet, testnet4 or regtest now shows 0 in your currency, such as €0.00. Before, its coins were valued at the price of real bitcoin, but test coins are worth nothing.
 - When every wallet is on the network shown, the backup export says "All wallets (N)" instead of offering a choice of one.
 - In Add a wallet, an input that fits a single network, such as a mainnet address, names that network instead of offering a choice of one.
 - On the Policy page, a coin that cannot be counted down before the first sync says "next known after the first sync" instead of "next in an unknown time".

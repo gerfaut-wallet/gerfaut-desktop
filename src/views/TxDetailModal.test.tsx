@@ -4,7 +4,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TxDetailModal } from "./TxDetailModal";
-import type { TxDetail, TxIo } from "../lib/ipc";
+import type { Network, TxDetail, TxIo } from "../lib/ipc";
 import { formatFiat, formatTimestamp } from "../lib/format";
 import { useUi } from "../state/store";
 
@@ -70,9 +70,11 @@ const DETAIL: TxDetail = {
   },
 };
 
-function open(detail: TxDetail = DETAIL) {
+/** The wallet is on the active network, as every wallet on screen is. */
+function open(detail: TxDetail = DETAIL, network: Network = "signet") {
   mockIPC((cmd) => {
     if (cmd === "tx_detail") return detail;
+    if (cmd === "get_settings") return { active_network: network, app_prefs: {} };
     if (cmd === "fetch_price") {
       return { rate: RATE, currency: "eur", source: "coingecko", at: MINED_AT };
     }
@@ -82,7 +84,7 @@ function open(detail: TxDetail = DETAIL) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <TxDetailModal walletId="w-1" network="signet" />
+      <TxDetailModal walletId="w-1" network={network} />
     </QueryClientProvider>,
   );
 }
@@ -247,12 +249,26 @@ describe("TxDetailModal", () => {
     // Nobody can tell whether a fiat figure beside an output is the
     // value on the day of the transaction or the value today.
     useUi.setState({ fiatEnabled: true, fiatCurrency: "eur", fiatSource: "coingecko" });
-    open();
+    open(DETAIL, "mainnet");
     // The panel on top carries one, so the quote really did arrive.
-    expect(await screen.findByText(formatFiat(-150_210, RATE, "eur"))).toBeInTheDocument();
+    expect(
+      await screen.findByText(formatFiat(-150_210, RATE, "eur", "mainnet")),
+    ).toBeInTheDocument();
     const outputs = within(screen.getByRole("region", { name: "Outputs" }));
     expect(outputs.getByText("0.00150000 BTC")).toBeInTheDocument();
-    expect(outputs.queryByText(formatFiat(150_000, RATE, "eur"))).not.toBeInTheDocument();
+    expect(
+      outputs.queryByText(formatFiat(150_000, RATE, "eur", "mainnet")),
+    ).not.toBeInTheDocument();
+  });
+
+  it("values a test network's payment at zero in the chosen currency", async () => {
+    useUi.setState({ fiatEnabled: true, fiatCurrency: "eur", fiatSource: "coingecko" });
+    open();
+    const hero = within(await screen.findByRole("region", { name: "Summary" }));
+    expect(await hero.findByText("€0.00")).toBeInTheDocument();
+    expect(
+      hero.queryByText(formatFiat(-150_210, RATE, "eur", "mainnet")),
+    ).not.toBeInTheDocument();
   });
 
   it("reads in the order the questions come in", async () => {

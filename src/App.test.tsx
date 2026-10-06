@@ -1660,6 +1660,13 @@ describe("display settings", () => {
   beforeEach(() => walletIpc());
 
   it("shows the fiat value next to the balance once enabled", async () => {
+    // Only mainnet coins have a price.
+    const wallet: WalletMeta = { ...WALLET, network: "mainnet" };
+    walletIpc({
+      get_settings: () => ({ ...SETTINGS, active_network: "mainnet" }),
+      list_wallets: () => [wallet],
+      wallet_snapshot: () => ({ ...SNAPSHOT, meta: wallet }),
+    });
     renderApp();
     await screen.findByText("0.00150000");
     expect(
@@ -1670,6 +1677,18 @@ describe("display settings", () => {
       (text) => text.includes("€") && text.includes("150"),
     );
     expect(matches.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("values a test network's wallet at zero, not at the price of bitcoin", async () => {
+    // A signet coin is worth nothing: the balance and the latest
+    // payment both read zero in the chosen currency.
+    renderApp();
+    await screen.findByText("0.00150000");
+    act(() => useUi.getState().setFiatEnabled(true));
+    expect(await screen.findAllByText("€0.00")).toHaveLength(2);
+    expect(
+      screen.queryByText((text) => text.includes("€") && text.includes("150")),
+    ).not.toBeInTheDocument();
   });
 
   it("follows the unit setting everywhere, including the switcher", async () => {

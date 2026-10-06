@@ -7,7 +7,7 @@ import {
   formatFiat,
   formatSats,
 } from "../lib/format";
-import { useFiatRate } from "../state/queries";
+import { useFiatRate, useSettings } from "../state/queries";
 import { useUi } from "../state/store";
 
 /** An amount as plain text, for a heading or a fact where a component
@@ -20,12 +20,17 @@ export function useAmountText(sats: number | null): string {
 }
 
 /** Fiat value of an amount, when the display is enabled and a quote is
-    available. Degrades to nothing, never to an error. */
+    available. Degrades to nothing, never to an error. Every fiat value
+    on screen comes from here, so the network is read here once: the
+    pages show the wallets of the active network and no other, which
+    makes it the network of every amount they hold. Not known yet, it
+    shows nothing rather than a price a test coin does not have. */
 export function useFiatValue(sats: number): string | null {
   const { fiatEnabled, fiatCurrency, masked } = useUi();
   const rate = useFiatRate();
-  if (!fiatEnabled || masked || !rate.data) return null;
-  return formatFiat(sats, rate.data.rate, fiatCurrency);
+  const network = useSettings().data?.active_network;
+  if (!fiatEnabled || masked || !rate.data || !network) return null;
+  return formatFiat(sats, rate.data.rate, fiatCurrency, network);
 }
 
 /** Headline balance figure: UI face with tabular figures, masked-aware.

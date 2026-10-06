@@ -2,7 +2,7 @@ import { Coins, Monitor, Moon, Sun, SunMoon } from "lucide-react";
 import { Select } from "../../components/Select";
 import { COINGECKO_ONLY_CURRENCIES, SHARED_CURRENCIES, quotesCurrency } from "../../lib/ipc";
 import type { FiatCurrency, PriceSource } from "../../lib/ipc";
-import { formatFiat, relativeTime } from "../../lib/format";
+import { formatCurrency, relativeTime } from "../../lib/format";
 import { torDown, useFiatRate } from "../../state/queries";
 import { useUi } from "../../state/store";
 import type { ThemePref } from "../../state/store";
@@ -201,9 +201,11 @@ function RatePreview() {
       </p>
     );
   }
+  // The price itself, not a wallet's amount: it stays what bitcoin
+  // fetches whichever network is open.
   return (
     <p className="tabular text-xs text-muted">
-      1 BTC = {formatFiat(100_000_000, rate.data.rate, fiatCurrency)} · updated{" "}
+      1 BTC = {formatCurrency(rate.data.rate, fiatCurrency)} · updated{" "}
       {relativeTime(rate.data.at)}
     </p>
   );

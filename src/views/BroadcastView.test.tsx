@@ -436,7 +436,9 @@ describe("BroadcastView", () => {
     const outputs = within(region);
     expect(outputs.getByText("0.00150000 BTC")).toBeInTheDocument();
     await waitFor(() =>
-      expect(outputs.queryByText(formatFiat(150_000, RATE, "eur"))).not.toBeInTheDocument(),
+      expect(
+        outputs.queryByText(formatFiat(150_000, RATE, "eur", "mainnet")),
+      ).not.toBeInTheDocument(),
     );
     expect(region.textContent ?? "").not.toMatch(/[€$£¥]/);
   });
