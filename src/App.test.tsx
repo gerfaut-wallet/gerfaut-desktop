@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, onlineManager } from "@tanstack/react-query";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -40,7 +40,6 @@ const SETTINGS: Settings = {
   electrum_certs: {},
   app_lock: null,
   tor: { mode: "auto", socks_proxy: null },
-  premium: { key: null, certificate: null, watched: [], acknowledged_offline_until: null },
 };
 
 /** A SHA-256 fingerprint in the shape openssl prints, as the core sends it. */
@@ -466,6 +465,36 @@ const PRICE_HISTORY = {
   at: 1_755_000_000,
 };
 
+/** The live watch as the core reports it while it does not run. */
+const LIVE_OFF = {
+  state: "off",
+  transport: null,
+  server: null,
+  detail: null,
+  watched_scripts: 0,
+  pushed_scripts: 0,
+  left_out_scripts: 0,
+  left_out_wallets: 0,
+  wallets: [],
+};
+
+/** The live watch short of room: this wallet heard in part, another
+    one not at all. */
+const LIVE_SHORT = {
+  ...LIVE_OFF,
+  state: "connected",
+  transport: "electrum",
+  server: "electrum.example.org",
+  watched_scripts: 2_000,
+  pushed_scripts: 2_000,
+  left_out_scripts: 1_240,
+  left_out_wallets: 2,
+  wallets: [
+    { wallet_id: "w-1", coverage: "partial", watched_scripts: 200, left_out_scripts: 1_040 },
+    { wallet_id: "w-2", coverage: "sync_only", watched_scripts: 0, left_out_scripts: 200 },
+  ],
+};
+
 /** What the core publishes for signet, the workspace network here. */
 const PUBLIC_SERVERS = [
   {
@@ -569,6 +598,9 @@ function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => 
         return { rate: 100_000, currency: "eur", source: "coingecko", at: 1_755_000_000 };
       case "fetch_price_history":
         return PRICE_HISTORY;
+      // The live watch is off unless a test turns it on.
+      case "live_status":
+        return { enabled: false, status: LIVE_OFF };
       case "address_list":
         return {
           external: [
@@ -586,10 +618,11 @@ function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => 
   });
 }
 
-function renderApp() {
-  const client = new QueryClient({
+function renderApp(
+  client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
-  });
+  }),
+) {
   return render(
     <QueryClientProvider client={client}>
       <App />
@@ -717,6 +750,33 @@ describe("empty workspace", () => {
     // Settings stays reachable without a wallet.
     expect(sidebar().getByRole("button", { name: "Settings" })).toBeEnabled();
   });
+
+  /** The first screen of an empty vault presents the app by name, once;
+      a network that only lacks wallets keeps the watermark. */
+  it("shows the lockup on an empty vault only", async () => {
+    const first = renderApp();
+    const main = () => within(screen.getByRole("main"));
+    await screen.findByText("No wallets watched yet");
+    await waitFor(() =>
+      expect(main().getByRole("img", { name: "Gerfaut" })).toBeInTheDocument(),
+    );
+    first.unmount();
+
+    mockIPC((cmd, args) => {
+      switch (cmd) {
+        case "get_settings":
+          return SETTINGS;
+        case "list_wallets":
+          // A wallet on another network than the one shown.
+          return (args as { network?: string }).network == null ? [WALLET] : [];
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderApp();
+    await screen.findByText("No wallets watched yet");
+    expect(main().queryByRole("img", { name: "Gerfaut" })).not.toBeInTheDocument();
+  });
 });
 
 describe("a vault that did not open", () => {
@@ -841,6 +901,23 @@ describe("overview", () => {
     expect(screen.getByRole("radio", { name: "1Y" })).toBeInTheDocument();
   });
 
+  /** With an onion backend the core sends the price through Tor, and
+      nothing at all while Tor cannot be had: the card says that, not
+      that the source failed to answer. */
+  it("says Tor is out of reach instead of blaming the price source", async () => {
+    withFiat({
+      fetch_price_history: () =>
+        Promise.reject({ kind: "tor", message: "tor: no Tor proxy answers at 127.0.0.1:9050" }),
+    });
+    renderApp();
+    expect(
+      await screen.findByText("Tor is not available, so no price was asked.", undefined, {
+        timeout: 5000,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("The price source did not answer.")).not.toBeInTheDocument();
+  });
+
   it("charts the wallet balance over its life", async () => {
     renderApp();
     expect(
@@ -953,6 +1030,34 @@ describe("overview", () => {
     );
     expect(useUi.getState().view).toBe("settings");
     expect(useUi.getState().settingsSection).toBe("wallets");
+  });
+
+  it("says how much of the wallet the live watch hears, only while it is short of room", async () => {
+    walletIpc({ live_status: () => ({ enabled: true, status: LIVE_SHORT }) });
+    const first = renderApp();
+    const status = within(await screen.findByRole("region", { name: "Watch status" }));
+    expect(await status.findByText("Live watch")).toBeInTheDocument();
+    expect(status.getByText("Partly live")).toBeInTheDocument();
+    expect(status.getByText("1 040 addresses wait for the next sync.")).toBeInTheDocument();
+    first.unmount();
+
+    // Room for every address: every wallet is live, and nothing is said.
+    walletIpc({
+      live_status: () => ({
+        enabled: true,
+        status: {
+          ...LIVE_SHORT,
+          left_out_scripts: 0,
+          left_out_wallets: 0,
+          wallets: [{ wallet_id: "w-1", coverage: "live", watched_scripts: 36, left_out_scripts: 0 }],
+        },
+      }),
+    });
+    renderApp();
+    const calm = within(await screen.findByRole("region", { name: "Watch status" }));
+    await waitFor(() => expect(calm.getByText("Block")).toBeInTheDocument());
+    expect(calm.queryByText("Live watch")).not.toBeInTheDocument();
+    expect(calm.queryByText("Live")).not.toBeInTheDocument();
   });
 
   it("leads from the watch status to the node settings", async () => {
@@ -1260,8 +1365,7 @@ describe("navigation", () => {
   });
 
   // The canvas scrolls as one box for every page: a page reached from
-  // another one starts at its top, where the Overview keeps the banner
-  // of a device asking into the account.
+  // another one starts at its top.
   it("opens every page at its top, whatever the last one was scrolled to", async () => {
     renderApp();
     const user = userEvent.setup();
@@ -1529,8 +1633,18 @@ describe("policy page", () => {
     expect(await main.findByRole("button", { name: /^Policy$/ })).toBeInTheDocument();
   });
 
-  it("copies the descriptor from its folded section", async () => {
-    walletIpc({ wallet_policy: () => LIANA_POLICY });
+  /** The descriptor lets anyone watch the wallet: it goes through the
+      Rust side, out of the clipboard history and off the clipboard a
+      minute later, and the toast says so. */
+  it("copies the descriptor from its folded section, for a minute", async () => {
+    const copied: unknown[] = [];
+    walletIpc({
+      wallet_policy: () => LIANA_POLICY,
+      copy_sensitive: (args) => {
+        copied.push(args.text);
+        return 60;
+      },
+    });
     renderApp();
     const user = userEvent.setup();
     await screen.findByText("Bitcoin price");
@@ -1538,7 +1652,8 @@ describe("policy page", () => {
     await screen.findByText(/A recovery key can spend/);
     await user.click(screen.getByText("Descriptor"));
     await user.click(screen.getByRole("button", { name: "Copy descriptor" }));
-    expect(await navigator.clipboard.readText()).toBe(LIANA_POLICY.descriptor);
+    await waitFor(() => expect(copied).toEqual([LIANA_POLICY.descriptor]));
+    expect(await screen.findByText("Copied for 1 minute")).toBeInTheDocument();
   });
 });
 
@@ -1546,6 +1661,13 @@ describe("display settings", () => {
   beforeEach(() => walletIpc());
 
   it("shows the fiat value next to the balance once enabled", async () => {
+    // Only mainnet coins have a price.
+    const wallet: WalletMeta = { ...WALLET, network: "mainnet" };
+    walletIpc({
+      get_settings: () => ({ ...SETTINGS, active_network: "mainnet" }),
+      list_wallets: () => [wallet],
+      wallet_snapshot: () => ({ ...SNAPSHOT, meta: wallet }),
+    });
     renderApp();
     await screen.findByText("0.00150000");
     expect(
@@ -1556,6 +1678,129 @@ describe("display settings", () => {
       (text) => text.includes("€") && text.includes("150"),
     );
     expect(matches.length).toBeGreaterThanOrEqual(1);
+  });
+
+  /** A refresh that fails leaves the answer before it in the cache.
+      Shown, it would price every amount at a rate nobody can date,
+      under a settings line that says amounts show without fiat. */
+  it("drops every price once the source stops answering", async () => {
+    const wallet: WalletMeta = { ...WALLET, network: "mainnet" };
+    let down = false;
+    const answer = <T,>(value: T) =>
+      down ? Promise.reject({ kind: "network", message: "price source timed out" }) : value;
+    walletIpc({
+      get_settings: () => ({
+        ...SETTINGS,
+        active_network: "mainnet",
+        app_prefs: { ...SETTINGS.app_prefs, "display.fiat": "1" },
+      }),
+      list_wallets: () => [wallet],
+      wallet_snapshot: () => ({ ...SNAPSHOT, meta: wallet }),
+      fetch_price: () =>
+        answer({ rate: 100_000, currency: "eur", source: "coingecko", at: 1_755_000_000 }),
+      fetch_price_history: () => answer(PRICE_HISTORY),
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderApp(client);
+    const user = userEvent.setup();
+    expect(await screen.findAllByText("€150.00")).toHaveLength(2);
+    expect(screen.getByText("+11.1%")).toBeInTheDocument();
+
+    down = true;
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ["price"] });
+      await client.refetchQueries({ queryKey: ["price-history"] });
+    });
+    await waitFor(() => expect(screen.queryByText("€150.00")).not.toBeInTheDocument());
+    expect(screen.queryByText("+11.1%")).not.toBeInTheDocument();
+    expect(screen.getByText("The price source did not answer.")).toBeInTheDocument();
+
+    await openSettings(user, "General");
+    expect(
+      await screen.findByText(
+        "The price source did not answer. Amounts show without fiat until it does.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^1 BTC =/)).not.toBeInTheDocument();
+  });
+
+  /** Offline, TanStack holds a refresh back by default and the query
+      stays a success with its old answer: hours later the amounts
+      would still carry the price of the moment the link went. The
+      price is a command to the core, asked anyway; the core's failure
+      is what the screens say. */
+  it("drops every price while the machine is offline", async () => {
+    const wallet: WalletMeta = { ...WALLET, network: "mainnet" };
+    let down = false;
+    const asked: string[] = [];
+    const answer = <T,>(cmd: string, value: T) => {
+      asked.push(cmd);
+      return down ? Promise.reject({ kind: "network", message: "no route to host" }) : value;
+    };
+    walletIpc({
+      get_settings: () => ({
+        ...SETTINGS,
+        active_network: "mainnet",
+        app_prefs: { ...SETTINGS.app_prefs, "display.fiat": "1" },
+      }),
+      list_wallets: () => [wallet],
+      wallet_snapshot: () => ({ ...SNAPSHOT, meta: wallet }),
+      fetch_price: () =>
+        answer("fetch_price", {
+          rate: 100_000,
+          currency: "eur",
+          source: "coingecko",
+          at: 1_755_000_000,
+        }),
+      fetch_price_history: () => answer("fetch_price_history", PRICE_HISTORY),
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderApp(client);
+    const user = userEvent.setup();
+    expect(await screen.findAllByText("€150.00")).toHaveLength(2);
+    expect(screen.getByText("+11.1%")).toBeInTheDocument();
+
+    try {
+      down = true;
+      asked.length = 0;
+      onlineManager.setOnline(false);
+      // Not awaited: a refresh held back offline never settles.
+      act(() => {
+        void client.refetchQueries({ queryKey: ["price"] });
+        void client.refetchQueries({ queryKey: ["price-history"] });
+      });
+      await waitFor(() => expect(screen.queryByText("€150.00")).not.toBeInTheDocument(), {
+        timeout: 5000,
+      });
+      await waitFor(
+        () => expect(screen.getByText("The price source did not answer.")).toBeInTheDocument(),
+        { timeout: 5000 },
+      );
+      expect(screen.queryByText("+11.1%")).not.toBeInTheDocument();
+      // Asked all the same: the core, not the webview, knows the network.
+      expect(asked).toEqual(expect.arrayContaining(["fetch_price", "fetch_price_history"]));
+
+      await openSettings(user, "General");
+      expect(
+        await screen.findByText(
+          "The price source did not answer. Amounts show without fiat until it does.",
+        ),
+      ).toBeInTheDocument();
+    } finally {
+      onlineManager.setOnline(true);
+    }
+  });
+
+  it("values a test network's wallet at zero, not at the price of bitcoin", async () => {
+    // A signet coin is worth nothing: the balance and the latest
+    // payment both read zero in the chosen currency.
+    renderApp();
+    await screen.findByText("0.00150000");
+    act(() => useUi.getState().setFiatEnabled(true));
+    expect(await screen.findAllByText("€0.00")).toHaveLength(2);
+    expect(
+      screen.queryByText((text) => text.includes("€") && text.includes("150")),
+    ).not.toBeInTheDocument();
   });
 
   it("follows the unit setting everywhere, including the switcher", async () => {
@@ -1643,11 +1888,11 @@ describe("display settings", () => {
       }),
     );
 
-    // An Electrum server cannot serve a single-address wallet, and says so.
+    // An Electrum server serves a single-address wallet as Esplora does:
+    // nothing is said against choosing one.
     await choose(user, "Public server", "mempool.space:60602");
-    expect(
-      screen.getByText(/Electrum servers cannot serve a single-address wallet/),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Only this server is asked for chain data.")).toBeInTheDocument();
+    expect(screen.queryByText(/single-address/)).not.toBeInTheDocument();
 
     // Back to automatic: the stored shape carries no operator.
     await choose(user, "Public server", "Automatic");
@@ -1770,7 +2015,9 @@ describe("receive page", () => {
     expect(await screen.findByText("m/84'/1'/0'/0/1")).toBeInTheDocument();
   });
 
-  it("warns beyond the gap limit", async () => {
+  // Twenty clicks, each a round trip to the mocked core: past the
+  // default five seconds on a busy machine, with nothing wrong.
+  it("warns beyond the gap limit", { timeout: 20_000 }, async () => {
     walletIpc();
     renderApp();
     const user = userEvent.setup();
@@ -2073,7 +2320,8 @@ describe("electrum certificates", () => {
         fingerprint: FINGERPRINT,
         reason: "self-signed, or signed by an authority this machine does not know",
         subject: "CN=node.example.org",
-        expires: 1_800_000_000,
+        // Noon, local time: the day is the same wherever the test runs.
+        expires: new Date(2030, 2, 7, 12, 0).getTime() / 1000,
       }),
       trust_certificate: (args) => {
         trusted.push(args);
@@ -2096,6 +2344,8 @@ describe("electrum certificates", () => {
     expect(dialog.textContent).toContain(FINGERPRINT.split(":").slice(0, 16).join(":"));
     expect(dialog.textContent).toContain(FINGERPRINT.split(":").slice(16).join(":"));
     expect(within(dialog).getByText("CN=node.example.org")).toBeInTheDocument();
+    // The expiry reads like every other date in the app.
+    expect(within(dialog).getByText("Mar 07, 2030")).toBeInTheDocument();
     expect(within(dialog).getByText(/openssl x509/)).toBeInTheDocument();
     // Nothing is trusted and nothing is saved until the user says so.
     expect(trusted).toHaveLength(0);
@@ -2114,6 +2364,33 @@ describe("electrum certificates", () => {
         url: "ssl://node.example.org:50002",
       }),
     );
+  });
+
+  it("saves a backend whose server did not answer, and says what its certificate costs", async () => {
+    const saved: unknown[] = [];
+    walletIpc({
+      inspect_certificate: () => ({
+        host: "node.example.org:50002",
+        status: "unreachable",
+        detail: "connection refused",
+      }),
+      set_backend: (args) => {
+        saved.push(args.config);
+        return undefined;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "Saved. The server did not answer, so its certificate is unchecked. If it signs its own, syncs fail until you press Save backend again and accept it.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("keeps a refused certificate out of the vault when the dialog is cancelled", async () => {
@@ -2226,6 +2503,13 @@ describe("electrum certificates", () => {
       }),
     );
     const dialog = await screen.findByRole("dialog");
+    // Nothing asks again on its own: the sync fails until the backend is
+    // saved again.
+    expect(
+      within(dialog).getByText(
+        "Syncs with node.example.org:50002 will fail until you press Save backend again and accept its certificate.",
+      ),
+    ).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Forget it" }));
     await waitFor(() => expect(forgotten).toEqual(["node.example.org:50002"]));
   });
@@ -2327,7 +2611,7 @@ describe("broadcast page", () => {
     const field = await screen.findByLabelText("Signed transaction");
     await user.type(field, "unsigned");
     await user.click(screen.getByRole("button", { name: "Preview" }));
-    expect(await screen.findByText("Unsigned")).toBeInTheDocument();
+    expect(await screen.findByText("Not fully signed")).toBeInTheDocument();
     expect(screen.getByText(/carry no signature/)).toBeInTheDocument();
     const main = within(screen.getByRole("main"));
     expect(main.getByRole("button", { name: "Broadcast" })).toBeDisabled();
@@ -2364,6 +2648,40 @@ describe("broadcast page", () => {
   });
 });
 
+describe("a page that could not be read", () => {
+  it("says why and asks again, and the wallet comes back", async () => {
+    let attempts = 0;
+    walletIpc({
+      wallet_snapshot: () => {
+        attempts += 1;
+        return attempts === 1
+          ? Promise.reject({ kind: "vault", message: "the vault is busy" })
+          : SNAPSHOT;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+
+    const failure = await screen.findByRole("alert");
+    expect(failure).toHaveTextContent("This wallet could not be loaded.");
+    expect(failure).toHaveTextContent("the vault is busy");
+    await user.click(within(failure).getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Bitcoin price")).toBeInTheDocument();
+  });
+
+  /** An empty table would say the wallet holds no coins. */
+  it("never shows a failed list of UTXOs as an empty one", async () => {
+    walletIpc({ utxos: () => Promise.reject({ kind: "vault", message: "the vault is busy" }) });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "UTXOs" }));
+
+    expect(await screen.findByText("The UTXOs could not be loaded.")).toBeInTheDocument();
+    expect(screen.queryByText("No unspent outputs")).not.toBeInTheDocument();
+  });
+});
+
 describe("export page", () => {
   it("previews the selection and writes the file", async () => {
     const exported = vi.fn((_args: Record<string, unknown>) => undefined);
@@ -2381,11 +2699,6 @@ describe("export page", () => {
     await user.click(sidebar().getByRole("button", { name: "Export" }));
 
     expect(await screen.findByText(/1 of 1 transaction selected/)).toBeInTheDocument();
-    // The premium teaser is visible but inert.
-    expect(screen.getByText("Premium")).toBeInTheDocument();
-    expect(
-      screen.getByRole("switch", { name: /fiat value at transaction time/i }),
-    ).toBeDisabled();
 
     // Filtering to outgoing leaves nothing: the export button locks.
     await user.click(screen.getByRole("radio", { name: "Sent" }));
@@ -2401,6 +2714,80 @@ describe("export page", () => {
     expect(Object.keys(args)).not.toContain("path");
     expect((args.options as Record<string, unknown>).include_pending).toBe(true);
     expect(await screen.findByText("1 transaction exported")).toBeInTheDocument();
+  });
+
+  /** The bounds are whole UTC days, the days of the file's
+      `date_utc` column, and the page says so beside the fields. */
+  it("bounds the range by UTC days, and says so", async () => {
+    const exported = vi.fn((_args: Record<string, unknown>) => undefined);
+    walletIpc({
+      export_transactions_csv: (args) => {
+        exported(args);
+        return 1;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Export" }));
+    expect(
+      await screen.findByText(
+        "Days in UTC, as the file dates each transaction. Leave empty to export the full history.",
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2025-01-01" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2025-12-31" } });
+    await user.click(screen.getByRole("button", { name: /export csv/i }));
+    await waitFor(() => expect(exported).toHaveBeenCalledTimes(1));
+    const options = exported.mock.calls[0][0].options as Record<string, unknown>;
+    expect(options.from).toBe(Date.UTC(2025, 0, 1) / 1000);
+    expect(options.to).toBe(Date.UTC(2025, 11, 31) / 1000 + 86_399);
+  });
+
+  /** The days are typed, in the app's one language, never the system's
+      date field; one that does not read is said, and nothing exports
+      rather than a file of the whole history. */
+  it("says a day it cannot read, and exports nothing", async () => {
+    walletIpc();
+    renderApp();
+    await screen.findByText("Bitcoin price");
+    await userEvent.setup().click(sidebar().getByRole("button", { name: "Export" }));
+    const from = await screen.findByLabelText("From");
+    expect(from).toHaveAttribute("type", "text");
+    expect(from).toHaveAttribute("placeholder", "YYYY-MM-DD");
+
+    fireEvent.change(from, { target: { value: "2026-02-31" } });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Write each day as YYYY-MM-DD, for example 2026-01-31.",
+    );
+    expect(from).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("button", { name: /export csv/i })).toBeDisabled();
+
+    fireEvent.change(from, { target: { value: "2026-03-01" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-02-01" } });
+    expect(screen.getByRole("alert")).toHaveTextContent("The range ends before it starts.");
+
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "" } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  /** A file that could not be written stays said under the button,
+      not in a toast gone before it is read. */
+  it("says under the button when the file was not written", async () => {
+    walletIpc({
+      export_transactions_csv: () => Promise.reject({ kind: "internal", message: "disk full" }),
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Export" }));
+    await screen.findByText(/1 of 1 transaction selected/);
+
+    await user.click(screen.getByRole("button", { name: /export csv/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The file was not written: disk full",
+    );
   });
 
   it("says nothing when the save dialog is closed on nothing", async () => {
@@ -2773,6 +3160,60 @@ describe("the app lock", () => {
     await waitFor(() => expect(syncs).toBe(1));
   });
 
+  /** Behind the lock the vault answers the theme alone. After the
+      unlock the whole set of preferences comes back slower than the
+      wallet list: the shell waits for it, and the balances never show
+      for a frame with "Hide amounts" on. */
+  it("keeps the amounts hidden from the first frame after the unlock", async () => {
+    let unlocked = false;
+    const pending: (() => void)[] = [];
+    const seen: string[] = [];
+    const full: Settings = { ...LOCKED, app_prefs: { "desktop.masked": "1" } };
+    mockIPC((cmd) => {
+      seen.push(cmd);
+      switch (cmd) {
+        case "get_settings":
+          if (!unlocked) return { ...LOCKED, app_prefs: {} };
+          return new Promise((resolve) => pending.push(() => resolve(full)));
+        case "app_lock":
+          return LOCKED.app_lock;
+        case "verify_app_lock":
+          unlocked = true;
+          return { unlocked: true, failures: 0, retry_after_secs: 0 };
+        case "list_wallets":
+          return [WALLET];
+        case "wallet_snapshot":
+          return SNAPSHOT;
+        case "utxos":
+          return [];
+        case "receive_addresses":
+          return receiveEntries(0);
+        case "fetch_price_history":
+          return PRICE_HISTORY;
+        case "set_app_pref":
+          return undefined;
+        case "sync_all":
+          return { reports: [], failures: [] };
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderApp();
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByLabelText("PIN"), "1234");
+    await user.click(screen.getByRole("button", { name: /unlock/i }));
+    await waitFor(() => expect(seen).toContain("list_wallets"));
+    await waitFor(() => expect(pending.length).toBeGreaterThan(0));
+    expect(screen.queryByRole("navigation", { name: "Navigation" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/0\.00150000/)).not.toBeInTheDocument();
+
+    act(() => pending.forEach((release) => release()));
+    await screen.findByRole("navigation", { name: "Navigation" });
+    expect(screen.queryByText(/0\.00150000/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/•••••/).length).toBeGreaterThan(0);
+  });
+
   it("says a wrong PIN plainly and stays", async () => {
     mockLocked([{ unlocked: false, failures: 1, retry_after_secs: 0 }]);
     renderApp();
@@ -2891,8 +3332,8 @@ describe("the app lock", () => {
 
   it("asks the vault for nothing of a wallet while it is shut", async () => {
     // The lock screen used to be a curtain in front of a cache the
-    // vault had already filled: the wallet list, its balances, the
-    // account key. Behind the curtain nothing is asked for at all.
+    // vault had already filled: the wallet list, its balances, its
+    // descriptors. Behind the curtain nothing is asked for at all.
     const seen: string[] = [];
     mockLocked([{ unlocked: true, failures: 0, retry_after_secs: 0 }], undefined, seen);
     renderApp();
@@ -2935,7 +3376,6 @@ describe("the app lock", () => {
     expect(client.getQueryData(["snapshot", WALLET.id])).toBeUndefined();
     const kept = client.getQueryData<Settings>(["settings"]);
     expect(kept?.app_lock).toEqual(LOCKED.app_lock);
-    expect(kept?.premium.key).toBeNull();
     expect(kept?.electrum_certs).toEqual({});
   });
 
@@ -2983,8 +3423,11 @@ describe("the app lock", () => {
     await screen.findAllByText(WALLET.name);
     await waitFor(() => expect(asked.some((call) => call.cmd === "sync_all")).toBe(true));
 
-    expect(asked.length).toBeGreaterThan(0);
-    for (const call of asked) expect(call.network).toBe("signet");
+    // The read of every network's wallets names none, by design: it only
+    // tells a first launch from a network without wallets.
+    const scoped = asked.filter((call) => !(call.cmd === "list_wallets" && call.network === null));
+    expect(scoped.length).toBeGreaterThan(0);
+    for (const call of scoped) expect(call.network).toBe("signet");
     expect(screen.queryByText(/no wallets watched yet/i)).not.toBeInTheDocument();
   });
 
@@ -3159,6 +3602,87 @@ describe("the welcome tour", () => {
       expect(prefs["onboarding.seen"]).toBe("1");
     });
     expect(screen.queryByText("Keep it yours")).not.toBeInTheDocument();
+  });
+});
+
+describe("restoring a backup", () => {
+  /** A desktop on mainnet restores the phone's backup, all signet: the
+      workspace follows the wallets, and what the backup's settings put
+      in place shows at once, not at the next launch. */
+  it("lands the wallets of another network in sight, with the settings applied", async () => {
+    let settings: Settings = { ...SETTINGS, active_network: "mainnet" };
+    let wallets: WalletMeta[] = [];
+    const calls: string[] = [];
+    walletIpc({
+      get_settings: () => settings,
+      list_wallets: (args) =>
+        wallets.filter((wallet) => args.network == null || wallet.network === args.network),
+      pick_backup_file: () => ({ name: "phone.gerfaut", data: "R0ZCQUNLVVA=" }),
+      preview_backup: () => ({
+        created_at: 1_755_000_000,
+        has_settings: true,
+        wallets: [
+          {
+            index: 0,
+            name: "Cold storage",
+            network: "signet",
+            kind: WALLET.kind,
+            already_watched: false,
+          },
+        ],
+        backends: [{ network: "signet", backend: "node.example.org" }],
+        electrum_hosts: [],
+      }),
+      import_backup: () => {
+        calls.push("import_backup");
+        wallets = [WALLET];
+        settings = {
+          ...settings,
+          gap_limit: 50,
+          backends: { signet: { type: "custom_electrum", url: "ssl://node.example.org:50002" } },
+        };
+        return { added: [WALLET], skipped: 0, settings_applied: true };
+      },
+      set_active_network: (args) => {
+        calls.push("set_active_network");
+        settings = { ...settings, active_network: args.network as Settings["active_network"] };
+        return undefined;
+      },
+      // The sync that follows is still running: its own toast would
+      // take the restore's place.
+      sync_all: (args) => {
+        calls.push(`sync_all ${String(args.network)}`);
+        return new Promise(() => {});
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    expect(await screen.findByText("No wallets watched yet")).toBeInTheDocument();
+
+    await openSettings(user, "Backup & sync");
+    await user.click(screen.getByRole("button", { name: "Restore…" }));
+    await user.click(await screen.findByRole("button", { name: /open a file/i }));
+    await user.type(await screen.findByLabelText("Password"), "correct horse");
+    await user.click(screen.getByRole("button", { name: "Open backup" }));
+    await user.click(await screen.findByRole("switch", { name: /apply node settings/i }));
+    await user.click(screen.getByRole("button", { name: "Restore 1 wallet" }));
+
+    expect(await screen.findByText("1 wallet restored · settings applied")).toBeInTheDocument();
+    expect(calls.slice(0, 2)).toEqual(["import_backup", "set_active_network"]);
+    // The first wallets of a fresh desktop also start the launch sync:
+    // every sync goes to the network they are on.
+    expect(calls.slice(2)).not.toHaveLength(0);
+    expect(calls.slice(2).every((call) => call === "sync_all signet")).toBe(true);
+    // The settings shown are the vault's, read again: the network the
+    // wallets are on, and the backend and gap limit the backup brought.
+    await openSettings(user, "Network");
+    expect(await screen.findByRole("button", { name: /^Signet/, pressed: true })).toBeInTheDocument();
+    expect(screen.getByLabelText("Host")).toHaveValue("node.example.org");
+    await openSettings(user, "Wallets");
+    expect(screen.getByLabelText("Gap limit")).toHaveValue("50");
+    // And the wallet is in sight, not filed under a network nobody shows.
+    await user.click(sidebar().getByRole("button", { name: "Overview" }));
+    expect(await screen.findByRole("heading", { name: "Cold storage" })).toBeInTheDocument();
   });
 });
 

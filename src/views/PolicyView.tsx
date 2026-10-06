@@ -1,13 +1,13 @@
 import { clsx } from "clsx";
 import { Check, ChevronRight, Clock, Coins, Copy, Lock } from "lucide-react";
-import { useState } from "react";
 import type { ReactNode } from "react";
 import { AddressChip } from "../components/AddressChip";
 import { IconButton } from "../components/Button";
 import { Notice } from "../components/Notice";
 import { Pill } from "../components/StatusPill";
 import { formatTimestamp, groupThousands } from "../lib/format";
-import type { PolicyBranch, PolicyKey, PolicySnapshot } from "../lib/ipc";
+import { multipathDescriptor } from "../lib/descriptor";
+import type { PolicyBranch, PolicyKey, PolicySnapshot, WalletKind } from "../lib/ipc";
 import { isCommandError } from "../lib/ipc";
 import type { Countdown as CountdownFigures } from "../lib/policy";
 import {
@@ -22,7 +22,7 @@ import {
   timelockText,
 } from "../lib/policy";
 import { useSnapshot, useWalletPolicy } from "../state/queries";
-import { useUi } from "../state/store";
+import { useClipboard } from "../state/clipboard";
 
 /** The `label` style: section names, roles, the estimated date. */
 const LABEL = "font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted";
@@ -59,7 +59,7 @@ export function PolicyView({ walletId }: { walletId: string }) {
           {isCommandError(policy.error) ? policy.error.message : "The core did not answer."}
         </Notice>
       ) : (
-        <Body snapshot={policy.data} />
+        <Body snapshot={policy.data} wallet={snapshot.data?.meta.kind} />
       )}
     </div>
   );
@@ -93,7 +93,7 @@ function Placeholder() {
   );
 }
 
-function Body({ snapshot }: { snapshot: PolicySnapshot }) {
+function Body({ snapshot, wallet }: { snapshot: PolicySnapshot; wallet?: WalletKind }) {
   const sentence = (
     <p className="max-w-[65ch] px-1 font-ui text-base text-pretty text-text">
       {describePolicy(snapshot)}
@@ -130,7 +130,7 @@ function Body({ snapshot }: { snapshot: PolicySnapshot }) {
         </p>
       )}
       <KeysSection keys={snapshot.keys} />
-      <DescriptorSection snapshot={snapshot} />
+      <DescriptorSection snapshot={snapshot} wallet={wallet} />
     </>
   );
 }
@@ -274,18 +274,26 @@ function KeysSection({ keys }: { keys: PolicyKey[] }) {
   );
 }
 
-/** The descriptor as imported, folded by default, with the normalized
-    policy under it: the keys named, the locks as consensus values. */
-function DescriptorSection({ snapshot }: { snapshot: PolicySnapshot }) {
-  const [copied, setCopied] = useState(false);
-  const showToast = useUi((s) => s.showToast);
+/** The descriptor the page shows and copies: the wallet whole, its
+    receive and change branches as one multipath descriptor (`<0;1>`),
+    the form it was most likely imported in. The core reads the policy
+    from the receive branch alone, and that one copied elsewhere would
+    have watched the wallet without its change. When the two do not make
+    one descriptor, the receive one, as before. */
+export function shownDescriptor(snapshot: PolicySnapshot, wallet?: WalletKind): string {
+  if (wallet?.type !== "descriptors" || wallet.internal === null) return snapshot.descriptor;
+  if (wallet.external !== snapshot.descriptor) return snapshot.descriptor;
+  return multipathDescriptor(wallet.external, wallet.internal) ?? snapshot.descriptor;
+}
 
-  const copy = async () => {
-    await navigator.clipboard.writeText(snapshot.descriptor);
-    setCopied(true);
-    showToast("Copied");
-    setTimeout(() => setCopied(false), 1500);
-  };
+/** The descriptor, folded by default, with the normalized policy under
+    it: the keys named, the locks as consensus values. */
+function DescriptorSection({ snapshot, wallet }: { snapshot: PolicySnapshot; wallet?: WalletKind }) {
+  // The descriptor is what lets anyone watch the wallet: it leaves the
+  // clipboard history out, and the clipboard a minute later.
+  const { copy: copyText, copied } = useClipboard({ sensitive: true });
+  const descriptor = shownDescriptor(snapshot, wallet);
+  const copy = () => copyText(descriptor);
 
   return (
     <details className="group px-1">
@@ -309,7 +317,7 @@ function DescriptorSection({ snapshot }: { snapshot: PolicySnapshot }) {
             centres on it, a long one starts at the top beside it. */}
         <div className="flex items-start gap-1 rounded-md bg-sunken py-1.5 pr-1.5 pl-3">
           <p className="selectable flex min-h-10 min-w-0 flex-1 items-center break-all py-1.5 font-data text-[12px] leading-relaxed text-text">
-            {snapshot.descriptor}
+            {descriptor}
           </p>
           <IconButton
             label="Copy descriptor"

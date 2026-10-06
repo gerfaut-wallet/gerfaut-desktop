@@ -18,12 +18,6 @@ const FULL: Settings = {
   electrum_certs: { "node.example:50002": "AB:CD" },
   app_lock: PIN,
   tor: { mode: "auto", socks_proxy: null },
-  premium: {
-    key: "abcd-efgh-ijkm-npqr",
-    certificate: "cert",
-    watched: [{ wallet_id: "w-1", consented_at: 0 }],
-    acknowledged_offline_until: null,
-  },
 };
 
 describe("the settings kept behind the lock", () => {
@@ -38,8 +32,6 @@ describe("the settings kept behind the lock", () => {
     expect(shut.app_prefs).toEqual({ "desktop.theme": "dark", "onboarding.seen": "1" });
     expect(shut.backends).toEqual({});
     expect(shut.electrum_certs).toEqual({});
-    expect(shut.premium.key).toBeNull();
-    expect(shut.premium.watched).toEqual([]);
     // What the lock screen has to ask for stays.
     expect(shut.app_lock).toEqual(PIN);
   });

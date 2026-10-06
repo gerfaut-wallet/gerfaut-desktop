@@ -1,11 +1,12 @@
 import { Check, Globe } from "lucide-react";
 import { clsx } from "clsx";
+import { useState } from "react";
 import type { Settings } from "../../lib/ipc";
 import { useSetActiveNetwork, useSetBackend } from "../../state/queries";
 import { useUi } from "../../state/store";
 import { BackendSection, NETWORKS } from "./BackendSection";
 import { CertificatesSection } from "./CertificatesSection";
-import { SectionCard } from "./primitives";
+import { SaveFailure, SectionCard } from "./primitives";
 import { TorSection } from "./TorSection";
 
 /** The chain the workspace watches, where its data comes from, how
@@ -15,6 +16,8 @@ export function NetworkSection({ settings }: { settings: Settings }) {
   const setActiveNetwork = useSetActiveNetwork();
   const setBackend = useSetBackend();
   const network = settings.active_network;
+  /** The switch the vault refused: the selection stays where it was. */
+  const [failure, setFailure] = useState<unknown>(null);
 
   return (
     <>
@@ -29,9 +32,11 @@ export function NetworkSection({ settings }: { settings: Settings }) {
                 aria-pressed={selected}
                 onClick={() => {
                   if (!selected) {
-                    void setActiveNetwork.mutateAsync(option.value).then(() => {
-                      showToast("Setting saved");
-                    });
+                    setFailure(null);
+                    void setActiveNetwork.mutateAsync(option.value).then(
+                      () => showToast("Setting saved"),
+                      setFailure,
+                    );
                   }
                 }}
                 className={clsx(
@@ -61,6 +66,7 @@ export function NetworkSection({ settings }: { settings: Settings }) {
             );
           })}
         </div>
+        <SaveFailure error={failure} />
         <p className="mt-3 font-ui text-xs text-muted">
           Only wallets on the selected network are shown.
         </p>

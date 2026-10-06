@@ -4,7 +4,6 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BackendConfig, Network, WatchStatus } from "../../lib/ipc";
-import { notifier } from "../../state/notifications";
 import { useUi } from "../../state/store";
 import { NotificationsSection } from "./NotificationsSection";
 
@@ -15,6 +14,9 @@ const OFF: WatchStatus = {
   detail: null,
   watched_scripts: 0,
   pushed_scripts: 0,
+  left_out_scripts: 0,
+  left_out_wallets: 0,
+  wallets: [],
 };
 
 interface Desk {
@@ -22,15 +24,24 @@ interface Desk {
   prefs: Record<string, string>;
   tests: number;
   refuseTest: boolean;
+  /** The networks of the wallets in the vault, one entry per wallet. */
+  wallets: Network[];
+  /** The networks the card asked for the wallets of. */
+  listed: Network[];
 }
 
 function mockDesk(status: WatchStatus = OFF): Desk {
-  const desk: Desk = { status, prefs: {}, tests: 0, refuseTest: false };
+  const desk: Desk = { status, prefs: {}, tests: 0, refuseTest: false, wallets: ["mainnet"], listed: [] };
   mockIPC((cmd, args) => {
     const payload = (args ?? {}) as Record<string, string>;
     switch (cmd) {
       case "live_status":
         return { enabled: desk.prefs["notify.new_tx"] === "1", status: desk.status };
+      case "list_wallets":
+        desk.listed.push(payload.network as Network);
+        return desk.wallets
+          .filter((network) => network === payload.network)
+          .map((network, index) => ({ id: `w-${index}`, network }));
       case "set_app_pref":
         desk.prefs[payload.key] = payload.value;
         return undefined;
@@ -62,9 +73,7 @@ function renderCard(
 const statusLine = () => screen.getByRole("status", { name: "Live watch status" });
 
 beforeEach(() => {
-  useUi.setState({ notifyNewTx: false, notificationsRefused: false });
-  vi.spyOn(notifier, "isPermissionGranted").mockResolvedValue(true);
-  vi.spyOn(notifier, "requestPermission").mockResolvedValue("granted");
+  useUi.setState({ notifyNewTx: false });
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -99,19 +108,64 @@ describe("Settings › Notifications", () => {
     );
   });
 
-  it("stays off, and says why, when the system refuses notifications", async () => {
+  /** The vault writes the preference and the Rust side starts the watch
+      before either answers: meanwhile the line says the watch is on its
+      way, not "Off" under a switch that says on. */
+  it("says the watch is connecting while it starts", async () => {
     const desk = mockDesk();
-    vi.spyOn(notifier, "isPermissionGranted").mockResolvedValue(false);
-    vi.spyOn(notifier, "requestPermission").mockResolvedValue("denied");
+    let started: () => void = () => {};
+    mockIPC((cmd, args) => {
+      const payload = (args ?? {}) as Record<string, string>;
+      if (cmd === "live_status") {
+        return { enabled: desk.prefs["notify.new_tx"] === "1", status: desk.status };
+      }
+      if (cmd === "set_app_pref") {
+        return new Promise<void>((resolve) => {
+          started = () => {
+            desk.prefs[payload.key] = payload.value;
+            desk.status = { ...OFF, state: "connected", transport: "electrum", server: "node.example" };
+            resolve();
+          };
+        });
+      }
+      throw new Error(`unexpected command ${cmd}`);
+    });
     renderCard();
+    await waitFor(() => expect(statusLine()).toHaveTextContent("Off"));
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("switch", { name: "Notify about new transactions" }));
-    expect(
-      await screen.findByText("Notifications are off for Gerfaut in the system settings."),
-    ).toBeInTheDocument();
-    expect(desk.prefs["notify.new_tx"]).toBeUndefined();
-    expect(statusLine()).toHaveTextContent("Off");
+    expect(statusLine()).toHaveTextContent("Connecting…");
+    started();
+    await waitFor(() =>
+      expect(statusLine()).toHaveTextContent("Connected · Electrum · node.example"),
+    );
+  });
+
+  /** On, with no wallet on the network in use, the watch has nothing to
+      follow: the line says what turns it on, as on Android. A wallet on
+      another network does not count, and off is only off. */
+  it("says the watch waits for a wallet on this network", async () => {
+    const desk = mockDesk();
+    desk.wallets = ["mainnet"];
+    renderCard({}, "signet");
+    const user = userEvent.setup();
+    await waitFor(() => expect(statusLine()).toHaveTextContent(/^Off$/));
+
+    await user.click(screen.getByRole("switch", { name: "Notify about new transactions" }));
+    await waitFor(() => expect(desk.prefs["notify.new_tx"]).toBe("1"));
+    await waitFor(() => expect(statusLine()).toHaveTextContent("Off until you add a wallet."));
+    expect(statusLine()).not.toHaveTextContent("Connecting…");
+  });
+
+  it("says a bare Off when the network holds a wallet and the watch is off", async () => {
+    useUi.setState({ notifyNewTx: true });
+    const desk = mockDesk();
+    desk.prefs["notify.new_tx"] = "1";
+    desk.wallets = ["signet"];
+    renderCard({}, "signet");
+    await waitFor(() => expect(desk.listed).toEqual(["signet"]));
+    await waitFor(() => expect(statusLine()).toHaveTextContent(/^Off$/));
   });
 
   it("says why it is reconnecting, and that an Esplora backend is polled", async () => {
@@ -142,15 +196,110 @@ describe("Settings › Notifications", () => {
     mockDesk();
     const automatic = renderCard({}, "mainnet");
     expect(
-      screen.getByText(/The server learns what a sync already tells it, and also how long Gerfaut stays connected\./),
+      screen.getByText(/which learns what a sync already tells it and how long Gerfaut stays connected\./),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/With the Automatic backend, Gerfaut first tries an Electrum server run by one of the public operators already in the rotation, because Electrum is what pushes changes\./),
+      screen.getByText(/With the Automatic backend, that is an Electrum server of an operator already in the rotation: Electrum is what pushes changes\./),
     ).toBeInTheDocument();
     automatic.unmount();
 
     renderCard({ mainnet: { type: "custom_electrum", url: "ssl://node.example:50002" } });
     expect(screen.queryByText(/With the Automatic backend/)).not.toBeInTheDocument();
+  });
+
+  /** Short of room, the watch says what it leaves to the syncs and the
+      way out; on the user's own node there is no further way out. */
+  it("says what it leaves to the syncs, and offers the own node", async () => {
+    useUi.setState({ notifyNewTx: true, settingsSection: "notifications" });
+    const short: WatchStatus = {
+      ...OFF,
+      state: "connected",
+      transport: "electrum",
+      server: "electrum.example.org",
+      watched_scripts: 2_000,
+      pushed_scripts: 2_000,
+      left_out_scripts: 1_240,
+      left_out_wallets: 2,
+      wallets: [],
+    };
+    const desk = mockDesk(short);
+    desk.prefs["notify.new_tx"] = "1";
+    const first = renderCard({}, "mainnet");
+    expect(
+      await screen.findByText(
+        // The matcher reads a no-break space as a space.
+        "The live watch follows at most 200 addresses per wallet and 2 000 in all. 1 240 addresses of 2 wallets are checked at the next sync instead. Connect your own node and turn on \"This is my node\" in Network to follow up to 20 000.",
+      ),
+    ).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Node settings" }));
+    expect(useUi.getState().view).toBe("settings");
+    expect(useUi.getState().settingsSection).toBe("network");
+    first.unmount();
+
+    // At the own node's cap: the cap is all there is to say.
+    desk.status = {
+      ...short,
+      watched_scripts: 20_000,
+      pushed_scripts: 20_000,
+      left_out_scripts: 1,
+      left_out_wallets: 1,
+    };
+    renderCard({
+      mainnet: { type: "custom_electrum", url: "ssl://node.example:50002", own_node: true },
+    });
+    expect(
+      await screen.findByText(
+        "The live watch follows at most 20 000 addresses, even on your own node. 1 address of 1 wallet is checked at the next sync instead.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Node settings" })).not.toBeInTheDocument();
+  });
+
+  /** On the user's own node, addresses left out below the cap are the
+      server's refusals: the note says so, and names the setting of the
+      server it runs that lets it take more, which no button of the app
+      reaches. */
+  it("names the node's own limit when it refuses addresses", async () => {
+    useUi.setState({ notifyNewTx: true, settingsSection: "notifications" });
+    const desk = mockDesk({
+      ...OFF,
+      state: "connected",
+      transport: "electrum",
+      server: "node.example",
+      watched_scripts: 4_000,
+      pushed_scripts: 3_700,
+      left_out_scripts: 300,
+      left_out_wallets: 1,
+      wallets: [],
+      server_software: "Fulcrum 1.12.0",
+    });
+    desk.prefs["notify.new_tx"] = "1";
+    renderCard({
+      mainnet: { type: "custom_electrum", url: "ssl://node.example:50002", own_node: true },
+    });
+    expect(
+      await screen.findByText(
+        "Your node refuses some of the addresses the live watch asks it to follow. 300 addresses of 1 wallet are checked at the next sync instead. Raise max_subs_per_ip in the Fulcrum configuration to follow them all.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Node settings" })).not.toBeInTheDocument();
+  });
+
+  it("says nothing of room while every address is followed, or the watch is off", async () => {
+    const desk = mockDesk({
+      ...OFF,
+      state: "connected",
+      transport: "electrum",
+      server: "electrum.example.org",
+      watched_scripts: 36,
+      pushed_scripts: 36,
+    });
+    useUi.setState({ notifyNewTx: true });
+    desk.prefs["notify.new_tx"] = "1";
+    renderCard();
+    await waitFor(() => expect(statusLine()).toHaveTextContent("Connected"));
+    expect(screen.queryByText(/checked at the next sync/)).not.toBeInTheDocument();
   });
 
   it("sends a test notification and says what to check, or what the system answered", async () => {

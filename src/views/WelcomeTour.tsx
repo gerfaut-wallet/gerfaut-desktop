@@ -5,7 +5,7 @@ import { clsx } from "clsx";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { useUi } from "../state/store";
-import mark from "../assets/gerfaut-mark.svg";
+import { Lockup } from "../components/Lockup";
 
 interface Step {
   icon: ReactNode;
@@ -66,8 +66,11 @@ export function WelcomeTour({ open, onClose }: { open: boolean; onClose: () => v
           if (event.key === "ArrowLeft" && step > 0) setStep(step - 1);
         }}
       >
+        {/* The first page presents the app by name, in place of the
+            disc: every page keeps the same 64px slot, so the dialog
+            does not jump. */}
         {step === 0 ? (
-          <img src={mark} alt="Gerfaut" className="h-16 w-16" />
+          <Lockup label="Gerfaut" width={100} />
         ) : (
           <span className="flex size-16 items-center justify-center rounded-full bg-sunken text-primary">
             {current.icon}

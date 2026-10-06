@@ -2,13 +2,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "./components/Button";
 import { EmptyState } from "./components/EmptyState";
-import { NewDeviceBanner } from "./components/NewDeviceBanner";
 import { Toast } from "./components/Toast";
 import { UpdateNotice } from "./components/UpdateNotice";
 import { Sidebar } from "./shell/Sidebar";
 import { useLiveEvents } from "./state/live";
 import { isLockedError, lockedSettings, useLock, useLockShortcut } from "./state/lock";
-import { useDeviceWatch, usePremiumWatch } from "./state/premium";
 import { useUpdateCheck } from "./state/update";
 import { LockScreen } from "./views/LockScreen";
 import { WelcomeTour } from "./views/WelcomeTour";
@@ -21,7 +19,7 @@ import {
   useSyncing,
   useWallets,
 } from "./state/queries";
-import { useUi } from "./state/store";
+import { useFollowSystemTheme, useUi } from "./state/store";
 import { AddWalletModal } from "./views/AddWalletModal";
 import { BroadcastView } from "./views/BroadcastView";
 import { ExportView } from "./views/ExportView";
@@ -34,19 +32,6 @@ import { TransactionsView } from "./views/TransactionsView";
 import { TxDetailModal } from "./views/TxDetailModal";
 import { UtxosView } from "./views/UtxosView";
 
-/** Keeps the server's heartbeat coming while there is something to
-    watch: a key is set and at least one wallet was agreed to; and the
-    account's devices current while a key is set, or while a connection
-    whose answer was lost waits to go again. Its own component, so it
-    can sit behind the lock check without a hook running
-    conditionally. */
-function PremiumWatch({ settings }: { settings: Settings }) {
-  const { premium } = settings;
-  usePremiumWatch(premium.key !== null && premium.watched.length > 0);
-  useDeviceWatch(premium.key !== null || premium.pending_connect != null);
-  return null;
-}
-
 export default function App() {
   const startup = useStartupFailure();
   const settings = useSettings();
@@ -57,6 +42,10 @@ export default function App() {
   // it is locked, and nothing while it is: the lock screen used to be
   // a curtain over a cache full of descriptors and balances.
   const wallets = useWallets(network, lockSeen && !locked);
+  // Every network's: the first screen of an empty vault is not the
+  // first screen of a network that only lacks wallets. Asked only when
+  // this network has none, the one case it decides.
+  const everyWallet = useWallets(undefined, lockSeen && !locked && wallets.data?.length === 0);
   const syncAll = useSyncAll();
   // Any sync in flight, not only this hook's: the one a fresh wallet
   // starts, or a single wallet's refresh, must turn the sidebar icon.
@@ -68,6 +57,11 @@ export default function App() {
     tourDismissed,
   } = useUi();
   const hydrated = useRef(false);
+  // The shell waits for the whole set of preferences: behind the lock
+  // the vault answers the theme alone, and a wallet list that came back
+  // before the settings once drew the balances unmasked, "Hide amounts"
+  // on, for the length of a round trip.
+  const [prefsReady, setPrefsReady] = useState(false);
   const autosynced = useRef(false);
   const wasLocked = useRef(false);
   const client = useQueryClient();
@@ -75,6 +69,7 @@ export default function App() {
   const [tourOpen, setTourOpen] = useState(false);
   const canvas = useRef<HTMLDivElement>(null);
   useLockShortcut();
+  useFollowSystemTheme();
 
   // Both of these read the vault, and both have to land before the
   // browser paints, so they run in layout effects rather than ordinary
@@ -96,13 +91,13 @@ export default function App() {
     if (!settings.data || hydrated.current) return;
     hydratePrefs(settings.data.app_prefs);
     hydrated.current = !useLock.getState().locked;
+    if (hydrated.current) setPrefsReady(true);
   }, [settings.data, hydratePrefs]);
 
   // Every page opens at its top. The canvas is one scrolling box for all
   // of them, and it used to keep the offset of the page left behind: the
   // Overview came back from a long Settings section scrolled past its
-  // first card, and the red banner of a device asking into the account
-  // stood out of view. Another wallet's page is another page too. Done
+  // first card. Another wallet's page is another page too. Done
   // before the paint, and before any page's own effects, so a section
   // that brings a card into view on arrival still has the last word.
   useLayoutEffect(() => {
@@ -111,7 +106,7 @@ export default function App() {
 
   // What the cache is allowed to hold is decided by the lock, in one
   // place. The curtain falling empties it of everything the vault
-  // answered — descriptors, balances, addresses, the account key —
+  // answered — descriptors, balances, addresses —
   // and cuts the settings entry down to the theme rather than dropping
   // it, which would lose the ramp the lock screen is painted in.
   useEffect(() => {
@@ -123,9 +118,20 @@ export default function App() {
       );
     } else if (wasLocked.current) {
       wasLocked.current = false;
-      void client.invalidateQueries({ queryKey: keys.settings });
+      // The settings read again are the whole set: taken here too, for
+      // the day they come back identical to the cut copy and the cache
+      // keeps the same object, which the effect above would not see.
+      void client.invalidateQueries({ queryKey: keys.settings }).then(() => {
+        // A refetch that failed keeps the cut copy: not that one.
+        if (client.getQueryState(keys.settings)?.status !== "success") return;
+        const fresh = client.getQueryData<Settings>(keys.settings);
+        if (!fresh || hydrated.current || useLock.getState().locked) return;
+        hydratePrefs(fresh.app_prefs);
+        hydrated.current = true;
+        setPrefsReady(true);
+      });
     }
-  }, [locked, client]);
+  }, [locked, client, hydratePrefs]);
 
   // One background refresh at startup; data stays visibly stamped. It
   // waits for the unlock because the vault answers nothing before it,
@@ -199,7 +205,7 @@ export default function App() {
   // is waited on, which behind the lock is never asked for at all.
   if (locked) return <LockScreen />;
 
-  if (wallets.isPending) {
+  if (wallets.isPending || !prefsReady) {
     return (
       <div className="shell-rail flex h-full items-center justify-center bg-shell">
         <p className="font-ui text-sm text-muted">Opening vault…</p>
@@ -236,25 +242,19 @@ export default function App() {
               {view === "settings" ? (
                 <SettingsView settings={settings.data} wallets={walletList} />
               ) : walletList.length === 0 ? (
-                // With no wallet there is no Overview, and a stranger's
-                // device asking into the account is still said first.
-                <div className="flex h-full flex-col">
-                  <NewDeviceBanner className="mb-4 mt-2" />
-                  <div className="min-h-0 flex-1">
-                    <EmptyState
-                      title="No wallets watched yet"
-                      hint="Add a descriptor, an extended public key, or an address. Gerfaut watches it and never touches a private key."
-                      action={
-                        <Button
-                          variant="primary"
-                          onClick={() => useUi.getState().setAddWalletOpen(true)}
-                        >
-                          Add a wallet
-                        </Button>
-                      }
-                    />
-                  </div>
-                </div>
+                <EmptyState
+                  lockup={everyWallet.data?.length === 0}
+                  title="No wallets watched yet"
+                  hint="Add a descriptor, an extended public key, or an address. Gerfaut watches it and never touches a private key."
+                  action={
+                    <Button
+                      variant="primary"
+                      onClick={() => useUi.getState().setAddWalletOpen(true)}
+                    >
+                      Add a wallet
+                    </Button>
+                  }
+                />
               ) : activeWallet ? (
                 <>
                   {view === "home" && <HomeView walletId={activeWallet.id} />}
@@ -275,7 +275,6 @@ export default function App() {
         </div>
       </main>
 
-      <PremiumWatch settings={settings.data} />
       {view !== "settings" && activeWallet && (
         <TxDetailModal walletId={activeWallet.id} network={activeWallet.network} />
       )}

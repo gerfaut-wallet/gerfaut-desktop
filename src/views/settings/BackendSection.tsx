@@ -5,23 +5,31 @@ import { Button } from "../../components/Button";
 import { ScanQrModal } from "../../components/ScanQrModal";
 import { Select } from "../../components/Select";
 import { OnionIcon } from "../../components/icons/OnionIcon";
-import { ipc, isCommandError } from "../../lib/ipc";
+import { NETWORK_LABEL, groupThousands } from "../../lib/format";
+import { errorMessage, ipc, isCommandError } from "../../lib/ipc";
 import type { BackendConfig, CertificateReport, Network, Settings } from "../../lib/ipc";
 import {
   useInspectCertificate,
   usePublicServers,
   useTrustCertificate,
 } from "../../state/queries";
+import { isOwnNode, WATCH_LIMITS } from "../../state/live";
 import { useUi } from "../../state/store";
 import { CertificateDialog } from "./CertificatesSection";
 import { FieldLabel, SectionCard, Toggle } from "./primitives";
 
 /** The chains a workspace can watch, each with a word on what it is. */
+/** Said once a backend is saved whose server did not answer. Nothing
+    asks about its certificate later: a sync it refuses fails, and Save
+    backend is where it is accepted. */
+const UNCHECKED_NOTE =
+  "Saved. The server did not answer, so its certificate is unchecked. If it signs its own, syncs fail until you press Save backend again and accept it.";
+
 export const NETWORKS: { value: Network; label: string; hint: string }[] = [
-  { value: "mainnet", label: "Mainnet", hint: "The Bitcoin network" },
-  { value: "signet", label: "Signet", hint: "Test network, reliable blocks" },
-  { value: "testnet4", label: "Testnet 4", hint: "Public test network" },
-  { value: "regtest", label: "Regtest", hint: "Local development chain" },
+  { value: "mainnet", label: NETWORK_LABEL.mainnet, hint: "The Bitcoin network" },
+  { value: "signet", label: NETWORK_LABEL.signet, hint: "Test network, reliable blocks" },
+  { value: "testnet4", label: NETWORK_LABEL.testnet4, hint: "Public test network" },
+  { value: "regtest", label: NETWORK_LABEL.regtest, hint: "Local development chain" },
 ];
 
 // --- electrum url helpers ----------------------------------------------
@@ -85,6 +93,10 @@ export function BackendSection({
   const [host, setHost] = useState(initialElectrum.host);
   const [port, setPort] = useState(initialElectrum.port);
   const [tls, setTls] = useState(initialElectrum.tls);
+  // Read from the stored backend and sent back with every save: the
+  // core leaves it out while off, so a form that rebuilt the config
+  // without it would turn it off each time the address is saved.
+  const [ownNode, setOwnNode] = useState(isOwnNode(current));
   const inspect = useInspectCertificate();
   const trust = useTrustCertificate();
   const { showToast } = useUi();
@@ -116,6 +128,7 @@ export function BackendSection({
     setHost(electrum.host);
     setPort(electrum.port);
     setTls(electrum.tls);
+    setOwnNode(isOwnNode(config));
     setOnion(false);
     setSaveError(null);
   }, [network, settings.backends]);
@@ -130,12 +143,15 @@ export function BackendSection({
   const known = servers.data?.some((server) => server.id === publicServer) ?? false;
   const chosen = known ? publicServer : "";
 
-  /** What the form describes right now. */
+  /** What the form describes right now. The switch goes with every
+      custom server, in the form the core stores: there while on, left
+      out while off. */
   const draft = (): BackendConfig => {
     if (kind === "public_esplora")
       return chosen ? { type: "public_esplora", server: chosen } : { type: "public_esplora" };
-    if (kind === "custom_esplora") return { type: "custom_esplora", url: esploraUrl.trim() };
-    return { type: "custom_electrum", url: buildElectrumUrl(host, port, tls) };
+    const mine = ownNode ? { own_node: true } : {};
+    if (kind === "custom_esplora") return { type: "custom_esplora", url: esploraUrl.trim(), ...mine };
+    return { type: "custom_electrum", url: buildElectrumUrl(host, port, tls), ...mine };
   };
 
   /** The Electrum address a configuration talks to, if any: the only case
@@ -157,6 +173,10 @@ export function BackendSection({
       setScanError(null);
       setSaveError(null);
       setOnion(backend.onion);
+      // Another server is not the user's node until they say so: left
+      // on, the switch would have the live watch hand it up to 20 000
+      // addresses. The stored server read again keeps it.
+      setOwnNode(isOwnNode(current) && "url" in current && current.url === backend.url);
       if (backend.kind === "esplora") {
         setKind("custom_esplora");
         setEsploraUrl(backend.url);
@@ -223,20 +243,26 @@ export function BackendSection({
     await store(
       config,
       report?.status === "unreachable"
-        ? "Saved. The server did not answer, so its certificate is unchecked."
+        ? UNCHECKED_NOTE
         : undefined,
     );
   };
 
   const accept = (fingerprint: string) => {
     if (!pending) return;
-    void trust.mutateAsync({ url: pending.url, fingerprint }).then(() => {
-      void store(pending.config);
-      setPending(null);
-    });
+    void trust.mutateAsync({ url: pending.url, fingerprint }).then(
+      () => {
+        void store(pending.config);
+        setPending(null);
+      },
+      // Not trusted, so not stored: said under the button that saves.
+      (error) => {
+        setPending(null);
+        setSaveError(errorMessage(error));
+      },
+    );
   };
 
-  const chosenProtocol = servers.data?.find((server) => server.id === chosen)?.protocol;
   const networkLabel = NETWORKS.find((option) => option.value === network)?.label;
 
   /** The field the selected source needs, rendered under its own option
@@ -273,8 +299,6 @@ export function BackendSection({
           {chosen
             ? "Only this server is asked for chain data."
             : "Every public server is tried in turn until one answers."}
-          {chosenProtocol === "electrum" &&
-            " Electrum servers cannot serve a single-address wallet."}
         </p>
       </>
     ),
@@ -294,7 +318,7 @@ export function BackendSection({
               }}
               spellCheck={false}
               placeholder="https://node.example.org:3002/api"
-              className="field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted/60"
+              className="field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted"
             />
           </div>
           <ScanButton onClick={() => setScanOpen(true)} />
@@ -319,7 +343,7 @@ export function BackendSection({
               }}
               spellCheck={false}
               placeholder="node.example.org or xxxxxxxx.onion"
-              className="field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted/60"
+              className="field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted"
             />
           </div>
           <div className="w-24">
@@ -335,7 +359,7 @@ export function BackendSection({
               }}
               inputMode="numeric"
               placeholder="50002"
-              className="field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted/60"
+              className="field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted"
             />
           </div>
           <div className="flex h-11 items-center gap-2 pb-0.5">
@@ -408,10 +432,13 @@ export function BackendSection({
       </fieldset>
 
       {kind !== "public_esplora" && (
-        <p className="mt-3 font-ui text-xs text-muted">
-          An address ending in .onion goes through Tor; the Tor card below says
-          which one and lets you test it.
-        </p>
+        <>
+          <OwnNodeSwitch checked={ownNode} onChange={setOwnNode} />
+          <p className="mt-3 font-ui text-xs text-muted">
+            An address ending in .onion goes through Tor; the Tor card below says
+            which one and lets you test it.
+          </p>
+        </>
       )}
       {plainTcp && (
         <p className="mt-3 font-ui text-xs text-muted">
@@ -448,6 +475,43 @@ export function BackendSection({
         onScan={(text) => void applyScan(text)}
       />
     </SectionCard>
+  );
+}
+
+/** "This is my node": the one thing about a server the app cannot
+    find out for itself. A public server limits how many addresses one
+    connection may follow and refuses the rest, and it learns every one
+    of them; a node of one's own serves all it is asked. So Live asks
+    ten times more of a server the user says is theirs, and nothing
+    checks the claim: the line under the switch says when to leave it
+    off. */
+function OwnNodeSwitch({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="mt-4 flex items-start justify-between gap-6 border-t border-border pt-4">
+      <div className="min-w-0 max-w-xl">
+        <p className="font-ui text-sm font-medium text-text">This is my node</p>
+        <p id="own-node-hint" className="mt-0.5 font-ui text-xs text-muted">
+          The live watch then follows up to{" "}
+          {groupThousands(String(WATCH_LIMITS.ownNode.total))} addresses instead of{" "}
+          {groupThousands(String(WATCH_LIMITS.any.total))}. Leave it off for a server you do not
+          run: it would refuse most of them, and learn every one.
+        </p>
+      </div>
+      <div className="shrink-0 pt-0.5">
+        <Toggle
+          checked={checked}
+          onChange={onChange}
+          label="This is my node"
+          describedBy="own-node-hint"
+        />
+      </div>
+    </div>
   );
 }
 

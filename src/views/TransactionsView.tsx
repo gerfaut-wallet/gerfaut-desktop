@@ -1,5 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import { Button } from "../components/Button";
+import { LoadFailure } from "../components/LoadFailure";
 import { SyncIndicator } from "../components/SyncIndicator";
 import { MASKED, formatAmount } from "../lib/format";
 import { useLoadMoreHistory, useSnapshot, useSyncing } from "../state/queries";
@@ -19,9 +20,12 @@ export function TransactionsView({ walletId }: { walletId: string }) {
   }
   if (snapshot.isError || !snapshot.data) {
     return (
-      <p className="px-1 py-4 font-ui text-sm text-muted">
-        This wallet could not be loaded.
-      </p>
+      <LoadFailure
+        what="This wallet"
+        error={snapshot.error}
+        retrying={snapshot.isFetching}
+        onRetry={() => void snapshot.refetch()}
+      />
     );
   }
   const { meta, balance, txs } = snapshot.data;
@@ -56,7 +60,9 @@ export function TransactionsView({ walletId }: { walletId: string }) {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-surface">
+      {/* As tall as its rows, then scrolling: a short list stays short,
+          not a white box down to the bottom of the window. */}
+      <div className="min-h-0 overflow-y-auto rounded-lg border border-border bg-surface">
         <TxList txs={txs} />
         {snapshot.data.truncated && (
           <div className="flex flex-col items-center gap-1.5 px-3 py-4">

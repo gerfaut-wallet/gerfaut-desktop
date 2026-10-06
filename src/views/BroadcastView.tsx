@@ -1,7 +1,5 @@
 import {
   AlertTriangle,
-  ArrowDownLeft,
-  ArrowUpRight,
   Ban,
   Check,
   CircleHelp,
@@ -22,19 +20,19 @@ import {
   Wallet as WalletIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { AddressChip } from "../components/AddressChip";
 import { UnitAmount, useAmountText } from "../components/Amount";
 import { Button } from "../components/Button";
+import { OpenFailure, useExplorer } from "../components/ExternalLink";
 import { Modal } from "../components/Modal";
 import { Pill } from "../components/StatusPill";
 import { Notice } from "../components/Notice";
 import { ScanQrModal } from "../components/ScanQrModal";
-import { TxDiagram } from "../components/TxDiagram";
-import type { TxBranch } from "../components/TxDiagram";
+import { BRANCH_ROLES, TxDiagram } from "../components/TxDiagram";
+import type { BranchRole, TxBranch } from "../components/TxDiagram";
 import type {
   Network,
   TxInputPreview,
@@ -347,7 +345,7 @@ function InputCard({
         spellCheck={false}
         rows={7}
         placeholder="Paste a PSBT (base64 or hex) or a raw transaction (hex)…"
-        className="field-focus selectable w-full resize-y rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text placeholder:text-muted/60"
+        className="field-focus selectable w-full resize-y rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text placeholder:text-muted"
       />
       {error && (
         <p role="alert" className="mt-2 font-ui text-sm text-muted">
@@ -360,7 +358,7 @@ function InputCard({
         back to the signer.
       </p>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1">
+        <div className="-ml-4 flex gap-1">
           <Button variant="ghost" onClick={onImport}>
             <FileUp size={16} strokeWidth={1.5} aria-hidden />
             Import a file
@@ -437,12 +435,24 @@ function Claimed() {
   );
 }
 
+/** What an input is to the watched wallets, in the diagram's words. */
+function inputRole(input: TxInputPreview): BranchRole {
+  return input.wallet !== null ? "wallet-in" : "external-in";
+}
+
+/** What an output is to the watched wallets, in the diagram's words. */
+function outputRole(output: TxOutputPreview): BranchRole {
+  if (output.op_return) return "op-return";
+  if (output.wallet === null) return "external-out";
+  return output.change ? "change" : "received";
+}
+
 /** The inputs of a transaction waiting to be sent, as diagram branches:
     an input is named by the outpoint it spends. */
 function previewInputBranches(inputs: TxInputPreview[]): TxBranch[] {
   return inputs.map(
     (input): TxBranch => ({
-      role: input.wallet !== null ? "wallet-in" : "external-in",
+      role: inputRole(input),
       label: `${input.txid}:${input.vout}`,
       amount: input.value_sats,
       isMine: input.wallet !== null,
@@ -453,13 +463,7 @@ function previewInputBranches(inputs: TxInputPreview[]): TxBranch[] {
 function previewOutputBranches(outputs: TxOutputPreview[]): TxBranch[] {
   return outputs.map(
     (output): TxBranch => ({
-      role: output.op_return
-        ? "op-return"
-        : output.wallet !== null
-          ? output.change
-            ? "change"
-            : "received"
-          : "external-out",
+      role: outputRole(output),
       label: output.op_return
         ? opReturnPreview(output.op_return)
         : (output.address ?? "Script output"),
@@ -497,10 +501,11 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
               Ready to broadcast
             </Pill>
           ) : (
-            // A transaction believed ready that the network cannot take
-            // is one of the four cases red is kept for.
-            <Pill tone="alert" icon={<AlertTriangle size={12} strokeWidth={2} aria-hidden />}>
-              Unsigned
+            // A status, in amber: nothing is at risk while the Broadcast
+            // button stays off. The red is the core's `unsigned` caution
+            // in the list below, so it is said once, where the reason is.
+            <Pill tone="pending" icon={<PenOff size={12} strokeWidth={2} aria-hidden />}>
+              Not fully signed
             </Pill>
           )}
           {preview.rbf && <Pill tone="neutral">RBF</Pill>}
@@ -540,8 +545,8 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <IoList title="Inputs" side="in" ios={preview.inputs} claimed={claimed} />
-        <IoList title="Outputs" side="out" ios={preview.outputs} />
+        <IoList title="Inputs" ios={preview.inputs} claimed={claimed} />
+        <IoList title="Outputs" ios={preview.outputs} />
       </div>
 
       {/* The fee node carries the amount; the rate belongs here. */}
@@ -577,12 +582,10 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
 
 function IoList({
   title,
-  side,
   ios,
   claimed = false,
 }: {
   title: string;
-  side: "in" | "out";
   ios: (TxInputPreview | TxOutputPreview)[];
   /** A value on this side is the PSBT's own word, so the total is too.
       Which row it is the core does not say, and a mark on the wrong
@@ -609,6 +612,9 @@ function IoList({
           const mine = io.wallet !== null;
           const input = "signed" in io ? io : null;
           const output = "op_return" in io ? io : null;
+          // The diagram's glyph for the same row: an output to someone
+          // else points away, one back to the wallet points in.
+          const role = BRANCH_ROLES[input ? inputRole(input) : outputRole(output!)];
           return (
             <li
               key={index}
@@ -622,15 +628,16 @@ function IoList({
                 aria-hidden
                 className={clsx(
                   "inline-flex size-7 shrink-0 items-center justify-center rounded-md",
-                  mine ? "bg-primary/10 text-primary" : "bg-sunken text-muted",
+                  output?.op_return
+                    ? "bg-pending-surface text-pending"
+                    : mine
+                      ? "bg-primary/10 text-primary"
+                      : "bg-sunken text-muted",
                 )}
               >
-                {side === "in" ? (
-                  <ArrowUpRight size={14} strokeWidth={1.75} />
-                ) : (
-                  <ArrowDownLeft size={14} strokeWidth={1.75} />
-                )}
+                {role.icon}
               </span>
+              <span className="sr-only">{role.title}:</span>
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 {output?.op_return ? (
                   <>
@@ -755,17 +762,11 @@ function StatusCard({
   /** The one just sent: polled from the start, shown large. */
   live?: boolean;
 }) {
-  const { explorerAck, setExplorerAck } = useUi();
   const [watching, setWatching] = useState(live);
   const status = useTransactionStatus(entry.network, watching ? entry.hex : null);
-  const [confirmExplorer, setConfirmExplorer] = useState(false);
   const [confirmForget, setConfirmForget] = useState(false);
-  const [skipNextTime, setSkipNextTime] = useState(false);
   const url = explorerTxUrl(entry.network, entry.txid);
-
-  const openExplorer = () => {
-    if (url) void openUrl(url);
-  };
+  const explorer = useExplorer(url);
 
   const standing = status.data;
   // A transaction the backend has not seen is most often one it has not
@@ -861,7 +862,7 @@ function StatusCard({
           <Button
             variant="ghost"
             className="h-8"
-            onClick={() => (explorerAck ? openExplorer() : setConfirmExplorer(true))}
+            onClick={explorer.ask}
           >
             <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
             View on mempool.space
@@ -879,48 +880,9 @@ function StatusCard({
           </Button>
         )}
       </div>
+      <OpenFailure url={explorer.failed} />
 
-      <Modal
-        open={confirmExplorer}
-        onClose={() => setConfirmExplorer(false)}
-        title="Open an external explorer?"
-        centered
-      >
-        {/* Handing an operator the link between this transaction and an
-            IP address is a privacy loss: red, by the rule. */}
-        <Notice tone="alert">
-          <span className="font-medium">
-            The explorer's operator can link this transaction to your IP address.
-          </span>
-          <span className="mt-0.5 block text-xs text-muted">
-            Use a VPN or Tor if that matters to you.
-          </span>
-        </Notice>
-        <label className="mt-4 flex cursor-pointer items-center gap-2 font-ui text-sm text-text">
-          <input
-            type="checkbox"
-            checked={skipNextTime}
-            onChange={(event) => setSkipNextTime(event.target.checked)}
-            className="accent-(--color-primary)"
-          />
-          Do not show this warning again
-        </label>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => setConfirmExplorer(false)}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-              if (skipNextTime) setExplorerAck(true);
-              setConfirmExplorer(false);
-              openExplorer();
-            }}
-          >
-            Open
-          </Button>
-        </div>
-      </Modal>
+      {explorer.warning}
 
       <Modal
         open={confirmForget}

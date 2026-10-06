@@ -6,10 +6,10 @@ import { Button } from "../../components/Button";
 import { Modal } from "../../components/Modal";
 import { Notice } from "../../components/Notice";
 import type { CertificateReport } from "../../lib/ipc";
-import { LOCALE } from "../../lib/format";
+import { formatDate } from "../../lib/format";
 import { useForgetCertificate } from "../../state/queries";
 import { useUi } from "../../state/store";
-import { SectionCard } from "./primitives";
+import { SaveFailure, SectionCard } from "./primitives";
 
 /** A fingerprint laid out to be compared by eye: two rows of sixteen
     bytes, in the same uppercase hex pairs `openssl` prints. */
@@ -42,15 +42,6 @@ function CertFact({ label, children }: { label: string; children: ReactNode }) {
       <dd className="mt-0.5 break-words font-ui text-sm text-text">{children}</dd>
     </div>
   );
-}
-
-/** The day a certificate stops being valid. */
-function expiryLabel(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleDateString(LOCALE, {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
 }
 
 /**
@@ -129,7 +120,7 @@ export function CertificateDialog({
                   </div>
                 )}
                 {report.expires !== null && (
-                  <CertFact label="Valid until">{expiryLabel(report.expires)}</CertFact>
+                  <CertFact label="Valid until">{formatDate(report.expires)}</CertFact>
                 )}
                 <CertFact label="Why it is asked">{report.reason}</CertFact>
               </dl>
@@ -178,6 +169,8 @@ export function CertificatesSection({ certs }: { certs: Record<string, string> }
   const forget = useForgetCertificate();
   const { showToast } = useUi();
   const [pending, setPending] = useState<string | null>(null);
+  /** A forget the vault refused, said in the dialog that asked it. */
+  const [failure, setFailure] = useState<unknown>(null);
   const hosts = Object.keys(certs).sort();
   if (hosts.length === 0) return null;
 
@@ -205,28 +198,45 @@ export function CertificatesSection({ certs }: { certs: Record<string, string> }
         ))}
       </ul>
       <p className="mt-3 font-ui text-xs text-muted">
-        Each line is a certificate you accepted for that server. Forget one and Gerfaut asks
-        again the next time it connects.
+        Each line is a certificate you accepted for that server. Forget one and syncs with that
+        server fail until you press Save backend again and accept it.
       </p>
       {pending && (
-        <Modal open onClose={() => setPending(null)} centered width={440} title="Forget this certificate?">
+        <Modal
+          open
+          onClose={() => {
+            setPending(null);
+            setFailure(null);
+          }}
+          centered
+          width={440}
+          title="Forget this certificate?"
+        >
           <p className="font-ui text-sm text-text">
-            Gerfaut will ask again the next time it connects to {pending}, and refuse until the
-            certificate is accepted.
+            Syncs with {pending} will fail until you press Save backend again and accept its
+            certificate.
           </p>
+          <SaveFailure error={failure} className="mt-3" />
           <div className="mt-4 flex items-center justify-end gap-3">
-            <Button variant="ghost" onClick={() => setPending(null)}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setPending(null);
+                setFailure(null);
+              }}
+            >
               Cancel
             </Button>
             <Button
               variant="primary"
               disabled={forget.isPending}
-              onClick={() =>
+              onClick={() => {
+                setFailure(null);
                 void forget.mutateAsync(pending).then(() => {
                   setPending(null);
                   showToast("Certificate forgotten");
-                })
-              }
+                }, setFailure);
+              }}
             >
               Forget it
             </Button>

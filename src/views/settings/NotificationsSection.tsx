@@ -1,13 +1,56 @@
 import { Bell, CircleOff, Clock, Radio, RefreshCw } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Button } from "../../components/Button";
+import { Notice } from "../../components/Notice";
 import { ipc, isCommandError } from "../../lib/ipc";
-import type { Settings, WatchState } from "../../lib/ipc";
-import { liveStatusLine, useLiveStatus, usesAutomaticBackend } from "../../state/live";
-import { notifier } from "../../state/notifications";
+import type { Settings, WatchState, WatchStatus } from "../../lib/ipc";
+import {
+  isOwnNode,
+  LIVE_NO_WALLET_LINE,
+  liveStatusKey,
+  liveStatusLine,
+  shortOfRoom,
+  shortOfRoomWords,
+  useLiveStatus,
+  usesAutomaticBackend,
+} from "../../state/live";
+import { useWallets } from "../../state/queries";
 import { useUi } from "../../state/store";
-import { SectionCard, SettingRow, Toggle } from "./primitives";
+import { GHOST_ON_TINT, SaveFailure, SectionCard, SettingRow, Toggle } from "./primitives";
+
+/** What the live watch leaves to the syncs when it is short of room, and
+    the way out: a node of one's own, where it follows ten times more,
+    or on it, the node's own setting. Amber, under the status: nothing
+    is at risk, a payment to those addresses only shows later. Which
+    wallets, the badges in Settings › Wallets and on each Overview say. */
+function ShortOfRoomNote({ status, ownNode }: { status: WatchStatus; ownNode: boolean }) {
+  const openSettings = useUi((state) => state.openSettings);
+  const words = shortOfRoomWords(status, ownNode);
+  return (
+    <Notice
+      tone="info"
+      className="mt-2.5 max-w-2xl"
+      action={
+        // The node settings are the way out only off one's own node: on
+        // it, what is left to change is in the node's configuration.
+        !ownNode && words.remedy !== null ? (
+          <Button
+            variant="ghost"
+            className={GHOST_ON_TINT}
+            onClick={() => openSettings("network")}
+          >
+            Node settings
+          </Button>
+        ) : undefined
+      }
+    >
+      {words.limits} {words.waiting}
+      {words.remedy !== null && ` ${words.remedy}`}
+    </Notice>
+  );
+}
 
 /** The state is never said by colour alone: a glyph, then the words. */
 const STATE_ICON: Record<WatchState, ReactNode> = {
@@ -29,27 +72,18 @@ export function NotificationsSection({
 }: {
   settings: Pick<Settings, "backends" | "active_network">;
 }) {
-  const { notifyNewTx, notificationsRefused, setNotifyNewTx, setNotificationsRefused } = useUi();
+  const { notifyNewTx, setNotifyNewTx } = useUi();
+  /** The vault refused the switch: it went back, and this says why. */
+  const [saveFailure, setSaveFailure] = useState<unknown>(null);
   const live = useLiveStatus();
+  const client = useQueryClient();
+  /** The switch was just turned on, and the watch is on its way: the
+      vault writes the preference and the Rust side starts the watch
+      before either answers, a second or more on a remote server, and
+      the line said "Off" under a switch that said on all that time. */
+  const [turningOn, setTurningOn] = useState(false);
   const [test, setTest] = useState<TestResult>(null);
   const [testing, setTesting] = useState(false);
-
-  // Turning it on asks the system first; a refusal is said rather than
-  // pretended away.
-  const toggle = async (on: boolean) => {
-    if (!on) {
-      setNotifyNewTx(false);
-      return;
-    }
-    try {
-      let granted = await notifier.isPermissionGranted();
-      if (!granted) granted = (await notifier.requestPermission()) === "granted";
-      setNotificationsRefused(!granted);
-      if (granted) setNotifyNewTx(true);
-    } catch {
-      setNotificationsRefused(true);
-    }
-  };
 
   const sendTest = async () => {
     setTesting(true);
@@ -63,8 +97,16 @@ export function NotificationsSection({
     }
   };
 
+  const wallets = useWallets(settings.active_network);
   const status = live.data?.status;
+  const off = !status || status.state === "off";
+  /** On, with nothing to watch on this network: the watch stays off
+      until a wallet comes, and saying "Connecting…" or a bare "Off"
+      would leave the person wondering why. */
+  const noWallet = notifyNewTx && off && wallets.data?.length === 0;
+  const starting = notifyNewTx && turningOn && off && !noWallet;
   const automatic = usesAutomaticBackend(settings.backends, settings.active_network);
+  const ownNode = isOwnNode(settings.backends[settings.active_network]);
 
   return (
     <SectionCard icon={<Bell size={18} strokeWidth={1.5} />} title="Notifications">
@@ -72,19 +114,24 @@ export function NotificationsSection({
         <div>
           <SettingRow
             title="New transactions"
-            hint="A notification when a transaction appears, incoming or outgoing, and again when it confirms, for as long as Gerfaut is open, minimised and locked included. Amounts follow the display unit and stay hidden while balances are masked. While Gerfaut is locked, a notification names no wallet and no amount."
+            hint="A notification when a transaction appears and again when it confirms, while Gerfaut is open, minimised or locked."
           >
             <Toggle
               checked={notifyNewTx}
-              onChange={(on) => void toggle(on)}
+              onChange={(on) => {
+                setSaveFailure(null);
+                setTurningOn(on);
+                setNotifyNewTx(on)
+                  // The status read once the watch has started, so the
+                  // line goes from "Connecting…" to where it stands.
+                  .then(() => client.refetchQueries({ queryKey: liveStatusKey }))
+                  .catch(setSaveFailure)
+                  .finally(() => setTurningOn(false));
+              }}
               label="Notify about new transactions"
             />
           </SettingRow>
-          {notificationsRefused && (
-            <p className="mt-1.5 font-ui text-xs text-muted">
-              Notifications are off for Gerfaut in the system settings.
-            </p>
-          )}
+          <SaveFailure error={saveFailure} />
         </div>
 
         <div>
@@ -94,24 +141,38 @@ export function NotificationsSection({
             aria-label="Live watch status"
             className="mt-1.5 flex items-center gap-2 font-ui text-sm text-text"
           >
-            {STATE_ICON[notifyNewTx && status ? status.state : "off"]}
+            {STATE_ICON[starting ? "connecting" : notifyNewTx && status ? status.state : "off"]}
             <span className="min-w-0 break-words">
-              {notifyNewTx && status ? liveStatusLine(status) : "Off"}
+              {noWallet
+                ? LIVE_NO_WALLET_LINE
+                : starting
+                  ? "Connecting…"
+                  : notifyNewTx && status
+                    ? liveStatusLine(status)
+                    : "Off"}
             </span>
           </p>
           {notifyNewTx && status?.state === "reconnecting" && status.detail && (
             <p className="mt-1 break-words font-ui text-xs text-muted">{status.detail}</p>
           )}
+          {notifyNewTx && status && shortOfRoom(status) && (
+            <ShortOfRoomNote status={status} ownNode={ownNode} />
+          )}
           <p className="mt-1.5 max-w-xl font-ui text-xs text-muted">
-            While this is on, Gerfaut keeps one connection open to your backend. The server
-            learns what a sync already tells it, and also how long Gerfaut stays connected.
+            While this is on, Gerfaut keeps one connection open to your backend, which learns
+            what a sync already tells it and how long Gerfaut stays connected.
             {automatic &&
-              " With the Automatic backend, Gerfaut first tries an Electrum server run by one of the public operators already in the rotation, because Electrum is what pushes changes."}
+              " With the Automatic backend, that is an Electrum server of an operator already in the rotation: Electrum is what pushes changes."}
           </p>
         </div>
 
         <div>
-          <Button variant="ghost" disabled={testing} onClick={() => void sendTest()}>
+          <Button
+            variant="ghost"
+            className="-ml-4"
+            disabled={testing}
+            onClick={() => void sendTest()}
+          >
             <Bell size={14} strokeWidth={1.5} aria-hidden />
             Send a test notification
           </Button>

@@ -13,7 +13,7 @@ import type {
   WalletMeta,
 } from "../lib/ipc";
 import { ipc, isCommandError } from "../lib/ipc";
-import { formatTimestamp } from "../lib/format";
+import { NETWORK_LABEL, formatTimestamp } from "../lib/format";
 import {
   backupFilename,
   formatBytes,
@@ -21,7 +21,7 @@ import {
   useImportBackup,
   usePreviewBackup,
 } from "../state/backup";
-import { useInvalidateWallet, useSyncAll } from "../state/queries";
+import { useSyncAll } from "../state/queries";
 import { useUi } from "../state/store";
 import { FieldLabel, Segmented, Toggle } from "./settings/primitives";
 
@@ -62,13 +62,6 @@ function SettingsPreview({ preview }: { preview: BackupPreview }) {
     </div>
   );
 }
-
-const NETWORK_LABEL: Record<Network, string> = {
-  mainnet: "Mainnet",
-  signet: "Signet",
-  testnet4: "Testnet 4",
-  regtest: "Regtest",
-};
 
 /** A password typed once here and typed again on the other device: it
     can be read back before it is committed to. */
@@ -226,22 +219,27 @@ export function BackupExportModal({
         <div className="flex flex-col gap-4">
           <div>
             <FieldLabel>Wallets</FieldLabel>
-            <Segmented
-              label="Wallets"
-              value={scope}
-              onChange={(value) => setScope(value as "all" | "network")}
-              options={[
-                { value: "all", label: `All wallets (${wallets.length})` },
-                ...(onNetwork.length === wallets.length
-                  ? []
-                  : [
-                      {
-                        value: "network",
-                        label: `${NETWORK_LABEL[activeNetwork]} only (${onNetwork.length})`,
-                      },
-                    ]),
-              ]}
-            />
+            {/* With every wallet on the network shown there is no choice
+                to make: a group of one option read as a second primary
+                button. The count is said plainly. */}
+            {onNetwork.length === wallets.length ? (
+              <p className="font-ui text-sm text-text">
+                All wallets <span className="tabular text-muted">({wallets.length})</span>
+              </p>
+            ) : (
+              <Segmented
+                label="Wallets"
+                value={scope}
+                onChange={(value) => setScope(value as "all" | "network")}
+                options={[
+                  { value: "all", label: `All wallets (${wallets.length})` },
+                  {
+                    value: "network",
+                    label: `${NETWORK_LABEL[activeNetwork]} only (${onNetwork.length})`,
+                  },
+                ]}
+              />
+            )}
           </div>
           <div className="flex items-center justify-between gap-6">
             <div>
@@ -287,7 +285,11 @@ export function BackupExportModal({
             recover it. This file can be copied and guessed offline: use a long
             passphrase, several words.
           </p>
-          {problem && <p className="font-ui text-xs text-muted">{problem}</p>}
+          {problem && (
+            <p role="alert" className="font-ui text-xs text-muted">
+              {problem}
+            </p>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={close}>
               Cancel
@@ -355,10 +357,9 @@ export function BackupRestoreModal({
   activeNetwork: Network;
 }) {
   const { showToast } = useUi();
-  const invalidate = useInvalidateWallet();
   const syncAll = useSyncAll();
   const previewBackup = usePreviewBackup();
-  const importBackup = useImportBackup();
+  const importBackup = useImportBackup(activeNetwork);
   const [source, setSource] = useState<string | null>(null);
   const [from, setFrom] = useState<BackupSource | null>(null);
   const [password, setPassword] = useState("");
@@ -458,7 +459,7 @@ export function BackupRestoreModal({
   const restore = async () => {
     if (source === null || chosen.size === 0) return;
     try {
-      const report = await importBackup.mutateAsync({
+      const { report, network, elsewhere } = await importBackup.mutateAsync({
         source,
         password,
         choices: {
@@ -466,18 +467,12 @@ export function BackupRestoreModal({
           apply_settings: applySettings,
         },
       });
-      // The workspace follows the restored wallets when none of them is
-      // on the active network, otherwise they would land invisible.
-      let network = activeNetwork;
-      if (report.added.length > 0 && !report.added.some((w) => w.network === network)) {
-        network = report.added[0].network;
-        await ipc.setActiveNetwork(network);
-      }
-      invalidate();
       const count =
         report.added.length === 1 ? "1 wallet restored" : `${report.added.length} wallets restored`;
-      showToast(report.settings_applied ? `${count} · settings applied` : count);
-      syncAll.mutate(network);
+      const where = elsewhere ? ` on ${NETWORK_LABEL[report.added[0].network]}` : "";
+      showToast(report.settings_applied ? `${count}${where} · settings applied` : `${count}${where}`);
+      // The restored wallets get their first sync wherever they are.
+      syncAll.mutate(elsewhere ? report.added[0].network : network);
       close();
     } catch (error) {
       setProblem(restoreMessage(error));
@@ -535,7 +530,11 @@ export function BackupRestoreModal({
               setProblem(null);
             }}
           />
-          {problem && <p className="font-ui text-xs text-muted">{problem}</p>}
+          {problem && (
+            <p role="alert" className="font-ui text-xs text-muted">
+              {problem}
+            </p>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={close}>
               Cancel
@@ -632,7 +631,11 @@ export function BackupRestoreModal({
               <SettingsPreview preview={preview} />
             </div>
           )}
-          {problem && <p className="font-ui text-xs text-muted">{problem}</p>}
+          {problem && (
+            <p role="alert" className="font-ui text-xs text-muted">
+              {problem}
+            </p>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={close}>
               Cancel

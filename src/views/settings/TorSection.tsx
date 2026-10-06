@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../../components/Button";
 import { OnionIcon } from "../../components/icons/OnionIcon";
@@ -8,9 +8,8 @@ import { ipc, isCommandError } from "../../lib/ipc";
 import { keys } from "../../state/queries";
 import { FieldLabel, SectionCard, Segmented } from "./primitives";
 
-/** The Tor modes as the settings name them; the backend form borrows
-    the label when a scanned address turns out to be an onion. */
-export const TOR_MODES: { value: TorMode; label: string }[] = [
+/** The Tor modes as the settings name them. */
+const TOR_MODES: { value: TorMode; label: string }[] = [
   { value: "auto", label: "Automatic" },
   { value: "system", label: "System Tor" },
   { value: "embedded", label: "Built-in" },
@@ -22,12 +21,24 @@ const HINT: Record<TorMode, string> = {
   embedded: "Only the built-in Tor. The first connection takes a little longer while it starts.",
 };
 
+/** The price takes the route of the syncs, as the update check does:
+    the core sends it through Tor as soon as a backend, on any network,
+    is an onion address, and not at all while Tor cannot be had. */
+export const PRICE_ROUTE =
+  "When a backend is a .onion address, the price goes through Tor too, or is not fetched while Tor is out of reach.";
+
 /** The settings card for how `.onion` backends reach Tor. */
 export function TorSection({ tor }: { tor: TorSettings }) {
   const client = useQueryClient();
   const [proxy, setProxy] = useState(tor.socks_proxy ?? "");
   const [problem, setProblem] = useState<string | null>(null);
   const [route, setRoute] = useState<TorRoute | null>(null);
+  // The mode chosen shows at once. The vault answers once the live
+  // watch has taken the new route, a second or more when it talks to a
+  // remote server, and a group left on the old choice that long reads
+  // as a click that was lost. A refusal puts the vault's back.
+  const [mode, setMode] = useState(tor.mode);
+  useEffect(() => setMode(tor.mode), [tor.mode]);
 
   const save = useMutation({
     mutationFn: (next: TorSettings) => ipc.setTorSettings(next),
@@ -68,21 +79,25 @@ export function TorSection({ tor }: { tor: TorSettings }) {
   const apply = (next: Partial<TorSettings>) => {
     setRoute(null);
     setProblem(null);
+    if (next.mode) setMode(next.mode);
     save.mutate(
-      { mode: tor.mode, socks_proxy: tor.socks_proxy, ...next },
+      { mode, socks_proxy: tor.socks_proxy, ...next },
       {
-        onError: (error) =>
-          setProblem(isCommandError(error) ? error.message : String(error)),
+        onError: (error) => {
+          setMode(tor.mode);
+          setProblem(isCommandError(error) ? error.message : String(error));
+        },
       },
     );
   };
 
   return (
     <SectionCard icon={<OnionIcon size={18} />} title="Tor">
-      <p className="font-ui text-sm text-muted">
+      <p className="max-w-2xl font-ui text-sm text-muted">
         {embedded
           ? "An address ending in .onion goes through Tor. Gerfaut uses the Tor already running on this machine when there is one, and starts its own otherwise."
-          : "An address ending in .onion goes through Tor. This build has no Tor of its own: start Tor or the Tor Browser first."}
+          : "An address ending in .onion goes through Tor. This build has no Tor of its own: start Tor or the Tor Browser first."}{" "}
+        {PRICE_ROUTE}
       </p>
 
       <div className="mt-4 flex flex-col gap-4">
@@ -90,7 +105,7 @@ export function TorSection({ tor }: { tor: TorSettings }) {
           <FieldLabel>Tor</FieldLabel>
           <Segmented
             label="Tor"
-            value={tor.mode}
+            value={mode}
             onChange={(value) => apply({ mode: value as TorMode })}
             options={TOR_MODES.map((mode) => ({
               ...mode,
@@ -98,10 +113,10 @@ export function TorSection({ tor }: { tor: TorSettings }) {
               disabled: !embedded && mode.value === "embedded",
             }))}
           />
-          <p className="mt-1.5 font-ui text-xs text-muted">{HINT[tor.mode]}</p>
+          <p className="mt-1.5 font-ui text-xs text-muted">{HINT[mode]}</p>
         </div>
 
-        {tor.mode !== "embedded" && (
+        {mode !== "embedded" && (
           <div>
             <FieldLabel htmlFor="tor-proxy">SOCKS address</FieldLabel>
             <input
@@ -139,9 +154,13 @@ export function TorSection({ tor }: { tor: TorSettings }) {
             </>
           )}
         </p>
-        {problem && <p className="font-ui text-xs text-muted">{problem}</p>}
+        {problem && (
+          <p role="alert" className="font-ui text-xs text-muted">
+            {problem}
+          </p>
+        )}
 
-        <div>
+        <div className="-ml-4">
           <Button
             variant="ghost"
             disabled={connect.isPending}

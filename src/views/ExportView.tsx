@@ -1,22 +1,47 @@
-import { FileDown, Gem } from "lucide-react";
+import { FileDown } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { clsx } from "clsx";
 import { Button } from "../components/Button";
+import { LoadFailure } from "../components/LoadFailure";
 import type { ExportDirection, ExportOptions, TxSummary } from "../lib/ipc";
-import { isCommandError } from "../lib/ipc";
+import { Notice } from "../components/Notice";
+import { errorMessage } from "../lib/ipc";
 import { useExportCsv, useSnapshot } from "../state/queries";
 import { useUi } from "../state/store";
+import { Segmented, Toggle } from "./settings/primitives";
 
 type DirectionChoice = "all" | ExportDirection;
 
-/** `2026-08-25` -> unix seconds at the UTC start (or end) of that day. */
-function dayBound(value: string, end: boolean): number | null {
-  if (!value) return null;
-  const [year, month, day] = value.split("-").map(Number);
-  if (!year || !month || !day) return null;
-  const start = Date.UTC(year, month - 1, day) / 1000;
+const DIRECTIONS: { value: DirectionChoice; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "incoming", label: "Received" },
+  { value: "outgoing", label: "Sent" },
+];
+
+/** `2026-08-25` -> unix seconds at the UTC start (or end) of that day.
+    UTC as the file is: its `date_utc` column then holds only days the
+    range names, and the page says so beside the fields, since the rest
+    of the app shows the computer's time. */
+export function dayBound(value: string, end: boolean): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const [year, month, day] = match.slice(1).map(Number);
+  // Not Date.UTC, which reads the years 0 to 99 as 1900 to 1999.
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  // 2026-02-31 is no day: the date would roll into March.
+  if (date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  const start = date.getTime() / 1000;
   return end ? start + 86_399 : start;
+}
+
+/** What is wrong with the range as typed, or null. */
+function rangeProblem(fromDay: string, toDay: string): string | null {
+  const from = fromDay.trim() === "" ? undefined : dayBound(fromDay, false);
+  const to = toDay.trim() === "" ? undefined : dayBound(toDay, true);
+  if (from === null || to === null) return "Write each day as YYYY-MM-DD, for example 2026-01-31.";
+  if (from !== undefined && to !== undefined && to < from) return "The range ends before it starts.";
+  return null;
 }
 
 /** Mirror of `gerfaut_core::export::passes`, for the live row count. */
@@ -48,9 +73,12 @@ export function ExportView({ walletId }: { walletId: string }) {
   }
   if (snapshot.isError || !snapshot.data) {
     return (
-      <p className="px-1 py-4 font-ui text-sm text-muted">
-        This wallet could not be loaded.
-      </p>
+      <LoadFailure
+        what="This wallet"
+        error={snapshot.error}
+        retrying={snapshot.isFetching}
+        onRetry={() => void snapshot.refetch()}
+      />
     );
   }
   const { meta, txs, truncated } = snapshot.data;
@@ -61,6 +89,9 @@ export function ExportView({ walletId }: { walletId: string }) {
     include_pending: includePending,
   };
   const selected = txs.filter((tx) => matchesExport(tx, options)).length;
+  // A day the bounds cannot read is said, and nothing is exported: a
+  // bound dropped in silence would write a file of the whole history.
+  const problem = rangeProblem(fromDay, toDay);
 
   // The save dialog opens on the Rust side: the page suggests a name
   // and hears back how many rows were written, never where.
@@ -73,8 +104,6 @@ export function ExportView({ walletId }: { walletId: string }) {
           if (rows === null) return;
           showToast(rows === 1 ? "1 transaction exported" : `${rows} transactions exported`);
         },
-        onError: (error) =>
-          showToast(isCommandError(error) ? error.message : "The export failed"),
       },
     );
   };
@@ -86,102 +115,59 @@ export function ExportView({ walletId }: { walletId: string }) {
           Export
         </h1>
         <p className="mt-1 font-ui text-sm text-muted">
-          This wallet's transaction history as a CSV file.
+          This wallet's transaction history as a CSV file. Everything stays on this machine.
         </p>
       </header>
 
       <div className="rounded-lg border border-border bg-surface p-6">
         <div className="flex flex-col gap-5">
-          <Row title="Date range" hint="Leave empty to export the full history.">
-            <div className="flex items-center gap-2">
-              <DateInput label="From" value={fromDay} onChange={setFromDay} />
-              <span aria-hidden className="text-muted">
-                –
-              </span>
-              <DateInput label="To" value={toDay} onChange={setToDay} />
+          <Row
+            title="Date range"
+            hint="Days in UTC, as the file dates each transaction. Leave empty to export the full history."
+          >
+            <div>
+              <div className="flex items-center gap-2">
+                <DateInput
+                  label="From"
+                  value={fromDay}
+                  onChange={setFromDay}
+                  invalid={problem !== null}
+                />
+                <span aria-hidden className="text-muted">
+                  –
+                </span>
+                <DateInput label="To" value={toDay} onChange={setToDay} invalid={problem !== null} />
+              </div>
+              {problem && (
+                <p
+                  id="export-range-problem"
+                  role="alert"
+                  className="mt-1.5 max-w-xs font-ui text-xs text-muted"
+                >
+                  {problem}
+                </p>
+              )}
             </div>
           </Row>
 
           <Row title="Direction">
-            <div role="radiogroup" aria-label="Direction" className="inline-flex rounded-md bg-sunken p-0.5">
-              {(
-                [
-                  { value: "all", label: "All" },
-                  { value: "incoming", label: "Received" },
-                  { value: "outgoing", label: "Sent" },
-                ] as { value: DirectionChoice; label: string }[]
-              ).map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={direction === option.value}
-                  onClick={() => setDirection(option.value)}
-                  className={clsx(
-                    "cursor-pointer rounded-[6px] px-3 py-1.5 font-ui text-sm font-medium transition-colors duration-150",
-                    direction === option.value
-                      ? "bg-surface text-text shadow-[inset_0_0_0_1px_var(--color-border)]"
-                      : "text-muted hover:text-text",
-                  )}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              label="Direction"
+              value={direction}
+              onChange={setDirection}
+              options={DIRECTIONS}
+            />
           </Row>
 
           <Row
             title="Include pending"
             hint="Pending transactions have no date yet: they only export without date bounds."
           >
-            <button
-              type="button"
-              role="switch"
-              aria-checked={includePending}
-              aria-label="Include pending transactions"
-              onClick={() => setIncludePending(!includePending)}
-              className={clsx(
-                "relative h-6 w-11 cursor-pointer rounded-full transition-colors duration-150",
-                includePending ? "bg-primary" : "bg-border",
-              )}
-            >
-              <span
-                aria-hidden
-                className={clsx(
-                  "absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow-[0_1px_2px_rgba(13,19,23,0.25)] transition-transform duration-150",
-                  includePending && "translate-x-5",
-                )}
-              />
-            </button>
-          </Row>
-
-          <div aria-hidden className="h-px bg-border/60" />
-
-          <Row
-            title={
-              <span className="flex items-center gap-2">
-                Fiat value at transaction time
-                <span className="inline-flex items-center gap-1 rounded-full border border-premium/25 bg-premium-surface px-2 py-0.5 font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-premium">
-                  <Gem size={11} strokeWidth={1.75} aria-hidden />
-                  Premium
-                </span>
-              </span>
-            }
-            hint="Adds the price at each transaction's date to the file."
-          >
-            <button
-              type="button"
-              role="switch"
-              aria-checked={false}
-              disabled
-              aria-label="Fiat value at transaction time (premium)"
-              className="relative h-6 w-11 cursor-default rounded-full bg-border opacity-50"
-            >
-              <span
-                aria-hidden
-                className="absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow-[0_1px_2px_rgba(13,19,23,0.25)]"
-              />
-            </button>
+            <Toggle
+              checked={includePending}
+              onChange={setIncludePending}
+              label="Include pending transactions"
+            />
           </Row>
         </div>
 
@@ -201,12 +187,19 @@ export function ExportView({ walletId }: { walletId: string }) {
           <Button
             variant="primary"
             onClick={run}
-            disabled={exportCsv.isPending || selected === 0}
+            disabled={exportCsv.isPending || selected === 0 || problem !== null}
           >
             <FileDown size={16} strokeWidth={1.5} aria-hidden />
             {exportCsv.isPending ? "Exporting…" : "Export CSV…"}
           </Button>
         </div>
+        {/* Under the button that sent it, until the next try: a toast
+            would be gone before it is read. */}
+        {exportCsv.isError && (
+          <Notice tone="info" role="alert" className="mt-4">
+            The file was not written: {errorMessage(exportCsv.error)}
+          </Notice>
+        )}
       </div>
     </div>
   );
@@ -223,7 +216,7 @@ function Row({
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
-      <div className="min-w-0 max-w-xl">
+      <div className="min-w-0 max-w-xl flex-[1_1_20rem]">
         <p className="font-ui text-sm font-medium text-text">{title}</p>
         {hint && <p className="mt-0.5 font-ui text-xs text-muted">{hint}</p>}
       </div>
@@ -232,14 +225,20 @@ function Row({
   );
 }
 
+/** A day as YYYY-MM-DD, typed. Not the browser's date field: it
+    writes and reads the day in the language of the system, day first
+    on a French machine, and Gerfaut speaks one language. A date is a
+    number, not an identifier: tabular figures, not the mono face. */
 function DateInput({
   label,
   value,
   onChange,
+  invalid,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  invalid: boolean;
 }) {
   return (
     <label className="flex items-center gap-2">
@@ -247,10 +246,17 @@ function DateInput({
         {label}
       </span>
       <input
-        type="date"
+        type="text"
+        inputMode="numeric"
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="field-focus selectable h-10 rounded-sm border border-transparent bg-sunken px-2.5 font-data text-[13px] text-text"
+        maxLength={10}
+        placeholder="YYYY-MM-DD"
+        autoComplete="off"
+        spellCheck={false}
+        aria-invalid={invalid || undefined}
+        aria-describedby={invalid ? "export-range-problem" : undefined}
+        onChange={(event) => onChange(event.target.value.replace(/[^\d-]/g, ""))}
+        className="field-focus selectable tabular h-10 w-32 rounded-sm border border-transparent bg-sunken px-2.5 font-ui text-sm text-text"
       />
     </label>
   );

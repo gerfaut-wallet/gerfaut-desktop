@@ -12,7 +12,7 @@ use gerfaut_core::backup::{
 use gerfaut_core::chain::BackendConfig;
 use gerfaut_core::chain::connect::ScannedBackend;
 use gerfaut_core::chain::tor::{TorRoute, TorSettings, TorStatus};
-use gerfaut_core::error::{CoreError, PremiumError, VaultError};
+use gerfaut_core::error::{CoreError, VaultError};
 use gerfaut_core::input::qr::QrProgress;
 use gerfaut_core::input::{DerivationChoice, ImportOptions, ParsedInput, ScriptKind};
 use gerfaut_core::lock::{AppLock, LockKind, LockVerdict};
@@ -30,10 +30,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
 
-mod devices;
+mod clipboard;
 mod live;
 mod notice;
-mod premium;
+// Compiled on Linux for its tests too, where nothing else calls it.
+#[cfg(any(target_os = "macos", all(unix, test)))]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod single_instance;
 #[cfg(any(windows, test))]
 mod toast;
 
@@ -42,10 +45,6 @@ mod toast;
 pub struct CommandError {
     pub kind: &'static str,
     pub message: String,
-    /// With `identity_refused`: seconds before the app lock looks at
-    /// another secret, as the lock screen counts them.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub retry_after_secs: Option<u32>,
 }
 
 impl CommandError {
@@ -53,70 +52,12 @@ impl CommandError {
         CommandError {
             kind,
             message: message.into(),
-            retry_after_secs: None,
         }
-    }
-}
-
-/// What the screen does about a premium failure: back to the key field,
-/// to the renewal page, the waiting card, "Connect again", a note in the
-/// server's words, or the "watch is offline" banner.
-fn premium_kind(error: &PremiumError) -> &'static str {
-    match error {
-        PremiumError::NoKey => "premium_no_key",
-        PremiumError::UnknownKey => "premium_unknown_key",
-        // No token to speak with: never connected, or the key went where
-        // a token was due. Either way the device is to be connected.
-        PremiumError::NoDevice | PremiumError::DeviceRequired => "premium_no_device",
-        PremiumError::DevicePending { .. } => "premium_device_pending",
-        PremiumError::DeviceDisconnected => "premium_device_disconnected",
-        PremiumError::TooManyDevices(_) => "premium_too_many_devices",
-        // A key change sent and not answered: what was asked would lose
-        // the new key. The screen says to finish the change first.
-        PremiumError::KeyChangePending => "premium_key_change_pending",
-        PremiumError::NoPaidTime => "premium_no_paid_time",
-        PremiumError::Rejected(_) => "premium_rejected",
-        // Nothing under that id on the server: the screen shows it as
-        // it shows a refusal, in the server's words.
-        PremiumError::NotFound => "premium_rejected",
-        // Not a refusal of the request: the same one may pass after the
-        // wait, so the screen says to try again rather than what failed.
-        PremiumError::RateLimited { .. } => "premium_rate_limited",
-        PremiumError::Unreachable(_) | PremiumError::UnexpectedResponse(_) => "premium_unreachable",
-        PremiumError::InvalidCertificate(_)
-        | PremiumError::InvalidHeartbeat(_)
-        | PremiumError::StaleHeartbeat { .. } => "premium_invalid",
-    }
-}
-
-/// A wait in the unit a person reads it in: the hourly connection
-/// ceiling answers with nearly an hour, which "3528 s" hides.
-fn wait_words(seconds: u64) -> String {
-    match seconds {
-        0..60 => format!("{seconds} s"),
-        60..3600 => format!("{} min", seconds.div_ceil(60)),
-        _ => format!("{} h", seconds.div_ceil(3600)),
     }
 }
 
 impl From<CoreError> for CommandError {
     fn from(error: CoreError) -> Self {
-        // A refusal is shown in the server's own sentence, without the
-        // prefix the error type wraps it in.
-        if let CoreError::Premium(PremiumError::Rejected(words)) = &error {
-            return CommandError::new("premium_rejected", words.clone());
-        }
-        // A rate limit is no failure of the request: the screen says
-        // when to try again, calmly, and nothing else.
-        if let CoreError::Premium(PremiumError::RateLimited { retry_after }) = &error {
-            return CommandError::new(
-                "premium_rate_limited",
-                match retry_after {
-                    Some(seconds) => format!("Try again in {}.", wait_words(*seconds)),
-                    None => "Try again in a moment.".to_owned(),
-                },
-            );
-        }
         let kind = match &error {
             CoreError::UnrecognizedInput(_) => "unrecognized_input",
             CoreError::PrivateMaterialRejected => "private_material",
@@ -138,7 +79,6 @@ impl From<CoreError> for CommandError {
             CoreError::BackendUnavailable(_) => "backend_unavailable",
             CoreError::Descriptor(_) => "descriptor",
             CoreError::Tor(_) => "tor",
-            CoreError::Premium(error) => premium_kind(error),
             CoreError::Internal(_) => "internal",
         };
         CommandError::new(kind, error.to_string())
@@ -158,7 +98,7 @@ pub(crate) struct AppState {
     /// The curtain used to be drawn in the webview alone: every command
     /// still answered behind it, so anything that reached the bridge —
     /// a renderer gone wrong, a page left open on a screen nobody
-    /// watches — read descriptors, balances and the account key out of
+    /// watches — read descriptors, balances and addresses out of
     /// a locked app. Set here at startup from the lock the vault holds,
     /// raised again by [`lock_app`], and taken down by one thing only:
     /// a secret the core verified.
@@ -166,9 +106,6 @@ pub(crate) struct AppState {
     /// The live watch and what it posts. It runs on this side, behind
     /// the lock included: see [`live`].
     pub(crate) live: live::LiveAlerts,
-    /// What the check of the account's devices remembers between two
-    /// rounds: see [`devices`].
-    pub(crate) devices: devices::DeviceWatch,
 }
 
 impl AppState {
@@ -294,13 +231,20 @@ pub struct PickedBackup {
 
 /// Classifies pasted or scanned material. `script` and `derivation`
 /// only apply to a lone extended key; everything else fixes its own.
+/// `network` is the one the wallet is about to be added on, which the
+/// first address shown is derived for.
 #[tauri::command]
 fn parse_input(
     input: String,
     script: Option<ScriptKind>,
     derivation: Option<DerivationChoice>,
+    network: Option<Network>,
 ) -> CommandResult<ParsedInput> {
-    let options = ImportOptions { script, derivation };
+    let options = ImportOptions {
+        script,
+        derivation,
+        network,
+    };
     Ok(gerfaut_core::input::parse_input_with_options(
         &input, &options,
     )?)
@@ -314,10 +258,16 @@ fn parse_backend(input: String) -> CommandResult<ScannedBackend> {
     Ok(gerfaut_core::chain::connect::parse_backend(&input)?)
 }
 
-/// Assembles the QR frames scanned so far (plain, UR, BBQr).
+/// Assembles the QR frames scanned so far (plain, UR, BBQr). The core
+/// decodes every frame again at each call, and a synchronous command
+/// runs on the main thread: a code of a hundred parts made the window
+/// stutter while it was scanned. On a worker thread instead.
 #[tauri::command]
-fn assemble_qr(frames: Vec<String>) -> CommandResult<QrProgress> {
-    Ok(gerfaut_core::input::qr::assemble(&frames)?)
+async fn assemble_qr(frames: Vec<String>) -> CommandResult<QrProgress> {
+    tauri::async_runtime::spawn_blocking(move || gerfaut_core::input::qr::assemble(&frames))
+        .await
+        .map_err(|e| internal(format!("the QR assembly did not finish: {e}")))?
+        .map_err(CommandError::from)
 }
 
 #[tauri::command]
@@ -456,36 +406,10 @@ async fn rename_wallet(
     Ok(state.manager.rename_wallet(&id, &name).await?)
 }
 
-/// Removes the wallet here, then tells the premium server on the side.
-/// The core queued the wallet for unwatching in the same write that
-/// removed it, so the answer does not wait for the network: a server
-/// out of reach now is told at the next heartbeat.
-///
-/// A wallet the server watches stops being watched with it, which is
-/// what unwatching it asks the app lock's secret for: removing it asks
-/// the same, or the one would be the way around the other.
 #[tauri::command]
-async fn remove_wallet(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-    id: String,
-    secret: Option<String>,
-) -> CommandResult<()> {
+async fn remove_wallet(state: tauri::State<'_, AppState>, id: String) -> CommandResult<()> {
     state.unlocked()?;
-    remove_checked(&state, &id, secret.as_deref()).await?;
-    tauri::async_runtime::spawn(async move {
-        premium::flush_unwatch(&app.state::<AppState>(), &premium::base_url()).await;
-    });
-    Ok(())
-}
-
-/// The removal itself, behind the secret when the server watches the
-/// wallet.
-async fn remove_checked(state: &AppState, id: &str, secret: Option<&str>) -> CommandResult<()> {
-    if premium::watched_by_server(state, id).await {
-        premium::confirm_identity_given(state, secret).await?;
-    }
-    Ok(state.manager.remove_wallet(id).await?)
+    Ok(state.manager.remove_wallet(&id).await?)
 }
 
 #[tauri::command]
@@ -498,6 +422,19 @@ async fn set_wallet_icon(
     Ok(state.manager.set_wallet_icon(&id, icon).await?)
 }
 
+/// Pins a wallet to the live watch, or unpins it: when the watch cannot
+/// follow every address, the pinned wallets are followed first. The core
+/// hands a running watch its new list itself.
+#[tauri::command]
+async fn set_wallet_live_pinned(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    pinned: bool,
+) -> CommandResult<()> {
+    state.unlocked()?;
+    Ok(state.manager.set_wallet_live_pinned(&id, pinned).await?)
+}
+
 /// Puts the listed wallets in that order; wallets not listed keep
 /// their slots, so one network's list reorders without the others.
 #[tauri::command]
@@ -508,9 +445,9 @@ async fn reorder_wallets(state: tauri::State<'_, AppState>, ids: Vec<String>) ->
 
 /// The settings, and behind the lock a copy cut down to what the lock
 /// screen needs to draw itself: the theme it is painted in and the kind
-/// of secret it must ask for. No backend, no accepted certificate, no
-/// account key — none of it is read until someone comes back, and a
-/// copy sitting in the webview's cache is a copy that can be read.
+/// of secret it must ask for. No backend, no accepted certificate —
+/// none of it is read until someone comes back, and a copy sitting in
+/// the webview's cache is a copy that can be read.
 #[tauri::command]
 async fn get_settings(state: tauri::State<'_, AppState>) -> CommandResult<Settings> {
     Ok(settings_of(&state).await)
@@ -697,21 +634,32 @@ fn public_servers(network: Network) -> Vec<gerfaut_core::chain::public::PublicSe
     gerfaut_core::chain::public::public_servers(network)
 }
 
+/// The current BTC price, by the route the syncs take: through Tor
+/// when a backend is an onion address, and not at all when Tor is
+/// required and cannot be had. That case answers `tor`.
 #[tauri::command]
 async fn fetch_price(
+    state: tauri::State<'_, AppState>,
     source: gerfaut_core::price::PriceSource,
     currency: gerfaut_core::price::FiatCurrency,
 ) -> CommandResult<gerfaut_core::price::PriceQuote> {
-    Ok(gerfaut_core::price::fetch_price(source, currency).await?)
+    state.unlocked()?;
+    Ok(state.manager.fetch_price(source, currency).await?)
 }
 
+/// A BTC price series, by the same route as [`fetch_price`].
 #[tauri::command]
 async fn fetch_price_history(
+    state: tauri::State<'_, AppState>,
     source: gerfaut_core::price::PriceSource,
     currency: gerfaut_core::price::FiatCurrency,
     range: gerfaut_core::price::PriceRange,
 ) -> CommandResult<gerfaut_core::price::PriceHistory> {
-    Ok(gerfaut_core::price::fetch_price_history(source, currency, range).await?)
+    state.unlocked()?;
+    Ok(state
+        .manager
+        .fetch_price_history(source, currency, range)
+        .await?)
 }
 
 /// The repository whose releases the app compares itself with.
@@ -921,20 +869,18 @@ async fn preview_backup(
 
 #[tauri::command]
 async fn import_backup(
-    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     source: String,
     password: String,
     choices: ImportChoices,
 ) -> CommandResult<ImportReport> {
     state.unlocked()?;
-    let report = state
+    // A backup carries no preference, so the alerts stay as they were;
+    // the backends it may bring, the core's watch follows by itself.
+    Ok(state
         .manager
         .import_backup(&source, &password, &choices)
-        .await?;
-    // A backup can carry the preferences, the alerts among them.
-    live::apply(&app).await;
-    Ok(report)
+        .await?)
 }
 
 // --- vault key ---------------------------------------------------------
@@ -984,8 +930,9 @@ fn vault_key(data_dir: &std::path::Path) -> Result<VaultKey, String> {
 fn key_from(entry: &keyring::Entry, vault_present: bool) -> Result<VaultKey, String> {
     match entry.get_password() {
         Ok(stored) => {
-            let bytes =
-                hex::decode(&stored).map_err(|_| "stored vault key is not valid hex".to_owned())?;
+            let bytes = data_encoding::HEXLOWER_PERMISSIVE
+                .decode(stored.as_bytes())
+                .map_err(|_| "stored vault key is not valid hex".to_owned())?;
             let key: [u8; 32] = bytes
                 .try_into()
                 .map_err(|_| "stored vault key has the wrong length".to_owned())?;
@@ -1000,7 +947,7 @@ fn key_from(entry: &keyring::Entry, vault_present: bool) -> Result<VaultKey, Str
             use rand::RngCore;
             rand::rng().fill_bytes(&mut key);
             entry
-                .set_password(&hex::encode(key))
+                .set_password(&data_encoding::HEXLOWER.encode(&key))
                 .map_err(|e| format!("cannot store vault key: {e}"))?;
             Ok(VaultKey::Raw(key))
         }
@@ -1045,7 +992,6 @@ fn open_vault(app: &tauri::AppHandle) -> CommandResult<()> {
         manager,
         locked: AtomicBool::new(locked),
         live: live::LiveAlerts::default(),
-        devices: devices::DeviceWatch::default(),
     });
     // The watch starts with the app when the alerts are on,
     // locked or not, and before the opening sync so nothing
@@ -1055,9 +1001,6 @@ fn open_vault(app: &tauri::AppHandle) -> CommandResult<()> {
         live::apply(&handle).await;
         live::keep_time(handle).await;
     });
-    // The account's devices are checked on this side too, so a
-    // new one is announced with the window minimised or locked.
-    tauri::async_runtime::spawn(devices::watch(app.clone()));
     Ok(())
 }
 
@@ -1131,18 +1074,38 @@ pub fn run() {
         let config = context.config_mut();
         config.identifier = isolated_identifier(&config.identifier, &dir);
     }
-    tauri::Builder::default()
-        // First, so that a second launch leaves before anything else
-        // starts: before the vault is opened, before a window exists.
-        // Its arguments and working directory are not read: a launch
-        // only ever brings the open window forward.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            show_main_window(app);
-        }))
+    // On macOS, before anything else starts: a second launch leaves
+    // before the vault is opened, before a window exists. See
+    // `single_instance` for why not the plugin there.
+    #[cfg(target_os = "macos")]
+    let first = match single_instance::claim(&context.config().identifier) {
+        single_instance::Claim::Second => return,
+        single_instance::Claim::First(listener) => Some(listener),
+        single_instance::Claim::Unavailable => None,
+    };
+    #[cfg(target_os = "macos")]
+    let socket = first.as_ref().map(|listener| listener.path().to_owned());
+
+    let builder = tauri::Builder::default();
+    // First, so that a second launch leaves before anything else
+    // starts: before the vault is opened, before a window exists. Its
+    // arguments and working directory are not read: a launch only ever
+    // brings the open window forward.
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        show_main_window(app);
+    }));
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .setup(|app| {
+        .manage(clipboard::SensitiveClipboard::default())
+        .setup(move |app| {
+            #[cfg(target_os = "macos")]
+            if let Some(listener) = first {
+                let handle = app.handle().clone();
+                listener.serve(move || show_main_window(&handle));
+            }
             // A vault that would not open leaves the window to say why,
             // and every command that needs it answers an error until it
             // does: no state is managed for them to reach.
@@ -1179,6 +1142,7 @@ pub fn run() {
             rename_wallet,
             remove_wallet,
             set_wallet_icon,
+            set_wallet_live_pinned,
             reorder_wallets,
             get_settings,
             set_active_network,
@@ -1204,36 +1168,13 @@ pub fn run() {
             tor_status,
             set_tor_settings,
             tor_connect,
-            premium::premium_status,
-            premium::premium_activate,
-            premium::premium_reconnect,
-            premium::premium_forget,
-            premium::premium_device,
-            premium::premium_devices,
-            premium::premium_approve_device,
-            premium::premium_remove_device,
-            premium::premium_change_key,
-            premium::premium_set_key_saved,
-            premium::premium_hide_checklist,
-            premium::premium_account,
-            premium::premium_wallets,
-            premium::premium_watch_wallet,
-            premium::premium_unwatch_wallet,
-            premium::premium_channels,
-            premium::premium_add_channel,
-            premium::premium_delete_channel,
-            premium::premium_confirm_channel,
-            premium::premium_delete_account,
-            premium::premium_test_channel,
-            premium::premium_events,
-            premium::premium_heartbeat,
-            premium::premium_acknowledge_offline,
             live::live_status,
-            live::send_test_notification
+            live::send_test_notification,
+            clipboard::copy_sensitive
         ])
         .build(context)
         .expect("error while running tauri application")
-        .run(|app, event| {
+        .run(move |app, event| {
             // The window is gone: stop the watch, and leave within
             // `live::EXIT_GRACE` whatever is still in flight.
             if matches!(
@@ -1242,78 +1183,39 @@ pub fn run() {
             ) {
                 live::shutdown(app);
             }
+            // A secret copied less than a minute ago does not outlive
+            // the app.
+            if matches!(event, tauri::RunEvent::Exit) {
+                app.state::<clipboard::SensitiveClipboard>().expire_now();
+                #[cfg(target_os = "macos")]
+                if let Some(path) = &socket {
+                    single_instance::release(path);
+                }
+            }
         });
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{CommandError, bare_file_name, wait_words};
-    use gerfaut_core::error::{CoreError, PremiumError};
+    use super::{CommandError, assemble_qr, bare_file_name};
+    use gerfaut_core::error::CoreError;
 
+    /// The assembly runs off the main thread and answers as before.
     #[test]
-    fn premium_failures_are_named_for_the_screen() {
-        let kind = |error: PremiumError| CommandError::from(CoreError::Premium(error)).kind;
-        assert_eq!(kind(PremiumError::UnknownKey), "premium_unknown_key");
-        assert_eq!(kind(PremiumError::NoPaidTime), "premium_no_paid_time");
-        assert_eq!(kind(PremiumError::NoKey), "premium_no_key");
+    fn a_scanned_frame_is_assembled_on_a_worker() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let plain = runtime
+            .block_on(assemble_qr(vec![
+                "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx".to_owned(),
+            ]))
+            .unwrap();
+        assert!(plain.complete);
         assert_eq!(
-            kind(PremiumError::KeyChangePending),
-            "premium_key_change_pending"
+            plain.text.as_deref(),
+            Some("tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx")
         );
-        assert_eq!(
-            kind(PremiumError::Unreachable("timed out".to_owned())),
-            "premium_unreachable"
-        );
-        assert_eq!(
-            kind(PremiumError::UnexpectedResponse("html".to_owned())),
-            "premium_unreachable"
-        );
-        assert_eq!(
-            kind(PremiumError::StaleHeartbeat { skew: 900 }),
-            "premium_invalid"
-        );
-        assert_eq!(
-            kind(PremiumError::InvalidCertificate("no".to_owned())),
-            "premium_invalid"
-        );
-    }
-
-    /// The server's sentence reaches the screen as it was written.
-    #[test]
-    fn a_refusal_keeps_the_servers_own_words() {
-        let error = CommandError::from(CoreError::Premium(PremiumError::Rejected(
-            "that is not an address Gerfaut can watch: addr() holds one address".to_owned(),
-        )));
-        assert_eq!(error.kind, "premium_rejected");
-        assert_eq!(
-            error.message,
-            "that is not an address Gerfaut can watch: addr() holds one address"
-        );
-    }
-
-    /// A rate limit reaches the screen as a wait, not as a failure.
-    #[test]
-    fn a_rate_limit_says_when_to_try_again() {
-        let timed = CommandError::from(CoreError::Premium(PremiumError::RateLimited {
-            retry_after: Some(42),
-        }));
-        assert_eq!(timed.kind, "premium_rate_limited");
-        assert_eq!(timed.message, "Try again in 42 s.");
-        let open = CommandError::from(CoreError::Premium(PremiumError::RateLimited {
-            retry_after: None,
-        }));
-        assert_eq!(open.message, "Try again in a moment.");
-    }
-
-    /// A long wait is said in minutes or hours, rounded up.
-    #[test]
-    fn a_long_wait_reads_in_minutes_or_hours() {
-        assert_eq!(wait_words(59), "59 s");
-        assert_eq!(wait_words(60), "1 min");
-        assert_eq!(wait_words(3528), "59 min");
-        assert_eq!(wait_words(3599), "60 min");
-        assert_eq!(wait_words(3600), "1 h");
-        assert_eq!(wait_words(86_399), "24 h");
+        let refused = runtime.block_on(assemble_qr(Vec::new())).unwrap_err();
+        assert_eq!(refused.kind, "invalid_input");
     }
 
     /// A wrong backup password has a kind of its own, so the screen can
@@ -1541,7 +1443,6 @@ mod tests {
     use gerfaut_core::WalletManager;
     use gerfaut_core::lock::LockKind;
     use gerfaut_core::network::Network;
-    use gerfaut_core::premium::PremiumState;
     use gerfaut_core::store::VaultKey;
 
     use super::AppState;
@@ -1559,7 +1460,6 @@ mod tests {
                 manager,
                 locked: AtomicBool::new(locked),
                 live: crate::live::LiveAlerts::default(),
-                devices: crate::devices::DeviceWatch::default(),
             },
             runtime,
         )
@@ -1603,7 +1503,6 @@ mod tests {
             manager,
             locked: AtomicBool::new(false),
             live: crate::live::LiveAlerts::default(),
-            devices: crate::devices::DeviceWatch::default(),
         };
 
         runtime.block_on(super::lock_vault(&state)).unwrap();
@@ -1611,9 +1510,9 @@ mod tests {
     }
 
     /// Behind the lock the settings answer the theme and the kind of
-    /// secret to ask for. A backend, an accepted certificate, an
-    /// account key or the last transactions broadcast, sitting in the
-    /// webview's cache, are there to be read.
+    /// secret to ask for. A backend, an accepted certificate or the
+    /// last transactions broadcast, sitting in the webview's cache, are
+    /// there to be read.
     #[test]
     fn the_settings_read_behind_the_lock_carry_nothing_of_the_vault() {
         let dir = tempfile::tempdir().unwrap();
@@ -1629,8 +1528,6 @@ mod tests {
         runtime
             .block_on(state.manager.set_active_network(Network::Signet))
             .unwrap();
-        // An account: a key, and the token of the device it connected.
-        crate::testkit::connect(&state.manager);
         runtime
             .block_on(
                 state
@@ -1658,24 +1555,12 @@ mod tests {
         assert_eq!(shut.app_lock.map(|lock| lock.kind), Some(LockKind::Pin));
         assert!(shut.backends.is_empty());
         assert!(shut.electrum_certs.is_empty());
-        assert_eq!(shut.premium, PremiumState::default());
 
         // And in full once a secret went through.
         runtime
             .block_on(super::verify_lock(&state, "246813"))
             .unwrap();
         let open = runtime.block_on(super::settings_of(&state));
-        assert_eq!(open.premium.key.as_deref(), Some("abcdefghijkmnpqr"));
-        // The token never does, locked or not: the core blanks it.
-        let shown = serde_json::to_string(&open).unwrap();
-        assert!(!shown.contains(crate::testkit::TOKEN), "{shown}");
-        assert_eq!(
-            open.premium
-                .device
-                .as_ref()
-                .map(|device| device.id.as_str()),
-            Some(crate::testkit::DEVICE_ID)
-        );
         assert_eq!(open.electrum_certs.len(), 1);
         assert!(open.app_prefs.contains_key("broadcast.recent"));
     }
@@ -1693,10 +1578,7 @@ mod tests {
         // The BIP 173 example address: public, and valid on signet.
         let parsed = gerfaut_core::input::parse_input_with_options(
             "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
-            &ImportOptions {
-                script: None,
-                derivation: None,
-            },
+            &ImportOptions::default(),
         )
         .unwrap();
         runtime
@@ -1725,73 +1607,6 @@ mod tests {
                 .block_on(state.manager.list_wallets(Some(Network::Mainnet)))
                 .is_empty()
         );
-    }
-
-    /// Removing a wallet the server watches ends that watch, which is
-    /// what unwatching asks the secret for: the removal asks it too, and
-    /// a wallet the server never had goes without it.
-    #[test]
-    fn removing_a_wallet_the_server_watches_takes_the_secret() {
-        use gerfaut_core::input::ImportOptions;
-
-        let dir = tempfile::tempdir().unwrap();
-        let (state, runtime) = locked_state(dir.path());
-        runtime
-            .block_on(super::verify_lock(&state, "246813"))
-            .unwrap();
-        crate::testkit::connect(&state.manager);
-        let add = |address: &str, name: &str| {
-            let parsed = gerfaut_core::input::parse_input_with_options(
-                address,
-                &ImportOptions {
-                    script: None,
-                    derivation: None,
-                },
-            )
-            .unwrap();
-            runtime
-                .block_on(state.manager.add_wallet(name, &parsed, Network::Signet))
-                .unwrap()
-                .id
-        };
-        // The BIP 173 example address and the P2WSH one: public, valid
-        // on signet.
-        let watched = add("tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx", "Cold");
-        let local = add(
-            "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7",
-            "Spending",
-        );
-        let mut premium = runtime.block_on(state.manager.premium_state());
-        premium.consent(&watched, 1_790_000_000);
-        runtime
-            .block_on(state.manager.set_premium_state(premium))
-            .unwrap();
-        let ids = || -> Vec<String> {
-            runtime
-                .block_on(state.manager.list_wallets(None))
-                .into_iter()
-                .map(|wallet| wallet.id)
-                .collect()
-        };
-
-        // Not watched: no secret asked.
-        runtime
-            .block_on(super::remove_checked(&state, &local, None))
-            .unwrap();
-        assert_eq!(ids(), vec![watched.clone()]);
-
-        // Watched: none given, then a wrong one, and the wallet stays.
-        for secret in [None, Some("000000")] {
-            let refused = runtime
-                .block_on(super::remove_checked(&state, &watched, secret))
-                .unwrap_err();
-            assert_eq!(refused.kind, "identity_refused");
-            assert_eq!(ids(), vec![watched.clone()]);
-        }
-        runtime
-            .block_on(super::remove_checked(&state, &watched, Some("246813")))
-            .unwrap();
-        assert!(ids().is_empty());
     }
 
     /// Every sync leaves what it found in the vault until someone claims
@@ -1831,25 +1646,33 @@ mod tests {
     /// Four commands answer behind the lock, and only four: the two that
     /// read the lock itself, the one that draws it, and the settings,
     /// which go through the redaction above instead.
+    ///
+    /// Every shape of command is read, synchronous ones included: one
+    /// that took the state without being `async` used to pass unseen.
     #[test]
     fn every_command_that_reaches_the_vault_begins_with_the_guard() {
         const PASSES_LOCKED: [&str; 4] =
             ["app_lock", "verify_app_lock", "lock_app", "get_settings"];
+        const SHAPES: [&str; 6] = [
+            "pub async fn ",
+            "pub(crate) async fn ",
+            "async fn ",
+            "pub fn ",
+            "pub(crate) fn ",
+            "fn ",
+        ];
         let sources = [
             ("lib.rs", include_str!("lib.rs")),
-            ("premium.rs", include_str!("premium.rs")),
             ("live.rs", include_str!("live.rs")),
-            ("devices.rs", include_str!("devices.rs")),
+            ("clipboard.rs", include_str!("clipboard.rs")),
         ];
 
         let mut checked = 0;
+        let mut commands = 0;
         for (file, source) in sources {
             let lines: Vec<&str> = source.lines().collect();
             for (index, line) in lines.iter().enumerate() {
-                let Some(rest) = line
-                    .strip_prefix("pub async fn ")
-                    .or_else(|| line.strip_prefix("async fn "))
-                else {
+                let Some(rest) = SHAPES.iter().find_map(|shape| line.strip_prefix(shape)) else {
                     continue;
                 };
                 let name = rest.split('(').next().unwrap_or_default();
@@ -1868,6 +1691,7 @@ mod tests {
                 if !command {
                     continue;
                 }
+                commands += 1;
                 // The body opens at the first line ending in `{`.
                 let Some(offset) = lines[index..]
                     .iter()
@@ -1908,12 +1732,20 @@ mod tests {
                 );
             }
         }
-        // A count, so an empty scan cannot pass for a clean one.
-        assert!(checked >= 50, "only {checked} commands scanned");
+        // Counts, so an empty scan cannot pass for a clean one: every
+        // command the app registers is read, the six synchronous ones
+        // and the one in clipboard.rs among them.
+        assert!(checked >= 45, "only {checked} commands checked");
+        let registered = include_str!("lib.rs")
+            .split("generate_handler![")
+            .nth(1)
+            .and_then(|list| list.split(']').next())
+            .map(|list| {
+                list.split(',')
+                    .filter(|name| !name.trim().is_empty())
+                    .count()
+            })
+            .unwrap_or_default();
+        assert_eq!(commands, registered, "a registered command was not read");
     }
 }
-
-// After the tests, which read this file and stop at the first
-// `#[cfg(test)]`: declared above them, it would hide every command.
-#[cfg(test)]
-mod testkit;

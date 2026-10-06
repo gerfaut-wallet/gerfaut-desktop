@@ -22,7 +22,7 @@ export function formatBtcSigned(sats: number): string {
   return sats < 0 ? formatBtc(sats) : `+${formatBtc(sats)}`;
 }
 
-/** `1234567` -> `"1 234 567"` (narrow no-break spaces). */
+/** `1234567` -> `"1 234 567"`, grouped with no-break spaces (U+00A0). */
 export function groupThousands(digits: string): string {
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, GROUP);
 }
@@ -210,16 +210,41 @@ export function formatAmountSigned(sats: number, unit: Unit): string {
   return sats < 0 ? formatSats(sats) : `+${formatSats(sats)}`;
 }
 
-/** Fiat value of an amount at a given BTC rate. */
-export function formatFiat(sats: number, rate: number, currency: string): string {
-  const value = (sats / 100_000_000) * rate;
+/** A sum in a currency: its symbol and its precision from the currency
+    formatter, in the app's one language, and its thousands grouped like
+    every other number on screen, with no-break spaces. The formatter's
+    commas put "€74,074" beside "1 297 812 sats". */
+export function formatCurrency(
+  value: number,
+  currency: string,
+  options: Pick<Intl.NumberFormatOptions, "maximumFractionDigits"> = {},
+): string {
+  return new Intl.NumberFormat(LOCALE, {
+    style: "currency",
+    currency: currency.toUpperCase(),
+    ...options,
+  })
+    .formatToParts(value)
+    .map((part) => (part.type === "group" ? GROUP : part.value))
+    .join("");
+}
+
+/** Fiat value of a wallet's amount at a given BTC rate. The rate is what
+    mainnet bitcoin fetches; the coins of a test network fetch nothing,
+    so on signet, testnet4 or regtest the value is zero, in the same
+    currency and format as any other. */
+export function formatFiat(
+  sats: number,
+  rate: number,
+  currency: string,
+  network: Network,
+): string {
+  // A plain zero, not the amount times zero: a payment out would read
+  // "-€0.00".
+  const value = network === "mainnet" ? (sats / 100_000_000) * rate : 0;
   // Each currency sets its own precision: yen, won and dong carry no
   // decimals, and forcing two on them reads as an error. Under one unit
   // the ceiling is raised to four so a small amount does not collapse
   // to zero, whatever the currency.
-  return new Intl.NumberFormat(LOCALE, {
-    style: "currency",
-    currency: currency.toUpperCase(),
-    ...(Math.abs(value) < 1 ? { maximumFractionDigits: 4 } : {}),
-  }).format(value);
+  return formatCurrency(value, currency, Math.abs(value) < 1 ? { maximumFractionDigits: 4 } : {});
 }

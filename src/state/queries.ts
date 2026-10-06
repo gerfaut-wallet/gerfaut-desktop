@@ -1,5 +1,6 @@
 // Server-state hooks. One place defines cache keys and invalidation.
 
+import type { FetchStatus } from "@tanstack/react-query";
 import {
   useIsMutating,
   useMutation,
@@ -9,6 +10,7 @@ import {
 import type {
   BackendConfig,
   ExportOptions,
+  FiatCurrency,
   LockKind,
   Network,
   ParsedInput,
@@ -30,6 +32,7 @@ export const keys = {
   policy: (id: string) => ["policy", id] as const,
   txDetail: (id: string, txid: string) => ["tx", id, txid] as const,
   receive: (id: string) => ["receive", id] as const,
+  liveStatus: ["live-status"] as const,
 };
 
 /** What kept the vault shut at startup, or null. Asked once: only a
@@ -257,6 +260,19 @@ export function useExportCsv() {
   });
 }
 
+/** Whether a price was not asked because Tor is required and cannot
+    be had: with an onion backend the core sends nothing in the clear. */
+export function torDown(error: unknown): boolean {
+  return isCommandError(error) && error.kind === "tor";
+}
+
+/** Asked whatever the webview thinks of the network. The request is a
+    command to the core, which reaches the source or says why not, Tor
+    included; by default TanStack holds a refresh back while the
+    webview reads offline, and the query keeps its old answer and its
+    success, with no error for anyone to see. */
+const PRICE_NETWORK_MODE = "always";
+
 /** Current BTC price, refreshed every minute while fiat display is on. */
 export function useFiatRate() {
   const { fiatEnabled, fiatSource, fiatCurrency } = useUi();
@@ -264,27 +280,46 @@ export function useFiatRate() {
     queryKey: ["price", fiatSource, fiatCurrency],
     queryFn: () => ipc.fetchPrice(fiatSource, fiatCurrency),
     enabled: fiatEnabled,
+    networkMode: PRICE_NETWORK_MODE,
     refetchInterval: 60_000,
     staleTime: 55_000,
     retry: 1,
   });
 }
 
+/** The answer a price display may use: the last one, while the last
+    request for it went through, and in the currency chosen. A failed
+    refresh keeps the answer before it in the cache, and showing it
+    would price every amount at a rate of an hour ago with nothing to
+    say so; a quote in another currency would put a dollar figure
+    behind a euro sign. A refresh held back offline is no better: it
+    keeps the old answer as if it had just come. Either way the display
+    shows no price, as the settings say it will. */
+export function liveAnswer<T extends { currency: FiatCurrency }>(
+  query: { isError: boolean; data: T | undefined; fetchStatus: FetchStatus },
+  currency: FiatCurrency,
+): T | null {
+  if (query.isError || query.fetchStatus === "paused") return null;
+  if (!query.data || query.data.currency !== currency) return null;
+  return query.data;
+}
+
 /** Price series for the overview chart, from the configured source in
     the configured currency.
  *
  *  `enabled` is the fiat setting and nothing else. A price request is a
- *  request to a third party, in the clear, from this machine at the
- *  moment Gerfaut opened — and with a `.onion` backend it goes out
- *  beside the Tor circuit rather than through it. Fiat display is off
- *  by default because of exactly that, so the chart asks for nothing
- *  until the setting says yes. */
+ *  request to a third party from this machine at the moment Gerfaut
+ *  opened, in the clear unless a backend is a `.onion` address, when
+ *  the core sends it through Tor. Fiat display is off by default
+ *  because of exactly that, so the chart asks for nothing until the
+ *  setting says yes. */
 export function usePriceHistory(range: PriceRange, enabled: boolean) {
   const { fiatSource, fiatCurrency } = useUi();
   return useQuery({
     queryKey: ["price-history", fiatSource, fiatCurrency, range],
     queryFn: () => ipc.fetchPriceHistory(fiatSource, fiatCurrency, range),
     enabled,
+    networkMode: PRICE_NETWORK_MODE,
     staleTime: range === "day" ? 5 * 60_000 : 30 * 60_000,
     retry: 1,
   });
@@ -331,19 +366,11 @@ export function useAddWallet() {
   });
 }
 
-/** A wallet the server watched is unwatched on the way out, so the
-    premium section is read again: the server's list, the consents the
-    vault holds, and the settings that carry them for the heartbeat. */
 export function useRemoveWallet() {
   const invalidate = useInvalidateWallet();
-  const client = useQueryClient();
   return useMutation({
-    mutationFn: (args: { id: string; secret?: string }) => ipc.removeWallet(args.id, args.secret),
-    onSuccess: () => {
-      invalidate();
-      void client.invalidateQueries({ queryKey: ["premium"] });
-      void client.invalidateQueries({ queryKey: keys.settings });
-    },
+    mutationFn: (id: string) => ipc.removeWallet(id),
+    onSuccess: () => invalidate(),
   });
 }
 
@@ -365,6 +392,22 @@ export function useSetWalletIcon() {
     onSuccess: (_data, { id }) => {
       void client.invalidateQueries({ queryKey: ["wallets"] });
       void client.invalidateQueries({ queryKey: keys.snapshot(id) });
+    },
+  });
+}
+
+/** A pin lives in the wallet list; the live watch takes it at once and
+    its status says how much of each wallet it now hears. */
+export function useSetWalletLivePinned() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; pinned: boolean }) =>
+      ipc.setWalletLivePinned(args.id, args.pinned),
+    // Settled once the list has been read back, so the switch shows
+    // what the vault holds and never flips back for a frame.
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: keys.liveStatus });
+      return client.invalidateQueries({ queryKey: ["wallets"] });
     },
   });
 }

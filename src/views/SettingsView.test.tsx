@@ -3,16 +3,8 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  BackendConfig,
-  ScannedBackend,
-  Settings,
-  WalletMeta,
-  WalletWatch,
-} from "../lib/ipc";
-import { useLock } from "../state/lock";
-import { premiumKeys } from "../state/premiumQueries";
-import { useSettings, useWallets } from "../state/queries";
+import type { BackendConfig, ScannedBackend, Settings, WalletMeta } from "../lib/ipc";
+import { useWallets } from "../state/queries";
 import { useUi } from "../state/store";
 import { BackendSection } from "./settings/BackendSection";
 import { SettingsView } from "./SettingsView";
@@ -55,7 +47,6 @@ const SETTINGS: Settings = {
   electrum_certs: {},
   app_lock: null,
   tor: { mode: "auto", socks_proxy: null },
-  premium: { key: null, certificate: null, watched: [], acknowledged_offline_until: null },
 };
 
 function renderBackend(
@@ -311,6 +302,103 @@ describe("scanning a server address", () => {
   });
 });
 
+describe("this is my node", () => {
+  const TRUSTED: ScannedBackend = {
+    kind: "electrum",
+    url: "ssl://node.local:50002",
+    host: "node.local",
+    port: 50002,
+    tls: true,
+    onion: false,
+  };
+
+  /** The core leaves the switch out of a stored backend while it is
+      off, so a form that rebuilt the config from the address alone
+      turned it off at every save. It is read back and sent back. */
+  it("stays on when the address is saved again", async () => {
+    mockBackendIpc(TRUSTED);
+    const saved: BackendConfig[] = [];
+    renderBackend((config) => saved.push(config), {
+      ...SETTINGS,
+      backends: {
+        mainnet: { type: "custom_electrum", url: "ssl://node.local:50002", own_node: true },
+      },
+    });
+    const user = userEvent.setup();
+    expect(toggle("This is my node")).toHaveAttribute("aria-checked", "true");
+
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    await waitFor(() =>
+      expect(saved).toEqual([
+        { type: "custom_electrum", url: "ssl://node.local:50002", own_node: true },
+      ]),
+    );
+  });
+
+  it("is off for a server stored before it existed, and goes along once turned on", async () => {
+    mockBackendIpc(TRUSTED);
+    const saved: BackendConfig[] = [];
+    renderBackend((config) => saved.push(config), {
+      ...SETTINGS,
+      backends: { mainnet: { type: "custom_esplora", url: "https://node.local/api" } },
+    });
+    const user = userEvent.setup();
+    const ownNode = toggle("This is my node");
+    expect(ownNode).toHaveAttribute("aria-checked", "false");
+    // What it does and when to leave it off, read out with its name.
+    expect(ownNode).toHaveAccessibleDescription(
+      "The live watch then follows up to 20 000 addresses instead of 2 000. Leave it off for a server you do not run: it would refuse most of them, and learn every one.",
+    );
+
+    await user.click(ownNode);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    await user.click(toggle("This is my node"));
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    await waitFor(() =>
+      expect(saved).toEqual([
+        { type: "custom_esplora", url: "https://node.local/api", own_node: true },
+        { type: "custom_esplora", url: "https://node.local/api" },
+      ]),
+    );
+  });
+
+  /** A code read is another server, unless it is the one stored: the
+      switch does not carry over to it. */
+  it("goes off for another server read from a code", async () => {
+    const STORED: Settings = {
+      ...SETTINGS,
+      backends: {
+        mainnet: { type: "custom_electrum", url: "ssl://node.local:50002", own_node: true },
+      },
+    };
+    mockBackendIpc(TRUSTED);
+    const { unmount } = renderBackend(undefined, STORED);
+    const user = userEvent.setup();
+    await scanCode(user, "node.local:50002:s");
+    expect(toggle("This is my node")).toHaveAttribute("aria-checked", "true");
+    unmount();
+
+    mockBackendIpc({
+      ...TRUSTED,
+      url: "ssl://electrum.example.org:50002",
+      host: "electrum.example.org",
+    });
+    renderBackend(undefined, STORED);
+    await scanCode(user, "electrum.example.org:50002:s");
+    expect(field("Host")).toHaveValue("electrum.example.org");
+    expect(toggle("This is my node")).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("is not offered for the public servers", async () => {
+    mockBackendIpc(TRUSTED);
+    renderBackend();
+    const user = userEvent.setup();
+    expect(toggle("This is my node")).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: /public api/i }));
+    expect(screen.queryByRole("switch", { name: "This is my node" })).not.toBeInTheDocument();
+  });
+});
+
 // --- the sections --------------------------------------------------------
 
 /** What the core answers about Tor on a machine with no daemon. */
@@ -381,27 +469,6 @@ function renderLiveSettings() {
   );
 }
 
-/** The view fed from the vault on both sides, settings included: what
-    a premium write changes there, the wallets section reads next. */
-function VaultSettings() {
-  const settings = useSettings();
-  const wallets = useWallets();
-  if (!settings.data) return null;
-  return <SettingsView settings={settings.data} wallets={wallets.data ?? []} />;
-}
-
-/** Renders the vault-fed view and hands back its cache, for a test that
-    lets part of it go the way time would. */
-function renderVaultSettings() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
-    <QueryClientProvider client={client}>
-      <VaultSettings />
-    </QueryClientProvider>,
-  );
-  return client;
-}
-
 /** Answers what the sections ask on their own, and records every call. */
 function mockSettingsIpc(
   overrides: Record<string, (args: Record<string, unknown>) => unknown> = {},
@@ -420,19 +487,20 @@ function mockSettingsIpc(
         return [WALLET];
       case "set_app_pref":
         return undefined;
-      case "premium_status":
+      case "live_status":
         return {
-          key: null,
-          licence: null,
-          consented: [],
-          acknowledged_offline_until: null,
-          device: null,
-          disconnected: false,
-          key_saved: false,
-          checklist_hidden: false,
-          disconnected_reason: null,
-          key_change_pending: false,
-          connect_pending: false,
+          enabled: false,
+          status: {
+            state: "off",
+            transport: null,
+            server: null,
+            detail: null,
+            watched_scripts: 0,
+            pushed_scripts: 0,
+            left_out_scripts: 0,
+            left_out_wallets: 0,
+            wallets: [],
+          },
         };
       default:
         throw new Error(`unexpected command ${cmd}`);
@@ -489,21 +557,9 @@ describe("settings sections", () => {
     expect(
       screen.getByText(/A backup holds descriptors and addresses, never a private key or seed\.$/),
     ).toBeInTheDocument();
-
-    // Premium last: the licence card, and without a key nothing else.
-    await user.click(nav().getByRole("button", { name: "Premium" }));
-    expect(await screen.findByRole("heading", { name: "Licence" })).toBeInTheDocument();
-    expect(heading("About")).not.toBeInTheDocument();
-    expect(heading("Watched wallets")).not.toBeInTheDocument();
-    expect(nav().getByRole("button", { name: "Premium" })).toHaveAttribute("aria-current", "page");
-    // Selected, the entry marks itself in the premium colour, not the
-    // action blue every other section takes.
-    expect(
-      nav().getByRole("button", { name: "Premium" }).querySelector("span[aria-hidden]"),
-    ).toHaveClass("bg-premium");
   });
 
-  it("lists the eight sections in order, each with an icon, the gem in the premium colour", () => {
+  it("lists the seven sections in order, each with an icon", () => {
     mockSettingsIpc();
     renderSettings();
     const items = nav().getAllByRole("button");
@@ -515,10 +571,8 @@ describe("settings sections", () => {
       "Notifications",
       "Backup & sync",
       "About",
-      "Premium",
     ]);
     for (const item of items) expect(item.querySelector("svg")).not.toBeNull();
-    expect(items[7].querySelector("svg.lucide-gem")).toHaveClass("text-premium");
   });
 
   it("opens straight on the section asked for", () => {
@@ -652,8 +706,6 @@ describe("settings sections", () => {
     await user.click(remove);
     expect(calls.some((call) => call.cmd === "remove_wallet")).toBe(false);
     expect(within(row).getByText(/cannot be undone/)).toBeInTheDocument();
-    // No key, so the server has nothing of this wallet to forget.
-    expect(within(row).queryByText(/alert history/)).not.toBeInTheDocument();
     // The yes of a destructive confirmation is the one button that
     // wears red; the note around it keeps its amber, and reads Cancel
     // first, the yes last.
@@ -674,39 +726,13 @@ describe("settings sections", () => {
     await user.click(within(row).getByRole("button", { name: "Remove wallet" }));
     await waitFor(() =>
       expect(calls.filter((call) => call.cmd === "remove_wallet").map((call) => call.args)).toEqual([
-        // The server never had it: no secret to ask.
-        { id: "w-1", secret: null },
+        { id: "w-1" },
       ]),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("says the server forgets a watched wallet too, when removing it", async () => {
-    // A key and a yes for this wallet: the core will queue the unwatch,
-    // and the confirmation says what that deletes — without asking the
-    // server anything from here.
-    const calls = mockSettingsIpc();
-    act(() => useUi.getState().openSettings("wallets"));
-    renderSettings([WALLET], {
-      ...SETTINGS,
-      premium: {
-        ...SETTINGS.premium,
-        key: "abcdefghijkmnpqr",
-        watched: [{ wallet_id: "w-1", consented_at: 1_755_000_000 }],
-      },
-    });
-    const user = userEvent.setup();
-    const row = screen.getByText("Cold storage").closest("li")!;
-    await user.click(within(row).getByRole("button", { name: "Remove" }));
-    expect(within(row).getByText(/cannot be undone/)).toHaveTextContent(
-      "The server stops watching it too, and deletes its alert history.",
-    );
-    expect(calls.some((call) => call.cmd === "premium_wallets")).toBe(false);
-  });
-
-  it("asks the app lock's secret before a wallet the server watches goes", async () => {
-    // Removing the wallet ends the watch as unwatching it does: the
-    // same secret, or the one would be the way around the other.
+  it("says why a removal failed, under its row, and keeps the question for a retry", async () => {
     let refuse = true;
     const calls = mockSettingsIpc({
       remove_wallet: () => {
@@ -717,151 +743,128 @@ describe("settings sections", () => {
         return undefined;
       },
     });
-    useLock.setState({ lock: { kind: "pin", biometric: false } });
     act(() => useUi.getState().openSettings("wallets"));
-    renderSettings([WALLET], {
-      ...SETTINGS,
-      premium: {
-        ...SETTINGS.premium,
-        key: "abcdefghijkmnpqr",
-        watched: [{ wallet_id: "w-1", consented_at: 1_755_000_000 }],
-      },
-    });
+    renderSettings();
     const user = userEvent.setup();
     const row = screen.getByText("Cold storage").closest("li")!;
     await user.click(within(row).getByRole("button", { name: "Remove" }));
     await user.click(within(row).getByRole("button", { name: "Remove wallet" }));
-    expect(calls.some((call) => call.cmd === "remove_wallet")).toBe(false);
-    let dialog = screen.getByRole("dialog", { name: "Confirm it's you" });
-    await user.type(within(dialog).getByLabelText("PIN"), "2468");
-    await user.click(within(dialog).getByRole("button", { name: "Remove wallet" }));
 
-    // A failure closes the dialog and says why under the row; the
-    // question stays for the retry.
     expect(await within(row).findByRole("alert")).toHaveTextContent(
-      "Vault i/o error: disk full.",
+      "Not removed: vault i/o error: disk full",
     );
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-
     await user.click(within(row).getByRole("button", { name: "Remove wallet" }));
-    dialog = screen.getByRole("dialog", { name: "Confirm it's you" });
-    await user.type(within(dialog).getByLabelText("PIN"), "2468");
-    await user.click(within(dialog).getByRole("button", { name: "Remove wallet" }));
-    await waitFor(() =>
-      expect(calls.filter((call) => call.cmd === "remove_wallet").map((call) => call.args)).toEqual([
-        { id: "w-1", secret: "2468" },
-        { id: "w-1", secret: "2468" },
-      ]),
-    );
     await waitFor(() => expect(useUi.getState().toast).toBe("Wallet removed"));
-    useLock.setState({ lock: null });
+    expect(calls.filter((call) => call.cmd === "remove_wallet")).toHaveLength(2);
+    expect(within(row).queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("stops saying the server forgets a wallet once it was unwatched", async () => {
-    // The vault's side: the core drops the wallet from the watched list
-    // along with the consent when the server has let it go, and the
-    // settings are read again for the sentence to follow.
-    let premium = {
-      ...SETTINGS.premium,
-      key: "abcdefghijkmnpqr",
-      watched: [{ wallet_id: "w-1", consented_at: 1_755_000_000 }],
+  it("badges each wallet with what the live watch hears, only while it is short of room", async () => {
+    const short = {
+      state: "connected",
+      transport: "electrum",
+      server: "electrum.example.org",
+      detail: null,
+      watched_scripts: 2_000,
+      pushed_scripts: 2_000,
+      left_out_scripts: 1_240,
+      left_out_wallets: 2,
+      wallets: [
+        { wallet_id: "w-1", coverage: "partial", watched_scripts: 200, left_out_scripts: 1_040 },
+        { wallet_id: "w-2", coverage: "sync_only", watched_scripts: 0, left_out_scripts: 200 },
+        { wallet_id: "w-3", coverage: "live", watched_scripts: 12, left_out_scripts: 0 },
+      ],
     };
-    let consented = ["w-1"];
-    let server: WalletWatch[] = [
-      {
-        id: "w-1",
-        name: "Cold storage",
-        script_kind: "p2wpkh",
-        watched_since: 1_755_000_000,
-        baseline_at: 1_755_000_100,
-        baseline_height: 910_000,
-        coins: 1,
-        value_sats: 150_000,
-      },
-    ];
-    const status = () => ({
-      key: "abcd-efgh-ijkm-npqr",
-      licence: { status: "active", until: 1_804_809_600 },
-      consented,
-      acknowledged_offline_until: null,
-      device: { id: "d-1", connected_at: 1_755_000_000 },
-      disconnected: false,
-      key_saved: true,
-      checklist_hidden: true,
-      disconnected_reason: null,
-      key_change_pending: false,
-      connect_pending: false,
-    });
-    const device = {
-      id: "d-1",
-      platform: "windows",
-      connected_at: 1_755_000_000,
-      access: "full",
-      pending_until: null,
-      approved_at: 1_755_000_000,
-      this_device: true,
-    };
+    mockSettingsIpc({ live_status: () => ({ enabled: true, status: short }) });
+    useUi.setState({ settingsSection: "wallets" });
+    renderSettings([
+      WALLET,
+      { ...WALLET, id: "w-2", name: "Savings" },
+      { ...WALLET, id: "w-3", name: "Spending" },
+    ]);
+    const row = (name: string) => within(screen.getByText(name).closest("li")!);
+    expect(await row("Cold storage").findByText("Partly live")).toBeInTheDocument();
+    expect(row("Savings").getByText("At next sync")).toBeInTheDocument();
+    expect(row("Spending").getByText("Live")).toBeInTheDocument();
+    // The count rides along for a pointer, and is read out with the badge.
+    expect(row("Savings").getByTitle("200 addresses wait for the next sync.")).toBeInTheDocument();
+    expect(row("Spending").getByTitle("Every address is followed live.")).toBeInTheDocument();
+  });
+
+  it("puts no badge on a wallet while the live watch has room, or is off", async () => {
     mockSettingsIpc({
-      get_settings: () => ({ ...SETTINGS, premium }),
-      premium_status: status,
-      premium_device: () => device,
-      premium_devices: () => [device],
-      premium_account: () => ({
-        account: { active: true, paid_until: 1_804_809_600, wallets: 1, channels: 0, network: "bitcoin" },
-        status: status(),
+      live_status: () => ({
+        enabled: false,
+        status: {
+          state: "off",
+          transport: null,
+          server: null,
+          detail: null,
+          watched_scripts: 0,
+          pushed_scripts: 0,
+          left_out_scripts: 0,
+          left_out_wallets: 0,
+          wallets: [],
+        },
       }),
-      premium_wallets: () => server,
-      premium_channels: () => [],
-      premium_events: () => [],
-      premium_unwatch_wallet: () => {
-        server = [];
-        consented = [];
-        premium = { ...premium, watched: [] };
+    });
+    useUi.setState({ settingsSection: "wallets" });
+    renderSettings();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Advanced/ })).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/^(Live|Partly live|At next sync)$/)).not.toBeInTheDocument();
+  });
+
+  /** An advanced setting, out of the way: folded until asked for. */
+  it("pins a wallet to the live watch from a folded advanced list", async () => {
+    let pinned = false;
+    const calls = mockSettingsIpc({
+      list_wallets: () => [{ ...WALLET, ...(pinned ? { live_pinned: true } : {}) }],
+      set_wallet_live_pinned: (args) => {
+        pinned = args.pinned as boolean;
         return undefined;
       },
     });
-    act(() => useUi.getState().openSettings("wallets"));
-    useLock.setState({ lock: { kind: "pin", biometric: false } });
-    const client = renderVaultSettings();
+    useUi.setState({ settingsSection: "wallets" });
+    renderLiveSettings();
     const user = userEvent.setup();
+    const advanced = await screen.findByRole("button", { name: /^Advanced/ });
+    expect(advanced).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("switch", { name: /live first/ })).not.toBeInTheDocument();
 
-    // Watched and agreed to: the removal says what the server does.
-    let row = (await screen.findByText("Cold storage")).closest("li")!;
-    await user.click(within(row).getByRole("button", { name: "Remove" }));
-    expect(within(row).getByText(/cannot be undone/)).toHaveTextContent(
-      "The server stops watching it too, and deletes its alert history.",
+    await user.click(advanced);
+    expect(advanced).toHaveAttribute("aria-expanded", "true");
+    const pin = screen.getByRole("switch", { name: "Always watch Cold storage live first" });
+    expect(pin).toHaveAttribute("aria-checked", "false");
+    expect(pin).toHaveAccessibleDescription(
+      "When the live watch cannot follow every address, the wallets turned on here are followed first.",
     );
-    await user.click(within(row).getByRole("button", { name: "Cancel" }));
 
-    // Unwatched from the premium section.
-    act(() => useUi.getState().openSettings("premium"));
-    const cold = await screen.findByRole("switch", { name: "Watch Cold storage from the server" });
-    await waitFor(() => expect(cold).toHaveAttribute("aria-checked", "true"));
-    await waitFor(() => expect(cold).toBeEnabled());
-    await user.click(cold);
-    await user.click(screen.getByRole("button", { name: "Unwatch" }));
-    const identity = await screen.findByRole("dialog", { name: "Confirm it's you" });
-    await user.type(within(identity).getByLabelText("PIN"), "2468");
-    await user.click(within(identity).getByRole("button", { name: "Unwatch" }));
-    await waitFor(() => expect(cold).toHaveAttribute("aria-checked", "false"));
+    await user.click(pin);
+    await waitFor(() => expect(pin).toHaveAttribute("aria-checked", "true"));
+    expect(calls.filter((call) => call.cmd === "set_wallet_live_pinned")).toEqual([
+      { cmd: "set_wallet_live_pinned", args: { id: "w-1", pinned: true } },
+    ]);
 
-    // Time passes elsewhere and the server's list leaves the cache, as
-    // it does minutes after the premium section is left: what the
-    // wallets section says then rests on the settings alone, and they
-    // were read again after the unwatch.
-    act(() => useUi.getState().openSettings("general"));
-    client.removeQueries({ queryKey: premiumKeys.wallets });
+    // Folded again, the count still says something is set.
+    await user.click(advanced);
+    expect(advanced).toHaveAccessibleName("Advanced · 1 wallet watched live first");
+  });
 
-    // Back in Wallets: the server has nothing of this wallet to forget
-    // any more, and the confirmation no longer says it does.
-    act(() => useUi.getState().openSettings("wallets"));
-    row = (await screen.findByText("Cold storage")).closest("li")!;
-    await user.click(within(row).getByRole("button", { name: "Remove" }));
-    await waitFor(() =>
-      expect(within(row).getByText(/cannot be undone/)).not.toHaveTextContent(
-        "The server stops watching",
-      ),
-    );
+  it("says why a pin was not saved, under its wallet", async () => {
+    mockSettingsIpc({
+      set_wallet_live_pinned: () =>
+        Promise.reject({ kind: "vault", message: "vault i/o error: disk full" }),
+    });
+    useUi.setState({ settingsSection: "wallets" });
+    renderSettings();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /^Advanced/ }));
+    const pin = screen.getByRole("switch", { name: "Always watch Cold storage live first" });
+    await user.click(pin);
+    expect(await screen.findByRole("alert")).toHaveTextContent("vault i/o error: disk full");
+    expect(pin).toHaveAttribute("aria-checked", "false");
   });
 
   it("offers no reordering to a single wallet", () => {
@@ -880,12 +883,116 @@ describe("settings sections", () => {
     await user.keyboard("{ArrowDown}");
     expect(nav().getByRole("button", { name: "Network" })).toHaveFocus();
     await user.keyboard("{End}");
-    expect(nav().getByRole("button", { name: "Premium" })).toHaveFocus();
+    expect(nav().getByRole("button", { name: "About" })).toHaveFocus();
     await user.keyboard("{ArrowRight}");
     expect(nav().getByRole("button", { name: "General" })).toHaveFocus();
     // Moving the focus is not choosing: Enter does that.
     expect(heading("Display")).toBeInTheDocument();
     await user.keyboard("{ArrowUp}{ArrowUp}{Enter}");
-    expect(heading("About")).toBeInTheDocument();
+    expect(heading("Backup & sync")).toBeInTheDocument();
+  });
+});
+
+/** A write the vault refuses — a full disk, a file an antivirus holds
+    during the rename — is said under the setting, and the control shows
+    what the vault holds, not what was asked. */
+describe("a setting the vault refuses", () => {
+  const refused = () => Promise.reject({ kind: "vault", message: "the vault could not be written" });
+
+  beforeEach(() => {
+    useUi.setState({ view: "settings", settingsSection: "general", notifyNewTx: false, toast: null });
+  });
+
+  it("puts the gap limit back and says why", async () => {
+    mockSettingsIpc({ set_gap_limit: refused });
+    act(() => useUi.getState().openSettings("wallets"));
+    renderSettings();
+    const user = userEvent.setup();
+    const field = screen.getByRole("textbox", { name: "Gap limit" });
+
+    await user.clear(field);
+    await user.type(field, "50{Enter}");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Not saved: the vault could not be written",
+    );
+    expect(field).toHaveValue(String(SETTINGS.gap_limit));
+    expect(useUi.getState().toast).toBeNull();
+  });
+
+  it("keeps the rename open on the name typed", async () => {
+    mockSettingsIpc({ rename_wallet: refused });
+    act(() => useUi.getState().openSettings("wallets"));
+    renderSettings();
+    const user = userEvent.setup();
+    const row = screen.getByText("Cold storage").closest("li")!;
+
+    await user.click(within(row).getByRole("button", { name: "Rename" }));
+    const name = within(row).getByRole("textbox", { name: "Wallet name" });
+    await user.clear(name);
+    await user.type(name, "Savings{Enter}");
+    expect(await within(row).findByRole("alert")).toHaveTextContent("Not saved:");
+    expect(within(row).getByRole("textbox", { name: "Wallet name" })).toHaveValue("Savings");
+  });
+
+  it("stays on the network the vault holds", async () => {
+    mockSettingsIpc({ set_active_network: refused });
+    act(() => useUi.getState().openSettings("network"));
+    renderSettings();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /^Signet/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Not saved:");
+    expect(screen.getByRole("button", { name: /^Mainnet/ })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  /** The Rust side starts the watch on what the vault holds: a switch
+      left on over a refused write would promise alerts nobody sends. */
+  it("turns the alerts switch back off", async () => {
+    mockSettingsIpc({ set_app_pref: refused });
+    act(() => useUi.getState().openSettings("notifications"));
+    renderSettings();
+    const user = userEvent.setup();
+    const alerts = screen.getByRole("switch", { name: "Notify about new transactions" });
+
+    await user.click(alerts);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Not saved:");
+    expect(alerts).not.toBeChecked();
+    expect(useUi.getState().notifyNewTx).toBe(false);
+  });
+});
+
+describe("turning the app lock on", () => {
+  beforeEach(() => {
+    useUi.setState({ view: "settings", settingsSection: "general", toast: null });
+  });
+
+  /** A form: Enter sends it from any field, and what is wrong is read
+      out with the fields it is about. */
+  it("sends on Enter and says what is wrong out loud", async () => {
+    const calls = mockSettingsIpc({ set_app_lock: () => undefined, get_settings: () => SETTINGS });
+    act(() => useUi.getState().openSettings("security"));
+    renderSettings();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("switch", { name: "App lock" }));
+    const dialog = await screen.findByRole("dialog", { name: "Turn on the app lock" });
+    const pin = within(dialog).getByLabelText("New PIN");
+    const confirm = within(dialog).getByLabelText("Confirm");
+    await user.type(pin, "246813");
+    await user.type(confirm, "246812{Enter}");
+
+    const problem = await within(dialog).findByRole("alert");
+    expect(problem).toHaveTextContent("The two entries differ.");
+    expect(confirm).toHaveAttribute("aria-invalid", "true");
+    expect(confirm).toHaveAccessibleDescription("The two entries differ.");
+    expect(calls.filter((call) => call.cmd === "set_app_lock")).toHaveLength(0);
+
+    await user.clear(confirm);
+    await user.type(confirm, "246813{Enter}");
+    await waitFor(() =>
+      expect(calls.filter((call) => call.cmd === "set_app_lock")).toEqual([
+        { cmd: "set_app_lock", args: { kind: "pin", secret: "246813", current: null } },
+      ]),
+    );
   });
 });

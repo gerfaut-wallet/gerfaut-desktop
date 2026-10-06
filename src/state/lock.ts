@@ -33,7 +33,7 @@ export function isLockedError(error: unknown): boolean {
     The Rust side cuts them the same way when it answers behind the
     lock. It is done here as well because the copy already in the cache
     when the curtain falls was answered in full — backends, accepted
-    certificates, the account key — and dropping the entry outright
+    certificates — and dropping the entry outright
     would lose the theme and flash the splash on the way to the lock
     screen. */
 export function lockedSettings(settings: Settings): Settings {
@@ -47,7 +47,6 @@ export function lockedSettings(settings: Settings): Settings {
     backends: {},
     electrum_certs: {},
     app_prefs: kept,
-    premium: { key: null, certificate: null, watched: [], acknowledged_offline_until: null },
   };
 }
 

@@ -17,7 +17,7 @@ import { Modal } from "../components/Modal";
 import { Notice } from "../components/Notice";
 import type { AddressEntry, AddressRow } from "../lib/ipc";
 import { useAddressList, useReceiveAddresses, useSnapshot } from "../state/queries";
-import { useUi } from "../state/store";
+import { useClipboard } from "../state/clipboard";
 
 /** Rows each keychain shows before "Show all". */
 const FOLDED_ROWS = 5;
@@ -45,7 +45,6 @@ export function unusedBefore(entries: AddressEntry[], position: number): number 
     card per keychain, folded to a few rows. Single-address wallets
     show their one address and its one row. */
 export function ReceiveView({ walletId }: { walletId: string }) {
-  const { showToast } = useUi();
   const snapshot = useSnapshot(walletId);
   // Skipping peeks further down the derivation path; nothing is
   // retired, and a restart returns to the first unused address.
@@ -54,7 +53,7 @@ export function ReceiveView({ walletId }: { walletId: string }) {
   // next one before "Next address" is pressed.
   const addresses = useReceiveAddresses(walletId, Math.min(offset + 1, MAX_LOOKAHEAD));
   const list = useAddressList(walletId);
-  const [copied, setCopied] = useState(false);
+  const { copy: copyText, copied } = useClipboard();
   const [qrOpen, setQrOpen] = useState(false);
 
   // A wallet switch resets the peek: offsets are not comparable.
@@ -81,11 +80,7 @@ export function ReceiveView({ walletId }: { walletId: string }) {
   const gap = entry ? unusedBefore(entries, position) : 0;
 
   const copy = async () => {
-    if (!entry) return;
-    await navigator.clipboard.writeText(entry.address);
-    setCopied(true);
-    showToast("Copied");
-    setTimeout(() => setCopied(false), 1500);
+    if (entry) await copyText(entry.address);
   };
 
   return (

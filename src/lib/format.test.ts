@@ -4,7 +4,9 @@ import {
   formatBlocks,
   formatBtc,
   formatBtcSigned,
+  formatCurrency,
   formatDate,
+  formatFiat,
   formatDuration,
   formatLocktime,
   formatSats,
@@ -18,11 +20,10 @@ import {
 
 describe("formatDate", () => {
   it("names the day in the voice of the timestamps, without a time", () => {
-    const at = Date.UTC(2030, 2, 17, 12, 0) / 1000;
-    const local = new Date(at * 1000);
-    const dd = String(local.getDate()).padStart(2, "0");
-    expect(formatDate(at)).toBe(`Mar ${dd}, 2030`);
-    expect(formatDate(at)).not.toMatch(/\d{2}:\d{2}/);
+    // A local date, not a UTC one: UTC noon is already the next day in
+    // UTC+13 and UTC+14, and what is under test is the wording.
+    const at = new Date(2030, 2, 7, 12, 0).getTime() / 1000;
+    expect(formatDate(at)).toBe("Mar 07, 2030");
   });
 });
 
@@ -67,20 +68,16 @@ describe("formatBlocks", () => {
 });
 
 describe("formatTimestamp", () => {
+  // Local dates, not UTC ones: a UTC moment falls on another day in the
+  // zones far from it, and what is under test is the wording.
   it("prints one language, whatever the host speaks", () => {
-    // Local time, so the assertion is built the same way rather than
-    // pinned to a zone: what is under test is the wording.
-    const at = Date.UTC(2026, 7, 28, 18, 56) / 1000;
-    const local = new Date(at * 1000);
-    const hh = String(local.getHours()).padStart(2, "0");
-    const mm = String(local.getMinutes()).padStart(2, "0");
-    expect(formatTimestamp(at)).toBe(`Aug 28, 2026, ${hh}:${mm}`);
+    const at = new Date(2026, 7, 28, 18, 56).getTime() / 1000;
+    expect(formatTimestamp(at)).toBe("Aug 28, 2026, 18:56");
   });
 
   it("keeps a 24-hour clock and pads the day", () => {
-    expect(formatTimestamp(Date.UTC(2026, 0, 5, 12, 0) / 1000)).toMatch(
-      /^Jan 05, 2026, \d{2}:\d{2}$/,
-    );
+    const at = new Date(2026, 0, 5, 9, 5).getTime() / 1000;
+    expect(formatTimestamp(at)).toBe("Jan 05, 2026, 09:05");
   });
 });
 
@@ -168,5 +165,43 @@ describe("relativeTime", () => {
     expect(relativeTime(now / 1000 - 120, now)).toBe("2 min ago");
     expect(relativeTime(now / 1000 - 7200, now)).toBe("2 h ago");
     expect(relativeTime(now / 1000 - 172_800, now)).toBe("2 d ago");
+  });
+});
+
+/** Every number on screen groups its thousands the same way, with a
+    no-break space: a fiat value too, beside amounts in sats. */
+describe("fiat values", () => {
+  const NBSP = " ";
+
+  it("group their thousands with no-break spaces, not commas", () => {
+    expect(formatCurrency(74_074.07, "eur")).toBe(`€74${NBSP}074.07`);
+    expect(formatCurrency(1_234_567.5, "usd")).toBe(`$1${NBSP}234${NBSP}567.50`);
+    expect(formatCurrency(61_250, "eur", { maximumFractionDigits: 0 })).toBe(`€61${NBSP}250`);
+    expect(formatFiat(123_456_789, 60_000, "eur", "mainnet")).toBe(`€74${NBSP}074.07`);
+    expect(formatFiat(123_456_789, 60_000, "eur", "mainnet")).not.toContain(",");
+  });
+
+  it("keep each currency's own precision, and small sums readable", () => {
+    expect(formatCurrency(1_500_000, "jpy")).toBe(`¥1${NBSP}500${NBSP}000`);
+    expect(formatFiat(1_000, 60_000, "eur", "mainnet")).toBe("€0.60");
+    expect(formatFiat(20, 60_000, "eur", "mainnet")).toBe("€0.012");
+    expect(formatFiat(-150_000, 60_000, "eur", "mainnet")).toBe("-€90.00");
+  });
+
+  /** A test coin is worth nothing: whatever the amount and the rate,
+      its value is zero in the chosen currency, written the way that
+      currency writes any other sum. */
+  it("are zero on a test network, in the chosen currency", () => {
+    for (const network of ["signet", "testnet4", "regtest"] as const) {
+      expect(formatFiat(123_456_789, 60_000, "eur", network)).toBe("€0.00");
+      expect(formatFiat(123_456_789, 60_000, "usd", network)).toBe("$0.00");
+      expect(formatFiat(123_456_789, 9_000_000, "jpy", network)).toBe("¥0");
+    }
+    expect(formatFiat(123_456_789, 60_000, "eur", "mainnet")).not.toBe("€0.00");
+  });
+
+  it("are a plain zero for a payment out on a test network, with no sign", () => {
+    expect(formatFiat(-150_000, 60_000, "eur", "signet")).toBe("€0.00");
+    expect(formatFiat(0, 60_000, "eur", "mainnet")).toBe("€0.00");
   });
 });

@@ -7,7 +7,7 @@ import {
   formatFiat,
   formatSats,
 } from "../lib/format";
-import { useFiatRate } from "../state/queries";
+import { liveAnswer, useFiatRate, useSettings } from "../state/queries";
 import { useUi } from "../state/store";
 
 /** An amount as plain text, for a heading or a fact where a component
@@ -19,13 +19,19 @@ export function useAmountText(sats: number | null): string {
   return masked ? MASKED : formatAmount(sats, unit);
 }
 
-/** Fiat value of an amount, when the display is enabled and a quote is
-    available. Degrades to nothing, never to an error. */
+/** Fiat value of an amount, when the display is enabled and the price
+    source answered the last time it was asked, in the chosen currency.
+    Degrades to nothing, never to an error. Every fiat value
+    on screen comes from here, so the network is read here once: the
+    pages show the wallets of the active network and no other, which
+    makes it the network of every amount they hold. Not known yet, it
+    shows nothing rather than a price a test coin does not have. */
 export function useFiatValue(sats: number): string | null {
   const { fiatEnabled, fiatCurrency, masked } = useUi();
-  const rate = useFiatRate();
-  if (!fiatEnabled || masked || !rate.data) return null;
-  return formatFiat(sats, rate.data.rate, fiatCurrency);
+  const quote = liveAnswer(useFiatRate(), fiatCurrency);
+  const network = useSettings().data?.active_network;
+  if (!fiatEnabled || masked || !quote || !network) return null;
+  return formatFiat(sats, quote.rate, fiatCurrency, network);
 }
 
 /** Headline balance figure: UI face with tabular figures, masked-aware.
@@ -96,19 +102,6 @@ export function StackedAmount({ sats }: { sats: number }) {
       {fiat && (
         <span className="whitespace-nowrap tabular text-[11px] text-muted">{fiat}</span>
       )}
-    </span>
-  );
-}
-
-/** Inline amount for detail views: primary unit, fiat optional. */
-export function InlineAmount({ sats, withFiat = true }: { sats: number; withFiat?: boolean }) {
-  const { masked, unit } = useUi();
-  const fiat = useFiatValue(sats);
-  if (masked) return <span className="tabular text-[13px] text-text">{MASKED}</span>;
-  return (
-    <span className="selectable tabular text-[13px] text-text">
-      {formatAmount(sats, unit)}
-      {withFiat && fiat && <span className="text-muted"> · {fiat}</span>}
     </span>
   );
 }

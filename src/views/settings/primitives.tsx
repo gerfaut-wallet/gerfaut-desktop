@@ -3,6 +3,29 @@
 
 import { clsx } from "clsx";
 import type { ReactNode, Ref } from "react";
+import { Notice } from "../../components/Notice";
+import { useRadioGroup } from "../../components/radioGroup";
+import { errorMessage } from "../../lib/ipc";
+
+/** A ghost on a tinted panel: hover in Neige with a hairline rather
+    than the Givre that would read dirty there; Givre again in dark. */
+export const GHOST_ON_TINT =
+  "h-9 hover:bg-surface hover:shadow-[inset_0_0_0_1px_var(--color-border)] dark:hover:bg-sunken dark:hover:shadow-none";
+
+/** What a setting that was not saved leaves under it: the amber note,
+    in the core's words, until the next try. Never a toast, which would
+    be gone before it is read, and never a control left showing a value
+    the vault does not hold. */
+export function SaveFailure({ error, className }: { error: unknown; className?: string }) {
+  if (error === null || error === undefined) return null;
+  // `className` replaces the margin above, for a parent that spaces
+  // its children itself.
+  return (
+    <Notice tone="info" role="alert" className={className ?? "mt-2"}>
+      Not saved: {errorMessage(error)}
+    </Notice>
+  );
+}
 
 export function SectionCard({
   icon,
@@ -10,15 +33,11 @@ export function SectionCard({
   children,
   className,
   headingRef,
-  premium = false,
 }: {
   icon: ReactNode;
   title: string;
   children: ReactNode;
   className?: string;
-  /** A card of the paid service: its glyph takes the premium colour,
-      as the entry that leads here does. */
-  premium?: boolean;
   /** The heading, for a section that moves the focus there once what
       held it is gone — a question answered, a row removed. Given a
       ref, the heading takes the focus from a script and never from
@@ -37,7 +56,7 @@ export function SectionCard({
         tabIndex={headingRef ? -1 : undefined}
         className="mb-4 flex items-center gap-2 font-display text-base font-semibold text-text"
       >
-        <span className={premium ? "text-premium" : "text-muted"}>{icon}</span>
+        <span className="text-muted">{icon}</span>
         {title}
       </h2>
       {children}
@@ -58,7 +77,9 @@ export function SettingRow({
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
-      <div className="min-w-0 max-w-xl">
+      {/* The words give way before the control does: a hint at its full
+          measure pushed a 96px field onto a line of its own. */}
+      <div className="min-w-0 max-w-xl flex-[1_1_20rem]">
         <p className="font-ui text-sm font-medium text-text">{title}</p>
         {hint && <p className="mt-0.5 font-ui text-xs text-muted">{hint}</p>}
       </div>
@@ -78,7 +99,11 @@ export function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: 
   );
 }
 
-/** Row of mutually exclusive choices, styled instead of a native select. */
+/** Row of mutually exclusive choices, styled instead of a native select.
+    The chosen one in a Glacier fill: the white chip with a hairline it
+    used to be was the faintest mark on the page for the one thing the
+    control says. An option that cannot apply stays, in Ardoise, and
+    takes no click. */
 export function Segmented<T extends string>({
   value,
   options,
@@ -90,28 +115,33 @@ export function Segmented<T extends string>({
   onChange: (value: T) => void;
   label: string;
 }) {
+  const radio = useRadioGroup(
+    options.map((option) => option.value),
+    value,
+    onChange,
+    (candidate) => options.find((option) => option.value === candidate)?.disabled === true,
+  );
   return (
     <div
       role="radiogroup"
       aria-label={label}
       className="inline-flex rounded-md bg-sunken p-0.5"
     >
-      {options.map((option) => (
+      {options.map((option, index) => (
         <button
           key={option.value}
           type="button"
           role="radio"
           aria-checked={value === option.value}
+          {...radio(option.value, index)}
           disabled={option.disabled}
           onClick={() => onChange(option.value)}
           className={clsx(
-            "inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 font-ui text-sm font-medium transition-colors duration-150",
-            option.disabled
-              ? "cursor-not-allowed text-muted/45"
-              : "cursor-pointer",
+            "inline-flex h-9 items-center gap-1.5 rounded-[6px] px-3 font-ui text-sm font-medium transition-colors duration-150",
+            option.disabled ? "cursor-not-allowed text-muted" : "cursor-pointer",
             value === option.value
-              ? "bg-surface text-text shadow-[inset_0_0_0_1px_var(--color-border)]"
-              : !option.disabled && "text-muted hover:text-text",
+              ? "bg-primary text-on-primary"
+              : !option.disabled && "text-text hover:bg-border/60",
           )}
         >
           {option.icon && (
@@ -132,15 +162,15 @@ export function Toggle({
   label,
   disabled = false,
   busy = false,
-  tone = "primary",
+  describedBy,
   ref,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label: string;
-  /** What the switch acts on when it is on: the app, or the paid
-      service. */
-  tone?: "primary" | "premium";
+  /** The id of the line that says what the switch does, read out after
+      its name. */
+  describedBy?: string;
   /** Greyed and inert, but still there: a switch that cannot be used
       says more than a switch that is gone. */
   disabled?: boolean;
@@ -156,12 +186,13 @@ export function Toggle({
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      aria-describedby={describedBy}
       aria-busy={busy || undefined}
       disabled={disabled || busy}
       onClick={() => onChange(!checked)}
       className={clsx(
         "relative h-6 w-11 rounded-full transition-colors duration-150",
-        checked ? (tone === "premium" ? "bg-premium" : "bg-primary") : "bg-border",
+        checked ? "bg-primary" : "bg-border",
         disabled ? "cursor-not-allowed opacity-45" : busy ? "cursor-wait" : "cursor-pointer",
       )}
     >

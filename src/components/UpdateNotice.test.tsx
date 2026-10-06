@@ -21,7 +21,6 @@ const SETTINGS: Settings = {
   electrum_certs: {},
   app_lock: null,
   tor: { mode: "auto", socks_proxy: null },
-  premium: { key: null, certificate: null, watched: [], acknowledged_offline_until: null },
 };
 
 /** What GitHub is made to answer: a tag, or a failure. */
@@ -370,7 +369,7 @@ describe("the update notice", () => {
     await user.click(screen.getByRole("button", { name: "Later" }));
     await user.click(screen.getByRole("button", { name: "Settings" }));
     await user.click(screen.getByRole("button", { name: "About" }));
-    expect(await screen.findByText(/With an onion backend on any network, the request goes through Tor/)).toBeInTheDocument();
+    expect(await screen.findByText(/through Tor when a backend is an onion address/)).toBeInTheDocument();
     expect(screen.queryByText(/Paused/)).not.toBeInTheDocument();
   });
 

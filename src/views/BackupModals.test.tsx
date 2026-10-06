@@ -301,6 +301,21 @@ describe("exporting a backup", () => {
     expect((sent as { options: { wallet_ids: string[] } }).options.wallet_ids).toEqual(["w1"]);
   });
 
+  /** Every wallet on the network shown: nothing to choose, so no group
+      of one option that would read as a second primary button. */
+  it("says the scope plainly when there is no choice to make", () => {
+    renderModal(
+      <BackupExportModal
+        open
+        onClose={() => {}}
+        wallets={[WALLETS[0]]}
+        activeNetwork="signet"
+      />,
+    );
+    expect(screen.queryByRole("radiogroup", { name: "Wallets" })).not.toBeInTheDocument();
+    expect(screen.getByText("All wallets")).toHaveTextContent("All wallets (1)");
+  });
+
   it("saving the file hands Rust the bytes and a name, and says when it is written", async () => {
     let saved: unknown = null;
     mockIPC((cmd, args) => {
@@ -547,6 +562,45 @@ describe("restoring a backup", () => {
       .choices;
     expect(choices.indexes).toEqual([0]);
     expect(choices.apply_settings).toBe(true);
+  });
+
+  /** The wallets came in, then moving the workspace to their network
+      failed: the restore still succeeded, and the toast says where
+      they are rather than leaving them to be looked for. */
+  it("names the network of wallets it could not bring into sight", async () => {
+    const onClose = vi.fn();
+    let syncedOn: unknown = null;
+    mockIPC((cmd, args) => {
+      switch (cmd) {
+        case "pick_backup_file":
+          return PICKED;
+        case "preview_backup":
+          return PREVIEW;
+        case "import_backup":
+          return { added: [WALLETS[0]], skipped: 1, settings_applied: false };
+        case "set_active_network":
+          return Promise.reject({ kind: "vault", message: "the vault could not be written" });
+        // Still running: its own toast would take the restore's place.
+        case "sync_all":
+          syncedOn = (args as { network?: string }).network;
+          return new Promise(() => {});
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderModal(<BackupRestoreModal open onClose={onClose} activeNetwork="mainnet" />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /open a file/i }));
+    await screen.findByText(/Backup read from/);
+    await user.type(screen.getByLabelText("Password"), "correct horse");
+    await user.click(screen.getByRole("button", { name: /open backup/i }));
+    await user.click(await screen.findByRole("button", { name: /restore 1 wallet/i }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(useUi.getState().toast).toBe("1 wallet restored on Signet");
+    // Their first sync goes where they are, not to the workspace's.
+    expect(syncedOn).toBe("signet");
   });
 
   /** A backup written by hand with a private key in it: the core

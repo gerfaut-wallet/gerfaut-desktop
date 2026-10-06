@@ -136,6 +136,26 @@ describe("BroadcastView", () => {
     expect(screen.queryByText(/descriptor/i)).not.toBeInTheDocument();
   });
 
+  /** The lists name each row with the diagram's glyph: an output to
+      someone else points away, never in, as the diagram drew it. */
+  it("gives each input and output the diagram's glyph and role", async () => {
+    const user = mount();
+    await preview(user);
+
+    const [spent] = within(screen.getByRole("region", { name: "Inputs" })).getAllByRole("listitem");
+    expect(spent.querySelector(".lucide-wallet")).toBeInTheDocument();
+    expect(spent).toHaveTextContent("Spent from this wallet:");
+
+    const [theirs, change] = within(screen.getByRole("region", { name: "Outputs" })).getAllByRole(
+      "listitem",
+    );
+    expect(theirs.querySelector(".lucide-arrow-up-right")).toBeInTheDocument();
+    expect(theirs.querySelector(".lucide-arrow-down-left")).not.toBeInTheDocument();
+    expect(theirs).toHaveTextContent("External output:");
+    expect(change.querySelector(".lucide-undo-2")).toBeInTheDocument();
+    expect(change).toHaveTextContent("Change back to this wallet:");
+  });
+
   it("reads the tone of a caution off the core, never off a local table", async () => {
     const user = mount({
       ...PREVIEW,
@@ -314,14 +334,21 @@ describe("BroadcastView", () => {
     ).toHaveClass("text-sm", "leading-5");
   });
 
-  it("calls a transaction that cannot be sent unsigned, in red", async () => {
-    const user = mount({ ...PREVIEW, ready: false, hex: null });
+  it("says a transaction is not fully signed in amber, and keeps it", async () => {
+    const user = mount({
+      ...PREVIEW,
+      ready: false,
+      hex: null,
+      warnings: [warning("unsigned", "alert", "Some inputs carry no signature yet.")],
+    });
     await preview(user);
-    const pill = screen.getByText("Unsigned");
-    expect(screen.queryByText("Not fully signed")).not.toBeInTheDocument();
-    // Believing a transaction went out when it cannot is one of the
-    // four cases red is kept for.
-    expect(pill).toHaveClass("bg-alert-surface", "text-alert");
+    const pill = screen.getByText("Not fully signed");
+    expect(screen.queryByText("Unsigned")).not.toBeInTheDocument();
+    // The pill is a status: nothing leaves while Broadcast is off. The
+    // red belongs to the core's caution, which says why.
+    expect(pill).toHaveAttribute("data-tone", "pending");
+    const caution = screen.getByText(/Some inputs carry no signature yet\./);
+    expect(caution.parentElement).toHaveClass("bg-alert-surface", "text-alert");
     expect(screen.getByRole("button", { name: "Broadcast" })).toBeDisabled();
   });
 
@@ -416,7 +443,9 @@ describe("BroadcastView", () => {
     const outputs = within(region);
     expect(outputs.getByText("0.00150000 BTC")).toBeInTheDocument();
     await waitFor(() =>
-      expect(outputs.queryByText(formatFiat(150_000, RATE, "eur"))).not.toBeInTheDocument(),
+      expect(
+        outputs.queryByText(formatFiat(150_000, RATE, "eur", "mainnet")),
+      ).not.toBeInTheDocument(),
     );
     expect(region.textContent ?? "").not.toMatch(/[€$£¥]/);
   });

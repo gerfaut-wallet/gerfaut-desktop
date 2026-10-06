@@ -16,7 +16,6 @@ import {
   Undo2,
   Wallet as WalletIcon,
 } from "lucide-react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
@@ -34,12 +33,13 @@ import {
 } from "../lib/format";
 import { explorerTxUrl } from "../lib/explorer";
 import { useTxDetail } from "../state/queries";
+import { useClipboard } from "../state/clipboard";
 import { useUi } from "../state/store";
 import { AddressChip } from "../components/AddressChip";
 import { UnitAmount, useAmountText, useFiatValue } from "../components/Amount";
 import { Button, IconButton } from "../components/Button";
+import { OpenFailure, useExplorer } from "../components/ExternalLink";
 import { Modal } from "../components/Modal";
-import { Notice } from "../components/Notice";
 import { StatusPill } from "../components/StatusPill";
 import { TxDiagram } from "../components/TxDiagram";
 import type { TxBranch } from "../components/TxDiagram";
@@ -50,23 +50,14 @@ import type { TxBranch } from "../components/TxDiagram";
     bytes — the order the questions come in, not the order the chain
     serializes. */
 export function TxDetailModal({ walletId, network }: { walletId: string; network: Network }) {
-  const { selectedTxid, selectTx, explorerAck, setExplorerAck } = useUi();
+  const { selectedTxid, selectTx } = useUi();
   const detail = useTxDetail(walletId, selectedTxid);
-  const [confirmExplorer, setConfirmExplorer] = useState(false);
-  const [skipNextTime, setSkipNextTime] = useState(false);
 
   const explorerUrl = detail.data ? explorerTxUrl(network, detail.data.summary.txid) : "";
-
-  const openExplorer = () => {
-    if (explorerUrl) void openUrl(explorerUrl);
-  };
-
   // The warning stands between the page and the explorer wherever the
   // button sits: moving it up the page does not move it out of the way.
-  const askExplorer = () => {
-    if (explorerAck) openExplorer();
-    else setConfirmExplorer(true);
-  };
+  // Over this dialog, so a step higher.
+  const explorer = useExplorer(explorerUrl, { z: 60 });
 
   return (
     <Modal open={selectedTxid !== null} onClose={() => selectTx(null)} title="Transaction" width={960}>
@@ -76,7 +67,8 @@ export function TxDetailModal({ walletId, network }: { walletId: string; network
       )}
       {detail.data && (
         <div className="flex flex-col gap-6">
-          <Summary detail={detail.data} onExplorer={explorerUrl === "" ? null : askExplorer} />
+          <Summary detail={detail.data} onExplorer={explorerUrl === "" ? null : explorer.ask} />
+          <OpenFailure url={explorer.failed} className="" />
 
           <TxDiagram
             inputs={inputBranches(detail.data)}
@@ -111,52 +103,7 @@ export function TxDetailModal({ walletId, network }: { walletId: string; network
         </div>
       )}
 
-      <Modal
-        open={confirmExplorer}
-        onClose={() => setConfirmExplorer(false)}
-        title="Open an external explorer"
-        width={460}
-        z={60}
-        centered
-      >
-        <div className="flex flex-col gap-4">
-          {/* Handing an operator the link between this transaction and
-              an IP address is a privacy loss: red, by the rule. */}
-          <Notice tone="alert">
-            <span className="font-medium">
-              This opens the transaction on mempool.space, a third-party website. Its
-              operator can link this transaction to your IP address.
-            </span>
-          </Notice>
-          <p className="font-ui text-sm text-muted">
-            Consider a VPN or Tor if that link matters to you.
-          </p>
-          <label className="flex cursor-pointer items-center gap-2 font-ui text-sm text-text">
-            <input
-              type="checkbox"
-              checked={skipNextTime}
-              onChange={(event) => setSkipNextTime(event.target.checked)}
-              className="size-4 accent-(--color-primary)"
-            />
-            Do not show this warning again
-          </label>
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setConfirmExplorer(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                if (skipNextTime) setExplorerAck(true);
-                setConfirmExplorer(false);
-                openExplorer();
-              }}
-            >
-              Open explorer
-            </Button>
-          </div>
-        </div>
-      </Modal>
+      {explorer.warning}
     </Modal>
   );
 }
@@ -519,15 +466,8 @@ function Flags({ extras, outputs }: { extras: TxExtras; outputs: TxIo[] }) {
 /** The raw serialized transaction, collapsed by default. */
 function RawTransaction({ hex }: { hex: string }) {
   const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const showToast = useUi((s) => s.showToast);
-
-  const copy = async () => {
-    await navigator.clipboard.writeText(hex);
-    setCopied(true);
-    showToast("Copied");
-    setTimeout(() => setCopied(false), 1500);
-  };
+  const { copy: copyText, copied } = useClipboard();
+  const copy = () => copyText(hex);
 
   return (
     <div className="min-w-0 flex-1">
@@ -657,7 +597,9 @@ function IoList({
 }
 
 
-/** Role chips: 32px squares, the same vocabulary as the diagram. */
+/** Role chips: 32px squares, the same vocabulary as the diagram. The
+    role is said in words too, for a screen reader: whether a row is the
+    wallet's own was only a tooltip and a tinted border. */
 function RoleIcon({ io, side, coinbase }: { io: TxIo; side: "in" | "out"; coinbase: boolean }) {
   const common = { size: 15, strokeWidth: 1.75, "aria-hidden": true } as const;
   const chip = (title: string, tone: string, icon: ReactNode) => (
@@ -666,6 +608,7 @@ function RoleIcon({ io, side, coinbase }: { io: TxIo; side: "in" | "out"; coinba
       className={clsx("inline-flex size-8 shrink-0 items-center justify-center rounded-lg", tone)}
     >
       {icon}
+      <span className="sr-only">{title}:</span>
     </span>
   );
   if (coinbase) return chip("Newly minted coins", "bg-sunken text-muted", <Pickaxe {...common} />);

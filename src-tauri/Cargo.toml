@@ -23,17 +23,23 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
-# A second launch hands over to the window already open, rather than
-# failing on the vault the first one holds. What the second launch sends
-# along, its arguments and working directory, is never read.
-tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
 keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native-sync-persistent", "crypto-rust"] }
 rand = "0.9"
-hex = "0.4"
+# The clipboard, for what is copied out of sight of the clipboard
+# history and taken off it a minute later: the webview can write the
+# clipboard, but not read it back to tell whose copy is there.
+arboard = { version = "3.6", default-features = false }
 data-encoding = "2"
+
+# A second launch hands over to the window already open, rather than
+# failing on the vault the first one holds. What the second launch sends
+# along, its arguments and working directory, is never read. Not on
+# macOS, where the plugin's socket would sit in the /tmp every account
+# shares: see src/single_instance.rs.
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+tauri-plugin-single-instance = "2"
 
 # The library the notification plugin posts with, called directly on
 # Linux: the plugin drops a notification's id on the desktop, and the id
@@ -48,9 +54,6 @@ notify-rust = "4.11"
 windows = { version = "0.61", features = ["Data_Xml_Dom", "Foundation_Collections", "UI_Notifications"] }
 
 [dev-dependencies]
-# The tests sign the licences they then read back; the app itself never
-# signs anything.
-ed25519-dalek = "2"
 # A vault of their own for the tests that open one.
 tempfile = "3"
 

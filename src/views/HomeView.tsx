@@ -16,12 +16,13 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Balance, ListAmount } from "../components/Amount";
 import { BalanceChart } from "../components/BalanceChart";
-import { NewDeviceBanner } from "../components/NewDeviceBanner";
-import { WatchOfflineBanner } from "../components/WatchOfflineBanner";
+import { CoverageBadge } from "../components/CoverageBadge";
+import { LoadFailure } from "../components/LoadFailure";
+import { useRadioGroup } from "../components/radioGroup";
 import {
-  LOCALE,
   MASKED,
   formatAmountSigned,
+  formatCurrency,
   formatTimestamp,
   groupThousands,
   relativeTime,
@@ -32,12 +33,15 @@ import type { PriceRange, TxSummary, WalletMeta, WalletSnapshot } from "../lib/i
 import { policyDigest } from "../lib/policy";
 import { balanceSeries } from "../lib/series";
 import {
+  liveAnswer,
+  torDown,
   usePriceHistory,
   useRenameWallet,
   useSnapshot,
   useUtxos,
   useWalletPolicy,
 } from "../state/queries";
+import { coverageOf, useLiveStatus, waitingWords } from "../state/live";
 import { useUi } from "../state/store";
 
 const RANGE_LABEL: Record<PriceRange, string> = {
@@ -60,19 +64,18 @@ export function HomeView({ walletId }: { walletId: string }) {
   }
   if (snapshot.isError || !snapshot.data) {
     return (
-      <p className="px-1 py-4 font-ui text-sm text-muted">
-        This wallet could not be loaded.
-      </p>
+      <LoadFailure
+        what="This wallet"
+        error={snapshot.error}
+        retrying={snapshot.isFetching}
+        onRetry={() => void snapshot.refetch()}
+      />
     );
   }
   const { meta } = snapshot.data;
 
   return (
     <div className="flex h-full min-h-[560px] flex-col pb-2">
-      {/* The server's watch gone quiet is said before anything else,
-          and so is a stranger's device asking into the account. */}
-      <WatchOfflineBanner className="mb-4 mt-2" />
-      <NewDeviceBanner className="mb-4 mt-2" />
       {/* No freshness line here: Watch status carries it below. */}
       <header className="px-1 pb-4 pt-2">
         <WalletTitle key={meta.id} meta={meta} />
@@ -322,7 +325,13 @@ function BalanceCard({
         <div className="-mx-2 mt-3 border-t border-border/60 pt-2">
           <LinkRow
             icon={<Coins size={15} strokeWidth={1.5} aria-hidden />}
-            figure={utxos.data ? groupThousands(String(utxos.data.length)) : "…"}
+            figure={
+              utxos.data
+                ? groupThousands(String(utxos.data.length))
+                : utxos.isError
+                  ? "—"
+                  : "…"
+            }
             label={`UTXO${(utxos.data?.length ?? 0) === 1 ? "" : "s"}`}
             onClick={() => setView("utxos")}
           />
@@ -401,7 +410,11 @@ function PriceCard() {
   // price at every launch whatever the setting said, which tells a
   // third party this machine opened a bitcoin wallet just now.
   const history = usePriceHistory(range, fiatEnabled);
-  const points = history.data?.points ?? [];
+  const radio = useRadioGroup(ranges, range, setPriceRange);
+  // A refresh that failed shows no price, like the amounts: the series
+  // before it stays in the cache, and its last point is not today's.
+  const answer = liveAnswer(history, fiatCurrency);
+  const points = answer?.points ?? [];
   const first = points[0];
   const last = points[points.length - 1];
   const change = first && last ? ((last.rate - first.rate) / first.rate) * 100 : null;
@@ -423,12 +436,13 @@ function PriceCard() {
       label="Bitcoin price"
       action={
         <div role="radiogroup" aria-label="Price range" className="inline-flex rounded-md bg-sunken p-0.5">
-          {ranges.map((option) => (
+          {ranges.map((option, index) => (
             <button
               key={option}
               type="button"
               role="radio"
               aria-checked={range === option}
+              {...radio(option, index)}
               onClick={() => setPriceRange(option)}
               className={clsx(
                 "cursor-pointer rounded-[6px] px-2 py-0.5 font-ui text-[11px] font-medium transition-colors duration-150",
@@ -446,11 +460,7 @@ function PriceCard() {
       {last ? (
         <div className="flex flex-wrap items-center gap-2.5">
           <span className="tabular text-[22px] font-semibold leading-tight text-text">
-            {new Intl.NumberFormat(LOCALE, {
-              style: "currency",
-              currency: fiatCurrency.toUpperCase(),
-              maximumFractionDigits: 0,
-            }).format(last.rate)}
+            {formatCurrency(last.rate, fiatCurrency, { maximumFractionDigits: 0 })}
           </span>
           {change !== null && (
             <span
@@ -468,7 +478,11 @@ function PriceCard() {
         </div>
       ) : (
         <p className="font-ui text-sm text-muted">
-          {history.isPending ? "Loading…" : "The price source did not answer."}
+          {!history.isError && !answer
+            ? "Loading…"
+            : torDown(history.error)
+              ? "Tor is not available, so no price was asked."
+              : "The price source did not answer."}
         </p>
       )}
     </Card>
@@ -505,6 +519,10 @@ function ShortcutsCard() {
 function StatusCard({ snapshot, error }: { snapshot: WalletSnapshot; error: string | null }) {
   const { openSettings } = useUi();
   const { meta, tip_height } = snapshot;
+  // Said only while the live watch is short of room: with room for
+  // every address, every wallet is live and the row would say nothing.
+  const live = useLiveStatus();
+  const coverage = coverageOf(live.data?.status, meta.id);
   const rows: { label: string; value: ReactNode; detail?: string }[] = [
     {
       label: "Last sync",
@@ -539,6 +557,15 @@ function StatusCard({ snapshot, error }: { snapshot: WalletSnapshot; error: stri
           "—"
         ),
     },
+    ...(coverage
+      ? [
+          {
+            label: "Live watch",
+            value: <CoverageBadge coverage={coverage} said={coverage.coverage !== "live"} />,
+            detail: coverage.coverage === "live" ? undefined : waitingWords(coverage),
+          },
+        ]
+      : []),
   ];
   return (
     <Card

@@ -1,6 +1,7 @@
 // UI state. Server state lives in TanStack Query; this store only holds
 // what the interface itself decides: selection, navigation, preferences.
 
+import { useEffect } from "react";
 import { create } from "zustand";
 import { ALL_CURRENCIES, quotesCurrency } from "../lib/ipc";
 import type { FiatCurrency, Network, PriceRange, PriceSource } from "../lib/ipc";
@@ -28,12 +29,7 @@ export type SettingsSection =
   | "security"
   | "notifications"
   | "backup"
-  | "about"
-  | "premium";
-
-/** A card a view can send Settings straight to, past the top of its
-    section: the Overview's "Review" goes to the Devices card. */
-export type SettingsTarget = "devices";
+  | "about";
 
 /** A transaction handed to the network from this app, kept so the
     broadcast page can show where it stands after a restart. */
@@ -51,9 +47,6 @@ export const RECENT_BROADCASTS = 10;
 interface UiState {
   view: CanvasView;
   settingsSection: SettingsSection;
-  /** The card Settings was opened for, until that card has taken the
-      focus. */
-  settingsTarget: SettingsTarget | null;
   activeWalletId: string | null;
   /** Txid opened in the detail modal, null when closed. */
   selectedTxid: string | null;
@@ -75,8 +68,6 @@ interface UiState {
       it confirms. Off by default. The Rust side starts and stops the
       watch on this preference as it is written. */
   notifyNewTx: boolean;
-  /** The system refused notifications the last time we asked. */
-  notificationsRefused: boolean;
   /** The welcome tour has been seen. */
   onboardingSeen: boolean;
   /** It was dismissed in this session, whatever the vault says yet. */
@@ -89,11 +80,8 @@ interface UiState {
 
   setView: (view: CanvasView) => void;
   setSettingsSection: (section: SettingsSection) => void;
-  /** Opens Settings on one of its sections, from anywhere, and on one
-      of its cards when a target is named. */
-  openSettings: (section: SettingsSection, target?: SettingsTarget) => void;
-  /** The target card has scrolled into view and taken the focus. */
-  clearSettingsTarget: () => void;
+  /** Opens Settings on one of its sections, from anywhere. */
+  openSettings: (section: SettingsSection) => void;
   openWallet: (id: string) => void;
   selectTx: (txid: string | null) => void;
   setAddWalletOpen: (open: boolean) => void;
@@ -106,8 +94,10 @@ interface UiState {
   setFiatSource: (source: PriceSource) => void;
   setPriceRange: (range: PriceRange) => void;
   setExplorerAck: (acknowledged: boolean) => void;
-  setNotifyNewTx: (enabled: boolean) => void;
-  setNotificationsRefused: (refused: boolean) => void;
+  /** Rejects, and puts the switch back, when the vault refuses: the
+      Rust side starts the watch on what the vault holds, so a switch
+      left on over a refused write would promise alerts nobody sends. */
+  setNotifyNewTx: (enabled: boolean) => Promise<void>;
   setOnboardingSeen: (seen: boolean) => void;
   markTourSeen: () => void;
   showToast: (message: string) => void;
@@ -120,6 +110,12 @@ interface UiState {
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
+/** Writes a preference the window alone reads, and lets a refusal go:
+    what it changes is already on screen for this session, and putting
+    it back would undo what was asked — amounts shown again under "Hide
+    amounts". Only the next launch misses it. The one preference the
+    Rust side acts on, the alerts, is written by `setNotifyNewTx`, which
+    says a refusal. */
 function persist(key: string, value: string) {
   void ipc.setAppPref(key, value).catch(() => {});
 }
@@ -148,7 +144,6 @@ function parseRecentBroadcasts(raw: string | undefined): RecentBroadcast[] {
 export const useUi = create<UiState>((set, get) => ({
   view: "home",
   settingsSection: "general",
-  settingsTarget: null,
   activeWalletId: null,
   selectedTxid: null,
   addWalletOpen: false,
@@ -162,7 +157,6 @@ export const useUi = create<UiState>((set, get) => ({
   priceRange: "month",
   explorerAck: false,
   notifyNewTx: false,
-  notificationsRefused: false,
   onboardingSeen: false,
   tourDismissed: false,
   toast: null,
@@ -171,14 +165,8 @@ export const useUi = create<UiState>((set, get) => ({
 
   setView: (view) => set({ view, selectedTxid: null }),
   setSettingsSection: (settingsSection) => set({ settingsSection }),
-  openSettings: (settingsSection, target) =>
-    set({
-      view: "settings",
-      settingsSection,
-      settingsTarget: target ?? null,
-      selectedTxid: null,
-    }),
-  clearSettingsTarget: () => set({ settingsTarget: null }),
+  openSettings: (settingsSection) =>
+    set({ view: "settings", settingsSection, selectedTxid: null }),
   // Switching wallets keeps the current page, so wallets compare on the
   // same view; from settings it lands on the overview.
   openWallet: (id) =>
@@ -235,11 +223,16 @@ export const useUi = create<UiState>((set, get) => ({
     set({ explorerAck });
     persist("privacy.explorer_ack", explorerAck ? "1" : "0");
   },
-  setNotifyNewTx: (notifyNewTx) => {
+  setNotifyNewTx: async (notifyNewTx) => {
+    const before = get().notifyNewTx;
     set({ notifyNewTx });
-    persist("notify.new_tx", notifyNewTx ? "1" : "0");
+    try {
+      await ipc.setAppPref("notify.new_tx", notifyNewTx ? "1" : "0");
+    } catch (error) {
+      set({ notifyNewTx: before });
+      throw error;
+    }
   },
-  setNotificationsRefused: (notificationsRefused) => set({ notificationsRefused }),
   setOnboardingSeen: (onboardingSeen) => {
     set({ onboardingSeen });
     persist("onboarding.seen", onboardingSeen ? "1" : "0");
@@ -308,6 +301,20 @@ export const useUi = create<UiState>((set, get) => ({
     applyTheme(theme);
   },
 }));
+
+/** Keeps "System" on the system's side: the machine going dark at
+    sunset takes Gerfaut with it, not at the next launch. Listens only
+    while the preference is "System". */
+export function useFollowSystemTheme() {
+  const theme = useUi((state) => state.theme);
+  useEffect(() => {
+    if (theme !== "system" || typeof window === "undefined" || !window.matchMedia) return;
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const follow = () => applyTheme("system");
+    query.addEventListener("change", follow);
+    return () => query.removeEventListener("change", follow);
+  }, [theme]);
+}
 
 export function applyTheme(theme: ThemePref) {
   const dark =

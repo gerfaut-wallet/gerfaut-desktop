@@ -110,13 +110,14 @@ describe("ScanQrModal", () => {
       total: 1,
       complete: true,
       text: received[0],
+      warnings: [],
     }));
     const onScan = vi.fn();
     const onClose = vi.fn();
     render(<ScanQrModal open onClose={onClose} onScan={onScan} />);
     await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
     await tick();
-    await waitFor(() => expect(onScan).toHaveBeenCalledWith("wpkh(tpub.../0/*)"));
+    await waitFor(() => expect(onScan).toHaveBeenCalledWith("wpkh(tpub.../0/*)", []));
     expect(onClose).toHaveBeenCalled();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
@@ -130,6 +131,7 @@ describe("ScanQrModal", () => {
       total: 3,
       complete: received.length === 3,
       text: received.length === 3 ? "wsh(sortedmulti(2,...))" : null,
+      warnings: received.length === 3 ? ["assumed_branches"] : [],
     }));
     const onScan = vi.fn();
     render(<ScanQrModal open onClose={vi.fn()} onScan={onScan} />);
@@ -147,7 +149,10 @@ describe("ScanQrModal", () => {
     expect(assembleCalls).toHaveLength(2);
 
     await tick();
-    await waitFor(() => expect(onScan).toHaveBeenCalledWith("wsh(sortedmulti(2,...))"));
+    // What the core assumed reading the code goes along with its text.
+    await waitFor(() =>
+      expect(onScan).toHaveBeenCalledWith("wsh(sortedmulti(2,...))", ["assumed_branches"]),
+    );
     // Every call carried the distinct frames seen so far, in order.
     expect(assembleCalls).toEqual([
       ["ur:crypto-output/1-3/aaaa"],
@@ -165,7 +170,7 @@ describe("ScanQrModal", () => {
           message: "this QR code holds a PSBT, not a wallet to watch",
         }) as unknown as QrProgress;
       }
-      return { format: "plain", received: 1, total: 1, complete: true, text: received[0] };
+      return { format: "plain", received: 1, total: 1, complete: true, text: received[0], warnings: [] };
     });
     const onScan = vi.fn();
     render(<ScanQrModal open onClose={vi.fn()} onScan={onScan} />);
@@ -174,7 +179,7 @@ describe("ScanQrModal", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/holds a PSBT/);
     await tick();
     await tick();
-    await waitFor(() => expect(onScan).toHaveBeenCalledWith("wpkh(tpub.../0/*)"));
+    await waitFor(() => expect(onScan).toHaveBeenCalledWith("wpkh(tpub.../0/*)", []));
     // The refused frame did not linger in the next assembly.
     expect(assembleCalls.at(-1)).toEqual(["wpkh(tpub.../0/*)"]);
   });
@@ -188,7 +193,7 @@ describe("ScanQrModal", () => {
             kind: "invalid_input",
             message: "this QR code holds a PSBT, not a wallet to watch",
           }) as unknown as QrProgress)
-        : { format: "plain", received: 1, total: 1, complete: true, text: received[0] },
+        : { format: "plain", received: 1, total: 1, complete: true, text: received[0], warnings: [] },
     );
     const onScan = vi.fn();
     render(<ScanQrModal open onClose={vi.fn()} onScan={onScan} />);
@@ -199,7 +204,7 @@ describe("ScanQrModal", () => {
     await tick();
     await tick();
     await tick();
-    await waitFor(() => expect(onScan).toHaveBeenCalledWith("wpkh(tpub.../0/*)"));
+    await waitFor(() => expect(onScan).toHaveBeenCalledWith("wpkh(tpub.../0/*)", []));
     // One refusal, one answer: the two further sightings were dropped
     // without going back to the core for the same verdict.
     expect(assembleCalls).toEqual([["B$HP0100ff"], ["wpkh(tpub.../0/*)"]]);
@@ -213,7 +218,7 @@ describe("ScanQrModal", () => {
             kind: "invalid_input",
             message: "this QR code holds a PSBT, not a wallet to watch",
           }) as unknown as QrProgress)
-        : { format: "ur", received: received.length, total: 3, complete: false, text: null },
+        : { format: "ur", received: received.length, total: 3, complete: false, text: null, warnings: [] },
     );
     render(<ScanQrModal open onClose={vi.fn()} onScan={vi.fn()} />);
     await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
@@ -237,6 +242,7 @@ describe("ScanQrModal", () => {
       total: 1,
       complete: true,
       text: "",
+      warnings: [],
     }));
     const onScan = vi.fn();
     const onClose = vi.fn();

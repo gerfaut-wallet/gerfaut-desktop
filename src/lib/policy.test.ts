@@ -14,13 +14,19 @@ import {
   conditionOutline,
   countdown,
   describePolicy,
-  digestText,
   hasTimeBasedLocks,
   orderBranches,
   policyDigest,
   remainingWords,
   timelockText,
 } from "./policy";
+import type { PolicyDigest } from "./policy";
+
+/** A digest as one string, the figure then the label, as the Overview
+    row reads it. */
+function digestText(digest: PolicyDigest): string {
+  return `${digest.figure} ${digest.label}`.trim();
+}
 
 const NOW = 1_755_000_000;
 const TIP = 200_000;
@@ -588,5 +594,26 @@ describe("a wallet that never synced", () => {
     });
     expect(digestText(policyDigest(wallet))).toBe("Recovery locked");
     expect(describePolicy(wallet)).toMatch(/^Key A signs\. A recovery key can spend after block 201.432\.$/);
+  });
+
+  /** A coin waits behind a relative lock, and nothing yet says for how
+      long: the pill says when it will, with no figure, no colour and no
+      bar, and the row calls the path locked, as on Android. */
+  it("says a coin's count comes with the first sync", () => {
+    const state: BranchState = { kind: "per_coin", unlocked: 0, waiting: 0, locked: 1, next: unknown };
+    const recovery = branch("b1", "recovery", "Recovery", and(key("k1"), older(52_560)), state, [
+      relative(52_560, state),
+    ]);
+    const wallet = snapshot({
+      tip_height: null,
+      branches: [branch("b0", "primary", "Primary", key("k0"), OPEN), recovery],
+    });
+    expect(branchStatus(recovery)).toEqual({
+      tone: "neutral",
+      glyph: "clock",
+      text: "0 of 1 coin unlocked · next known after the first sync",
+    });
+    expect(countdown(recovery)).toBeNull();
+    expect(digestText(policyDigest(wallet))).toBe("Recovery locked");
   });
 });

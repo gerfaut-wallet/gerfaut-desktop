@@ -13,6 +13,7 @@ import type {
   RecognizedKind,
   ScriptKind,
 } from "../lib/ipc";
+import { NETWORK_LABEL } from "../lib/format";
 import { ipc, isCommandError } from "../lib/ipc";
 import { useAddWallet, useSetActiveNetwork, useSyncWallet } from "../state/queries";
 import { useUi } from "../state/store";
@@ -44,25 +45,44 @@ const WARNING_LABEL: Record<InputWarning, string> = {
   multiple_accounts_in_file: "The file holds several account types; the preferred one was selected.",
   non_standard_derivation:
     "The paths chosen are not the usual 0/* and 1/*: compare the first address with your wallet.",
+  assumed_branches:
+    "This QR code carries no receive or change path, so Gerfaut assumes the usual 0/* and 1/*. Compare the first address with your signer.",
 };
 
-/** What each script type means to the person choosing, in one line. */
-const SCRIPT_HINT: Record<ScriptKind, string> = {
-  legacy: "P2PKH, addresses starting with 1",
-  nested_segwit: "P2SH-P2WPKH, addresses starting with 3",
-  segwit: "P2WPKH, addresses starting with bc1q",
-  taproot: "P2TR, addresses starting with bc1p",
-  witness_script: "P2WSH multisig or script",
-  legacy_script: "P2SH multisig or script",
-  bare: "Raw script",
+/** How the addresses of each single-key script type start on each
+    network: the test networks share theirs, and regtest has its own
+    prefix for SegWit. */
+const ADDRESS_START: Record<
+  "legacy" | "nested_segwit" | "segwit" | "taproot",
+  Record<Network, string>
+> = {
+  legacy: { mainnet: "1", signet: "m or n", testnet4: "m or n", regtest: "m or n" },
+  nested_segwit: { mainnet: "3", signet: "2", testnet4: "2", regtest: "2" },
+  segwit: { mainnet: "bc1q", signet: "tb1q", testnet4: "tb1q", regtest: "bcrt1q" },
+  taproot: { mainnet: "bc1p", signet: "tb1p", testnet4: "tb1p", regtest: "bcrt1p" },
 };
 
-const NETWORK_LABEL: Record<Network, string> = {
-  mainnet: "Mainnet",
-  signet: "Signet",
-  testnet4: "Testnet 4",
-  regtest: "Regtest",
-};
+/** What each script type means to the person choosing, in one line,
+    with the start of the addresses it gives on the wallet's network:
+    what they compare with their own wallet. */
+export function scriptHint(script: ScriptKind, network: Network): string {
+  switch (script) {
+    case "legacy":
+      return `P2PKH, addresses starting with ${ADDRESS_START.legacy[network]}`;
+    case "nested_segwit":
+      return `P2SH-P2WPKH, addresses starting with ${ADDRESS_START.nested_segwit[network]}`;
+    case "segwit":
+      return `P2WPKH, addresses starting with ${ADDRESS_START.segwit[network]}`;
+    case "taproot":
+      return `P2TR, addresses starting with ${ADDRESS_START.taproot[network]}`;
+    case "witness_script":
+      return "P2WSH multisig or script";
+    case "legacy_script":
+      return "P2SH multisig or script";
+    case "bare":
+      return "Raw script";
+  }
+}
 
 /** The largest file read for a wallet: sixteen times what the core
     takes as one. A bigger file is none, and reading it whole would
@@ -89,16 +109,31 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
   const [origin, setOrigin] = useState("");
   const [derivationError, setDerivationError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  /** What the core assumed reading the last code scanned, which the
+      text it gave no longer shows: said with that text's own warnings
+      for as long as the field holds it. */
+  const scanned = useRef<{ text: string; warnings: InputWarning[] } | null>(null);
   const addWallet = useAddWallet();
   const sync = useSyncWallet();
   const setActiveNetwork = useSetActiveNetwork();
 
   const reset = () => {
+    dropPending();
+    scanned.current = null;
     setRaw("");
     setError(null);
     setParsed(null);
     setScript(null);
     setName("");
+    addWallet.reset();
+  };
+  /** Back to the field, with what was pasted still in it: whoever goes
+      back does so to correct it, not to type it again. */
+  const back = () => {
+    dropPending();
+    setError(null);
+    setParsed(null);
+    setScript(null);
     addWallet.reset();
   };
   const close = () => {
@@ -122,23 +157,61 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
     setOrigin(result.derivation.origin ?? "");
   };
 
+  /** What the last parse that went through was asked, so a network
+      picked afterwards rebuilds that same wallet on it. */
+  const asked = useRef<{ chosen?: ScriptKind; paths?: DerivationChoice }>({});
+  /** The last parse asked for: an answer to an earlier one, landing
+      after it, is stale, and would put back a network or a first
+      address the person has already moved away from. */
+  const latest = useRef(0);
+  /** The network of the first address on screen, which a refused pick
+      goes back to. */
+  const shownOn = useRef<Network>(activeNetwork);
+  /** A parse is out: the address on screen may not be the network's. */
+  const [parsing, setParsing] = useState(false);
+  /** An answer still on its way is for an input left behind. */
+  const dropPending = () => {
+    latest.current += 1;
+    setParsing(false);
+  };
+
+  /** `on` is the network picked; without one this is a new input, and
+      it starts on the network on screen when the input allows it. The
+      core derives the first address for the same network. */
   const parse = async (
     input: string,
     chosen?: ScriptKind,
     paths?: DerivationChoice,
+    on?: Network,
   ) => {
+    const ticket = ++latest.current;
     setError(null);
+    setParsing(true);
     try {
-      const result = await ipc.parseInput(input, chosen, paths);
+      const parsedInput = await ipc.parseInput(input, chosen, paths, on ?? activeNetwork);
+      if (ticket !== latest.current) return;
+      setParsing(false);
+      const assumed = scanned.current?.text === input ? scanned.current.warnings : [];
+      const result = {
+        ...parsedInput,
+        warnings: [
+          ...parsedInput.warnings,
+          ...assumed.filter((warning) => !parsedInput.warnings.includes(warning)),
+        ],
+      };
       setParsed(result);
       seedDerivation(result);
       setDerivationError(null);
-      if (chosen === undefined && paths === undefined) {
-        setNetwork(
-          result.networks.includes(activeNetwork) ? activeNetwork : result.networks[0],
-        );
-      }
+      asked.current = { chosen, paths };
+      const shown =
+        on ?? (result.networks.includes(activeNetwork) ? activeNetwork : result.networks[0]);
+      shownOn.current = shown;
+      setNetwork(shown);
     } catch (err) {
+      if (ticket !== latest.current) return;
+      setParsing(false);
+      // The address on screen is still the one of the network before.
+      setNetwork(shownOn.current);
       const message = isCommandError(err) ? err.message : String(err);
       // A refused path belongs under the fields that caused it; the
       // card above keeps the parse that did work.
@@ -152,7 +225,17 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
       The derivation goes along, or picking a script would undo it. */
   const chooseScript = (chosen: ScriptKind) => {
     setScript(chosen);
-    void parse(raw, chosen, advanced ? derivation() : undefined);
+    void parse(raw, chosen, advanced ? derivation() : undefined, network);
+  };
+
+  /** The first address belongs to a network: picking another one asks
+      the core for it again, on the wallet as it stands. A regtest
+      wallet shown a signet address would be compared with the wrong
+      one: until the answer, nothing is added, and a network the core
+      refuses goes back to the one the address belongs to. */
+  const chooseNetwork = (next: Network) => {
+    setNetwork(next);
+    void parse(raw, asked.current.chosen, asked.current.paths, next);
   };
 
   const importFile = async (file: File) => {
@@ -166,21 +249,29 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
   };
 
   const submit = async () => {
-    if (!parsed || name.trim().length === 0) return;
+    if (!parsed || parsing || name.trim().length === 0) return;
+    let meta;
     try {
-      const meta = await addWallet.mutateAsync({ name, parsed, network });
-      // The workspace follows the wallet that was just added, otherwise
-      // it would land invisible on another network.
-      if (network !== activeNetwork) {
-        await setActiveNetwork.mutateAsync(network);
-      }
-      showToast("Wallet added");
-      close();
-      openWallet(meta.id);
-      sync.mutate(meta.id);
+      meta = await addWallet.mutateAsync({ name, parsed, network });
     } catch (err) {
       setError(isCommandError(err) ? err.message : String(err));
+      return;
     }
+    // The wallet is in from here on: whatever follows, the dialog
+    // closes, or a second click would only hear "already watched".
+    // The workspace follows it to its network, otherwise it would land
+    // out of sight; when that move fails, the toast says where it is.
+    let shown = true;
+    if (network !== activeNetwork) {
+      shown = await setActiveNetwork.mutateAsync(network).then(
+        () => true,
+        () => false,
+      );
+    }
+    showToast(shown ? "Wallet added" : `Wallet added on ${NETWORK_LABEL[network]}`);
+    close();
+    openWallet(meta.id);
+    sync.mutate(meta.id);
   };
 
   return (
@@ -208,7 +299,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
               spellCheck={false}
               aria-invalid={error !== null}
               placeholder="wpkh([fingerprint/84h/0h/0h]xpub.../0/*)"
-              className="field-focus selectable w-full resize-none rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text placeholder:text-muted/60"
+              className="field-focus selectable w-full resize-none rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text placeholder:text-muted"
             />
             {error && (
               <p role="alert" className="mt-2 font-ui text-sm text-muted">
@@ -221,7 +312,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
             </p>
           </div>
           <div className="flex items-center justify-between">
-            <div className="flex gap-1">
+            <div className="-ml-4 flex gap-1">
               <Button variant="ghost" onClick={() => fileRef.current?.click()}>
                 <FileUp size={16} strokeWidth={1.5} aria-hidden />
                 Import a file
@@ -265,8 +356,11 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
                 <> · {SCRIPT_LABEL[parsed.payload.script]}</>
               )}
             </p>
+            {/* Balanced: a 62-character Taproot address is a hair wider
+                than the card, and left to itself it put one character on
+                a line of its own. */}
             {parsed.payload.type === "address" && (
-              <p className="selectable mt-1 break-all font-data text-[13px] text-muted">
+              <p className="selectable mt-1 break-all text-balance font-data text-[13px] text-muted">
                 {parsed.payload.address}
               </p>
             )}
@@ -275,7 +369,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
                 <span>First address</span>
                 <span
                   data-testid="preview-address"
-                  className="selectable break-all font-data text-[13px] text-text"
+                  className="selectable break-all text-balance font-data text-[13px] text-text"
                 >
                   {parsed.preview_address}
                 </span>
@@ -312,7 +406,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
                 options={parsed.script_options.map((option) => ({
                   value: option,
                   label: SCRIPT_LABEL[option],
-                  hint: SCRIPT_HINT[option],
+                  hint: scriptHint(option, network),
                 }))}
               />
               <p className="mt-1.5 font-ui text-xs text-muted">
@@ -375,7 +469,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
                     <Button
                       variant="secondary"
                       onClick={() =>
-                        void parse(raw, script ?? undefined, derivation())
+                        void parse(raw, script ?? undefined, derivation(), network)
                       }
                     >
                       Apply
@@ -406,29 +500,44 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
                   }
                 }}
                 placeholder="Cold storage"
-                className="field-focus h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-ui text-base text-text placeholder:text-muted/60"
+                className="field-focus h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-ui text-base text-text placeholder:text-muted"
               />
             </div>
-            <div>
-              <label
-                htmlFor="wallet-network"
-                className="mb-1 block font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted"
-              >
-                Network
-              </label>
-              <Select
-                id="wallet-network"
-                label="Network"
-                className="w-40"
-                value={network}
-                onChange={setNetwork}
-                disabled={parsed.networks.length === 1}
-                options={parsed.networks.map((candidate) => ({
-                  value: candidate,
-                  label: NETWORK_LABEL[candidate],
-                }))}
-              />
-            </div>
+            {/* An input that fits one network leaves nothing to choose:
+                a menu of one option, greyed out, read as a control that
+                does nothing. The network is said plainly, as the backup
+                scope is. */}
+            {parsed.networks.length === 1 ? (
+              <div>
+                <p className="mb-1 block font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
+                  Network
+                </p>
+                <p className="flex h-11 items-center font-ui text-base text-text">
+                  {NETWORK_LABEL[network]}
+                </p>
+              </div>
+            ) : (
+              <div>
+                <label
+                  htmlFor="wallet-network"
+                  className="mb-1 block font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted"
+                >
+                  Network
+                </label>
+                <Select
+                  id="wallet-network"
+                  label="Network"
+                  align="end"
+                  className="w-40"
+                  value={network}
+                  onChange={chooseNetwork}
+                  options={parsed.networks.map((candidate) => ({
+                    value: candidate,
+                    label: NETWORK_LABEL[candidate],
+                  }))}
+                />
+              </div>
+            )}
           </div>
 
           {error && (
@@ -438,12 +547,12 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
           )}
 
           <div className="flex justify-between">
-            <Button variant="ghost" onClick={reset}>
+            <Button variant="ghost" className="-ml-4" onClick={back}>
               Back
             </Button>
             <Button
               variant="primary"
-              disabled={name.trim().length === 0 || addWallet.isPending}
+              disabled={name.trim().length === 0 || parsing || addWallet.isPending}
               onClick={() => void submit()}
             >
               {addWallet.isPending ? "Adding…" : "Add wallet"}
@@ -454,7 +563,8 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
       <ScanQrModal
         open={scanOpen}
         onClose={() => setScanOpen(false)}
-        onScan={(text) => {
+        onScan={(text, warnings) => {
+          scanned.current = { text, warnings };
           setRaw(text);
           void parse(text);
         }}

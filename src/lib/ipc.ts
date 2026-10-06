@@ -28,7 +28,8 @@ export type InputWarning =
   | "slip132_converted"
   | "change_not_tracked"
   | "multiple_accounts_in_file"
-  | "non_standard_derivation";
+  | "non_standard_derivation"
+  | "assumed_branches";
 
 /** Where a lone extended key derives its addresses: receive and change
     branches under the key (`0/*`, `1/*`), and the key origin. */
@@ -51,7 +52,8 @@ export interface ParsedInput {
   warnings: InputWarning[];
   /** Script types the user may switch to; empty when the input fixes it. */
   script_options: ScriptKind[];
-  /** First receive address on the first candidate network, when derivable. */
+  /** First receive address, when derivable: on the network asked for
+      when the input allows it, on the first candidate otherwise. */
   preview_address: string | null;
   /** The derivation in effect; set only for a lone extended key. */
   derivation: DerivationChoice | null;
@@ -68,6 +70,9 @@ export interface QrProgress {
   total: number;
   complete: boolean;
   text: string | null;
+  /** What the core assumed reading the code, which `text` no longer
+      shows: said with the warnings of that text. */
+  warnings: InputWarning[];
 }
 
 export type WalletKind =
@@ -127,6 +132,9 @@ export interface WalletMeta {
   labels: Record<string, string>;
   last_sync: SyncStamp | null;
   cached: { balance: BalanceSnapshot; tx_count: number };
+  /** Watched live before any other wallet when Live cannot follow every
+      address. Absent while off. */
+  live_pinned?: boolean;
 }
 
 export type TxStatus =
@@ -413,8 +421,12 @@ export type BackendConfig =
   /** `server` names one public operator; absent, every public Esplora
       instance is tried in order. */
   | { type: "public_esplora"; server?: string }
-  | { type: "custom_esplora"; url: string }
-  | { type: "custom_electrum"; url: string };
+  /** `own_node`: the user said the server is their own node, and Live
+      asks more of it. The core leaves it out while false, so it is sent
+      back with every save of a custom server, or saving would turn it
+      off. */
+  | { type: "custom_esplora"; url: string; own_node?: boolean }
+  | { type: "custom_electrum"; url: string; own_node?: boolean };
 
 export type ServerProtocol = "esplora" | "electrum";
 
@@ -489,183 +501,6 @@ export interface Settings {
   app_lock: AppLock | null;
   /** How `.onion` backends reach Tor. */
   tor: TorSettings;
-  /** The premium account as the vault keeps it. */
-  premium: PremiumState;
-}
-
-// --- premium --------------------------------------------------------------
-
-/** A wallet the user agreed to have watched by the server. */
-export interface WatchedWallet {
-  wallet_id: string;
-  /** Unix seconds: when the user said yes. */
-  consented_at: number;
-}
-
-/** The premium account as the vault keeps it, mirroring `PremiumState`
-    in gerfaut-core. Empty by default. */
-export interface PremiumState {
-  key: string | null;
-  certificate: string | null;
-  watched: WatchedWallet[];
-  acknowledged_offline_until: number | null;
-  /** A connection sent and not answered, its secrets blanked: the Rust
-      side sends it again, and the window hears when it went through. */
-  pending_connect?: unknown;
-}
-
-/** What a certificate says at a given time, read by the core. */
-export type LicenceState =
-  | { status: "active"; until: number }
-  | { status: "expired"; since: number };
-
-/** This device's connection to the account as the vault keeps it: its
-    id and when it connected. The token it talks to the server with
-    never leaves the Rust side. */
-export interface DeviceConnection {
-  id: string;
-  connected_at: number;
-}
-
-/** What the vault says about the account, readable without a network:
-    the key as shown, the licence the stored certificate proves, the
-    wallets already agreed to, and this device's own connection. */
-export interface PremiumStatus {
-  key: string | null;
-  licence: LicenceState | null;
-  consented: string[];
-  acknowledged_offline_until: number | null;
-  /** Null until this device is connected, and again once the server
-      disconnected it. */
-  device: DeviceConnection | null;
-  /** The key is set and the server refused this device's token: it
-      was disconnected from the account. "Connect again" uses the key
-      kept here. */
-  disconnected: boolean;
-  /** Why the server would not connect this device again, in its own
-      words, when it gave some: the key has every device it takes. */
-  disconnected_reason: string | null;
-  /** "I saved my key" was ticked, for the key in place. */
-  key_saved: boolean;
-  /** The "Protect your Premium account" card was hidden. */
-  checklist_hidden: boolean;
-  /** A key change was sent and not answered: the key in place may no
-      longer work. "Try again" sends the same new key; the key is not
-      offered for copying meanwhile. */
-  key_change_pending: boolean;
-  /** A connection of this device was sent and not answered; the Rust
-      side sends it again as it was. */
-  connect_pending: boolean;
-}
-
-export type DevicePlatform = "android" | "ios" | "windows" | "macos" | "linux";
-
-/** A device connected to the account, as the server describes it. */
-export interface Device {
-  id: string;
-  platform: DevicePlatform;
-  /** Unix seconds. */
-  connected_at: number;
-  /** `pending` for ten days after it connected, or until a device with
-      full access approves it. */
-  access: "full" | "pending";
-  /** When a pending device gets full access without approval; null
-      once it has it. */
-  pending_until: number | null;
-  approved_at: number | null;
-  this_device: boolean;
-}
-
-/** `GET /v1/account`, as the server sees the key. */
-export interface PremiumAccount {
-  active: boolean;
-  paid_until: number | null;
-  wallets: number;
-  channels: number;
-  /** The network the server watches, as it names it (`bitcoin`). */
-  network: string;
-}
-
-export interface PremiumAccountReport {
-  account: PremiumAccount;
-  status: PremiumStatus;
-}
-
-/** One wallet the server watches for this account. */
-export interface WalletWatch {
-  /** The app's own wallet id. */
-  id: string;
-  name: string;
-  script_kind: string;
-  watched_since: number;
-  /** Unix seconds when the first scan finished; null while it runs. */
-  baseline_at: number | null;
-  baseline_height: number | null;
-  coins: number;
-  value_sats: number;
-  /** False once the server has refused the wallet: it keeps the row to
-      say why, and watches nothing under it. Absent from a server that
-      refuses no wallet. */
-  watching?: boolean;
-  /** Why the server does not watch this wallet, in its own words. */
-  refusal?: { code: string; message: string } | null;
-}
-
-export type ChannelKind = "ntfy" | "telegram" | "email" | "webhook";
-
-/** One channel as the server describes it, plus the bot link the core
-    builds for a Telegram channel not linked yet. */
-export interface Channel {
-  id: string;
-  kind: ChannelKind;
-  /** Masked except for webhooks. */
-  target: string;
-  linked: boolean;
-  link_code: string | null;
-  link_url: string | null;
-  /** What the channel is linked to, when the server knows a name for it:
-      the Telegram chat that sent the code. Null for the other kinds. */
-  linked_name: string | null;
-  enabled: boolean;
-  created_at: number;
-  telegram_url: string | null;
-}
-
-/** A channel just created, with the ntfy URL shown once. */
-export interface NewChannel {
-  channel: Channel;
-  subscribe_url: string | null;
-}
-
-export type EventKind =
-  | "spend_detected"
-  | "spend_confirmed"
-  | "coins_gone"
-  | "receive_detected"
-  | "receive_confirmed"
-  | "timelock_due"
-  | "wallet_registered"
-  /** The server no longer watches the wallet; `data.message` says why. */
-  | "wallet_refused"
-  | "other";
-
-/** One entry of the account's event log. */
-export interface PremiumEvent {
-  id: number;
-  kind: EventKind;
-  /** The app's own wallet id. */
-  wallet: string;
-  wallet_name: string;
-  at: number;
-  data: unknown;
-}
-
-/** `GET /v1/heartbeat`, verified by the core. */
-export interface HeartbeatReport {
-  heartbeat: { now: number; tip_height: number | null };
-  payload: string;
-  signature: string;
-  public_key: string;
 }
 
 // --- backup ---------------------------------------------------------------
@@ -950,6 +785,29 @@ export interface WatchStatus {
   watched_scripts: number;
   /** Scripts the server pushes changes for; the rest are polled. */
   pushed_scripts: number;
+  /** Scripts worth watching that Live leaves to the regular syncs, past
+      what it takes of one wallet or of all of them. */
+  left_out_scripts: number;
+  /** The wallets those scripts belong to. */
+  left_out_wallets: number;
+  /** How much of each wallet of the list Live hears, in list order;
+      empty while it is off. */
+  wallets: WalletCoverage[];
+  /** What an Electrum server says it runs ("Fulcrum 1.12.0"); null over
+      the other transports, and from a core that predates it. */
+  server_software?: string | null;
+}
+
+/** Whether Live hears a wallet whole, in part, or not at all. */
+export type Coverage = "live" | "partial" | "sync_only";
+
+export interface WalletCoverage {
+  wallet_id: string;
+  coverage: Coverage;
+  /** Scripts of the wallet Live hears. */
+  watched_scripts: number;
+  /** Scripts of the wallet left to the regular syncs. */
+  left_out_scripts: number;
 }
 
 export interface LiveStatus {
@@ -981,38 +839,10 @@ export interface CommandError {
     /** The app is locked: the vault answers nothing until a secret
         goes through. */
     | "locked"
-    | "premium_no_key"
-    | "premium_unknown_key"
-    | "premium_no_paid_time"
-    | "premium_rejected"
-    | "premium_unreachable"
-    | "premium_invalid"
-    /** The premium server asks to wait; the message says how long. */
-    | "premium_rate_limited"
-    /** This device waits for approval, and the route needs full access. */
-    | "premium_device_pending"
-    /** The server no longer knows this device's token. */
-    | "premium_device_disconnected"
-    /** This device has no connection to the account yet. */
-    | "premium_no_device"
-    /** The key already has ten devices; the message is the server's. */
-    | "premium_too_many_devices"
-    /** A key change was sent and not answered, and what was asked would
-        lose the new key: the change is to be finished first. */
-    | "premium_key_change_pending"
-    /** A sensitive action needs the app lock, and there is none. */
-    | "app_lock_required"
-    /** The secret given for a sensitive action did not verify; the core
-        counts it with the lock screen's failures. */
-    | "identity_refused"
     /** The system refused to post a notification. */
     | "notification"
     | "internal";
   message: string;
-  /** With `identity_refused`: seconds before the next secret is even
-      looked at, as the lock screen counts them; 0 when it can be tried
-      now. */
-  retry_after_secs?: number;
 }
 
 /** Type guard for errors thrown by commands. */
@@ -1025,6 +855,12 @@ export function isCommandError(error: unknown): error is CommandError {
   );
 }
 
+/** What a failed call says: the command's own message, or the error as
+    text when it did not come from a command. */
+export function errorMessage(error: unknown): string {
+  return isCommandError(error) ? error.message : String(error);
+}
+
 // --- commands ----------------------------------------------------------
 
 export const ipc = {
@@ -1032,11 +868,19 @@ export const ipc = {
   startupFailure: () => invoke<CommandError | null>("startup_failure"),
   /** Tries the open again after a startup failure. */
   retryOpen: () => invoke<void>("retry_open"),
-  parseInput: (input: string, script?: ScriptKind, derivation?: DerivationChoice) =>
+  /** `network` is the one the wallet is about to be added on: the
+      first address comes back derived for it when the input allows it. */
+  parseInput: (
+    input: string,
+    script?: ScriptKind,
+    derivation?: DerivationChoice,
+    network?: Network,
+  ) =>
     invoke<ParsedInput>("parse_input", {
       input,
       script: script ?? null,
       derivation: derivation ?? null,
+      network: network ?? null,
     }),
   assembleQr: (frames: string[]) => invoke<QrProgress>("assemble_qr", { frames }),
   parseBackend: (input: string) => invoke<ScannedBackend>("parse_backend", { input }),
@@ -1061,12 +905,13 @@ export const ipc = {
   syncAll: (network?: Network) =>
     invoke<SyncAllReport>("sync_all", { network: network ?? null }),
   renameWallet: (id: string, name: string) => invoke<void>("rename_wallet", { id, name }),
-  /** A wallet the server watches stops being watched with it: that
-      removal takes the app lock's secret, as unwatching does. */
-  removeWallet: (id: string, secret?: string) =>
-    invoke<void>("remove_wallet", { id, secret: secret ?? null }),
+  removeWallet: (id: string) => invoke<void>("remove_wallet", { id }),
   setWalletIcon: (id: string, icon: WalletIconId) =>
     invoke<void>("set_wallet_icon", { id, icon }),
+  /** Pinned wallets are watched live before the others when the live
+      watch cannot follow every address. */
+  setWalletLivePinned: (id: string, pinned: boolean) =>
+    invoke<void>("set_wallet_live_pinned", { id, pinned }),
   /** The listed wallets take that order; unlisted ones keep their slots. */
   reorderWallets: (ids: string[]) => invoke<void>("reorder_wallets", { ids }),
   getSettings: () => invoke<Settings>("get_settings"),
@@ -1094,6 +939,10 @@ export const ipc = {
   checkUpdate: () => invoke<UpdateCheck>("check_update"),
   liveStatus: () => invoke<LiveStatus>("live_status"),
   sendTestNotification: () => invoke<void>("send_test_notification"),
+  /** Copies a secret out of sight of the clipboard history, and takes
+      it off the clipboard later unless something else was copied
+      since; the seconds it stays. */
+  copySensitive: (text: string) => invoke<number>("copy_sensitive", { text }),
   appLock: () => invoke<AppLock | null>("app_lock"),
   setAppLock: (kind: LockKind, secret: string, current?: string) =>
     invoke<void>("set_app_lock", { kind, secret, current: current ?? null }),
@@ -1115,59 +964,4 @@ export const ipc = {
   torStatus: () => invoke<TorStatus>("tor_status"),
   setTorSettings: (settings: TorSettings) => invoke<void>("set_tor_settings", { settings }),
   torConnect: () => invoke<TorRoute>("tor_connect"),
-  // Premium: every request leaves from Rust, every signature is checked
-  // there. The webview only shows what came back verified.
-  //
-  // The commands that change who can use the account, or what it
-  // watches and where it tells, take the app lock's secret: the Rust
-  // side checks it the way the lock screen does before anything leaves.
-  premiumStatus: () => invoke<PremiumStatus>("premium_status"),
-  /** Connects this device with a key just typed. */
-  premiumActivate: (key: string) => invoke<PremiumStatus>("premium_activate", { key }),
-  /** Connects this device again with the key the vault keeps. */
-  premiumReconnect: () => invoke<PremiumStatus>("premium_reconnect"),
-  /** Disconnects this device and forgets the key here; with full
-      access it takes the app lock's secret. */
-  premiumForget: (secret?: string) =>
-    invoke<PremiumStatus>("premium_forget", { secret: secret ?? null }),
-  /** This device as the server sees it. */
-  premiumDevice: () => invoke<Device>("premium_device"),
-  /** Every device of the account, oldest first; full access only. */
-  premiumDevices: () => invoke<Device[]>("premium_devices"),
-  premiumApproveDevice: (id: string, secret: string) =>
-    invoke<Device>("premium_approve_device", { id, secret }),
-  /** Refuses a pending device, or disconnects one with full access. */
-  premiumRemoveDevice: (id: string, secret: string) =>
-    invoke<void>("premium_remove_device", { id, secret }),
-  /** A new key for the account, as it is shown; every other device is
-      disconnected. */
-  premiumChangeKey: (secret: string) => invoke<string>("premium_change_key", { secret }),
-  premiumSetKeySaved: (saved: boolean) =>
-    invoke<PremiumStatus>("premium_set_key_saved", { saved }),
-  premiumHideChecklist: () => invoke<PremiumStatus>("premium_hide_checklist"),
-  premiumAccount: () => invoke<PremiumAccountReport>("premium_account"),
-  premiumWallets: () => invoke<WalletWatch[]>("premium_wallets"),
-  premiumWatchWallet: (id: string) => invoke<void>("premium_watch_wallet", { id }),
-  premiumUnwatchWallet: (id: string, secret: string) =>
-    invoke<void>("premium_unwatch_wallet", { id, secret }),
-  premiumChannels: () => invoke<Channel[]>("premium_channels"),
-  /** `secret` is a webhook's own; `identity`, the app lock's, needed
-      while a lock is on. */
-  premiumAddChannel: (kind: ChannelKind, target?: string, secret?: string, identity?: string) =>
-    invoke<NewChannel>("premium_add_channel", {
-      kind,
-      target: target ?? null,
-      secret: secret ?? null,
-      identity: identity ?? null,
-    }),
-  premiumDeleteChannel: (id: string, secret: string) =>
-    invoke<void>("premium_delete_channel", { id, secret }),
-  premiumConfirmChannel: (id: string, code: string) =>
-    invoke<Channel>("premium_confirm_channel", { id, code }),
-  premiumDeleteAccount: (secret: string) =>
-    invoke<PremiumStatus>("premium_delete_account", { secret }),
-  premiumTestChannel: (id: string) => invoke<void>("premium_test_channel", { id }),
-  premiumEvents: () => invoke<PremiumEvent[]>("premium_events"),
-  premiumHeartbeat: () => invoke<HeartbeatReport>("premium_heartbeat"),
-  premiumAcknowledgeOffline: () => invoke<PremiumStatus>("premium_acknowledge_offline"),
 };

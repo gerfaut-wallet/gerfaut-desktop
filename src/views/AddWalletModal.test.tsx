@@ -1,11 +1,42 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ParsedInput } from "../lib/ipc";
 import { useUi } from "../state/store";
-import { AddWalletModal, MAX_WALLET_FILE_BYTES } from "./AddWalletModal";
+import { AddWalletModal, MAX_WALLET_FILE_BYTES, scriptHint } from "./AddWalletModal";
+
+// The camera is out of reach here: the scanner hands over at once the
+// text and warnings the core gives for a crypto-output whose key names
+// no child path.
+vi.mock("../components/ScanQrModal", async () => {
+  const { createElement } = await import("react");
+  return {
+    ScanQrModal: ({
+      open,
+      onScan,
+      onClose,
+    }: {
+      open: boolean;
+      onScan: (text: string, warnings: string[]) => void;
+      onClose: () => void;
+    }) =>
+      open
+        ? createElement(
+            "button",
+            {
+              type: "button",
+              onClick: () => {
+                onScan("wpkh([9a6a2580/84h/1h/0h]tpub.../<0;1>/*)", ["assumed_branches"]);
+                onClose();
+              },
+            },
+            "Code seen",
+          )
+        : null,
+  };
+});
 
 /** A lone tpub: the core keeps Native SegWit and says it assumed it. */
 const PARSED_TPUB: ParsedInput = {
@@ -56,6 +87,123 @@ describe("AddWalletModal", () => {
     useUi.setState({ addWalletOpen: false });
   });
 
+  /** The hints name how the addresses start on the network the wallet
+      goes to, the ones the person compares with their own wallet: a
+      signet wallet never shows a mainnet prefix. */
+  it("names the address prefixes of the wallet's network", async () => {
+    const user = await confirmStep(PARSED_TPUB);
+    await user.click(screen.getByRole("combobox", { name: "Script type" }));
+    const listbox = await screen.findByRole("listbox");
+    expect(listbox).toHaveTextContent("P2WPKH, addresses starting with tb1q");
+    expect(listbox).toHaveTextContent("P2TR, addresses starting with tb1p");
+    expect(listbox).toHaveTextContent("P2SH-P2WPKH, addresses starting with 2");
+    expect(listbox).not.toHaveTextContent(/bc1q|bc1p/);
+  });
+
+  /** The first address is the network's own: regtest was shown the
+      signet one, which no regtest wallet ever gives. The core derives
+      it for the network asked, and a network picked asks again, on the
+      same wallet. */
+  it("shows the first address of the network picked", async () => {
+    const asked: Record<string, unknown>[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd !== "parse_input") return undefined;
+      const payload = args as Record<string, unknown>;
+      asked.push(payload);
+      return {
+        ...PARSED_TPUB,
+        preview_address:
+          payload.network === "regtest"
+            ? "bcrt1qpreview0segwit0000000000000000000000"
+            : PARSED_TPUB.preview_address,
+      };
+    });
+    useUi.setState({ addWalletOpen: true });
+    renderModal();
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText(/descriptor, extended public key/i),
+      "tpubDDnGNapGEY6...",
+    );
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await screen.findByText(/recognized as/i);
+    expect(asked.at(-1)).toMatchObject({ network: "signet", script: null, derivation: null });
+    expect(screen.getByTestId("preview-address")).toHaveTextContent(/^tb1q/);
+
+    await user.click(screen.getByRole("combobox", { name: "Network" }));
+    const list = await screen.findByRole("listbox", { name: "Network" });
+    await user.click(within(list).getByRole("option", { name: /^Regtest/ }));
+    expect(await screen.findByText("bcrt1qpreview0segwit0000000000000000000000")).toBeInTheDocument();
+    expect(asked.at(-1)).toMatchObject({ network: "regtest", script: null, derivation: null });
+    expect(screen.getByRole("combobox", { name: "Network" })).toHaveTextContent("Regtest");
+  });
+
+  /** Two networks picked in a row: the answer for the first may land
+      last, and must not put that network and its address back. A
+      network the core refuses leaves the one shown, with its address. */
+  it("keeps to the last network picked, whatever answers first", async () => {
+    const answers: Record<string, (value: ParsedInput) => void> = {};
+    mockIPC((cmd, args) => {
+      if (cmd !== "parse_input") return undefined;
+      const network = (args as { network: string }).network;
+      if (network === "signet") return PARSED_TPUB;
+      if (network === "testnet4") {
+        return Promise.reject({ kind: "invalid_input", message: "No." });
+      }
+      return new Promise<ParsedInput>((resolve) => {
+        answers[network] = resolve;
+      });
+    });
+    useUi.setState({ addWalletOpen: true });
+    renderModal();
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText(/descriptor, extended public key/i),
+      "tpubDDnGNapGEY6...",
+    );
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await screen.findByText(/recognized as/i);
+    const network = () => screen.getByRole("combobox", { name: "Network" });
+    const pick = async (name: RegExp) => {
+      await user.click(network());
+      const list = await screen.findByRole("listbox", { name: "Network" });
+      await user.click(within(list).getByRole("option", { name }));
+    };
+
+    await pick(/^Testnet 4/);
+    expect(await screen.findByText("No.")).toBeInTheDocument();
+    expect(network()).toHaveTextContent("Signet");
+    expect(screen.getByTestId("preview-address")).toHaveTextContent(/^tb1qpreview0segwit/);
+
+    // Regtest is asked, then signet; signet answers at once, regtest
+    // last. Until an answer, nothing can be added.
+    await user.type(screen.getByLabelText(/^name$/i), "Cold");
+    await pick(/^Regtest/);
+    expect(network()).toHaveTextContent("Regtest");
+    expect(screen.getByRole("button", { name: "Add wallet" })).toBeDisabled();
+    mockIPC((cmd) => (cmd === "parse_input" ? PARSED_TPUB : undefined));
+    await pick(/^Signet/);
+    expect(await screen.findByRole("button", { name: "Add wallet" })).toBeEnabled();
+    answers.regtest({
+      ...PARSED_TPUB,
+      preview_address: "bcrt1qpreview0segwit0000000000000000000000",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(network()).toHaveTextContent("Signet");
+    expect(screen.getByTestId("preview-address")).toHaveTextContent(/^tb1qpreview0segwit/);
+  });
+
+  it("writes each network's prefixes", () => {
+    expect(scriptHint("segwit", "mainnet")).toBe("P2WPKH, addresses starting with bc1q");
+    expect(scriptHint("taproot", "mainnet")).toBe("P2TR, addresses starting with bc1p");
+    expect(scriptHint("legacy", "mainnet")).toBe("P2PKH, addresses starting with 1");
+    expect(scriptHint("segwit", "testnet4")).toBe("P2WPKH, addresses starting with tb1q");
+    expect(scriptHint("legacy", "signet")).toBe("P2PKH, addresses starting with m or n");
+    expect(scriptHint("segwit", "regtest")).toBe("P2WPKH, addresses starting with bcrt1q");
+    expect(scriptHint("taproot", "regtest")).toBe("P2TR, addresses starting with bcrt1p");
+    expect(scriptHint("witness_script", "signet")).toBe("P2WSH multisig or script");
+  });
+
   it("says what it does not know in an amber notice, outside the recognition card", async () => {
     await confirmStep(PARSED_TPUB);
 
@@ -76,6 +224,124 @@ describe("AddWalletModal", () => {
     expect(
       notice.compareDocumentPosition(screen.getByRole("combobox", { name: "Script type" })),
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  /** Whoever goes back does so to correct what they pasted. */
+  /** A mainnet address fits one network: no menu of one option, greyed
+      out, but the network said plainly, and the wallet goes there. */
+  it("says the network plainly when the input fits only one", async () => {
+    const added: Record<string, unknown>[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "parse_input") {
+        return {
+          ...PARSED_TPUB,
+          kind: "address",
+          networks: ["mainnet"],
+          payload: { type: "address", address: "bc1qpreview0address00000000000000000000" },
+          warnings: [],
+          script_options: [],
+          derivation: null,
+          derivation_editable: false,
+          preview_address: "bc1qpreview0address00000000000000000000",
+        };
+      }
+      if (cmd === "add_wallet") {
+        added.push(args as Record<string, unknown>);
+        return { id: "w-new", network: "mainnet" };
+      }
+      return undefined;
+    });
+    useUi.setState({ addWalletOpen: true });
+    renderModal();
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText(/descriptor, extended public key/i),
+      "bc1qpreview0address00000000000000000000",
+    );
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await screen.findByText(/recognized as/i);
+    expect(screen.queryByRole("combobox", { name: "Network" })).not.toBeInTheDocument();
+    expect(screen.getByText("Mainnet")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/name/i), "Donations");
+    await user.click(screen.getByRole("button", { name: "Add wallet" }));
+    await vi.waitFor(() => expect(added).toHaveLength(1));
+    expect(added[0]).toMatchObject({ network: "mainnet" });
+  });
+
+  it("goes back to the field with the input still in it", async () => {
+    const user = await confirmStep(PARSED_TPUB);
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByLabelText(/descriptor, extended public key/i)).toHaveValue(
+      "tpubDDnGNapGEY6...",
+    );
+  });
+
+  /** The wallet is in once `add_wallet` answered: a failed move to its
+      network closes the dialog all the same, and says where it went. A
+      second click would only have heard "already watched". */
+  it("closes on a wallet added, even when the network could not follow", async () => {
+    const calls: string[] = [];
+    mockIPC((cmd) => {
+      calls.push(cmd);
+      switch (cmd) {
+        case "parse_input":
+          return { ...PARSED_TPUB, networks: ["testnet4"] };
+        case "add_wallet":
+          return { id: "w-new", network: "testnet4" };
+        case "set_active_network":
+          return Promise.reject({ kind: "vault", message: "the vault could not be written" });
+        default:
+          return undefined;
+      }
+    });
+    useUi.setState({ addWalletOpen: true, toast: null });
+    renderModal();
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText(/descriptor, extended public key/i),
+      "tpubDDnGNapGEY6...",
+    );
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await user.type(await screen.findByLabelText(/name/i), "Cold storage");
+    await user.click(screen.getByRole("button", { name: "Add wallet" }));
+
+    await vi.waitFor(() => expect(useUi.getState().addWalletOpen).toBe(false));
+    expect(useUi.getState().toast).toBe("Wallet added on Testnet 4");
+    expect(calls.filter((cmd) => cmd === "add_wallet")).toHaveLength(1);
+  });
+
+  /** The core read a scanned code's missing path as receive and
+      change. The notice stays with the text scanned, through a network
+      picked, and goes once the field holds something else. */
+  it("says a scanned code's branches were assumed", async () => {
+    const asked: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd !== "parse_input") return undefined;
+      asked.push((args as { input: unknown }).input);
+      return { ...PARSED_TPUB, warnings: [] };
+    });
+    useUi.setState({ addWalletOpen: true });
+    renderModal();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /scan a qr code/i }));
+    await user.click(screen.getByRole("button", { name: "Code seen" }));
+    expect(await screen.findByText(/carries no receive or change path/i)).toHaveTextContent(
+      "This QR code carries no receive or change path, so Gerfaut assumes the usual 0/* and 1/*. Compare the first address with your signer.",
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Network" }));
+    const list = await screen.findByRole("listbox", { name: "Network" });
+    await user.click(within(list).getByRole("option", { name: /^Regtest/ }));
+    await vi.waitFor(() => expect(asked).toHaveLength(2));
+    expect(screen.getByText(/carries no receive or change path/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    await user.type(screen.getByLabelText(/descriptor, extended public key/i), " ");
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await vi.waitFor(() => expect(asked).toHaveLength(3));
+    await screen.findByText(/recognized as/i);
+    expect(screen.queryByText(/carries no receive or change path/i)).not.toBeInTheDocument();
   });
 
   it("drops the notice once the key no longer needs one", async () => {

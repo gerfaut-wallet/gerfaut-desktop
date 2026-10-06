@@ -332,6 +332,9 @@ function remainingTime(remaining: Remaining): string {
   return "an unknown time";
 }
 
+/** The tail of a per-coin pill whose next coin has no count yet. */
+export const NEXT_UNKNOWN = "next known after the first sync";
+
 function coinsPhrase(unlocked: number, total: number): string {
   return `${groupThousands(String(unlocked))} of ${groupThousands(String(total))} coin${
     total === 1 ? "" : "s"
@@ -357,7 +360,13 @@ export function branchStatus(branch: PolicyBranch): BranchStatus {
     case "per_coin": {
       const total = state.unlocked + state.waiting + state.locked;
       const parts = [coinsPhrase(state.unlocked, total)];
-      if (state.next) parts.push(`next in ${remainingTime(state.next)}`);
+      // Before the first sync there is no tip to count the coin from:
+      // that it waits is known, for how long is not yet.
+      if (state.next) {
+        parts.push(
+          known(state.next) ? `next in ${remainingTime(state.next)}` : NEXT_UNKNOWN,
+        );
+      }
       if (state.waiting > 0) {
         parts.push(`${groupThousands(String(state.waiting))} waiting for a block`);
       }
@@ -394,7 +403,9 @@ export function countdown(branch: PolicyBranch): Countdown | null {
   if (state.kind === "locked") {
     return known(state.until) ? { remaining: state.until, progress: null, perCoin: false } : null;
   }
-  if (state.kind !== "per_coin" || state.next === null) return null;
+  // A coin whose count is unknown has no figure to show: the pill says
+  // when it will have one.
+  if (state.kind !== "per_coin" || state.next === null || !known(state.next)) return null;
   const total = relativeWait(branch);
   const progress =
     total === 0 || state.next.remaining_seconds === null
@@ -587,16 +598,11 @@ function stateWords(branch: PolicyBranch): string {
     case "locked":
       return known(state.until) ? `in ${remainingTime(state.until)}` : "locked";
     case "per_coin":
-      if (state.next) return `in ${remainingTime(state.next)}`;
+      if (state.next) return known(state.next) ? `in ${remainingTime(state.next)}` : "locked";
       return state.locked === 0 && state.waiting === 0 ? "unlocked" : "waiting for a block";
     case "no_coins":
       return `after ${durationWords(relativeWait(branch))}`;
     case "needs_preimage":
       return "needs a secret";
   }
-}
-
-/** The digest as one string, for an accessible name or a test. */
-export function digestText(digest: PolicyDigest): string {
-  return `${digest.figure} ${digest.label}`.trim();
 }
