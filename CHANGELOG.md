@@ -92,6 +92,8 @@ Gerfaut watches Bitcoin wallets it cannot spend from. There is no key generation
 - When a server takes only a certain number of your addresses, Live now asks it again for all of them a day later, or an hour later when it took none. Before, it waited until you changed the server settings or restarted Gerfaut, so a server that took no address could leave Live off for days. Two refusals still hold until you change the server settings or restart Gerfaut: a single address the server turns down, such as one with a history too long for it, and a cut from an ElectrumX server when Live uses too much of its resources. After such a cut, Live asks for fewer addresses, since asking for all of them would only get it cut off again.
 - In Add a wallet, the first address now belongs to the network you pick, and changes when you pick another one. A key added on regtest shows its bcrt1 address, not the tb1 address of signet.
 - In Add a wallet, a QR code that gives no receive or change path now says that Gerfaut assumes the usual 0/* and 1/*, and asks you to compare the first address with your signer.
+- The certificate list and the dialog that forgets a certificate now say that syncs with that server fail until you press Save backend again and accept it. They used to say that Gerfaut would ask again at the next connection, which it does not. When the server does not answer at Save backend, the note now says the same of a server that signs its own certificate.
+- On an Esplora backend, Live now checks every address in turn. It used to start over at the top of the list each time it reconnected, every half hour, so it never reached the addresses further down, and a payment to one of them waited for the next sync.
 
 ### Security
 
