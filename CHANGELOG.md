@@ -59,6 +59,7 @@ Gerfaut watches Bitcoin wallets it cannot spend from. There is no key generation
 - The hints under New transactions, Check for updates automatically and Currency are shorter.
 - Fiat values now group their thousands with a space, like amounts in BTC and sats: €74 074.07 instead of €74,074.07.
 - When every wallet is on the network shown, the backup export says "All wallets (N)" instead of offering a choice of one.
+- On the Policy page, a coin that cannot be counted down before the first sync says "next known after the first sync" instead of "next in an unknown time".
 
 ### Fixed
 
