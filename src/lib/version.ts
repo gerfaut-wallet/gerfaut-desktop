@@ -102,3 +102,10 @@ export function isUpdate(latest: unknown, current: string): boolean {
   if (next.pre.length > 0 && running.pre.length === 0) return false;
   return compareVersions(next, running) > 0;
 }
+
+/** Whether a version of this app is a beta: every 0.x version is, and
+    the label goes away by itself at 1.0.0. A version that does not read
+    as one is not called a beta. */
+export function isBeta(version: string): boolean {
+  return parseVersion(version)?.major === 0;
+}
