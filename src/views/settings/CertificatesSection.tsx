@@ -6,7 +6,7 @@ import { Button } from "../../components/Button";
 import { Modal } from "../../components/Modal";
 import { Notice } from "../../components/Notice";
 import type { CertificateReport } from "../../lib/ipc";
-import { LOCALE } from "../../lib/format";
+import { formatDate } from "../../lib/format";
 import { useForgetCertificate } from "../../state/queries";
 import { useUi } from "../../state/store";
 import { SaveFailure, SectionCard } from "./primitives";
@@ -42,15 +42,6 @@ function CertFact({ label, children }: { label: string; children: ReactNode }) {
       <dd className="mt-0.5 break-words font-ui text-sm text-text">{children}</dd>
     </div>
   );
-}
-
-/** The day a certificate stops being valid. */
-function expiryLabel(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleDateString(LOCALE, {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
 }
 
 /**
@@ -129,7 +120,7 @@ export function CertificateDialog({
                   </div>
                 )}
                 {report.expires !== null && (
-                  <CertFact label="Valid until">{expiryLabel(report.expires)}</CertFact>
+                  <CertFact label="Valid until">{formatDate(report.expires)}</CertFact>
                 )}
                 <CertFact label="Why it is asked">{report.reason}</CertFact>
               </dl>

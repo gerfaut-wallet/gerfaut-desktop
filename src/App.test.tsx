@@ -2253,7 +2253,8 @@ describe("electrum certificates", () => {
         fingerprint: FINGERPRINT,
         reason: "self-signed, or signed by an authority this machine does not know",
         subject: "CN=node.example.org",
-        expires: 1_800_000_000,
+        // Noon, local time: the day is the same wherever the test runs.
+        expires: new Date(2030, 2, 7, 12, 0).getTime() / 1000,
       }),
       trust_certificate: (args) => {
         trusted.push(args);
@@ -2276,6 +2277,8 @@ describe("electrum certificates", () => {
     expect(dialog.textContent).toContain(FINGERPRINT.split(":").slice(0, 16).join(":"));
     expect(dialog.textContent).toContain(FINGERPRINT.split(":").slice(16).join(":"));
     expect(within(dialog).getByText("CN=node.example.org")).toBeInTheDocument();
+    // The expiry reads like every other date in the app.
+    expect(within(dialog).getByText("Mar 07, 2030")).toBeInTheDocument();
     expect(within(dialog).getByText(/openssl x509/)).toBeInTheDocument();
     // Nothing is trusted and nothing is saved until the user says so.
     expect(trusted).toHaveLength(0);
