@@ -3,7 +3,7 @@ import { Select } from "../../components/Select";
 import { COINGECKO_ONLY_CURRENCIES, SHARED_CURRENCIES, quotesCurrency } from "../../lib/ipc";
 import type { FiatCurrency, PriceSource } from "../../lib/ipc";
 import { formatCurrency, relativeTime } from "../../lib/format";
-import { torDown, useFiatRate } from "../../state/queries";
+import { liveAnswer, torDown, useFiatRate } from "../../state/queries";
 import { useUi } from "../../state/store";
 import type { ThemePref } from "../../state/store";
 import { SectionCard, Segmented, SettingRow, Toggle } from "./primitives";
@@ -189,10 +189,10 @@ function AppearanceCard() {
 function RatePreview() {
   const rate = useFiatRate();
   const { fiatCurrency } = useUi();
-  if (rate.isPending) {
-    return <p className="font-ui text-xs text-muted">Fetching the current price…</p>;
-  }
-  if (rate.isError || !rate.data) {
+  // The line says what the amounts do: the same answer, by the same
+  // rule, or the reason they show none.
+  const quote = liveAnswer(rate, fiatCurrency);
+  if (rate.isError) {
     return (
       <p className="font-ui text-xs text-pending">
         {torDown(rate.error)
@@ -201,12 +201,14 @@ function RatePreview() {
       </p>
     );
   }
+  if (!quote) {
+    return <p className="font-ui text-xs text-muted">Fetching the current price…</p>;
+  }
   // The price itself, not a wallet's amount: it stays what bitcoin
   // fetches whichever network is open.
   return (
     <p className="tabular text-xs text-muted">
-      1 BTC = {formatCurrency(rate.data.rate, fiatCurrency)} · updated{" "}
-      {relativeTime(rate.data.at)}
+      1 BTC = {formatCurrency(quote.rate, fiatCurrency)} · updated {relativeTime(quote.at)}
     </p>
   );
 }

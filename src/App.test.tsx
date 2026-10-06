@@ -618,10 +618,11 @@ function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => 
   });
 }
 
-function renderApp() {
-  const client = new QueryClient({
+function renderApp(
+  client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
-  });
+  }),
+) {
   return render(
     <QueryClientProvider client={client}>
       <App />
@@ -1677,6 +1678,50 @@ describe("display settings", () => {
       (text) => text.includes("€") && text.includes("150"),
     );
     expect(matches.length).toBeGreaterThanOrEqual(1);
+  });
+
+  /** A refresh that fails leaves the answer before it in the cache.
+      Shown, it would price every amount at a rate nobody can date,
+      under a settings line that says amounts show without fiat. */
+  it("drops every price once the source stops answering", async () => {
+    const wallet: WalletMeta = { ...WALLET, network: "mainnet" };
+    let down = false;
+    const answer = <T,>(value: T) =>
+      down ? Promise.reject({ kind: "network", message: "price source timed out" }) : value;
+    walletIpc({
+      get_settings: () => ({
+        ...SETTINGS,
+        active_network: "mainnet",
+        app_prefs: { ...SETTINGS.app_prefs, "display.fiat": "1" },
+      }),
+      list_wallets: () => [wallet],
+      wallet_snapshot: () => ({ ...SNAPSHOT, meta: wallet }),
+      fetch_price: () =>
+        answer({ rate: 100_000, currency: "eur", source: "coingecko", at: 1_755_000_000 }),
+      fetch_price_history: () => answer(PRICE_HISTORY),
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderApp(client);
+    const user = userEvent.setup();
+    expect(await screen.findAllByText("€150.00")).toHaveLength(2);
+    expect(screen.getByText("+11.1%")).toBeInTheDocument();
+
+    down = true;
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ["price"] });
+      await client.refetchQueries({ queryKey: ["price-history"] });
+    });
+    await waitFor(() => expect(screen.queryByText("€150.00")).not.toBeInTheDocument());
+    expect(screen.queryByText("+11.1%")).not.toBeInTheDocument();
+    expect(screen.getByText("The price source did not answer.")).toBeInTheDocument();
+
+    await openSettings(user, "General");
+    expect(
+      await screen.findByText(
+        "The price source did not answer. Amounts show without fiat until it does.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^1 BTC =/)).not.toBeInTheDocument();
   });
 
   it("values a test network's wallet at zero, not at the price of bitcoin", async () => {

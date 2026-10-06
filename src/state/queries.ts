@@ -9,6 +9,7 @@ import {
 import type {
   BackendConfig,
   ExportOptions,
+  FiatCurrency,
   LockKind,
   Network,
   ParsedInput,
@@ -275,6 +276,21 @@ export function useFiatRate() {
     staleTime: 55_000,
     retry: 1,
   });
+}
+
+/** The answer a price display may use: the last one, while the last
+    request for it went through, and in the currency chosen. A failed
+    refresh keeps the answer before it in the cache, and showing it
+    would price every amount at a rate of an hour ago with nothing to
+    say so; a quote in another currency would put a dollar figure
+    behind a euro sign. Either way the display shows no price, as the
+    settings say it will. */
+export function liveAnswer<T extends { currency: FiatCurrency }>(
+  query: { isError: boolean; data: T | undefined },
+  currency: FiatCurrency,
+): T | null {
+  if (query.isError || !query.data || query.data.currency !== currency) return null;
+  return query.data;
 }
 
 /** Price series for the overview chart, from the configured source in

@@ -71,6 +71,7 @@ Gerfaut watches Bitcoin wallets it cannot spend from. There is no key generation
 - If the system's key store says it has no vault key while a vault is already on disk, Gerfaut no longer creates a new key that could never open it. The startup screen says the key is missing, and Try again asks the store again.
 - Restoring a backup whose wallets are all on another network left them out of sight until a restart, and the restored settings did not show either. The workspace now moves to the wallets' network, and everything shows at once.
 - With "Hide amounts" on, unlocking could show the balances for an instant.
+- When the price source stops answering, amounts now show without their fiat value and the Bitcoin price card says the source did not answer, as Settings already did. Before, both kept the last price they had, however old.
 - When the vault refused to save the network, a trusted certificate, the gap limit, a wallet's name or icon, or transaction notifications, on a full disk or while an antivirus held the file, the setting looked saved anyway. It now goes back to what the vault holds, with the reason under it. If this happens when you turn on transaction notifications, the switch stays off.
 - A link that nothing on the computer can open now says so and shows the address to copy.
 - A wallet page that could not be loaded now says why, with a Try again button. A list of UTXOs that failed to load no longer reads as an empty one.

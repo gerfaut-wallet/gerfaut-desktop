@@ -33,6 +33,7 @@ import type { PriceRange, TxSummary, WalletMeta, WalletSnapshot } from "../lib/i
 import { policyDigest } from "../lib/policy";
 import { balanceSeries } from "../lib/series";
 import {
+  liveAnswer,
   torDown,
   usePriceHistory,
   useRenameWallet,
@@ -410,7 +411,10 @@ function PriceCard() {
   // third party this machine opened a bitcoin wallet just now.
   const history = usePriceHistory(range, fiatEnabled);
   const radio = useRadioGroup(ranges, range, setPriceRange);
-  const points = history.data?.points ?? [];
+  // A refresh that failed shows no price, like the amounts: the series
+  // before it stays in the cache, and its last point is not today's.
+  const answer = liveAnswer(history, fiatCurrency);
+  const points = answer?.points ?? [];
   const first = points[0];
   const last = points[points.length - 1];
   const change = first && last ? ((last.rate - first.rate) / first.rate) * 100 : null;
@@ -474,7 +478,7 @@ function PriceCard() {
         </div>
       ) : (
         <p className="font-ui text-sm text-muted">
-          {history.isPending
+          {!history.isError && !answer
             ? "Loading…"
             : torDown(history.error)
               ? "Tor is not available, so no price was asked."
