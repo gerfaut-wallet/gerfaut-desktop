@@ -2232,6 +2232,33 @@ describe("electrum certificates", () => {
     );
   });
 
+  it("saves a backend whose server did not answer, and says what its certificate costs", async () => {
+    const saved: unknown[] = [];
+    walletIpc({
+      inspect_certificate: () => ({
+        host: "node.example.org:50002",
+        status: "unreachable",
+        detail: "connection refused",
+      }),
+      set_backend: (args) => {
+        saved.push(args.config);
+        return undefined;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "Saved. The server did not answer, so its certificate is unchecked. If it signs its own, syncs fail until you press Save backend again and accept it.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("keeps a refused certificate out of the vault when the dialog is cancelled", async () => {
     const trusted: unknown[] = [];
     const saved: unknown[] = [];
@@ -2342,6 +2369,13 @@ describe("electrum certificates", () => {
       }),
     );
     const dialog = await screen.findByRole("dialog");
+    // Nothing asks again on its own: the sync fails until the backend is
+    // saved again.
+    expect(
+      within(dialog).getByText(
+        "Syncs with node.example.org:50002 will fail until you press Save backend again and accept its certificate.",
+      ),
+    ).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Forget it" }));
     await waitFor(() => expect(forgotten).toEqual(["node.example.org:50002"]));
   });

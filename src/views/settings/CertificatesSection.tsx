@@ -207,8 +207,8 @@ export function CertificatesSection({ certs }: { certs: Record<string, string> }
         ))}
       </ul>
       <p className="mt-3 font-ui text-xs text-muted">
-        Each line is a certificate you accepted for that server. Forget one and Gerfaut asks
-        again the next time it connects.
+        Each line is a certificate you accepted for that server. Forget one and syncs with that
+        server fail until you press Save backend again and accept it.
       </p>
       {pending && (
         <Modal
@@ -222,8 +222,8 @@ export function CertificatesSection({ certs }: { certs: Record<string, string> }
           title="Forget this certificate?"
         >
           <p className="font-ui text-sm text-text">
-            Gerfaut will ask again the next time it connects to {pending}, and refuse until the
-            certificate is accepted.
+            Syncs with {pending} will fail until you press Save backend again and accept its
+            certificate.
           </p>
           <SaveFailure error={failure} className="mt-3" />
           <div className="mt-4 flex items-center justify-end gap-3">

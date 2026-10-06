@@ -19,6 +19,12 @@ import { CertificateDialog } from "./CertificatesSection";
 import { FieldLabel, SectionCard, Toggle } from "./primitives";
 
 /** The chains a workspace can watch, each with a word on what it is. */
+/** Said once a backend is saved whose server did not answer. Nothing
+    asks about its certificate later: a sync it refuses fails, and Save
+    backend is where it is accepted. */
+const UNCHECKED_NOTE =
+  "Saved. The server did not answer, so its certificate is unchecked. If it signs its own, syncs fail until you press Save backend again and accept it.";
+
 export const NETWORKS: { value: Network; label: string; hint: string }[] = [
   { value: "mainnet", label: NETWORK_LABEL.mainnet, hint: "The Bitcoin network" },
   { value: "signet", label: NETWORK_LABEL.signet, hint: "Test network, reliable blocks" },
@@ -237,7 +243,7 @@ export function BackendSection({
     await store(
       config,
       report?.status === "unreachable"
-        ? "Saved. The server did not answer, so its certificate is unchecked."
+        ? UNCHECKED_NOTE
         : undefined,
     );
   };
