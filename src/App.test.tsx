@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, onlineManager } from "@tanstack/react-query";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -1722,6 +1722,73 @@ describe("display settings", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/^1 BTC =/)).not.toBeInTheDocument();
+  });
+
+  /** Offline, TanStack holds a refresh back by default and the query
+      stays a success with its old answer: hours later the amounts
+      would still carry the price of the moment the link went. The
+      price is a command to the core, asked anyway; the core's failure
+      is what the screens say. */
+  it("drops every price while the machine is offline", async () => {
+    const wallet: WalletMeta = { ...WALLET, network: "mainnet" };
+    let down = false;
+    const asked: string[] = [];
+    const answer = <T,>(cmd: string, value: T) => {
+      asked.push(cmd);
+      return down ? Promise.reject({ kind: "network", message: "no route to host" }) : value;
+    };
+    walletIpc({
+      get_settings: () => ({
+        ...SETTINGS,
+        active_network: "mainnet",
+        app_prefs: { ...SETTINGS.app_prefs, "display.fiat": "1" },
+      }),
+      list_wallets: () => [wallet],
+      wallet_snapshot: () => ({ ...SNAPSHOT, meta: wallet }),
+      fetch_price: () =>
+        answer("fetch_price", {
+          rate: 100_000,
+          currency: "eur",
+          source: "coingecko",
+          at: 1_755_000_000,
+        }),
+      fetch_price_history: () => answer("fetch_price_history", PRICE_HISTORY),
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderApp(client);
+    const user = userEvent.setup();
+    expect(await screen.findAllByText("€150.00")).toHaveLength(2);
+    expect(screen.getByText("+11.1%")).toBeInTheDocument();
+
+    try {
+      down = true;
+      asked.length = 0;
+      onlineManager.setOnline(false);
+      // Not awaited: a refresh held back offline never settles.
+      act(() => {
+        void client.refetchQueries({ queryKey: ["price"] });
+        void client.refetchQueries({ queryKey: ["price-history"] });
+      });
+      await waitFor(() => expect(screen.queryByText("€150.00")).not.toBeInTheDocument(), {
+        timeout: 5000,
+      });
+      await waitFor(
+        () => expect(screen.getByText("The price source did not answer.")).toBeInTheDocument(),
+        { timeout: 5000 },
+      );
+      expect(screen.queryByText("+11.1%")).not.toBeInTheDocument();
+      // Asked all the same: the core, not the webview, knows the network.
+      expect(asked).toEqual(expect.arrayContaining(["fetch_price", "fetch_price_history"]));
+
+      await openSettings(user, "General");
+      expect(
+        await screen.findByText(
+          "The price source did not answer. Amounts show without fiat until it does.",
+        ),
+      ).toBeInTheDocument();
+    } finally {
+      onlineManager.setOnline(true);
+    }
   });
 
   it("values a test network's wallet at zero, not at the price of bitcoin", async () => {

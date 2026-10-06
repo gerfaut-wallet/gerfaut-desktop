@@ -7,20 +7,26 @@ const QUOTE: PriceQuote = { rate: 100_000, currency: "eur", source: "coingecko",
 /** A price display uses the last answer only while it still holds. */
 describe("the price a display may use", () => {
   it("is the last answer, in the chosen currency", () => {
-    expect(liveAnswer({ isError: false, data: QUOTE }, "eur")).toBe(QUOTE);
+    expect(liveAnswer({ isError: false, data: QUOTE, fetchStatus: "idle" }, "eur")).toBe(QUOTE);
   });
 
   it("is none before the first answer", () => {
-    expect(liveAnswer({ isError: false, data: undefined }, "eur")).toBeNull();
+    expect(liveAnswer({ isError: false, data: undefined, fetchStatus: "fetching" }, "eur")).toBeNull();
   });
 
   /** The cache keeps the answer before a failed refresh: it is an hour
       old by the time anyone reads it, and says nothing of it. */
   it("is none once the last request failed, whatever the cache holds", () => {
-    expect(liveAnswer({ isError: true, data: QUOTE }, "eur")).toBeNull();
+    expect(liveAnswer({ isError: true, data: QUOTE, fetchStatus: "idle" }, "eur")).toBeNull();
+  });
+
+  /** Held back offline, a refresh leaves the query a success with the
+      answer before it: no fresher than a failed one. */
+  it("is none while a refresh waits for the network", () => {
+    expect(liveAnswer({ isError: false, data: QUOTE, fetchStatus: "paused" }, "eur")).toBeNull();
   });
 
   it("is none in another currency than the one chosen", () => {
-    expect(liveAnswer({ isError: false, data: QUOTE }, "usd")).toBeNull();
+    expect(liveAnswer({ isError: false, data: QUOTE, fetchStatus: "idle" }, "usd")).toBeNull();
   });
 });

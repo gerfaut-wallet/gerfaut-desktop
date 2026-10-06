@@ -1,5 +1,6 @@
 // Server-state hooks. One place defines cache keys and invalidation.
 
+import type { FetchStatus } from "@tanstack/react-query";
 import {
   useIsMutating,
   useMutation,
@@ -265,6 +266,13 @@ export function torDown(error: unknown): boolean {
   return isCommandError(error) && error.kind === "tor";
 }
 
+/** Asked whatever the webview thinks of the network. The request is a
+    command to the core, which reaches the source or says why not, Tor
+    included; by default TanStack holds a refresh back while the
+    webview reads offline, and the query keeps its old answer and its
+    success, with no error for anyone to see. */
+const PRICE_NETWORK_MODE = "always";
+
 /** Current BTC price, refreshed every minute while fiat display is on. */
 export function useFiatRate() {
   const { fiatEnabled, fiatSource, fiatCurrency } = useUi();
@@ -272,6 +280,7 @@ export function useFiatRate() {
     queryKey: ["price", fiatSource, fiatCurrency],
     queryFn: () => ipc.fetchPrice(fiatSource, fiatCurrency),
     enabled: fiatEnabled,
+    networkMode: PRICE_NETWORK_MODE,
     refetchInterval: 60_000,
     staleTime: 55_000,
     retry: 1,
@@ -283,13 +292,15 @@ export function useFiatRate() {
     refresh keeps the answer before it in the cache, and showing it
     would price every amount at a rate of an hour ago with nothing to
     say so; a quote in another currency would put a dollar figure
-    behind a euro sign. Either way the display shows no price, as the
-    settings say it will. */
+    behind a euro sign. A refresh held back offline is no better: it
+    keeps the old answer as if it had just come. Either way the display
+    shows no price, as the settings say it will. */
 export function liveAnswer<T extends { currency: FiatCurrency }>(
-  query: { isError: boolean; data: T | undefined },
+  query: { isError: boolean; data: T | undefined; fetchStatus: FetchStatus },
   currency: FiatCurrency,
 ): T | null {
-  if (query.isError || !query.data || query.data.currency !== currency) return null;
+  if (query.isError || query.fetchStatus === "paused") return null;
+  if (!query.data || query.data.currency !== currency) return null;
   return query.data;
 }
 
@@ -308,6 +319,7 @@ export function usePriceHistory(range: PriceRange, enabled: boolean) {
     queryKey: ["price-history", fiatSource, fiatCurrency, range],
     queryFn: () => ipc.fetchPriceHistory(fiatSource, fiatCurrency, range),
     enabled,
+    networkMode: PRICE_NETWORK_MODE,
     staleTime: range === "day" ? 5 * 60_000 : 30 * 60_000,
     retry: 1,
   });
