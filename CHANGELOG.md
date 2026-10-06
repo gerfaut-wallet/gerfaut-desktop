@@ -62,6 +62,8 @@ Gerfaut watches Bitcoin wallets it cannot spend from. There is no key generation
 - When every wallet is on the network shown, the backup export says "All wallets (N)" instead of offering a choice of one.
 - In Add a wallet, an input that fits a single network, such as a mainnet address, names that network instead of offering a choice of one.
 - On the Policy page, a coin that cannot be counted down before the first sync says "next known after the first sync" instead of "next in an unknown time".
+- With Live alerts on and the Automatic backend, syncs now go first to the server the watch talks to, Blockstream's Electrum server on mainnet, so one operator sees your addresses instead of two. When blockstream.info:700 fails, the watch moves to electrum.blockstream.info:50002 before it falls back to mempool.space.
+- frigate.2140.dev is no longer in the list of public servers. It is a Silent Payments server, of no use to a wallet that only watches. If you picked it, Gerfaut goes back to Automatic.
 
 ### Fixed
 
