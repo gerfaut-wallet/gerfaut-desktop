@@ -39,8 +39,18 @@ const STEPS: Step[] = [
 ];
 
 /** The welcome tour: shown on a first launch, replayable from the
-    settings, and dismissible at any point. */
-export function WelcomeTour({ open, onClose }: { open: boolean; onClose: () => void }) {
+    settings, and dismissible at any point. On a `beta` version, every
+    0.x one, the first page adds one line under its paragraph: what a
+    public beta asks of you, in the amber of what is worth reading. */
+export function WelcomeTour({
+  open,
+  onClose,
+  beta,
+}: {
+  open: boolean;
+  onClose: () => void;
+  beta: boolean;
+}) {
   const [step, setStep] = useState(0);
   const setOnboardingSeen = useUi((state) => state.setOnboardingSeen);
   const markTourSeen = useUi((state) => state.markTourSeen);
@@ -78,6 +88,12 @@ export function WelcomeTour({ open, onClose }: { open: boolean; onClose: () => v
         )}
         <h2 className="font-display text-2xl font-semibold text-text">{current.title}</h2>
         <p className="max-w-sm font-ui text-sm text-muted">{current.body}</p>
+        {step === 0 && beta && (
+          <p className="-mt-3 max-w-sm font-ui text-xs text-muted">
+            <span className="font-medium text-pending">Public beta.</span> Check addresses and
+            amounts on your signing device.
+          </p>
+        )}
 
         <div className="flex gap-1.5" aria-hidden>
           {STEPS.map((_, index) => (

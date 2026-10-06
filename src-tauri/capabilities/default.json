@@ -12,7 +12,8 @@
       "identifier": "opener:allow-open-url",
       "allow": [
         { "url": "https://mempool.space/*" },
-        { "url": "https://github.com/gerfaut-wallet/gerfaut-desktop/releases/latest" }
+        { "url": "https://github.com/gerfaut-wallet/gerfaut-desktop/releases/latest" },
+        { "url": "https://github.com/gerfaut-wallet/gerfaut-desktop/issues" }
       ]
     }
   ]

@@ -1,9 +1,10 @@
-import { Compass, Info, RefreshCw } from "lucide-react";
+import { Compass, FlaskConical, Info, MessageSquareWarning, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../components/Button";
 import { OpenFailure, useOpenExternal } from "../../components/ExternalLink";
+import { Pill } from "../../components/StatusPill";
 import { isCommandError } from "../../lib/ipc";
-import { isUpdate } from "../../lib/version";
+import { isBeta, isUpdate } from "../../lib/version";
 import { useCheckUpdate } from "../../state/queries";
 import { RELEASES_URL, useUpdate } from "../../state/update";
 import { WelcomeTour } from "../WelcomeTour";
@@ -11,7 +12,15 @@ import { SectionCard, SettingRow, Toggle } from "./primitives";
 
 export const APP_VERSION = "0.1.0";
 
+/** Where a problem is reported: the issues of this repository, the one
+    other address the About card opens. */
+export const ISSUES_URL = "https://github.com/gerfaut-wallet/gerfaut-desktop/issues";
+
 /** The version, the way to a newer one, and the tour again.
+
+    Every 0.x version is a public beta: the card says so next to the
+    version, with one line on what that asks of you and a button to
+    report a problem. Both go away by themselves at 1.0.0.
 
     A newer release already known, from the daily check or from an
     earlier press of the button, is offered as soon as the card opens:
@@ -33,6 +42,7 @@ export function AboutSection() {
   const available = latest !== null && isUpdate(latest, APP_VERSION);
   const torUnavailable = useUpdate((state) => state.torUnavailable);
   const link = useOpenExternal();
+  const beta = isBeta(APP_VERSION);
 
   // Sent here by the update notice, whose button is gone by now: the
   // card's heading takes the focus it held.
@@ -50,9 +60,17 @@ export function AboutSection() {
     >
       <div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="font-ui text-sm text-text">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-ui text-sm text-text">
             Gerfaut {APP_VERSION}
-            <span className="ml-2 font-ui text-xs text-muted">for Windows, macOS, and Linux</span>
+            {beta && (
+              <Pill
+                tone="pending"
+                icon={<FlaskConical size={12} strokeWidth={2} aria-hidden className="shrink-0" />}
+              >
+                Beta
+              </Pill>
+            )}
+            <span className="font-ui text-xs text-muted">for Windows, macOS, and Linux</span>
           </p>
           <span className="flex flex-wrap items-center gap-3">
             <span role="status" className="font-ui text-xs text-muted">
@@ -99,6 +117,18 @@ export function AboutSection() {
             </Button>
           </span>
         </div>
+        {beta && (
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+            <p className="min-w-0 max-w-md font-ui text-xs text-muted">
+              This is a public beta. Check addresses and amounts on your signing device, and report
+              anything that looks wrong.
+            </p>
+            <Button variant="ghost" onClick={() => void link.open(ISSUES_URL)}>
+              <MessageSquareWarning size={14} strokeWidth={1.5} aria-hidden />
+              Report a problem
+            </Button>
+          </div>
+        )}
         <OpenFailure url={link.failed} className="" />
         <div>
           <SettingRow
@@ -124,7 +154,7 @@ export function AboutSection() {
           </Button>
         </div>
       </div>
-      <WelcomeTour open={tourOpen} onClose={() => setTourOpen(false)} />
+      <WelcomeTour open={tourOpen} onClose={() => setTourOpen(false)} beta={beta} />
     </SectionCard>
   );
 }
