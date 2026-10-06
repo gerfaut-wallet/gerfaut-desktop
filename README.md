@@ -2,11 +2,13 @@
 
 [Gerfaut](https://github.com/gerfaut-wallet) for Windows, macOS, and Linux, a Bitcoin watch-only wallet.
 
-![Status: alpha](https://img.shields.io/badge/status-alpha-orange) ![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-blue)
-
-> Status: alpha. What the app does today is listed in the [changelog](CHANGELOG.md). The interfaces are still moving.
+![Status: public beta](https://img.shields.io/badge/status-public%20beta-yellow) ![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-blue)
 
 Watch your coins without ever exposing them: Gerfaut holds no private keys. It watches descriptors, shows balances and history, and alerts you when something moves.
+
+## Status: public beta
+
+Gerfaut is in public beta. It never holds your private keys, so it cannot move your bitcoin, but it is new and has had little testing: check addresses and amounts on your signing device before you rely on them. Report anything that looks wrong in the [issues](https://github.com/gerfaut-wallet/gerfaut-desktop/issues). The [changelog](CHANGELOG.md) lists what the app does.
 
 ## Scope
 

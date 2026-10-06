@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareVersions, isUpdate, normalizeVersion, parseVersion } from "./version";
+import { compareVersions, isBeta, isUpdate, normalizeVersion, parseVersion } from "./version";
 
 const order = (a: string, b: string) => compareVersions(parseVersion(a)!, parseVersion(b)!);
 
@@ -95,5 +95,25 @@ describe("isUpdate", () => {
     expect(isUpdate("nightly", "0.1.0")).toBe(false);
     expect(isUpdate(undefined, "0.1.0")).toBe(false);
     expect(isUpdate("0.2.0", "garbage")).toBe(false);
+  });
+});
+
+describe("isBeta", () => {
+  it("calls every 0.x version a beta, pre-releases included", () => {
+    for (const version of ["0.1.0", "0.1.1", "0.2.0", "0.99.12", "v0.3.0", "0.2.0-rc.1"]) {
+      expect(isBeta(version), version).toBe(true);
+    }
+  });
+
+  it("stops at 1.0.0", () => {
+    for (const version of ["1.0.0", "1.0.0-rc.1", "1.2.3", "2.0.0"]) {
+      expect(isBeta(version), version).toBe(false);
+    }
+  });
+
+  it("calls nothing a beta that does not read as a version", () => {
+    for (const garbage of ["", "beta", "0.1", "00.1.0"]) {
+      expect(isBeta(garbage), garbage).toBe(false);
+    }
   });
 });

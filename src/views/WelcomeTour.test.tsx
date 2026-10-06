@@ -3,11 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { WelcomeTour } from "./WelcomeTour";
 
-function renderTour() {
+function renderTour({ beta = true }: { beta?: boolean } = {}) {
   const onClose = vi.fn();
-  render(<WelcomeTour open onClose={onClose} />);
+  render(<WelcomeTour open onClose={onClose} beta={beta} />);
   return { onClose, user: userEvent.setup() };
 }
+
+const betaLine = () => screen.queryByText(/Check addresses and amounts on your signing device/);
 
 describe("WelcomeTour", () => {
   it("offers no way back on the first page", () => {
@@ -62,5 +64,22 @@ describe("WelcomeTour", () => {
     expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Get started" }));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("says on its first page, and only there, that a 0.x version is a public beta", async () => {
+    const { user } = renderTour();
+    expect(betaLine()).toHaveTextContent(
+      "Public beta. Check addresses and amounts on your signing device.",
+    );
+    expect(screen.getByText("Public beta.")).toHaveClass("text-pending");
+
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(betaLine()).not.toBeInTheDocument();
+  });
+
+  it("says nothing of a beta on a stable version", () => {
+    renderTour({ beta: false });
+    expect(screen.getByText("Watch, never spend")).toBeInTheDocument();
+    expect(betaLine()).not.toBeInTheDocument();
   });
 });
