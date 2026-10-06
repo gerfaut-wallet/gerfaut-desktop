@@ -24,15 +24,24 @@ interface Desk {
   prefs: Record<string, string>;
   tests: number;
   refuseTest: boolean;
+  /** The networks of the wallets in the vault, one entry per wallet. */
+  wallets: Network[];
+  /** The networks the card asked for the wallets of. */
+  listed: Network[];
 }
 
 function mockDesk(status: WatchStatus = OFF): Desk {
-  const desk: Desk = { status, prefs: {}, tests: 0, refuseTest: false };
+  const desk: Desk = { status, prefs: {}, tests: 0, refuseTest: false, wallets: ["mainnet"], listed: [] };
   mockIPC((cmd, args) => {
     const payload = (args ?? {}) as Record<string, string>;
     switch (cmd) {
       case "live_status":
         return { enabled: desk.prefs["notify.new_tx"] === "1", status: desk.status };
+      case "list_wallets":
+        desk.listed.push(payload.network as Network);
+        return desk.wallets
+          .filter((network) => network === payload.network)
+          .map((network, index) => ({ id: `w-${index}`, network }));
       case "set_app_pref":
         desk.prefs[payload.key] = payload.value;
         return undefined;
@@ -131,6 +140,32 @@ describe("Settings › Notifications", () => {
     await waitFor(() =>
       expect(statusLine()).toHaveTextContent("Connected · Electrum · node.example"),
     );
+  });
+
+  /** On, with no wallet on the network in use, the watch has nothing to
+      follow: the line says what turns it on, as on Android. A wallet on
+      another network does not count, and off is only off. */
+  it("says the watch waits for a wallet on this network", async () => {
+    const desk = mockDesk();
+    desk.wallets = ["mainnet"];
+    renderCard({}, "signet");
+    const user = userEvent.setup();
+    await waitFor(() => expect(statusLine()).toHaveTextContent(/^Off$/));
+
+    await user.click(screen.getByRole("switch", { name: "Notify about new transactions" }));
+    await waitFor(() => expect(desk.prefs["notify.new_tx"]).toBe("1"));
+    await waitFor(() => expect(statusLine()).toHaveTextContent("Off until you add a wallet."));
+    expect(statusLine()).not.toHaveTextContent("Connecting…");
+  });
+
+  it("says a bare Off when the network holds a wallet and the watch is off", async () => {
+    useUi.setState({ notifyNewTx: true });
+    const desk = mockDesk();
+    desk.prefs["notify.new_tx"] = "1";
+    desk.wallets = ["signet"];
+    renderCard({}, "signet");
+    await waitFor(() => expect(desk.listed).toEqual(["signet"]));
+    await waitFor(() => expect(statusLine()).toHaveTextContent(/^Off$/));
   });
 
   it("says why it is reconnecting, and that an Esplora backend is polled", async () => {

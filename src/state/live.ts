@@ -94,6 +94,10 @@ const TRANSPORT: Record<NonNullable<WatchStatus["transport"]>, string> = {
   esplora_polling: "Esplora",
 };
 
+/** The status line while the network in use holds no wallet: nothing to
+    watch, so nothing runs, until the first one comes. As on Android. */
+export const LIVE_NO_WALLET_LINE = "Off until you add a wallet.";
+
 /** The status line: a state, how changes arrive, and the host. */
 export function liveStatusLine(status: WatchStatus): string {
   const parts = (head: string) =>

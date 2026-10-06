@@ -8,6 +8,7 @@ import { ipc, isCommandError } from "../../lib/ipc";
 import type { Settings, WatchState, WatchStatus } from "../../lib/ipc";
 import {
   isOwnNode,
+  LIVE_NO_WALLET_LINE,
   liveStatusKey,
   liveStatusLine,
   shortOfRoom,
@@ -15,6 +16,7 @@ import {
   useLiveStatus,
   usesAutomaticBackend,
 } from "../../state/live";
+import { useWallets } from "../../state/queries";
 import { useUi } from "../../state/store";
 import { GHOST_ON_TINT, SaveFailure, SectionCard, SettingRow, Toggle } from "./primitives";
 
@@ -95,8 +97,14 @@ export function NotificationsSection({
     }
   };
 
+  const wallets = useWallets(settings.active_network);
   const status = live.data?.status;
-  const starting = notifyNewTx && turningOn && (!status || status.state === "off");
+  const off = !status || status.state === "off";
+  /** On, with nothing to watch on this network: the watch stays off
+      until a wallet comes, and saying "Connecting…" or a bare "Off"
+      would leave the person wondering why. */
+  const noWallet = notifyNewTx && off && wallets.data?.length === 0;
+  const starting = notifyNewTx && turningOn && off && !noWallet;
   const automatic = usesAutomaticBackend(settings.backends, settings.active_network);
   const ownNode = isOwnNode(settings.backends[settings.active_network]);
 
@@ -135,7 +143,13 @@ export function NotificationsSection({
           >
             {STATE_ICON[starting ? "connecting" : notifyNewTx && status ? status.state : "off"]}
             <span className="min-w-0 break-words">
-              {starting ? "Connecting…" : notifyNewTx && status ? liveStatusLine(status) : "Off"}
+              {noWallet
+                ? LIVE_NO_WALLET_LINE
+                : starting
+                  ? "Connecting…"
+                  : notifyNewTx && status
+                    ? liveStatusLine(status)
+                    : "Off"}
             </span>
           </p>
           {notifyNewTx && status?.state === "reconnecting" && status.detail && (
