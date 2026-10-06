@@ -227,6 +227,48 @@ describe("AddWalletModal", () => {
   });
 
   /** Whoever goes back does so to correct what they pasted. */
+  /** A mainnet address fits one network: no menu of one option, greyed
+      out, but the network said plainly, and the wallet goes there. */
+  it("says the network plainly when the input fits only one", async () => {
+    const added: Record<string, unknown>[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "parse_input") {
+        return {
+          ...PARSED_TPUB,
+          kind: "address",
+          networks: ["mainnet"],
+          payload: { type: "address", address: "bc1qpreview0address00000000000000000000" },
+          warnings: [],
+          script_options: [],
+          derivation: null,
+          derivation_editable: false,
+          preview_address: "bc1qpreview0address00000000000000000000",
+        };
+      }
+      if (cmd === "add_wallet") {
+        added.push(args as Record<string, unknown>);
+        return { id: "w-new", network: "mainnet" };
+      }
+      return undefined;
+    });
+    useUi.setState({ addWalletOpen: true });
+    renderModal();
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText(/descriptor, extended public key/i),
+      "bc1qpreview0address00000000000000000000",
+    );
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await screen.findByText(/recognized as/i);
+    expect(screen.queryByRole("combobox", { name: "Network" })).not.toBeInTheDocument();
+    expect(screen.getByText("Mainnet")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/name/i), "Donations");
+    await user.click(screen.getByRole("button", { name: "Add wallet" }));
+    await vi.waitFor(() => expect(added).toHaveLength(1));
+    expect(added[0]).toMatchObject({ network: "mainnet" });
+  });
+
   it("goes back to the field with the input still in it", async () => {
     const user = await confirmStep(PARSED_TPUB);
     await user.click(screen.getByRole("button", { name: "Back" }));

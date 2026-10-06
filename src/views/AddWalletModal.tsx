@@ -503,27 +503,41 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
                 className="field-focus h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-ui text-base text-text placeholder:text-muted"
               />
             </div>
-            <div>
-              <label
-                htmlFor="wallet-network"
-                className="mb-1 block font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted"
-              >
-                Network
-              </label>
-              <Select
-                id="wallet-network"
-                label="Network"
-                align="end"
-                className="w-40"
-                value={network}
-                onChange={chooseNetwork}
-                disabled={parsed.networks.length === 1}
-                options={parsed.networks.map((candidate) => ({
-                  value: candidate,
-                  label: NETWORK_LABEL[candidate],
-                }))}
-              />
-            </div>
+            {/* An input that fits one network leaves nothing to choose:
+                a menu of one option, greyed out, read as a control that
+                does nothing. The network is said plainly, as the backup
+                scope is. */}
+            {parsed.networks.length === 1 ? (
+              <div>
+                <p className="mb-1 block font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
+                  Network
+                </p>
+                <p className="flex h-11 items-center font-ui text-base text-text">
+                  {NETWORK_LABEL[network]}
+                </p>
+              </div>
+            ) : (
+              <div>
+                <label
+                  htmlFor="wallet-network"
+                  className="mb-1 block font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted"
+                >
+                  Network
+                </label>
+                <Select
+                  id="wallet-network"
+                  label="Network"
+                  align="end"
+                  className="w-40"
+                  value={network}
+                  onChange={chooseNetwork}
+                  options={parsed.networks.map((candidate) => ({
+                    value: candidate,
+                    label: NETWORK_LABEL[candidate],
+                  }))}
+                />
+              </div>
+            )}
           </div>
 
           {error && (
