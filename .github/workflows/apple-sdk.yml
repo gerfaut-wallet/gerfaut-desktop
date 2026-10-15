@@ -19,7 +19,7 @@
 # unpacks an entry, wherever its paths point, before anything can check
 # it. Changing the secret retires every entry sealed under the old one.
 #
-# Called by reproducible.yml and release.yml, which pass the key it
+# Called by release.yml and macos-reference.yml, which pass the key it
 # returns to container-build.yml.
 
 name: Apple SDK

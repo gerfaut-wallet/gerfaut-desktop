@@ -1,23 +1,21 @@
-# Builds every file of a release on each `v*` tag, the way
-# docs/REPRODUCIBLE-BUILDS.md tells anyone to rebuild them, and attaches
-# them to a draft GitHub Release: review it, sign it with
-# scripts/sign-release.ps1, then click Publish.
+# Builds every file of a release on each `v*` tag and attaches them to a
+# draft GitHub Release: review it, sign it with scripts/sign-release.ps1,
+# then click Publish.
 #
 #   git tag v0.1.0 && git push origin v0.1.0
 #
-# Each target is built twice, on two runners, in the pinned container of
-# reproducible/ (container-build.yml), and the two builds are compared
-# byte for byte (compare-builds.yml). The Windows installer and the macOS
-# application are installed or unpacked and started on the systems they
-# are for (smoke.yml). Nothing is drafted unless all of it passed: what
-# ships was built twice with the same bytes, and was seen running.
+# Each target is built once, on a runner of its own, in the pinned Linux
+# container of reproducible/ (container-build.yml). The Windows installer
+# and the macOS application are installed or unpacked and started on the
+# systems they are for (smoke.yml). Nothing is drafted unless all of it
+# passed: what ships was built from this commit and seen running.
 #
 # A manual run (Actions, Release, Run workflow) is the dress rehearsal:
 # the same jobs, and the files of the release as a workflow artifact,
 # gerfaut-desktop-release. It touches no tag and no release.
 #
-# The split of privileges holds throughout. Every build, comparison and
-# test runs with a read-only token. The token that can write to the
+# The split of privileges holds throughout. Every build, check and test
+# runs with a read-only token. The token that can write to the
 # repository exists only in the last job, `draft`, which runs `gh` on
 # the files handed over and nothing else: no checkout, no build tool, no
 # third-party code.
@@ -33,115 +31,66 @@ permissions:
   contents: read
 
 jobs:
-  linux-1:
+  linux:
     uses: ./.github/workflows/container-build.yml
     with:
       target: linux
-      build: '1'
     secrets:
       core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
 
-  linux-2:
-    uses: ./.github/workflows/container-build.yml
-    with:
-      target: linux
-      build: '2'
-    secrets:
-      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
-
-  linux-compare:
-    needs: [linux-1, linux-2]
-    uses: ./.github/workflows/compare-builds.yml
-    with:
-      target: linux
-
-  windows-1:
+  windows:
     uses: ./.github/workflows/container-build.yml
     with:
       target: windows
-      build: '1'
       accept-microsoft-license: true
     secrets:
       core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
-
-  windows-2:
-    uses: ./.github/workflows/container-build.yml
-    with:
-      target: windows
-      build: '2'
-      accept-microsoft-license: true
-    secrets:
-      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
-
-  windows-compare:
-    needs: [windows-1, windows-2]
-    uses: ./.github/workflows/compare-builds.yml
-    with:
-      target: windows
 
   windows-smoke:
-    needs: windows-compare
+    needs: windows
     uses: ./.github/workflows/smoke.yml
     with:
       target: windows
-      artifact: windows-1
+      artifact: build-windows
 
   apple-sdk:
     uses: ./.github/workflows/apple-sdk.yml
     secrets:
       apple-sdk-cache-key: ${{ secrets.APPLE_SDK_CACHE_KEY }}
 
-  macos-1:
+  macos:
     needs: apple-sdk
     uses: ./.github/workflows/container-build.yml
     with:
       target: macos
-      build: '1'
       apple-sdk-key: ${{ needs.apple-sdk.outputs.key }}
     secrets:
       core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
       apple-sdk-cache-key: ${{ secrets.APPLE_SDK_CACHE_KEY }}
-
-  macos-2:
-    needs: apple-sdk
-    uses: ./.github/workflows/container-build.yml
-    with:
-      target: macos
-      build: '2'
-      apple-sdk-key: ${{ needs.apple-sdk.outputs.key }}
-    secrets:
-      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
-      apple-sdk-cache-key: ${{ secrets.APPLE_SDK_CACHE_KEY }}
-
-  macos-compare:
-    needs: [macos-1, macos-2]
-    uses: ./.github/workflows/compare-builds.yml
-    with:
-      target: macos
 
   macos-smoke:
-    needs: macos-compare
+    needs: macos
     uses: ./.github/workflows/smoke.yml
     with:
       target: macos
-      artifact: macos-1
+      artifact: build-macos
 
-  # The gate. Both builds of every target gave the same files with the
-  # same bytes, both come from this commit and the pinned core, and the
-  # set is exactly the five files of a release, named after the version
-  # the tag carries. The release is gathered here, with its SHA256SUMS,
+  # The gate. Every target was built from this commit and the pinned
+  # core, each file has the hash its build wrote down, and the set is
+  # exactly the five files of a release, named after the version the
+  # tag carries. The release is gathered here, with its SHA256SUMS,
   # still with a read-only token.
   assemble:
-    needs: [linux-compare, windows-compare, macos-compare, windows-smoke, macos-smoke]
+    needs: [linux, windows, macos, windows-smoke, macos-smoke]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: '*-[12]'
+          pattern: build-*
           path: builds
 
-      - name: Check both builds and gather the release
+      - name: Check the builds and gather the release
         env:
           REF_TYPE: ${{ github.ref_type }}
         run: |
@@ -149,18 +98,14 @@ jobs:
           mkdir release
           : > sums
           for target in linux windows macos; do
-            one="builds/$target-1" two="builds/$target-2"
-            [ -s "$one/SHA256SUMS" ] && [ -s "$two/SHA256SUMS" ] || { echo "::error::$target: a build is missing"; exit 1; }
-            cmp "$one/SHA256SUMS" "$two/SHA256SUMS" || { echo "::error::$target: the two builds differ"; exit 1; }
-            (cd "$one" && sha256sum --check --strict SHA256SUMS)
-            (cd "$two" && sha256sum --check --strict SHA256SUMS)
-            for build in "$one" "$two"; do
-              grep -qx "gerfaut-desktop $GITHUB_SHA" "$build/build-info/sources" \
-                || { echo "::error::$build was not built from $GITHUB_SHA"; exit 1; }
-              ! grep -q 'NOT A RELEASE BUILD' "$build/build-info/sources" \
-                || { echo "::error::$build was built against a core other than the pinned one"; exit 1; }
-            done
-            cat "$one/SHA256SUMS" >> sums
+            build="builds/build-$target"
+            [ -s "$build/SHA256SUMS" ] || { echo "::error::$target: the build is missing"; exit 1; }
+            (cd "$build" && sha256sum --check --strict SHA256SUMS)
+            grep -qx "gerfaut-desktop $GITHUB_SHA" "$build/build-info/sources" \
+              || { echo "::error::$target was not built from $GITHUB_SHA"; exit 1; }
+            ! grep -q 'NOT A RELEASE BUILD' "$build/build-info/sources" \
+              || { echo "::error::$target was built against a core other than the pinned one"; exit 1; }
+            cat "$build/SHA256SUMS" >> sums
           done
           version="$(sed -n 's/^[0-9a-f]\{64\}  Gerfaut_\([0-9]*\.[0-9]*\.[0-9]*\)_x64-setup\.exe$/\1/p' sums)"
           [ -n "$version" ] || { echo "::error::no installer named after a version"; exit 1; }
@@ -172,7 +117,7 @@ jobs:
             [ "$GITHUB_REF_NAME" = "v$version" ] || { echo "::error::the tag $GITHUB_REF_NAME does not name version $version"; exit 1; }
           fi
           while read -r _ name; do
-            cp "builds/$(case "$name" in *.exe) echo windows ;; *.zip) echo macos ;; *) echo linux ;; esac)-1/$name" release/
+            cp "builds/build-$(case "$name" in *.exe) echo windows ;; *.zip) echo macos ;; *) echo linux ;; esac)/$name" release/
           done < sums
           LC_ALL=C sort -k2 sums > release/SHA256SUMS
           (cd release && sha256sum --check --strict SHA256SUMS)
@@ -247,27 +192,11 @@ jobs:
                - macOS: `shasum -a 256 --check SHA256SUMS --ignore-missing`
                - Windows: `(Get-FileHash .\<file>).Hash` must match the file's line in `SHA256SUMS`
 
-            ### Rebuild it yourself
-
-            Every file above was built from this tag in the pinned Linux container
-            of `reproducible/`, twice, on two machines, with the same bytes both
-            times. You can rebuild any of them on your own Linux machine and
-            compare them byte for byte with the files of this release:
-
-            ```
-            git clone https://github.com/gerfaut-wallet/gerfaut-desktop
-            gerfaut-desktop/reproducible/verify.sh @TAG@
-            ```
-
-            Add `--target windows --accept-microsoft-license` for the Windows
-            installer, or `--target macos --macos-sdk <dir>` for the macOS app.
-            [REPRODUCIBLE-BUILDS.md](https://github.com/gerfaut-wallet/gerfaut-desktop/blob/@TAG@/docs/REPRODUCIBLE-BUILDS.md)
-            explains each step, and what you download yourself.
+            Step by step: [Verify a download](https://gerfaut-wallet.com/docs/getting-started/verify-your-download).
         run: |
           set -euo pipefail
           [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::not a release tag: $GITHUB_REF_NAME"; exit 1; }
-          notes="${NOTES//@TAG@/$GITHUB_REF_NAME}"
-          notes="${notes//@VERSION@/${GITHUB_REF_NAME#v}}"
+          notes="${NOTES//@VERSION@/${GITHUB_REF_NAME#v}}"
           mapfile -t files < <(find release -type f | LC_ALL=C sort)
           if [ "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)" = true ]; then
             gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}"

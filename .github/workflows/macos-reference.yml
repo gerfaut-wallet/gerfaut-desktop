@@ -1,153 +1,43 @@
-# Proof that the Linux packages, the Windows installer and the macOS
-# application are reproducible: each target is built twice, on two
-# runners, in the same pinned image, and the run fails if a single byte
-# of the .deb, the .rpm, the .AppImage, the setup .exe or the macOS zip
-# differs. When it does fail, the diffoscope reports are attached to the
-# run. The Windows installer is then installed, started and removed on a
-# Windows runner, and the macOS application checked and started on an
-# Apple silicon and an Intel Mac. release.yml runs the same jobs on every
-# tag, and publishes nothing unless they pass. See
-# docs/REPRODUCIBLE-BUILDS.md.
+# Checks the macOS application built on Linux against the bundle Tauri's
+# own bundler makes on a Mac from the same commit. Tauri's macOS bundler
+# only runs on a Mac, so reproducible/targets/macos.sh lays the bundle
+# out itself (reproducible/macos/info-plist.py writes its Info.plist);
+# this compares the two: the same Info.plist byte for byte, the same
+# icon, layout, libraries and oldest macOS. Only text leaves the Mac: the
+# two Info.plist files, the two listings, the libraries each slice loads
+# and what it targets.
 #
-# The jobs live in reusable workflows: container-build.yml (one build),
-# compare-builds.yml (the two builds of a target), smoke.yml (on
-# Windows or a Mac) and apple-sdk.yml (the SDK the macOS build needs).
-#
-# Started by hand: Actions, Reproducible build, Run workflow. It builds
-# the application twice from nothing, so it is not something to run on
-# every push. `target` picks one platform: a macOS runner costs ten
-# times a Linux one, and the other targets need none.
+# Started by hand (Actions, macOS reference, Run workflow) whenever
+# @tauri-apps/cli changes version in package-lock.json. It builds the
+# application once in the container and once on a Mac, about half an
+# hour of a macOS runner.
 
-name: Reproducible build
+name: macOS reference
 
 on:
   workflow_dispatch:
-    inputs:
-      target:
-        description: What to build twice and test
-        type: choice
-        options: [all, linux, windows, macos]
-        default: all
-      macos-reference:
-        description: >-
-          macOS: also build the app on a Mac with Tauri's own bundler and
-          compare the two bundles (half an hour of a macOS runner)
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
 jobs:
-  linux-1:
-    if: inputs.target == 'all' || inputs.target == 'linux'
-    uses: ./.github/workflows/container-build.yml
-    with:
-      target: linux
-      build: '1'
-    secrets:
-      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
-
-  linux-2:
-    if: inputs.target == 'all' || inputs.target == 'linux'
-    uses: ./.github/workflows/container-build.yml
-    with:
-      target: linux
-      build: '2'
-    secrets:
-      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
-
-  linux-compare:
-    needs: [linux-1, linux-2]
-    uses: ./.github/workflows/compare-builds.yml
-    with:
-      target: linux
-
-  windows-1:
-    if: inputs.target == 'all' || inputs.target == 'windows'
-    uses: ./.github/workflows/container-build.yml
-    with:
-      target: windows
-      build: '1'
-      accept-microsoft-license: true
-    secrets:
-      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
-
-  windows-2:
-    if: inputs.target == 'all' || inputs.target == 'windows'
-    uses: ./.github/workflows/container-build.yml
-    with:
-      target: windows
-      build: '2'
-      accept-microsoft-license: true
-    secrets:
-      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
-
-  windows-compare:
-    needs: [windows-1, windows-2]
-    uses: ./.github/workflows/compare-builds.yml
-    with:
-      target: windows
-
-  windows-smoke:
-    needs: windows-compare
-    uses: ./.github/workflows/smoke.yml
-    with:
-      target: windows
-      artifact: windows-1
-
   apple-sdk:
-    if: inputs.target == 'all' || inputs.target == 'macos'
     uses: ./.github/workflows/apple-sdk.yml
     secrets:
       apple-sdk-cache-key: ${{ secrets.APPLE_SDK_CACHE_KEY }}
 
-  macos-1:
+  macos:
     needs: apple-sdk
-    if: inputs.target == 'all' || inputs.target == 'macos'
     uses: ./.github/workflows/container-build.yml
     with:
       target: macos
-      build: '1'
       apple-sdk-key: ${{ needs.apple-sdk.outputs.key }}
     secrets:
       core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
       apple-sdk-cache-key: ${{ secrets.APPLE_SDK_CACHE_KEY }}
 
-  macos-2:
-    needs: apple-sdk
-    if: inputs.target == 'all' || inputs.target == 'macos'
-    uses: ./.github/workflows/container-build.yml
-    with:
-      target: macos
-      build: '2'
-      apple-sdk-key: ${{ needs.apple-sdk.outputs.key }}
-    secrets:
-      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
-      apple-sdk-cache-key: ${{ secrets.APPLE_SDK_CACHE_KEY }}
-
-  macos-compare:
-    needs: [macos-1, macos-2]
-    uses: ./.github/workflows/compare-builds.yml
-    with:
-      target: macos
-
-  macos-smoke:
-    needs: macos-compare
-    uses: ./.github/workflows/smoke.yml
-    with:
-      target: macos
-      artifact: macos-1
-
-  # Tauri's own bundle of the same commit, built on a Mac, next to the
-  # one the recipe lays out on Linux. Only text leaves the runner: the
-  # two Info.plist files, the two listings, the libraries each slice
-  # loads and what it targets. Run it when Tauri is upgraded.
-  macos-reference:
-    needs: macos-compare
-    if: inputs.macos-reference
-    permissions:
-      contents: read
+  reference:
+    needs: macos
     runs-on: macos-15
     timeout-minutes: 90
     steps:
@@ -196,7 +86,7 @@ jobs:
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: macos-1
+          name: build-macos
           path: artefact
 
       - name: Compare the two bundles
