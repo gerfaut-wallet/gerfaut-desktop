@@ -2,7 +2,8 @@
 # software: it is in no repository and in no image, and the build never
 # downloads it. Whoever builds makes it from Xcode, with the scripts
 # below, and the build refuses a file whose hash is not the one here.
-# See docs/REPRODUCIBLE-BUILDS.md.
+# On a Mac: .github/workflows/apple-sdk.yml; on Linux, from the .xip:
+# reproducible/make-apple-sdk.sh.
 #
 # Xcode 26.1.1 (build 17B100), from Apple, with an Apple ID:
 #   https://developer.apple.com/download/all/?q=Xcode%2026.1.1

@@ -8,8 +8,9 @@
 # unpacks the part of Xcode that holds the SDK and turns it into the two
 # tarballs the build takes, in the pinned image and without network. It
 # writes them into DIR (default: ./apple-sdk) and checks them. They are
-# for your own builds: Apple's licence does not let you share them. Read
-# docs/REPRODUCIBLE-BUILDS.md first.
+# for your own builds: Apple's licence does not let you share them, and
+# it limits the SDK to computers made by Apple. Read it before you build
+# on Linux.
 # shellcheck source-path=SCRIPTDIR
 set -euo pipefail
 
@@ -17,7 +18,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
 
 [ $# -ge 1 ] && [ $# -le 2 ] && [ -f "$1" ] || {
-    sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+    sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
     exit 2
 }
 xip="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"

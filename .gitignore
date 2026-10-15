@@ -18,5 +18,5 @@ src-tauri/target/
 src-tauri/gen/
 tsconfig.tsbuildinfo
 
-# Reproducible build output
+# Container build output
 reproducible/out/

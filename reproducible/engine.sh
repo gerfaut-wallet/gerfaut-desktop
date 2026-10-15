@@ -1,6 +1,6 @@
 # shellcheck shell=bash
-# Shared by the scripts that run on the host (build.sh, compare.sh,
-# verify.sh): which container engine, and how to hand it a path.
+# Shared by the scripts that run on the host (build.sh,
+# make-apple-sdk.sh): which container engine, and how to hand it a path.
 
 ENGINE="${GERFAUT_ENGINE:-}"
 if [ -z "$ENGINE" ]; then
