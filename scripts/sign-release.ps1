@@ -3,13 +3,11 @@
 # it is and upload the signature.
 # The secret key never leaves this machine. CI only ever builds.
 #
-# The Release workflow built each file twice, compared the two builds
-# and wrote SHA256SUMS; anyone can rebuild the files with
-# reproducible/verify.sh and compare them with that list. This script
-# signs the list only if it is, byte for byte, the one a successful run
-# of the workflow wrote for the push of this tag, the draft holds
-# exactly the five files of a release, and each one has the hash the
-# list gives it.
+# The Release workflow built each file in the pinned container and
+# wrote SHA256SUMS. This script signs the list only if it is, byte for
+# byte, the one a successful run of the workflow wrote for the push of
+# this tag, the draft holds exactly the five files of a release, and
+# each one has the hash the list gives it.
 #
 # Usage:  pwsh scripts/sign-release.ps1 v0.1.0
 #         (works on the draft release before you click Publish)
