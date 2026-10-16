@@ -554,8 +554,9 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
             </Pill>
           ) : readinessOf(preview) === "refused" ? (
             // The core is sure the network refuses it: a coin spent in
-            // a block, outputs over the inputs. Signing again changes
-            // neither, so this is said before a missing signature.
+            // a block, outputs past all the bitcoin there is or over
+            // inputs proven to bring less. Signing again changes none
+            // of that, so this is said before a missing signature.
             <Pill tone="pending" icon={<Ban size={12} strokeWidth={2} aria-hidden />}>
               Will be refused
             </Pill>
