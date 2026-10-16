@@ -33,6 +33,14 @@ import { TransactionsView } from "./views/TransactionsView";
 import { TxDetailModal } from "./views/TxDetailModal";
 import { UtxosView } from "./views/UtxosView";
 
+/** The queries the lock leaves in the cache: the settings, cut down
+    below, and the constants of the build. */
+const KEPT_BEHIND_THE_LOCK = new Set<unknown>([
+  keys.settings[0],
+  keys.priceTable[0],
+  keys.liveLimits[0],
+]);
+
 export default function App() {
   const startup = useStartupFailure();
   const settings = useSettings();
@@ -109,11 +117,14 @@ export default function App() {
   // place. The curtain falling empties it of everything the vault
   // answered — descriptors, balances, addresses —
   // and cuts the settings entry down to the theme rather than dropping
-  // it, which would lose the ramp the lock screen is painted in.
+  // it, which would lose the ramp the lock screen is painted in. The
+  // price table and the watch's limits stay: constants of the build,
+  // asked once, that the currency and source menus, the ranges of the
+  // price card and the words under "This is my node" are drawn from.
   useEffect(() => {
     if (locked) {
       wasLocked.current = true;
-      client.removeQueries({ predicate: (query) => query.queryKey[0] !== "settings" });
+      client.removeQueries({ predicate: (query) => !KEPT_BEHIND_THE_LOCK.has(query.queryKey[0]) });
       client.setQueryData<Settings>(keys.settings, (cached) =>
         cached === undefined ? cached : lockedSettings(cached),
       );

@@ -133,7 +133,7 @@ export function liveStatusLine(status: WatchStatus): string {
     the whole run, so asked once. */
 export function useLiveLimits() {
   return useQuery({
-    queryKey: ["live-limits"] as const,
+    queryKey: keys.liveLimits,
     queryFn: ipc.liveLimits,
     staleTime: Infinity,
   });
