@@ -19,7 +19,7 @@ Gerfaut watches bitcoin wallets it cannot spend from. There is no key generation
 - Watch several wallets on mainnet, signet, testnet4 or regtest. Rename them, give them an icon, and drag them into the order you want.
 - For each wallet: the balance, the transaction history, the detail of each transaction with its inputs and outputs, and the UTXOs in a table of their own.
 - The Receive page shows the next unused address. "Next address" skips any address a payment already reached and stops 200 unused addresses ahead, and the gap limit warning counts the unused addresses since the last used one.
-- Every wallet gets a Policy page: each spending path, the keys that can take it, and the time left on the paths that wait for a timelock. Its Descriptor section shows and copies the whole wallet as one multipath descriptor, with `/<0;1>/*`.
+- Every wallet gets a Policy page: each spending path, primary paths first, the keys that can take it, and the time left on the paths that wait for a timelock. A path open now shows in green, and one that opens within 30 days in amber. Its Descriptor section shows and copies the whole wallet as one multipath descriptor, with `/<0;1>/*`.
 - Export the history of a wallet as CSV, over a date range typed as `YYYY-MM-DD` and read as whole days in UTC.
 
 #### Broadcasting a signed transaction
@@ -41,7 +41,7 @@ Gerfaut watches bitcoin wallets it cannot spend from. There is no key generation
 
 - Live alerts, off until you turn on "New transactions" in Settings › Notifications. Gerfaut then keeps one connection open to your backend and posts a system notification when a transaction reaches the mempool, incoming or outgoing, and again when it confirms.
 - An Electrum server pushes changes within seconds, and a mempool instance pushes them for the addresses it agrees to follow. Gerfaut checks any other Esplora server once a minute, a few addresses at a time, and goes through every address in turn.
-- Live runs for as long as Gerfaut is open, minimised and locked included, and the pages update at the same moment. A notification names the wallet and the amount, and leaves the amount out while amounts are hidden. While Gerfaut is locked, it names no wallet and no amount.
+- Live runs for as long as Gerfaut is open, minimised and locked included, and the pages update at the same moment. A notification uses the same words as on Android: it names the wallet and the amount, and leaves the amount out while amounts are hidden. While Gerfaut is locked, it names no wallet and no amount.
 - Each transaction is announced once when it appears and once when it confirms, across restarts, whether Live or a sync saw it first. A fee bump brings no new notification. Past 3 transactions in one wallet at once, one line counts the rest, and notifications stop at 20 a minute.
 - On Linux and Windows, when a pending payment confirms or is no longer coming while Gerfaut is still open, the new notification replaces the pending one. On macOS, both stay side by side in the notification center.
 - When an incoming payment leaves the mempool and nothing pays you in its place, Gerfaut says so: "A pending payment of 0.00150000 BTC is no longer coming".
@@ -52,10 +52,10 @@ Gerfaut watches bitcoin wallets it cannot spend from. There is no key generation
 #### Keeping it yours
 
 - Export every wallet into a backup sealed with a password of your own, as a file or as an animated QR code. The same backup restores on another computer or on Android. It holds descriptors and addresses, never a private key, and the page where you pick the password warns that a copied file can be guessed offline.
-- A backup can also carry your backend choice, accepted certificates and gap limit. Restoring one shows what they would put in place before anything changes, and a backup written by a newer Gerfaut is refused by name.
+- A backup can also carry your backend choice, accepted certificates and gap limit. Restoring one shows what they would put in place before anything changes. A wrong password, a file that is not a Gerfaut backup and a backup written by a newer Gerfaut each get their own sentence, so Gerfaut never blames a password that was right.
 - Fiat value beside the balance, in the currency you pick, from CoinGecko, Kraken or mempool.space. No price source hears from Gerfaut until you turn "Fiat value" on. A wallet on signet, testnet4 or regtest shows 0 in your currency, since test coins are worth nothing.
 - Amounts in BTC or in sats, and a light, dark or system theme.
-- A check for a newer version, from a button in Settings › About and on its own at most once a day while Gerfaut is unlocked. It asks GitHub for the latest release, with no identifier attached. When a newer one is out, a strip above the page says so, and a switch in Settings › About turns the automatic check off.
+- A check for a newer version, from a button in Settings › About and on its own at most once a day while Gerfaut is unlocked, the first time a day after Gerfaut first opened. It asks GitHub for the latest release, with no identifier attached, and never announces a pre-release. When a newer one is out, a strip above the page says so, and a switch in Settings › About turns the automatic check off.
 - Settings › About marks a 0.x version as a beta and has a "Report a problem" button that opens the issues of this repository. The first page of the welcome tour says that Gerfaut is in public beta.
 - Opening Gerfaut while it already runs brings its window to the front. When the vault cannot open at startup, the window says why and offers "Try again", and two copies of Gerfaut never open the same vault.
 - The arrow keys move through choice groups, Enter submits the app lock dialogs, and screen readers announce form errors.
@@ -64,7 +64,7 @@ Gerfaut watches bitcoin wallets it cannot spend from. There is no key generation
 
 - The wallet list is stored encrypted, under a key that the operating system's credential store keeps: the Windows Credential Manager, the macOS Keychain or the Secret Service on Linux.
 - Lock Gerfaut with a PIN or a password. While it is locked, the vault refuses every command the lock screen does not need, the window holds no descriptor and no balance, and Gerfaut opens no file dialog.
-- When one of your backends is a `.onion` address, the price and the update check go through Tor too, and Gerfaut sends neither when Tor is out of reach. An Electrum host that hides a port is refused, so an onion name never reaches the system resolver.
+- When one of your backends is a `.onion` address, the price and the update check go through Tor too, and Gerfaut sends neither when Tor is out of reach. The automatic check never starts Tor for itself. It uses the Tor already running on the computer, or the one a sync or Live started, and when there is none, the day does not count and it asks again at the next unlock or within the hour. An Electrum host that hides a port is refused, so an onion name never reaches the system resolver.
 - Copying a descriptor keeps it out of the clipboard history and the cloud clipboard on Windows, and out of the clipboard managers that honour the same flag on macOS and Linux. Gerfaut clears it from the clipboard after a minute, unless you copied something else since.
 - The window calls only Gerfaut's own commands, and opens only the addresses Gerfaut links to: the block explorer, the releases page and the issues page.
 - Gerfaut refuses, before reading it, a file far too large to be a wallet or a transaction. It also refuses an animated QR code that announces more than 5,000 parts, and a sync that reports a transaction worth more than 21 million bitcoin.
