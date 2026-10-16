@@ -177,6 +177,14 @@ export function BroadcastView({ network }: { network: Network }) {
     broadcast.reset();
   };
 
+  /** Typing again answers a refusal: it goes as soon as the text
+      changes, and the hint it stood in for comes back in its place. */
+  const edit = (value: string) => {
+    setRaw(value);
+    setFileError(null);
+    if (preview.isError) preview.reset();
+  };
+
   const inputError: InputError | null = fileError
     ? { headline: fileError }
     : preview.error
@@ -213,7 +221,7 @@ export function BroadcastView({ network }: { network: Network }) {
         {!preview.data && !sent && (
           <InputCard
             raw={raw}
-            onChange={setRaw}
+            onChange={edit}
             onDecode={() => decode(raw)}
             onImport={() => fileRef.current?.click()}
             onScan={() => setScanOpen(true)}
@@ -369,26 +377,47 @@ function InputCard({
         placeholder="Paste a PSBT (base64 or hex) or a raw transaction (hex)…"
         className="field-focus selectable w-full resize-y rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text placeholder:text-muted"
       />
-      {error && (
-        // An input error is said in words, in the text colour with its
-        // glyph, never in red: Alerte belongs to the chain (DESIGN.md).
-        <div id="broadcast-input-error" role="alert" className="mt-2 flex items-start gap-2">
-          <CircleAlert size={16} strokeWidth={1.5} aria-hidden className="mt-0.5 shrink-0 text-text" />
-          <p className="min-w-0 font-ui text-sm font-medium text-text">
-            {error.headline}
-            {error.detail && (
-              <span className="selectable mt-0.5 block break-words font-ui text-xs font-normal text-muted">
-                {error.detail}
-              </span>
-            )}
-          </p>
-        </div>
-      )}
-      <p id="broadcast-input-hint" className="mt-2 font-ui text-xs text-muted">
-        PSBT files, transaction files, base64, hex, or an animated QR code from a
-        signing device. Gerfaut never signs: a transaction missing signatures goes
-        back to the signer.
-      </p>
+      {/* One slot under the field, for the hint or for what went wrong
+          in its place: both sit in the same cell, the hint kept, hidden,
+          while the error shows, and the cell holds room for the error's
+          two lines. Neither one coming nor one going moves Preview. */}
+      <div className="mt-2 grid min-h-10">
+        <p
+          id="broadcast-input-hint"
+          className={clsx(
+            "col-start-1 row-start-1 font-ui text-xs text-muted",
+            error && "invisible",
+          )}
+        >
+          PSBT files, transaction files, base64, hex, or an animated QR code from a
+          signing device. Gerfaut never signs: a transaction missing signatures goes
+          back to the signer.
+        </p>
+        {error && (
+          // An input error is said in words, in the text colour with its
+          // glyph, never in red: Alerte belongs to the chain (DESIGN.md).
+          <div
+            id="broadcast-input-error"
+            role="alert"
+            className="col-start-1 row-start-1 flex items-start gap-2"
+          >
+            <CircleAlert
+              size={16}
+              strokeWidth={1.5}
+              aria-hidden
+              className="mt-0.5 shrink-0 text-text"
+            />
+            <p className="min-w-0 font-ui text-sm font-medium text-text">
+              {error.headline}
+              {error.detail && (
+                <span className="selectable mt-0.5 block break-words font-ui text-xs font-normal text-muted">
+                  {error.detail}
+                </span>
+              )}
+            </p>
+          </div>
+        )}
+      </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="-ml-4 flex gap-1">
           <Button variant="ghost" onClick={onImport}>

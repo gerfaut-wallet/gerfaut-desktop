@@ -338,6 +338,33 @@ describe("BroadcastView", () => {
     expect(field).toHaveAttribute("aria-describedby", alert.id);
   });
 
+  /** The error answered what was typed; typing again answers it. It
+      goes at the first keystroke, and the hint comes back in the slot
+      it held, so Preview stays where it was. */
+  it("drops the error as soon as the text changes, in the slot of the hint", async () => {
+    const user = mount();
+    mockIPC((cmd) => {
+      if (cmd === "preview_transaction") {
+        throw { kind: "invalid_input", message: "invalid transaction: not hex and not base64" };
+      }
+      return undefined;
+    });
+    const field = screen.getByLabelText("Signed transaction");
+    await user.type(field, "nope");
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    const alert = await screen.findByRole("alert");
+    const hint = screen.getByText(/PSBT files, transaction files/);
+    // One cell: the hint is kept, hidden, under the error.
+    expect(alert.parentElement).toBe(hint.parentElement);
+    expect(hint).toHaveClass("invisible");
+
+    await user.type(field, "!");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(field).not.toHaveAttribute("aria-invalid");
+    expect(field).toHaveAttribute("aria-describedby", hint.id);
+    expect(hint).not.toHaveClass("invisible");
+  });
+
   /** A coin nothing stood behind — no backend answered, or none knew
       it. The core says so, in amber, and the preview still shows the
       fee it summed over the PSBT's own word. The mark says which figures
