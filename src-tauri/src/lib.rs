@@ -1224,6 +1224,7 @@ pub fn run() {
             set_tor_settings,
             tor_connect,
             live::live_status,
+            live::live_limits,
             live::send_test_notification,
             clipboard::copy_sensitive
         ])

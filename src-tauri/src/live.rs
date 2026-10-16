@@ -28,7 +28,7 @@ use std::time::{Duration, Instant, SystemTime};
 use gerfaut_core::WalletManager;
 use gerfaut_core::live::{LiveEvent, LiveEvents};
 use gerfaut_core::wallet::snapshot::SyncReport;
-use gerfaut_core::watch::WatchStatus;
+use gerfaut_core::watch::{WatchLimitsChoice, WatchStatus};
 use serde::Serialize;
 use tauri::{Emitter, Manager};
 #[cfg(not(any(target_os = "linux", windows)))]
@@ -589,6 +589,14 @@ pub async fn live_status(state: tauri::State<'_, AppState>) -> CommandResult<Liv
         enabled: enabled(&state.manager).await,
         status: state.manager.live_status().await,
     })
+}
+
+/// What the watch takes on any server and on the user's own node, for
+/// the words under "This is my node". The same for everyone, so it
+/// answers behind the lock too.
+#[tauri::command]
+pub fn live_limits() -> WatchLimitsChoice {
+    WatchLimitsChoice::CURRENT
 }
 
 /// Posts one notification with fixed words, so the person can see

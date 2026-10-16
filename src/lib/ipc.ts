@@ -816,7 +816,45 @@ export interface WatchStatus {
   /** What an Electrum server says it runs ("Fulcrum 1.12.0"); null over
       the other transports, and from a core that predates it. */
   server_software?: string | null;
+  /** Why Live leaves addresses to the syncs and the way out, as the core
+      decides it: present exactly while it runs and leaves some out. */
+  left_out?: LeftOut | null;
 }
+
+/** What the live watch takes of one wallet and in all. */
+export interface WatchLimits {
+  per_wallet: number;
+  total: number;
+}
+
+/** The two sets of limits "This is my node" chooses between. */
+export interface WatchLimitsChoice {
+  any: WatchLimits;
+  own_node: WatchLimits;
+}
+
+/** The core's verdict on what Live leaves to the syncs. */
+export interface LeftOut {
+  /** The server, as soon as it refused any address; Live's limits
+      otherwise. */
+  reason: "live_limit" | "server_refused";
+  /** What Live takes under the backend in use. */
+  limits: WatchLimits;
+  /** The backend is the user's own node. */
+  own_node: boolean;
+  /** Null when nothing the user can do takes more. */
+  remedy: Remedy | null;
+}
+
+/** An Electrum server whose subscription limit the core can name. */
+export type ServerSoftware = "fulcrum" | "electrumx" | "electrs_esplora" | "mempool_electrs";
+
+export type Remedy =
+  /** A node of one's own, marked "This is my node": Live takes `limits`. */
+  | { type: "own_node"; limits: WatchLimits }
+  /** The setting of the user's node to raise: none named when the core
+      does not know its software. */
+  | { type: "raise_server_limit"; server: ServerSoftware | null; settings: string[] };
 
 /** Whether Live hears a wallet whole, in part, or not at all. */
 export type Coverage = "live" | "partial" | "sync_only";
@@ -828,6 +866,9 @@ export interface WalletCoverage {
   watched_scripts: number;
   /** Scripts of the wallet left to the regular syncs. */
   left_out_scripts: number;
+  /** Of those, the ones the server refused; the rest are past Live's
+      limits. */
+  refused_scripts?: number;
 }
 
 export interface LiveStatus {
@@ -958,6 +999,7 @@ export const ipc = {
     invoke<PriceHistory>("fetch_price_history", { source, currency, range }),
   checkUpdate: () => invoke<UpdateCheck>("check_update"),
   liveStatus: () => invoke<LiveStatus>("live_status"),
+  liveLimits: () => invoke<WatchLimitsChoice>("live_limits"),
   sendTestNotification: () => invoke<void>("send_test_notification"),
   /** Copies a secret out of sight of the clipboard history, and takes
       it off the clipboard later unless something else was copied
