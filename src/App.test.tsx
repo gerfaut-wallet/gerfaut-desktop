@@ -691,6 +691,7 @@ const PREVIEW = {
   ],
   fee_sats: 1_000,
   fee_rate_sat_vb: 7.1,
+  amounts_declared: false,
   vsize: 141,
   weight: 561,
   size: 222,

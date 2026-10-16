@@ -747,6 +747,10 @@ export interface TxPreview {
   outputs: TxOutputPreview[];
   fee_sats: number | null;
   fee_rate_sat_vb: number | null;
+  /** A value shown for an input is only what the PSBT declares: no
+      watched wallet, no backend and no previous transaction proves it.
+      The inputs total and the fee rest on that word then. */
+  amounts_declared: boolean;
   vsize: number;
   weight: number;
   size: number;

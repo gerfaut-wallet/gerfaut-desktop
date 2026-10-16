@@ -68,6 +68,7 @@ const PREVIEW: TxPreview = {
   ],
   fee_sats: 210,
   fee_rate_sat_vb: 1.5,
+  amounts_declared: false,
   vsize: 141,
   weight: 561,
   size: 215,
@@ -390,6 +391,7 @@ describe("BroadcastView", () => {
   it("marks every figure that rests on the PSBT's word when a coin was not checked", async () => {
     const user = mount({
       ...PREVIEW,
+      amounts_declared: true,
       inputs: [{ ...PREVIEW.inputs[0], wallet: null }],
       warnings: [
         warning(
@@ -437,6 +439,29 @@ describe("BroadcastView", () => {
     const dialog = within(await screen.findByRole("dialog"));
     expect(dialog.getByText("as the PSBT claims")).toHaveClass("text-pending");
     expect(dialog.getByText("The cautions listed on the preview still apply.")).toBeInTheDocument();
+  });
+
+  /** No backend answered, but the PSBT carries the previous
+      transaction, which proves the value: the coin is unchecked, its
+      amount is not a claim, and no figure says it is. */
+  it("marks no figure the previous transaction proves", async () => {
+    const user = mount({
+      ...PREVIEW,
+      amounts_declared: false,
+      inputs: [{ ...PREVIEW.inputs[0], wallet: null }],
+      warnings: [
+        warning(
+          "input_unknown",
+          "info",
+          "Input 0 could not be checked: no backend answered about this coin. Its value is proven by the previous transaction the PSBT carries, the one this input spends; whether the coin is still there to spend is not.",
+        ),
+      ],
+    });
+    await preview(user);
+    expect(screen.queryByText("as the PSBT claims")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Broadcast" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(dialog.queryByText("as the PSBT claims")).not.toBeInTheDocument();
   });
 
   it("marks nothing when every coin was confirmed", async () => {

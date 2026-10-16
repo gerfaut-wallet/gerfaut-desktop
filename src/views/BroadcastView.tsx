@@ -465,13 +465,14 @@ const WARNING_ADVICE: Partial<Record<TxWarningKind, string>> = {
     "This signature does not fix where all of the money goes: anyone who sees the transaction before it is mined can send some or all of it somewhere else. Unless you set this up on purpose, do not broadcast it.",
 };
 
-/** Whether a figure on the preview is the PSBT's own word. The core
-    says so coin by coin — nothing stood behind it, no backend and no
-    watched wallet — and a total or a fee summed over such a coin rests
-    on the same claim. Only a PSBT carries the values of what it spends,
-    so what this marks is always its. */
+/** Whether a figure on the preview is the PSBT's own word: the core
+    says so when a value shown for a coin is one nothing proves, no
+    watched wallet, no backend and no previous transaction, and a total
+    or a fee summed over such a coin rests on the same claim. Only a
+    PSBT carries the values of what it spends, so what this marks is
+    always its. */
 function restsOnClaims(preview: TxPreview): boolean {
-  return preview.warnings.some((warning) => warning.kind === "input_unknown");
+  return preview.amounts_declared;
 }
 
 /** The mark on a figure nobody confirmed: amber, and in words, since a
