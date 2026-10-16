@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Ban,
   Check,
+  CircleAlert,
   CircleHelp,
   Clock,
   Coins,
@@ -89,6 +90,19 @@ export async function fileToInput(file: File): Promise<string> {
   }
 }
 
+/** What the page says when the core cannot read what was pasted as a
+    transaction: what to paste instead. The core's own words follow,
+    smaller, for the case it names (a single frame of an animated QR
+    code, a coin spent twice). */
+export const UNREADABLE_TRANSACTION =
+  "This is not a transaction Gerfaut can read. Paste a signed transaction in hex, or a PSBT.";
+
+/** A refusal to read the input, said under the field. */
+interface InputError {
+  headline: string;
+  detail?: string;
+}
+
 /** Broadcast page: paste, import or scan a finished transaction, read
     what it does, hand it to the network, and follow it until it
     confirms. Gerfaut signs nothing here: what comes in signed goes out
@@ -163,11 +177,25 @@ export function BroadcastView({ network }: { network: Network }) {
     broadcast.reset();
   };
 
-  const previewError = preview.error
-    ? isCommandError(preview.error)
-      ? preview.error.message
-      : String(preview.error)
-    : null;
+  /** Typing again answers a refusal: it goes as soon as the text
+      changes, and the hint it stood in for comes back in its place. */
+  const edit = (value: string) => {
+    setRaw(value);
+    setFileError(null);
+    if (preview.isError) preview.reset();
+  };
+
+  const inputError: InputError | null = fileError
+    ? { headline: fileError }
+    : preview.error
+      ? isCommandError(preview.error) && preview.error.kind === "invalid_input"
+        ? { headline: UNREADABLE_TRANSACTION, detail: preview.error.message }
+        : {
+            headline: isCommandError(preview.error)
+              ? preview.error.message
+              : String(preview.error),
+          }
+      : null;
   const broadcastError = broadcast.error
     ? isCommandError(broadcast.error)
       ? broadcast.error.message
@@ -193,12 +221,12 @@ export function BroadcastView({ network }: { network: Network }) {
         {!preview.data && !sent && (
           <InputCard
             raw={raw}
-            onChange={setRaw}
+            onChange={edit}
             onDecode={() => decode(raw)}
             onImport={() => fileRef.current?.click()}
             onScan={() => setScanOpen(true)}
             busy={preview.isPending}
-            error={fileError ?? previewError}
+            error={inputError}
           />
         )}
 
@@ -222,7 +250,7 @@ export function BroadcastView({ network }: { network: Network }) {
               </Button>
               <Button
                 variant="primary"
-                disabled={!preview.data.ready || broadcast.isPending}
+                disabled={preview.data.readiness !== "ready" || broadcast.isPending}
                 onClick={() => setConfirmOpen(true)}
               >
                 <Radio size={16} strokeWidth={1.5} aria-hidden />
@@ -328,7 +356,7 @@ function InputCard({
   onImport: () => void;
   onScan: () => void;
   busy: boolean;
-  error: string | null;
+  error: InputError | null;
 }) {
   return (
     <div className="rounded-lg border border-border bg-surface p-5">
@@ -344,19 +372,52 @@ function InputCard({
         onChange={(event) => onChange(event.target.value)}
         spellCheck={false}
         rows={7}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? "broadcast-input-error" : "broadcast-input-hint"}
         placeholder="Paste a PSBT (base64 or hex) or a raw transaction (hex)…"
         className="field-focus selectable w-full resize-y rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text placeholder:text-muted"
       />
-      {error && (
-        <p role="alert" className="mt-2 font-ui text-sm text-muted">
-          {error}
+      {/* One slot under the field, for the hint or for what went wrong
+          in its place: both sit in the same cell, the hint kept, hidden,
+          while the error shows, and the cell holds room for the error's
+          two lines. Neither one coming nor one going moves Preview. */}
+      <div className="mt-2 grid min-h-10">
+        <p
+          id="broadcast-input-hint"
+          className={clsx(
+            "col-start-1 row-start-1 font-ui text-xs text-muted",
+            error && "invisible",
+          )}
+        >
+          PSBT files, transaction files, base64, hex, or an animated QR code from a
+          signing device. Gerfaut never signs: a transaction missing signatures goes
+          back to the signer.
         </p>
-      )}
-      <p className="mt-2 font-ui text-xs text-muted">
-        PSBT files, transaction files, base64, hex, or an animated QR code from a
-        signing device. Gerfaut never signs: a transaction missing signatures goes
-        back to the signer.
-      </p>
+        {error && (
+          // An input error is said in words, in the text colour with its
+          // glyph, never in red: red is kept for what happens on chain.
+          <div
+            id="broadcast-input-error"
+            role="alert"
+            className="col-start-1 row-start-1 flex items-start gap-2"
+          >
+            <CircleAlert
+              size={16}
+              strokeWidth={1.5}
+              aria-hidden
+              className="mt-0.5 shrink-0 text-text"
+            />
+            <p className="min-w-0 font-ui text-sm font-medium text-text">
+              {error.headline}
+              {error.detail && (
+                <span className="selectable mt-0.5 block break-words font-ui text-xs font-normal text-muted">
+                  {error.detail}
+                </span>
+              )}
+            </p>
+          </div>
+        )}
+      </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="-ml-4 flex gap-1">
           <Button variant="ghost" onClick={onImport}>
@@ -403,25 +464,6 @@ const WARNING_ADVICE: Partial<Record<TxWarningKind, string>> = {
   uncommitted_outputs:
     "This signature does not fix where all of the money goes: anyone who sees the transaction before it is mined can send some or all of it somewhere else. Unless you set this up on purpose, do not broadcast it.",
 };
-
-/** Whether the outputs pay more than the inputs bring: every input's
-    value is known, and there is still no fee. The network refuses such
-    a transaction; "unknown" would send someone looking for a value
-    that is not missing. */
-function overspends(preview: TxPreview): boolean {
-  return (
-    preview.fee_sats === null && preview.inputs.every((input) => input.value_sats !== null)
-  );
-}
-
-/** Whether a figure on the preview is the PSBT's own word. The core
-    says so coin by coin — nothing stood behind it, no backend and no
-    watched wallet — and a total or a fee summed over such a coin rests
-    on the same claim. Only a PSBT carries the values of what it spends,
-    so what this marks is always its. */
-function restsOnClaims(preview: TxPreview): boolean {
-  return preview.warnings.some((warning) => warning.kind === "input_unknown");
-}
 
 /** The mark on a figure nobody confirmed: amber, and in words, since a
     colour alone tells nothing to a reader who cannot see it. It keeps
@@ -480,7 +522,9 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
   // A fee that rests on the PSBT's word is marked everywhere it shows,
   // the diagram included: a figure that looks confirmed in one place
   // and doubtful in another is read from the confident one.
-  const claimed = restsOnClaims(preview);
+  // `amounts_declared`: a value shown for a coin is one nothing proves,
+  // and a total or a fee summed over it rests on the same word.
+  const claimed = preview.amounts_declared;
   const feeNote = claimed && preview.fee_sats !== null ? <Claimed /> : undefined;
 
   return (
@@ -496,9 +540,18 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Pill tone="neutral">{preview.source === "psbt" ? "PSBT" : "Raw transaction"}</Pill>
-          {preview.ready ? (
+          {/* Where it stands is the core's word, read as it comes. */}
+          {preview.readiness === "ready" ? (
             <Pill tone="confirmed" icon={<Check size={12} strokeWidth={2} aria-hidden />}>
               Ready to broadcast
+            </Pill>
+          ) : preview.readiness === "refused" ? (
+            // The core is sure the network refuses it: a coin spent in
+            // a block, outputs past all the bitcoin there is or over
+            // inputs proven to bring less. Signing again changes none
+            // of that, so this is said before a missing signature.
+            <Pill tone="pending" icon={<Ban size={12} strokeWidth={2} aria-hidden />}>
+              Will be refused
             </Pill>
           ) : (
             // A status, in amber: nothing is at risk while the Broadcast
@@ -527,7 +580,12 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
           </h2>
           <ul className="flex flex-col gap-2">
             {preview.warnings.map((warning) => {
-              const advice = WARNING_ADVICE[warning.kind];
+              // Checking the amounts is advice for amounts nothing
+              // proves: a coin the previous transaction proves needs none.
+              const advice =
+                warning.kind === "input_unknown" && !preview.amounts_declared
+                  ? undefined
+                  : WARNING_ADVICE[warning.kind];
               return (
                 // The core answers the one question that picks the tone,
                 // so the same caution never reads red here and amber on
@@ -708,8 +766,13 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
   const { masked, unit } = useUi();
   // The last figure read before an irreversible send: if it is the
   // PSBT's word, it is marked here as it was on the preview.
-  const claimed = restsOnClaims(preview) && preview.fee_sats !== null;
+  const claimed = preview.amounts_declared && preview.fee_sats !== null;
   const outputsOpen = preview.warnings.some((warning) => warning.kind === "uncommitted_outputs");
+  // A fee nobody could establish: the core's own line on why, said again
+  // where the send is decided. For outputs over amounts nothing proves,
+  // it is the one that says the network will refuse them if those
+  // amounts are right.
+  const whyNoFee = preview.fee_unknown_reason;
   return (
     <div className="flex flex-col gap-3">
       <p className="font-ui text-sm text-text">
@@ -718,11 +781,13 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
       </p>
       <dl className="grid grid-cols-2 gap-3 rounded-md bg-sunken/50 p-3">
         <Fact label="Outputs">{groupThousands(String(preview.outputs.length))}</Fact>
+        {/* Outputs over proven amounts, or past all the bitcoin there
+            will ever be, never get here: the core blocks the send. Over
+            amounts only the PSBT declares, the fee is as unknown as they
+            are, and the line under the facts says what that means. */}
         <Fact label="Fee" note={claimed ? <Claimed /> : undefined}>
           {preview.fee_sats === null
-            ? overspends(preview)
-              ? "none, the outputs exceed the inputs"
-              : "unknown"
+            ? "unknown"
             : masked
               ? MASKED
               : `${formatAmount(preview.fee_sats, unit)}${
@@ -732,6 +797,7 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
                 }`}
         </Fact>
       </dl>
+      {whyNoFee && <p className="font-ui text-sm text-pending">{whyNoFee}</p>}
       {/* The one caution that makes the outputs above a suggestion:
           said again here, in red, where the send is decided. */}
       {outputsOpen && (

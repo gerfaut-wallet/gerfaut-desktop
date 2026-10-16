@@ -725,7 +725,18 @@ export interface TxWarning {
       takes it as given: a kind added later must not fall through a
       hand-written table into a tone nobody chose. */
   severity: TxSeverity;
+  /** The network is sure to refuse the transaction while this holds: a
+      signature missing, a coin spent in a block, outputs past all the
+      bitcoin there will ever be, or outputs over inputs whose every
+      amount is proven. The core sets it, and a preview with one is not
+      ready. */
+  blocking: boolean;
 }
+
+/** Where a transaction stands before it is sent, decided by the core:
+    the words of the readiness pill. `refused` comes before `unsigned`
+    when both hold, since a signature does not bring back a spent coin. */
+export type TxReadiness = "ready" | "refused" | "unsigned";
 
 /** Everything shown before a transaction is broadcast. */
 export interface TxPreview {
@@ -736,14 +747,23 @@ export interface TxPreview {
   outputs: TxOutputPreview[];
   fee_sats: number | null;
   fee_rate_sat_vb: number | null;
+  /** Why there is no fee, in the words of the core's caution: what the
+      confirmation repeats. Null when there is a fee. */
+  fee_unknown_reason: string | null;
+  /** A value shown for an input is only what the PSBT declares: no
+      watched wallet, no backend and no previous transaction proves it.
+      The inputs total and the fee rest on that word then. */
+  amounts_declared: boolean;
   vsize: number;
   weight: number;
   size: number;
   version: number;
   locktime: number;
   rbf: boolean;
-  /** Every input signed: the transaction can be sent. */
-  ready: boolean;
+  /** Where it stands: the one thing the pill and the Broadcast button
+      both read. The core also sends `ready`, derived from this, which
+      the page leaves alone. */
+  readiness: TxReadiness;
   warnings: TxWarning[];
   /** The transaction as the network takes it; present only when ready. */
   hex: string | null;

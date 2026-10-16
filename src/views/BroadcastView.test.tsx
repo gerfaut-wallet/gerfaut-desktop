@@ -23,8 +23,13 @@ const HEX = "0200000000010112ab";
 /** A round rate, so a fiat figure is easy to name in an assertion. */
 const RATE = 50_000;
 
-function warning(kind: TxWarning["kind"], severity: TxWarning["severity"], message: string) {
-  return { kind, severity, message };
+function warning(
+  kind: TxWarning["kind"],
+  severity: TxWarning["severity"],
+  message: string,
+  blocking = false,
+): TxWarning {
+  return { kind, severity, message, blocking };
 }
 
 /** A signed transaction spending one watched coin, paying out and
@@ -63,13 +68,15 @@ const PREVIEW: TxPreview = {
   ],
   fee_sats: 210,
   fee_rate_sat_vb: 1.5,
+  fee_unknown_reason: null,
+  amounts_declared: false,
   vsize: 141,
   weight: 561,
   size: 215,
   version: 2,
   locktime: 0,
   rbf: true,
-  ready: true,
+  readiness: "ready",
   warnings: [],
   hex: HEX,
 };
@@ -234,27 +241,172 @@ describe("BroadcastView", () => {
     expect(reminder.parentElement).toHaveClass("bg-alert-surface", "text-alert");
   });
 
-  /** Every coin's value is known and there is still no fee: the
-      outputs pay more than the inputs bring, and "unknown" would send
-      someone looking for a value that is not missing. */
-  it("says there is no fee when the outputs exceed the inputs", async () => {
+  /** Every coin's value confirmed and there is still no fee: the
+      outputs pay more than the inputs bring. No node takes that, so the
+      core blocks the send, and the pill says the same as the caution. */
+  it("says outputs over the inputs will be refused, and keeps Broadcast off", async () => {
     const user = mount({
       ...PREVIEW,
       fee_sats: null,
       fee_rate_sat_vb: null,
+      readiness: "refused",
+      hex: null,
       warnings: [
         warning(
           "fee_unknown",
           "info",
           "The outputs pay more than the inputs bring: the network will refuse this transaction.",
+          true,
         ),
       ],
     });
     await preview(user);
+    expect(screen.getByText("Will be refused")).toHaveAttribute("data-tone", "pending");
+    expect(screen.queryByText("Ready to broadcast")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Broadcast" })).toBeDisabled();
+  });
+
+  /** A transaction already mined, pasted again, used to read "Ready to
+      broadcast" in green beside the red line saying its coin was spent.
+      The core blocks a coin spent in a block, and the pill and the
+      button follow it. */
+  it("never calls ready a transaction whose coin is spent in a block", async () => {
+    const user = mount({
+      ...PREVIEW,
+      readiness: "refused",
+      hex: null,
+      warnings: [
+        warning(
+          "input_spent",
+          "alert",
+          "Input 0 is already spent by another transaction, which is in a block. The network will refuse this one.",
+          true,
+        ),
+      ],
+    });
+    await preview(user);
+    const pill = screen.getByText("Will be refused");
+    expect(pill).toHaveAttribute("data-tone", "pending");
+    expect(screen.queryByText("Ready to broadcast")).not.toBeInTheDocument();
+    expect(screen.queryByText("Not fully signed")).not.toBeInTheDocument();
+    const caution = screen.getByText(/already spent by another transaction/);
+    expect(caution.parentElement).toHaveClass("bg-alert-surface", "text-alert");
+    expect(screen.getByRole("button", { name: "Broadcast" })).toBeDisabled();
+  });
+
+  /** The pill says what the core says, as it says it: the screen works
+      nothing out of the cautions, which may say more or less. */
+  it("reads the pill off the core, never off the cautions", async () => {
+    const user = mount({ ...PREVIEW, readiness: "refused", hex: null });
+    await preview(user);
+    expect(screen.getByText("Will be refused")).toHaveAttribute("data-tone", "pending");
+    expect(screen.queryByText("Not fully signed")).not.toBeInTheDocument();
+  });
+
+  /** The pill and the Broadcast button read one thing: a refused
+      transaction is never sendable, hex or no hex. */
+  it("keeps the pill and the button on the same state", async () => {
+    const user = mount({ ...PREVIEW, readiness: "refused" });
+    await preview(user);
+    expect(screen.getByText("Will be refused")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Broadcast" })).toBeDisabled();
+  });
+
+  /** Outputs over amounts only the PSBT declares stay sendable: the
+      node goes by the real coins. The last look before the send says
+      what happens if the declared amounts are right. */
+  it("says at the confirmation when declared amounts would be refused", async () => {
+    const line =
+      "The outputs pay more than the inputs bring, by amounts nothing proves: if those amounts are right, the network will refuse this transaction.";
+    // The reason is the core's field, read as it comes: the cautions
+    // are not searched for it.
+    const user = mount({
+      ...PREVIEW,
+      fee_sats: null,
+      fee_rate_sat_vb: null,
+      fee_unknown_reason: line,
+      amounts_declared: true,
+      warnings: [],
+    });
+    await preview(user);
+    expect(screen.getByText("Ready to broadcast")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Broadcast" }));
     const dialog = within(await screen.findByRole("dialog"));
-    expect(dialog.getByText("none, the outputs exceed the inputs")).toBeInTheDocument();
-    expect(dialog.queryByText("unknown")).not.toBeInTheDocument();
+    expect(dialog.getByText("unknown")).toBeInTheDocument();
+    expect(dialog.getByText(line)).toHaveClass("text-pending");
+  });
+
+  /** A spend still in the mempool is the node's to judge: this one may
+      replace it. The caution stays red, and the send stays possible. */
+  it("leaves a red caution that blocks nothing to the node", async () => {
+    const user = mount({
+      ...PREVIEW,
+      warnings: [
+        warning(
+          "input_spent",
+          "alert",
+          "Input 0 is already spent by another transaction waiting in the mempool.",
+        ),
+      ],
+    });
+    await preview(user);
+    expect(screen.getByText("Ready to broadcast")).toHaveAttribute("data-tone", "confirmed");
+    expect(screen.getByRole("button", { name: "Broadcast" })).toBeEnabled();
+  });
+
+  /** Text the core cannot read: what to paste, said as an error the
+      field carries — in the text colour, never the grey of a hint, and
+      never in red, which belongs to the chain. */
+  it("says what to paste when the text is not a transaction", async () => {
+    const user = mount();
+    mockIPC((cmd) => {
+      if (cmd === "preview_transaction") {
+        throw { kind: "invalid_input", message: "invalid transaction: not hex and not base64" };
+      }
+      return undefined;
+    });
+    const field = screen.getByLabelText("Signed transaction");
+    await user.type(field, "this is not a transaction");
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "This is not a transaction Gerfaut can read. Paste a signed transaction in hex, or a PSBT.",
+    );
+    expect(alert).toHaveTextContent("invalid transaction: not hex and not base64");
+    const headline = within(alert).getByText(/This is not a transaction/);
+    expect(headline).toHaveClass("text-text");
+    expect(headline).not.toHaveClass("text-muted");
+    expect(alert.innerHTML).not.toMatch(/text-alert|bg-alert/);
+    expect(field).toHaveAttribute("aria-invalid", "true");
+    expect(field).toHaveAttribute("aria-describedby", alert.id);
+  });
+
+  /** The error answered what was typed; typing again answers it. It
+      goes at the first keystroke, and the hint comes back in the slot
+      it held, so Preview stays where it was. */
+  it("drops the error as soon as the text changes, in the slot of the hint", async () => {
+    const user = mount();
+    mockIPC((cmd) => {
+      if (cmd === "preview_transaction") {
+        throw { kind: "invalid_input", message: "invalid transaction: not hex and not base64" };
+      }
+      return undefined;
+    });
+    const field = screen.getByLabelText("Signed transaction");
+    await user.type(field, "nope");
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    const alert = await screen.findByRole("alert");
+    const hint = screen.getByText(/PSBT files, transaction files/);
+    // One cell: the hint is kept, hidden, under the error.
+    expect(alert.parentElement).toBe(hint.parentElement);
+    expect(hint).toHaveClass("invisible");
+
+    await user.type(field, "!");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(field).not.toHaveAttribute("aria-invalid");
+    expect(field).toHaveAttribute("aria-describedby", hint.id);
+    expect(hint).not.toHaveClass("invisible");
   });
 
   /** A coin nothing stood behind — no backend answered, or none knew
@@ -264,6 +416,7 @@ describe("BroadcastView", () => {
   it("marks every figure that rests on the PSBT's word when a coin was not checked", async () => {
     const user = mount({
       ...PREVIEW,
+      amounts_declared: true,
       inputs: [{ ...PREVIEW.inputs[0], wallet: null }],
       warnings: [
         warning(
@@ -313,6 +466,32 @@ describe("BroadcastView", () => {
     expect(dialog.getByText("The cautions listed on the preview still apply.")).toBeInTheDocument();
   });
 
+  /** No backend answered, but the PSBT carries the previous
+      transaction, which proves the value: the coin is unchecked, its
+      amount is not a claim, and no figure says it is. */
+  it("marks no figure the previous transaction proves", async () => {
+    const user = mount({
+      ...PREVIEW,
+      amounts_declared: false,
+      inputs: [{ ...PREVIEW.inputs[0], wallet: null }],
+      warnings: [
+        warning(
+          "input_unknown",
+          "info",
+          "Input 0 could not be checked: no backend answered about this coin. Its value is proven by the previous transaction the PSBT carries, the one this input spends; whether the coin is still there to spend is not.",
+        ),
+      ],
+    });
+    await preview(user);
+    expect(screen.queryByText("as the PSBT claims")).not.toBeInTheDocument();
+    // Nor the advice to check the amounts on the signing device: they
+    // are proven.
+    expect(screen.queryByText(/check the amounts on the signing device/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Broadcast" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(dialog.queryByText("as the PSBT claims")).not.toBeInTheDocument();
+  });
+
   it("marks nothing when every coin was confirmed", async () => {
     const user = mount();
     await preview(user);
@@ -337,9 +516,9 @@ describe("BroadcastView", () => {
   it("says a transaction is not fully signed in amber, and keeps it", async () => {
     const user = mount({
       ...PREVIEW,
-      ready: false,
+      readiness: "unsigned",
       hex: null,
-      warnings: [warning("unsigned", "alert", "Some inputs carry no signature yet.")],
+      warnings: [warning("unsigned", "alert", "Some inputs carry no signature yet.", true)],
     });
     await preview(user);
     const pill = screen.getByText("Not fully signed");
