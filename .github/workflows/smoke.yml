@@ -63,13 +63,14 @@ jobs:
       # What a desktop has and the AppImage leaves to the system: an X
       # server, a session bus, FUSE to mount the image, and the
       # libraries its excludelist keeps out, Mesa's EGL, GL and software
-      # renderer first.
+      # renderer first. libgles2 comes with GTK 4 and WebKitGTK on any
+      # desktop; a bare runner lacks it and the webview aborts.
       - name: Install what a desktop provides
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             xvfb x11-apps x11-utils dbus-daemon fuse3 fonts-dejavu-core \
-            libegl1 libegl-mesa0 libgl1 libglx-mesa0 libgl1-mesa-dri libgbm1 libdrm2 \
+            libegl1 libegl-mesa0 libgl1 libgles2 libglx-mesa0 libgl1-mesa-dri libgbm1 libdrm2 \
             libwayland-client0 libwayland-cursor0 libwayland-egl1 libwayland-server0 \
             libx11-6 libx11-xcb1 libxcb1 libfontconfig1 libfreetype6 libfribidi0 libharfbuzz0b
           dpkg-query -W -f '${Package} ${Version}\n' libegl-mesa0 libwayland-client0
