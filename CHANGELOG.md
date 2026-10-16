@@ -25,7 +25,7 @@ Gerfaut watches bitcoin wallets it cannot spend from. There is no key generation
 #### Broadcasting a signed transaction
 
 - Broadcast a transaction someone else signed: paste its hex, open the file a signing device wrote, or scan its QR code. The preview shows what the transaction does before anything goes out, and Gerfaut follows it until it confirms.
-- The preview flags what needs checking. A missing signature reads "Not fully signed" and keeps the "Broadcast" button off; so does a transaction the network is sure to refuse, which reads "Will be refused". A coin no backend could confirm is marked in amber, and the fee and the input total read "as the PSBT claims".
+- The preview flags what needs checking. A missing signature reads "Not fully signed" and keeps the "Broadcast" button off; so does a transaction the network is sure to refuse, which reads "Will be refused". A coin no backend could confirm is marked in amber, and when its amount is only what the PSBT declares, the fee and the input total read "as the PSBT claims".
 - A signature made with SIGHASH_NONE or SIGHASH_SINGLE gets a red warning, repeated in the confirmation dialog: whoever relays such a transaction before it confirms can send some or all of the money elsewhere.
 
 #### Talking to the chain
