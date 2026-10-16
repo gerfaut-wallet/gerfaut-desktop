@@ -10,7 +10,7 @@
 # the gtk hook inside the AppImage itself. Tauri once vendored the scripts
 # (PR #14390) and went back to downloading them (PR #14841). The bundler
 # skips a download when the file already sits in its cache, so
-# workflows/release.yml downloads the five files itself, checks them
+# reproducible/targets/linux.sh downloads the five files itself, checks them
 # against this list and only then starts the build. The check must come
 # first: once the bundler has linuxdeploy it overwrites three bytes at
 # offset 8, to hide the file from AppImage integration tools.
