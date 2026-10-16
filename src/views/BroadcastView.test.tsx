@@ -310,10 +310,34 @@ describe("BroadcastView", () => {
     expect(screen.getByRole("button", { name: "Broadcast" })).toBeEnabled();
   });
 
-  /** A coin nothing stood behind — no backend answered, or none knew
-      it. The core says so, in amber, and the preview still shows the
-      fee it summed over the PSBT's own word. The mark says which figures
-      are that word; the caution says where to check them. */
+  /** Text the core cannot read: what to paste, said as an error the
+      field carries — in the text colour, never the grey of a hint, and
+      never in red, which belongs to the chain. */
+  it("says what to paste when the text is not a transaction", async () => {
+    const user = mount();
+    mockIPC((cmd) => {
+      if (cmd === "preview_transaction") {
+        throw { kind: "invalid_input", message: "invalid transaction: not hex and not base64" };
+      }
+      return undefined;
+    });
+    const field = screen.getByLabelText("Signed transaction");
+    await user.type(field, "this is not a transaction");
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "This is not a transaction Gerfaut can read. Paste a signed transaction in hex, or a PSBT.",
+    );
+    expect(alert).toHaveTextContent("invalid transaction: not hex and not base64");
+    const headline = within(alert).getByText(/This is not a transaction/);
+    expect(headline).toHaveClass("text-text");
+    expect(headline).not.toHaveClass("text-muted");
+    expect(alert.innerHTML).not.toMatch(/text-alert|bg-alert/);
+    expect(field).toHaveAttribute("aria-invalid", "true");
+    expect(field).toHaveAttribute("aria-describedby", alert.id);
+  });
+
   /** A coin nothing stood behind — no backend answered, or none knew
       it. The core says so, in amber, and the preview still shows the
       fee it summed over the PSBT's own word. The mark says which figures

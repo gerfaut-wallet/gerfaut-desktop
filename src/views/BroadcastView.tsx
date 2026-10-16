@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Ban,
   Check,
+  CircleAlert,
   CircleHelp,
   Clock,
   Coins,
@@ -89,6 +90,19 @@ export async function fileToInput(file: File): Promise<string> {
   }
 }
 
+/** What the page says when the core cannot read what was pasted as a
+    transaction: what to paste instead. The core's own words follow,
+    smaller, for the case it names (a single frame of an animated QR
+    code, a coin spent twice). */
+export const UNREADABLE_TRANSACTION =
+  "This is not a transaction Gerfaut can read. Paste a signed transaction in hex, or a PSBT.";
+
+/** A refusal to read the input, said under the field. */
+interface InputError {
+  headline: string;
+  detail?: string;
+}
+
 /** Broadcast page: paste, import or scan a finished transaction, read
     what it does, hand it to the network, and follow it until it
     confirms. Gerfaut signs nothing here: what comes in signed goes out
@@ -163,11 +177,17 @@ export function BroadcastView({ network }: { network: Network }) {
     broadcast.reset();
   };
 
-  const previewError = preview.error
-    ? isCommandError(preview.error)
-      ? preview.error.message
-      : String(preview.error)
-    : null;
+  const inputError: InputError | null = fileError
+    ? { headline: fileError }
+    : preview.error
+      ? isCommandError(preview.error) && preview.error.kind === "invalid_input"
+        ? { headline: UNREADABLE_TRANSACTION, detail: preview.error.message }
+        : {
+            headline: isCommandError(preview.error)
+              ? preview.error.message
+              : String(preview.error),
+          }
+      : null;
   const broadcastError = broadcast.error
     ? isCommandError(broadcast.error)
       ? broadcast.error.message
@@ -198,7 +218,7 @@ export function BroadcastView({ network }: { network: Network }) {
             onImport={() => fileRef.current?.click()}
             onScan={() => setScanOpen(true)}
             busy={preview.isPending}
-            error={fileError ?? previewError}
+            error={inputError}
           />
         )}
 
@@ -328,7 +348,7 @@ function InputCard({
   onImport: () => void;
   onScan: () => void;
   busy: boolean;
-  error: string | null;
+  error: InputError | null;
 }) {
   return (
     <div className="rounded-lg border border-border bg-surface p-5">
@@ -344,15 +364,27 @@ function InputCard({
         onChange={(event) => onChange(event.target.value)}
         spellCheck={false}
         rows={7}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? "broadcast-input-error" : "broadcast-input-hint"}
         placeholder="Paste a PSBT (base64 or hex) or a raw transaction (hex)…"
         className="field-focus selectable w-full resize-y rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text placeholder:text-muted"
       />
       {error && (
-        <p role="alert" className="mt-2 font-ui text-sm text-muted">
-          {error}
-        </p>
+        // An input error is said in words, in the text colour with its
+        // glyph, never in red: Alerte belongs to the chain (DESIGN.md).
+        <div id="broadcast-input-error" role="alert" className="mt-2 flex items-start gap-2">
+          <CircleAlert size={16} strokeWidth={1.5} aria-hidden className="mt-0.5 shrink-0 text-text" />
+          <p className="min-w-0 font-ui text-sm font-medium text-text">
+            {error.headline}
+            {error.detail && (
+              <span className="selectable mt-0.5 block break-words font-ui text-xs font-normal text-muted">
+                {error.detail}
+              </span>
+            )}
+          </p>
+        </div>
       )}
-      <p className="mt-2 font-ui text-xs text-muted">
+      <p id="broadcast-input-hint" className="mt-2 font-ui text-xs text-muted">
         PSBT files, transaction files, base64, hex, or an animated QR code from a
         signing device. Gerfaut never signs: a transaction missing signatures goes
         back to the signer.
