@@ -1408,6 +1408,39 @@ mod tests {
         assert_eq!(refused.kind, "invalid_input");
     }
 
+    /// A failure crosses in the form the core writes down for both
+    /// bridges, `CoreError.json` of its reference files in the
+    /// gerfaut-core checkout beside this repository: the code as `kind`
+    /// and the error's words as `message`, nothing else.
+    #[test]
+    fn a_failure_crosses_in_the_form_the_core_writes_down() {
+        use serde_json::Value;
+
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../gerfaut-core/tests/bridge/CoreError.json"
+        );
+        let text = std::fs::read_to_string(path).expect("gerfaut-core beside this repository");
+        let cases: Value = serde_json::from_str(&text).expect("the reference file is JSON");
+        let keys = |value: &Value| -> Vec<String> {
+            let mut keys: Vec<String> = value
+                .as_object()
+                .expect("an object")
+                .keys()
+                .cloned()
+                .collect();
+            keys.sort();
+            keys
+        };
+        let sent = serde_json::to_value(CommandError::from(CoreError::WalletNotFound(
+            "w1".to_owned(),
+        )))
+        .expect("a failure serializes");
+        let case = &cases["wallet_not_found"];
+        assert_eq!(keys(&sent), keys(case));
+        assert_eq!(sent["kind"], case["kind"]);
+    }
+
     /// The code the core gives is the kind the screens read, unchanged,
     /// with the core's words beside it. A wrong password, a file that
     /// is not a backup and one a newer Gerfaut wrote arrive under three
