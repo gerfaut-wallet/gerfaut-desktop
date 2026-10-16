@@ -3,8 +3,15 @@
 
 import { useEffect } from "react";
 import { create } from "zustand";
-import { ALL_CURRENCIES, quotesCurrency } from "../lib/ipc";
-import type { FiatCurrency, Network, PriceRange, PriceSource } from "../lib/ipc";
+import type {
+  FiatCurrency,
+  Network,
+  Preferences,
+  PreferencesChange,
+  PriceRange,
+  PriceSource,
+  Settings,
+} from "../lib/ipc";
 import { ipc } from "../lib/ipc";
 import type { Unit } from "../lib/format";
 
@@ -56,7 +63,8 @@ interface UiState {
   theme: ThemePref;
   /** Display unit for every amount. */
   unit: Unit;
-  /** Fiat display: off by default, currency and source configurable. */
+  /** Fiat display, its currency and its source. The pair is always one
+      a source quotes, as the vault stored it. */
   fiatEnabled: boolean;
   fiatCurrency: FiatCurrency;
   fiatSource: PriceSource;
@@ -65,8 +73,8 @@ interface UiState {
   /** External explorer warning acknowledged: skip the dialog when set. */
   explorerAck: boolean;
   /** Live alerts: a notification when a transaction shows up and when
-      it confirms. Off by default. The Rust side starts and stops the
-      watch on this preference as it is written. */
+      it confirms. The Rust side starts and stops the watch on this
+      preference as it is written. */
   notifyNewTx: boolean;
   /** The welcome tour has been seen. */
   onboardingSeen: boolean;
@@ -104,20 +112,91 @@ interface UiState {
   setSyncError: (walletId: string, message: string | null) => void;
   rememberBroadcast: (entry: RecentBroadcast) => void;
   forgetBroadcast: (txid: string) => void;
-  /** Applies preferences loaded from the vault at startup. */
-  hydratePrefs: (prefs: Record<string, string>) => void;
+  /** Applies the preferences the vault answered at startup. */
+  hydratePrefs: (settings: Settings) => void;
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** Writes a preference the window alone reads, and lets a refusal go:
-    what it changes is already on screen for this session, and putting
-    it back would undo what was asked — amounts shown again under "Hide
-    amounts". Only the next launch misses it. The one preference the
-    Rust side acts on, the alerts, is written by `setNotifyNewTx`, which
-    says a refusal. */
+/** What the screens hold before the vault answers. Never a default
+    anyone sees: the shell waits for the vault (`prefsReady`), which
+    always answers every preference, the ones it never stored at the
+    core's defaults. */
+const UNTIL_THE_VAULT_ANSWERS: Preferences = {
+  unit: "btc",
+  masked: false,
+  fiat: false,
+  fiat_currency: "eur",
+  price_source: "coingecko",
+  notify_new_tx: false,
+  explorer_ack: false,
+};
+
+/** The store's names for the preferences both apps keep. */
+function fromPreferences(preferences: Preferences) {
+  return {
+    unit: preferences.unit,
+    masked: preferences.masked,
+    fiatEnabled: preferences.fiat,
+    fiatCurrency: preferences.fiat_currency,
+    fiatSource: preferences.price_source,
+    notifyNewTx: preferences.notify_new_tx,
+    explorerAck: preferences.explorer_ack,
+  };
+}
+
+/** The two the price is asked by, as the vault stored them. */
+function pairOf(preferences: Preferences) {
+  return {
+    fiatCurrency: preferences.fiat_currency,
+    fiatSource: preferences.price_source,
+  };
+}
+
+/** The preferences writes in flight, one after the other in the order
+    they were made, so that each answer is the vault after the change
+    before it. */
+let written: Promise<unknown> = Promise.resolve();
+
+/** Writes a change to the preferences both apps keep, after the ones
+    already on their way, and answers what the vault holds then. */
+function writePreferences(change: PreferencesChange): Promise<Preferences> {
+  const next = written.then(
+    () => ipc.setPreferences(change),
+    () => ipc.setPreferences(change),
+  );
+  written = next.catch(() => {});
+  return next;
+}
+
+/** Changes what the price is asked by, the currency or the source. The
+    screen takes the pair from the vault's answer and not before. The
+    core asks the price by what it stored, and stores a currency with a
+    source that quotes it: shown before, a currency would sit for a
+    moment beside a source the core has already moved, and the price be
+    asked by a pair the core never had. A refusal leaves the screen as
+    it was, which is what the vault still holds. */
+function setPair(change: PreferencesChange, set: (state: Partial<UiState>) => void) {
+  void writePreferences(change).then(
+    (stored) => set(pairOf(stored)),
+    () => {},
+  );
+}
+
+/** Writes a preference of this app alone, and lets a refusal go: what
+    it changes is already on screen for this session. Only the next
+    launch misses it. */
 function persist(key: string, value: string) {
   void ipc.setAppPref(key, value).catch(() => {});
+}
+
+/** Writes a preference the window alone reads, shown at once, and lets
+    a refusal go the same way: putting it back would undo what was
+    asked — amounts shown again under "Hide amounts". The one the Rust
+    side acts on, the alerts, is written by `setNotifyNewTx`, which says
+    a refusal; the two the price is asked by, by `setPair`. */
+function persistShared(change: PreferencesChange) {
+  void writePreferences(change).catch(() => {});
 }
 
 /** Reads the remembered broadcasts; anything malformed is dropped. */
@@ -148,15 +227,9 @@ export const useUi = create<UiState>((set, get) => ({
   selectedTxid: null,
   addWalletOpen: false,
   sidebarCollapsed: false,
-  masked: false,
+  ...fromPreferences(UNTIL_THE_VAULT_ANSWERS),
   theme: "light",
-  unit: "btc",
-  fiatEnabled: false,
-  fiatCurrency: "eur",
-  fiatSource: "coingecko",
   priceRange: "month",
-  explorerAck: false,
-  notifyNewTx: false,
   onboardingSeen: false,
   tourDismissed: false,
   toast: null,
@@ -185,7 +258,7 @@ export const useUi = create<UiState>((set, get) => ({
   toggleMasked: () => {
     const masked = !get().masked;
     set({ masked });
-    persist("desktop.masked", masked ? "1" : "0");
+    persistShared({ masked });
   },
   setTheme: (theme) => {
     set({ theme });
@@ -194,40 +267,27 @@ export const useUi = create<UiState>((set, get) => ({
   },
   setUnit: (unit) => {
     set({ unit });
-    persist("display.unit", unit);
+    persistShared({ unit });
   },
   setFiatEnabled: (fiatEnabled) => {
     set({ fiatEnabled });
-    persist("display.fiat", fiatEnabled ? "1" : "0");
+    persistShared({ fiat: fiatEnabled });
   },
-  setFiatCurrency: (fiatCurrency) => {
-    set({ fiatCurrency });
-    persist("display.fiat_currency", fiatCurrency);
-    // Most currencies past the shared seven have one keyless publisher.
-    // Moving to one of them moves the source with it rather than
-    // leaving a pair no source can quote.
-    if (!quotesCurrency(get().fiatSource, fiatCurrency)) {
-      set({ fiatSource: "coingecko" });
-      persist("display.fiat_source", "coingecko");
-    }
-  },
-  setFiatSource: (fiatSource) => {
-    set({ fiatSource });
-    persist("display.fiat_source", fiatSource);
-  },
+  setFiatCurrency: (fiatCurrency) => setPair({ fiat_currency: fiatCurrency }, set),
+  setFiatSource: (fiatSource) => setPair({ price_source: fiatSource }, set),
   setPriceRange: (priceRange) => {
     set({ priceRange });
     persist("home.price_range", priceRange);
   },
   setExplorerAck: (explorerAck) => {
     set({ explorerAck });
-    persist("privacy.explorer_ack", explorerAck ? "1" : "0");
+    persistShared({ explorer_ack: explorerAck });
   },
   setNotifyNewTx: async (notifyNewTx) => {
     const before = get().notifyNewTx;
     set({ notifyNewTx });
     try {
-      await ipc.setAppPref("notify.new_tx", notifyNewTx ? "1" : "0");
+      await writePreferences({ notify_new_tx: notifyNewTx });
     } catch (error) {
       set({ notifyNewTx: before });
       throw error;
@@ -268,30 +328,15 @@ export const useUi = create<UiState>((set, get) => ({
     set({ recentBroadcasts });
     persist("broadcast.recent", JSON.stringify(recentBroadcasts));
   },
-  hydratePrefs: (prefs) => {
+  hydratePrefs: (settings) => {
+    const prefs = settings.app_prefs;
     const theme = (prefs["desktop.theme"] as ThemePref) ?? "light";
-    const unit = prefs["display.unit"] === "sats" ? "sats" : "btc";
-    const stored = prefs["display.fiat_currency"] as FiatCurrency;
-    const currency = ALL_CURRENCIES.includes(stored) ? stored : "eur";
-    const storedSource = prefs["display.fiat_source"] as PriceSource;
-    const source = ["coingecko", "kraken", "mempool_space"].includes(storedSource)
-      ? storedSource
-      : "coingecko";
     set({
+      ...fromPreferences(settings.preferences),
       recentBroadcasts: parseRecentBroadcasts(prefs["broadcast.recent"]),
       theme: ["light", "dark", "system"].includes(theme) ? theme : "light",
-      masked: prefs["desktop.masked"] === "1",
-      // Both are opt-in: an explicit "1" is the only yes.
-      notifyNewTx: prefs["notify.new_tx"] === "1",
       onboardingSeen: prefs["onboarding.seen"] === "1",
       sidebarCollapsed: prefs["desktop.sidebar"] === "collapsed",
-      unit,
-      fiatEnabled: prefs["display.fiat"] === "1",
-      explorerAck: prefs["privacy.explorer_ack"] === "1",
-      fiatCurrency: currency,
-      // A pair no source can quote would show a permanent dash: the
-      // currency wins, the source follows.
-      fiatSource: quotesCurrency(source, currency) ? source : "coingecko",
       priceRange: (["day", "week", "month", "year"] as PriceRange[]).includes(
         prefs["home.price_range"] as PriceRange,
       )

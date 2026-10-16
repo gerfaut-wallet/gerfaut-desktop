@@ -273,12 +273,15 @@ export function torDown(error: unknown): boolean {
     success, with no error for anyone to see. */
 const PRICE_NETWORK_MODE = "always";
 
-/** Current BTC price, refreshed every minute while fiat display is on. */
+/** Current BTC price, by the currency and source of the preferences,
+    refreshed every minute while fiat display is on. The key carries
+    what the price is asked by, which the store only takes once the
+    vault stored it: a new key is a price the core asks by it. */
 export function useFiatRate() {
   const { fiatEnabled, fiatSource, fiatCurrency } = useUi();
   return useQuery({
     queryKey: ["price", fiatSource, fiatCurrency],
-    queryFn: () => ipc.fetchPrice(fiatSource, fiatCurrency),
+    queryFn: () => ipc.fetchPrice(),
     enabled: fiatEnabled,
     networkMode: PRICE_NETWORK_MODE,
     refetchInterval: 60_000,
@@ -305,7 +308,7 @@ export function liveAnswer<T extends { currency: FiatCurrency }>(
 }
 
 /** Price series for the overview chart, from the configured source in
-    the configured currency.
+    the configured currency, which the core reads from the preferences.
  *
  *  `enabled` is the fiat setting and nothing else. A price request is a
  *  request to a third party from this machine at the moment Gerfaut
@@ -317,7 +320,7 @@ export function usePriceHistory(range: PriceRange, enabled: boolean) {
   const { fiatSource, fiatCurrency } = useUi();
   return useQuery({
     queryKey: ["price-history", fiatSource, fiatCurrency, range],
-    queryFn: () => ipc.fetchPriceHistory(fiatSource, fiatCurrency, range),
+    queryFn: () => ipc.fetchPriceHistory(range),
     enabled,
     networkMode: PRICE_NETWORK_MODE,
     staleTime: range === "day" ? 5 * 60_000 : 30 * 60_000,

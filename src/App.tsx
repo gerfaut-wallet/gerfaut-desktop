@@ -91,7 +91,7 @@ export default function App() {
 
   useLayoutEffect(() => {
     if (!settings.data || hydrated.current) return;
-    hydratePrefs(settings.data.app_prefs);
+    hydratePrefs(settings.data);
     hydrated.current = !useLock.getState().locked;
     if (hydrated.current) setPrefsReady(true);
   }, [settings.data, hydratePrefs]);
@@ -128,7 +128,7 @@ export default function App() {
         if (client.getQueryState(keys.settings)?.status !== "success") return;
         const fresh = client.getQueryData<Settings>(keys.settings);
         if (!fresh || hydrated.current || useLock.getState().locked) return;
-        hydratePrefs(fresh.app_prefs);
+        hydratePrefs(fresh);
         hydrated.current = true;
         setPrefsReady(true);
       });

@@ -3,9 +3,16 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { BackendConfig, ScannedBackend, Settings, WalletMeta } from "../lib/ipc";
+import type {
+  BackendConfig,
+  PreferencesChange,
+  ScannedBackend,
+  Settings,
+  WalletMeta,
+} from "../lib/ipc";
 import { useWallets } from "../state/queries";
 import { useUi } from "../state/store";
+import { PREFERENCES } from "../test/fixtures";
 import { BackendSection } from "./settings/BackendSection";
 import { SettingsView } from "./SettingsView";
 
@@ -47,6 +54,7 @@ const SETTINGS: Settings = {
   electrum_certs: {},
   app_lock: null,
   tor: { mode: "auto", socks_proxy: null },
+  preferences: PREFERENCES,
 };
 
 function renderBackend(
@@ -506,6 +514,8 @@ function mockSettingsIpc(
         return [WALLET];
       case "set_app_pref":
         return undefined;
+      case "set_preferences":
+        return { ...PREFERENCES, ...(payload.change as PreferencesChange) };
       case "live_status":
         return {
           enabled: false,
@@ -967,7 +977,7 @@ describe("a setting the vault refuses", () => {
   /** The Rust side starts the watch on what the vault holds: a switch
       left on over a refused write would promise alerts nobody sends. */
   it("turns the alerts switch back off", async () => {
-    mockSettingsIpc({ set_app_pref: refused });
+    mockSettingsIpc({ set_preferences: refused });
     act(() => useUi.getState().openSettings("notifications"));
     renderSettings();
     const user = userEvent.setup();

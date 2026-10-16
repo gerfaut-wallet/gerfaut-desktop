@@ -10,12 +10,14 @@ import type {
   ParsedInput,
   PolicyKey,
   PolicySnapshot,
+  PreferencesChange,
   Settings,
   WalletMeta,
   WalletSnapshot,
 } from "./lib/ipc";
 import { useLock } from "./state/lock";
 import { useUi } from "./state/store";
+import { PREFERENCES, preferencesHeld } from "./test/fixtures";
 
 // A vault opened before: the welcome tour is behind this user, so the
 // app lands on itself the way it does every other day.
@@ -40,6 +42,7 @@ const SETTINGS: Settings = {
   electrum_certs: {},
   app_lock: null,
   tor: { mode: "auto", socks_proxy: null },
+  preferences: PREFERENCES,
 };
 
 /** A SHA-256 fingerprint in the shape openssl prints, as the core sends it. */
@@ -544,13 +547,17 @@ function withFiat(overrides: Record<string, (args: Record<string, unknown>) => u
   return walletIpc({
     get_settings: () => ({
       ...SETTINGS,
-      app_prefs: { ...SETTINGS.app_prefs, "display.fiat": "1" },
+      preferences: { ...PREFERENCES, fiat: true },
     }),
     ...overrides,
   });
 }
 
 function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => unknown> = {}) {
+  // What the core holds of the preferences: the ones the vault answers,
+  // with every change applied.
+  const vault = (overrides.get_settings?.({}) ?? SETTINGS) as Settings;
+  const held = preferencesHeld(vault.preferences);
   mockIPC((cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
     if (overrides[cmd]) return overrides[cmd](payload);
@@ -594,6 +601,8 @@ function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => 
         return { reports: [], failures: [] };
       case "set_app_pref":
         return undefined;
+      case "set_preferences":
+        return held(payload.change as PreferencesChange);
       case "fetch_price":
         return { rate: 100_000, currency: "eur", source: "coingecko", at: 1_755_000_000 };
       case "fetch_price_history":
@@ -1699,7 +1708,7 @@ describe("display settings", () => {
       get_settings: () => ({
         ...SETTINGS,
         active_network: "mainnet",
-        app_prefs: { ...SETTINGS.app_prefs, "display.fiat": "1" },
+        preferences: { ...PREFERENCES, fiat: true },
       }),
       list_wallets: () => [wallet],
       wallet_snapshot: () => ({ ...SNAPSHOT, meta: wallet }),
@@ -1748,7 +1757,7 @@ describe("display settings", () => {
       get_settings: () => ({
         ...SETTINGS,
         active_network: "mainnet",
-        app_prefs: { ...SETTINGS.app_prefs, "display.fiat": "1" },
+        preferences: { ...PREFERENCES, fiat: true },
       }),
       list_wallets: () => [wallet],
       wallet_snapshot: () => ({ ...SNAPSHOT, meta: wallet }),
@@ -1929,11 +1938,12 @@ describe("display settings", () => {
 
     // A shared currency leaves every source available.
     await user.click(within(list).getByRole("option", { name: /^JPY/ }));
+    await waitFor(() => expect(useUi.getState().fiatCurrency).toBe("jpy"));
     expect(screen.getByRole("radio", { name: "Kraken" })).toBeEnabled();
     expect(useUi.getState().fiatSource).toBe("coingecko");
 
     await choose(user, "Fiat currency", "INR");
-    expect(useUi.getState().fiatCurrency).toBe("inr");
+    await waitFor(() => expect(useUi.getState().fiatCurrency).toBe("inr"));
     expect(screen.getByRole("radio", { name: "Kraken" })).toBeDisabled();
     expect(screen.getByRole("radio", { name: "mempool.space" })).toBeDisabled();
     expect(
@@ -3176,7 +3186,11 @@ describe("the app lock", () => {
     let unlocked = false;
     const pending: (() => void)[] = [];
     const seen: string[] = [];
-    const full: Settings = { ...LOCKED, app_prefs: { "desktop.masked": "1" } };
+    const full: Settings = {
+      ...LOCKED,
+      app_prefs: {},
+      preferences: { ...PREFERENCES, masked: true },
+    };
     mockIPC((cmd) => {
       seen.push(cmd);
       switch (cmd) {

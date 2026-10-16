@@ -2,6 +2,7 @@
 // serde DTOs one to one; if a field changes there, it changes here.
 
 import { invoke } from "@tauri-apps/api/core";
+import type { Unit } from "./format";
 
 export type Network = "mainnet" | "signet" | "testnet4" | "regtest";
 
@@ -501,6 +502,9 @@ export interface Settings {
   app_lock: AppLock | null;
   /** How `.onion` backends reach Tor. */
   tor: TorSettings;
+  /** What both apps keep with the same meaning; `app_prefs` holds what
+      is this app's alone. */
+  preferences: Preferences;
 }
 
 // --- backup ---------------------------------------------------------------
@@ -637,6 +641,23 @@ export function quotesCurrency(source: PriceSource, currency: FiatCurrency): boo
     (SHARED_CURRENCIES as readonly string[]).includes(currency)
   );
 }
+
+/** The preferences both apps keep, mirroring `Preferences` in
+    gerfaut-core. A vault that never stored one answers its default. */
+export interface Preferences {
+  unit: Unit;
+  masked: boolean;
+  fiat: boolean;
+  fiat_currency: FiatCurrency;
+  /** Always one that quotes `fiat_currency`: the core sees to it. */
+  price_source: PriceSource;
+  notify_new_tx: boolean;
+  explorer_ack: boolean;
+}
+
+/** A change to some of the preferences; what is left out keeps its
+    value. */
+export type PreferencesChange = Partial<Preferences>;
 
 export interface PriceQuote {
   /** Price of 1 BTC in the currency. */
@@ -952,10 +973,13 @@ export const ipc = {
     invoke<void>("trust_certificate", { url, fingerprint }),
   forgetCertificate: (host: string) => invoke<void>("forget_certificate", { host }),
   setAppPref: (key: string, value: string) => invoke<void>("set_app_pref", { key, value }),
-  fetchPrice: (source: PriceSource, currency: FiatCurrency) =>
-    invoke<PriceQuote>("fetch_price", { source, currency }),
-  fetchPriceHistory: (source: PriceSource, currency: FiatCurrency, range: PriceRange) =>
-    invoke<PriceHistory>("fetch_price_history", { source, currency, range }),
+  /** Answers every preference as stored, the change applied. */
+  setPreferences: (change: PreferencesChange) =>
+    invoke<Preferences>("set_preferences", { change }),
+  /** In the currency and from the source of the preferences. */
+  fetchPrice: () => invoke<PriceQuote>("fetch_price"),
+  fetchPriceHistory: (range: PriceRange) =>
+    invoke<PriceHistory>("fetch_price_history", { range }),
   checkUpdate: () => invoke<UpdateCheck>("check_update"),
   liveStatus: () => invoke<LiveStatus>("live_status"),
   sendTestNotification: () => invoke<void>("send_test_notification"),

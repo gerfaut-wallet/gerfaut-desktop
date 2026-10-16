@@ -3,8 +3,9 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { BackendConfig, Network, WatchStatus } from "../../lib/ipc";
+import type { BackendConfig, Network, PreferencesChange, WatchStatus } from "../../lib/ipc";
 import { useUi } from "../../state/store";
+import { PREFERENCES } from "../../test/fixtures";
 import { NotificationsSection } from "./NotificationsSection";
 
 const OFF: WatchStatus = {
@@ -21,7 +22,8 @@ const OFF: WatchStatus = {
 
 interface Desk {
   status: WatchStatus;
-  prefs: Record<string, string>;
+  /** The alerts preference, as the vault holds it. */
+  alerts: boolean;
   tests: number;
   refuseTest: boolean;
   /** The networks of the wallets in the vault, one entry per wallet. */
@@ -30,21 +32,26 @@ interface Desk {
   listed: Network[];
 }
 
+/** The alerts after a change to the preferences. */
+function alertsOf(change: unknown, before: boolean): boolean {
+  return (change as PreferencesChange).notify_new_tx ?? before;
+}
+
 function mockDesk(status: WatchStatus = OFF): Desk {
-  const desk: Desk = { status, prefs: {}, tests: 0, refuseTest: false, wallets: ["mainnet"], listed: [] };
+  const desk: Desk = { status, alerts: false, tests: 0, refuseTest: false, wallets: ["mainnet"], listed: [] };
   mockIPC((cmd, args) => {
-    const payload = (args ?? {}) as Record<string, string>;
+    const payload = (args ?? {}) as Record<string, unknown>;
     switch (cmd) {
       case "live_status":
-        return { enabled: desk.prefs["notify.new_tx"] === "1", status: desk.status };
+        return { enabled: desk.alerts, status: desk.status };
       case "list_wallets":
         desk.listed.push(payload.network as Network);
         return desk.wallets
           .filter((network) => network === payload.network)
           .map((network, index) => ({ id: `w-${index}`, network }));
-      case "set_app_pref":
-        desk.prefs[payload.key] = payload.value;
-        return undefined;
+      case "set_preferences":
+        desk.alerts = alertsOf(payload.change, desk.alerts);
+        return { ...PREFERENCES, notify_new_tx: desk.alerts };
       case "send_test_notification":
         desk.tests += 1;
         if (desk.refuseTest) {
@@ -102,7 +109,7 @@ describe("Settings › Notifications", () => {
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("switch", { name: "Notify about new transactions" }));
-    await waitFor(() => expect(desk.prefs["notify.new_tx"]).toBe("1"));
+    await waitFor(() => expect(desk.alerts).toBe(true));
     await waitFor(() =>
       expect(statusLine()).toHaveTextContent("Connected · Electrum · mempool.space"),
     );
@@ -115,16 +122,16 @@ describe("Settings › Notifications", () => {
     const desk = mockDesk();
     let started: () => void = () => {};
     mockIPC((cmd, args) => {
-      const payload = (args ?? {}) as Record<string, string>;
+      const payload = (args ?? {}) as Record<string, unknown>;
       if (cmd === "live_status") {
-        return { enabled: desk.prefs["notify.new_tx"] === "1", status: desk.status };
+        return { enabled: desk.alerts, status: desk.status };
       }
-      if (cmd === "set_app_pref") {
-        return new Promise<void>((resolve) => {
+      if (cmd === "set_preferences") {
+        return new Promise((resolve) => {
           started = () => {
-            desk.prefs[payload.key] = payload.value;
+            desk.alerts = alertsOf(payload.change, desk.alerts);
             desk.status = { ...OFF, state: "connected", transport: "electrum", server: "node.example" };
-            resolve();
+            resolve({ ...PREFERENCES, notify_new_tx: desk.alerts });
           };
         });
       }
@@ -153,7 +160,7 @@ describe("Settings › Notifications", () => {
     await waitFor(() => expect(statusLine()).toHaveTextContent(/^Off$/));
 
     await user.click(screen.getByRole("switch", { name: "Notify about new transactions" }));
-    await waitFor(() => expect(desk.prefs["notify.new_tx"]).toBe("1"));
+    await waitFor(() => expect(desk.alerts).toBe(true));
     await waitFor(() => expect(statusLine()).toHaveTextContent("Off until you add a wallet."));
     expect(statusLine()).not.toHaveTextContent("Connecting…");
   });
@@ -161,7 +168,7 @@ describe("Settings › Notifications", () => {
   it("says a bare Off when the network holds a wallet and the watch is off", async () => {
     useUi.setState({ notifyNewTx: true });
     const desk = mockDesk();
-    desk.prefs["notify.new_tx"] = "1";
+    desk.alerts = true;
     desk.wallets = ["signet"];
     renderCard({}, "signet");
     await waitFor(() => expect(desk.listed).toEqual(["signet"]));
@@ -177,7 +184,7 @@ describe("Settings › Notifications", () => {
       server: "node.example",
       detail: "connection refused",
     });
-    desk.prefs["notify.new_tx"] = "1";
+    desk.alerts = true;
     const first = renderCard({ mainnet: { type: "custom_electrum", url: "ssl://node.example:50002" } });
     await waitFor(() =>
       expect(statusLine()).toHaveTextContent("Reconnecting… · Electrum · node.example"),
@@ -223,7 +230,7 @@ describe("Settings › Notifications", () => {
       wallets: [],
     };
     const desk = mockDesk(short);
-    desk.prefs["notify.new_tx"] = "1";
+    desk.alerts = true;
     const first = renderCard({}, "mainnet");
     expect(
       await screen.findByText(
@@ -274,7 +281,7 @@ describe("Settings › Notifications", () => {
       wallets: [],
       server_software: "Fulcrum 1.12.0",
     });
-    desk.prefs["notify.new_tx"] = "1";
+    desk.alerts = true;
     renderCard({
       mainnet: { type: "custom_electrum", url: "ssl://node.example:50002", own_node: true },
     });
@@ -296,7 +303,7 @@ describe("Settings › Notifications", () => {
       pushed_scripts: 36,
     });
     useUi.setState({ notifyNewTx: true });
-    desk.prefs["notify.new_tx"] = "1";
+    desk.alerts = true;
     renderCard();
     await waitFor(() => expect(statusLine()).toHaveTextContent("Connected"));
     expect(screen.queryByText(/checked at the next sync/)).not.toBeInTheDocument();

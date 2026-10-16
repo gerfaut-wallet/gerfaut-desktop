@@ -1,6 +1,7 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { AppLock, Settings } from "../lib/ipc";
+import { PREFERENCES } from "../test/fixtures";
 import { isLockedError, lockedSettings, useLock } from "./lock";
 
 const PIN: AppLock = { kind: "pin", biometric: false };
@@ -12,12 +13,13 @@ const FULL: Settings = {
   app_prefs: {
     "desktop.theme": "dark",
     "onboarding.seen": "1",
-    "display.unit": "sats",
+    "desktop.sidebar": "collapsed",
     "broadcast.recent": '[{"txid":"ab","hex":"00","network":"signet"}]',
   },
   electrum_certs: { "node.example:50002": "AB:CD" },
   app_lock: PIN,
   tor: { mode: "auto", socks_proxy: null },
+  preferences: { ...PREFERENCES, unit: "sats" },
 };
 
 describe("the settings kept behind the lock", () => {
