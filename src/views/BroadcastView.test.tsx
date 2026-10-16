@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BroadcastView, MAX_TRANSACTION_FILE_BYTES } from "./BroadcastView";
-import type { BroadcastStatus, TxPreview, TxWarning } from "../lib/ipc";
+import type { BroadcastStatus, RecentBroadcast, TxPreview, TxWarning } from "../lib/ipc";
 import { useUi } from "../state/store";
 import { formatFiat } from "../lib/format";
 
@@ -96,10 +96,26 @@ function status(overrides: Partial<BroadcastStatus> = {}): BroadcastStatus {
   };
 }
 
+/** What the vault keeps, the way the core keeps it: a send the network
+    took at the head, a forgotten one gone. */
+let kept: RecentBroadcast[] = [];
+
 function mount(preview: TxPreview = PREVIEW, standing: BroadcastStatus = status()) {
-  mockIPC((cmd) => {
+  mockIPC((cmd, args) => {
+    const payload = (args ?? {}) as Record<string, string>;
     if (cmd === "preview_transaction") return preview;
-    if (cmd === "broadcast_transaction") return REPORT;
+    if (cmd === "broadcast_transaction") {
+      kept = [
+        { ...REPORT, network: payload.network as RecentBroadcast["network"], hex: payload.hex },
+        ...kept.filter((entry) => entry.txid !== REPORT.txid),
+      ];
+      return REPORT;
+    }
+    if (cmd === "recent_broadcasts") return kept.filter((entry) => entry.network === payload.network);
+    if (cmd === "forget_broadcast") {
+      kept = kept.filter((entry) => entry.txid !== payload.txid);
+      return undefined;
+    }
     if (cmd === "transaction_status") return standing;
     if (cmd === "fetch_price") return { rate: RATE, currency: "eur", at: 0, source: "coingecko" };
     return undefined;
@@ -131,7 +147,8 @@ async function send(user: ReturnType<typeof userEvent.setup>) {
 
 describe("BroadcastView", () => {
   beforeEach(() => {
-    useUi.setState({ masked: false, recentBroadcasts: [] });
+    useUi.setState({ masked: false });
+    kept = [];
   });
 
   it("tells the scanner what this page is waiting for", async () => {
@@ -605,13 +622,12 @@ describe("BroadcastView", () => {
   });
 
   it("asks before forgetting a past broadcast, and forgets only on yes", async () => {
-    useUi.setState({
-      recentBroadcasts: [
-        { txid: TXID, network: "signet", hex: HEX, backend: "mempool.space", at: 1_755_000_000 },
-      ],
-    });
+    kept = [
+      { txid: TXID, network: "signet", hex: HEX, backend: "mempool.space", at: 1_755_000_000 },
+    ];
     const user = mount();
     const past = () => within(screen.getByRole("region", { name: "Past broadcasts" }));
+    await screen.findByRole("region", { name: "Past broadcasts" });
     await user.click(past().getByRole("button", { name: "Forget this broadcast" }));
 
     const dialog = within(await screen.findByRole("dialog", { name: "Forget this broadcast?" }));
@@ -620,13 +636,15 @@ describe("BroadcastView", () => {
     expect(dialog.getByText(/on the network and is untouched/)).toBeInTheDocument();
 
     await user.click(dialog.getByRole("button", { name: "Cancel" }));
-    expect(useUi.getState().recentBroadcasts).toHaveLength(1);
+    expect(kept).toHaveLength(1);
 
     await user.click(past().getByRole("button", { name: "Forget this broadcast" }));
     const asked = within(await screen.findByRole("dialog", { name: "Forget this broadcast?" }));
     await user.click(asked.getByRole("button", { name: "Forget" }));
-    expect(useUi.getState().recentBroadcasts).toHaveLength(0);
-    expect(screen.queryByRole("region", { name: "Past broadcasts" })).not.toBeInTheDocument();
+    expect(kept).toHaveLength(0);
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Past broadcasts" })).not.toBeInTheDocument(),
+    );
   });
 
   it("prices a preview line in the chosen unit only, never in fiat", async () => {

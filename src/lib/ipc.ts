@@ -792,6 +792,17 @@ export interface BroadcastStatus {
   at: number;
 }
 
+/** A transaction handed to the network from this app, kept by the
+    vault so the broadcast page can show where it stands after a
+    restart. */
+export interface RecentBroadcast {
+  txid: string;
+  network: Network;
+  hex: string;
+  backend: string;
+  at: number;
+}
+
 /** What to say about releases: all of it decided by the core, which
     keeps the state of the check in the vault. */
 export interface UpdateStatus {
@@ -1010,6 +1021,10 @@ export const ipc = {
     invoke<BroadcastReport>("broadcast_transaction", { network, hex }),
   transactionStatus: (network: Network, hex: string) =>
     invoke<BroadcastStatus>("transaction_status", { network, hex }),
+  /** The last transactions sent on this network, newest first. */
+  recentBroadcasts: (network: Network) =>
+    invoke<RecentBroadcast[]>("recent_broadcasts", { network }),
+  forgetBroadcast: (txid: string) => invoke<void>("forget_broadcast", { txid }),
   setActiveNetwork: (network: Network) => invoke<void>("set_active_network", { network }),
   setBackend: (network: Network, config: BackendConfig) =>
     invoke<void>("set_backend", { network, config }),

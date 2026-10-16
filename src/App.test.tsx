@@ -605,6 +605,8 @@ function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => 
         };
       case "wallet_policy":
         return SINGLE_KEY_POLICY;
+      case "recent_broadcasts":
+        return [];
       case "sync_all":
         return { reports: [], failures: [] };
       case "set_app_pref":
@@ -2541,12 +2543,17 @@ describe("electrum certificates", () => {
 describe("broadcast page", () => {
   it("previews a transaction, confirms, and follows it", async () => {
     const broadcastCalls: unknown[] = [];
+    // The vault's list: the core keeps what the network took.
+    let kept: unknown[] = [];
     walletIpc({
       preview_transaction: () => PREVIEW,
       broadcast_transaction: (args) => {
         broadcastCalls.push(args);
-        return { txid: PREVIEW.txid, backend: "mempool.space", at: 1_755_000_000 };
+        const report = { txid: PREVIEW.txid, backend: "mempool.space", at: 1_755_000_000 };
+        kept = [{ ...report, network: args.network, hex: args.hex }];
+        return report;
       },
+      recent_broadcasts: () => kept,
       transaction_status: () => ({
         txid: PREVIEW.txid,
         found: true,
@@ -2595,10 +2602,11 @@ describe("broadcast page", () => {
     expect(
       main.getByRole("button", { name: "Broadcast another transaction" }),
     ).toHaveClass("bg-primary");
-    expect(useUi.getState().recentBroadcasts[0]).toMatchObject({
-      txid: PREVIEW.txid,
-      backend: "mempool.space",
-    });
+    // Sent again from the top, it is a past broadcast, as the vault
+    // says.
+    await user.click(main.getByRole("button", { name: "Broadcast another transaction" }));
+    const past = within(await screen.findByRole("region", { name: "Past broadcasts" }));
+    expect(past.getByText(/Sent .* · mempool\.space/)).toBeInTheDocument();
   });
 
   it("keeps an unsigned transaction on the machine and shows the node's refusal verbatim", async () => {
