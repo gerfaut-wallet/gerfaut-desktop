@@ -731,6 +731,11 @@ export interface TxWarning {
   blocking: boolean;
 }
 
+/** Where a transaction stands before it is sent, decided by the core:
+    the words of the readiness pill. `refused` comes before `unsigned`
+    when both hold, since a signature does not bring back a spent coin. */
+export type TxReadiness = "ready" | "refused" | "unsigned";
+
 /** Everything shown before a transaction is broadcast. */
 export interface TxPreview {
   txid: string;
@@ -747,8 +752,9 @@ export interface TxPreview {
   locktime: number;
   rbf: boolean;
   /** The transaction can be sent: every input signed, and no caution
-      `blocking`. */
+      `blocking`. The same as `readiness` being "ready". */
   ready: boolean;
+  readiness: TxReadiness;
   warnings: TxWarning[];
   /** The transaction as the network takes it; present only when ready. */
   hex: string | null;

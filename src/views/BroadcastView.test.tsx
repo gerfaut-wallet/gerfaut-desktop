@@ -75,6 +75,7 @@ const PREVIEW: TxPreview = {
   locktime: 0,
   rbf: true,
   ready: true,
+  readiness: "ready",
   warnings: [],
   hex: HEX,
 };
@@ -239,7 +240,7 @@ describe("BroadcastView", () => {
     expect(reminder.parentElement).toHaveClass("bg-alert-surface", "text-alert");
   });
 
-  /** Every coin's value is known and there is still no fee: the
+  /** Every coin's value confirmed and there is still no fee: the
       outputs pay more than the inputs bring. No node takes that, so the
       core blocks the send, and the pill says the same as the caution. */
   it("says outputs over the inputs will be refused, and keeps Broadcast off", async () => {
@@ -248,6 +249,7 @@ describe("BroadcastView", () => {
       fee_sats: null,
       fee_rate_sat_vb: null,
       ready: false,
+      readiness: "refused",
       hex: null,
       warnings: [
         warning(
@@ -264,14 +266,15 @@ describe("BroadcastView", () => {
     expect(screen.getByRole("button", { name: "Broadcast" })).toBeDisabled();
   });
 
-  /** The rehearsal of 0.1.0: a transaction already mined, pasted again,
-      read "Ready to broadcast" in green beside the red line saying its
-      coin was spent. The core now blocks a coin spent in a block, and
-      the pill and the button follow it. */
+  /** A transaction already mined, pasted again, used to read "Ready to
+      broadcast" in green beside the red line saying its coin was spent.
+      The core blocks a coin spent in a block, and the pill and the
+      button follow it. */
   it("never calls ready a transaction whose coin is spent in a block", async () => {
     const user = mount({
       ...PREVIEW,
       ready: false,
+      readiness: "refused",
       hex: null,
       warnings: [
         warning(
@@ -290,6 +293,15 @@ describe("BroadcastView", () => {
     const caution = screen.getByText(/already spent by another transaction/);
     expect(caution.parentElement).toHaveClass("bg-alert-surface", "text-alert");
     expect(screen.getByRole("button", { name: "Broadcast" })).toBeDisabled();
+  });
+
+  /** The pill says what the core says, as it says it: the screen works
+      nothing out of the cautions, which may say more or less. */
+  it("reads the pill off the core, never off the cautions", async () => {
+    const user = mount({ ...PREVIEW, ready: false, readiness: "refused", hex: null });
+    await preview(user);
+    expect(screen.getByText("Will be refused")).toHaveAttribute("data-tone", "pending");
+    expect(screen.queryByText("Not fully signed")).not.toBeInTheDocument();
   });
 
   /** A spend still in the mempool is the node's to judge: this one may
@@ -446,6 +458,7 @@ describe("BroadcastView", () => {
     const user = mount({
       ...PREVIEW,
       ready: false,
+      readiness: "unsigned",
       hex: null,
       warnings: [warning("unsigned", "alert", "Some inputs carry no signature yet.", true)],
     });

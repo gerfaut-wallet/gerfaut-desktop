@@ -465,14 +465,6 @@ const WARNING_ADVICE: Partial<Record<TxWarningKind, string>> = {
     "This signature does not fix where all of the money goes: anyone who sees the transaction before it is mined can send some or all of it somewhere else. Unless you set this up on purpose, do not broadcast it.",
 };
 
-/** Whether the core is sure the network refuses this transaction for
-    something other than a missing signature: a coin already spent in a
-    block, outputs worth more than the inputs. The core decides what
-    blocks; the page only picks the words of the pill. */
-function refusedOutright(preview: TxPreview): boolean {
-  return preview.warnings.some((warning) => warning.blocking && warning.kind !== "unsigned");
-}
-
 /** Whether a figure on the preview is the PSBT's own word. The core
     says so coin by coin — nothing stood behind it, no backend and no
     watched wallet — and a total or a fee summed over such a coin rests
@@ -555,11 +547,12 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Pill tone="neutral">{preview.source === "psbt" ? "PSBT" : "Raw transaction"}</Pill>
-          {preview.ready ? (
+          {/* Where it stands is the core's word, read as it comes. */}
+          {preview.readiness === "ready" ? (
             <Pill tone="confirmed" icon={<Check size={12} strokeWidth={2} aria-hidden />}>
               Ready to broadcast
             </Pill>
-          ) : refusedOutright(preview) ? (
+          ) : preview.readiness === "refused" ? (
             // The core is sure the network refuses it: a coin spent in
             // a block, outputs over the inputs. Signing again changes
             // neither, so this is said before a missing signature.

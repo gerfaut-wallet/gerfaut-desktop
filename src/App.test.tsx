@@ -698,6 +698,7 @@ const PREVIEW = {
   locktime: 0,
   rbf: true,
   ready: true,
+  readiness: "ready",
   // The core answers the tone: a screen never derives it.
   warnings: [
     {
@@ -2590,6 +2591,7 @@ describe("broadcast page", () => {
           ? {
               ...PREVIEW,
               ready: false,
+              readiness: "unsigned",
               hex: null,
               inputs: [{ ...PREVIEW.inputs[0], signed: false }],
               warnings: [
