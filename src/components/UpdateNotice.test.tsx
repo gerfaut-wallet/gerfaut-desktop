@@ -42,7 +42,8 @@ interface Core {
   /** The release the notice was closed on. */
   dismissed: string | null;
   torUnavailable: boolean;
-  /** How many sessions the window opened. */
+  /** How many sessions the window opened, counted as they are asked:
+      one asked behind the lock counts too, refused or not. */
   sessions: number;
   /** How many times GitHub was asked. */
   checks: number;
@@ -110,8 +111,8 @@ function mockCore(options: Partial<Core> & { lock?: boolean } = {}): Core {
         if (core.locked) return Promise.reject(LOCKED);
         return statusOf(core);
       case "update_session":
-        if (core.locked) return Promise.reject(LOCKED);
         core.sessions += 1;
+        if (core.locked) return Promise.reject(LOCKED);
         if (core.automatic && core.due && ask()) core.due = false;
         return statusOf(core);
       case "check_update": {
