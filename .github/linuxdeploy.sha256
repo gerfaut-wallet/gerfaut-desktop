@@ -1,7 +1,8 @@
 # The five tools the AppImage bundler of tauri-bundler 2.9.4 (the one
 # inside @tauri-apps/cli 2.11.4, see package-lock.json) downloads into
 # ~/.cache/tauri when it builds the AppImage, as they were on 2026-09-05,
-# except linuxdeploy-plugin-appimage, taken again on 2026-10-16.
+# except linuxdeploy-plugin-appimage, taken from a tagged release on
+# 2026-10-16.
 #
 # The bundler fetches them from references that move (release assets that
 # can be re-uploaded, a `master` branch, a `continuous` release), verifies
@@ -9,7 +10,7 @@
 # the gtk hook inside the AppImage itself. Tauri once vendored the scripts
 # (PR #14390) and went back to downloading them (PR #14841). The bundler
 # skips a download when the file already sits in its cache, so
-# workflows/release.yml downloads the five files itself, checks them
+# reproducible/targets/linux.sh downloads the five files itself, checks them
 # against this list and only then starts the build. The check must come
 # first: once the bundler has linuxdeploy it overwrites three bytes at
 # offset 8, to hide the file from AppImage integration tools.
@@ -29,13 +30,16 @@
 #   linuxdeploy-plugin-gstreamer.sh  tauri-apps/linuxdeploy-plugin-gstreamer 2a2e67491c32995a3f279ad0ecbe77abd512b42a
 #
 # The `continuous` release of linuxdeploy-plugin-appimage is rebuilt on
-# the 1st of every month by a scheduled run of its CI and the new file
-# replaces the old one: a full rebuild, so its hash changes even when
-# the plugin's own source does not. The hash below is the build of
-# 2026-10-01, run 36815339264 of linuxdeploy/linuxdeploy-plugin-appimage,
-# from commit 536b068787179ea901964bd7dabc7bf61e4941c3, the same commit
-# as the build of 2026-09-01 (run 33467741325) pinned before it; the
-# released file is byte for byte the x86_64 artifact of that run.
+# the 1st of every month, so its hash changes even when the source does
+# not. The plugin is fetched from the release 1-alpha-20250213-1 instead
+# (commit a96502d15ce19ec1df3d46e6cbe87ddf38589a71), whose file stays.
+# GitHub publishes no digest for it and the upstream run that built it
+# has aged out. Its provenance: uploaded by github-actions[bot] on
+# 2025-02-13 and never replaced since (asset 228937581), and the same
+# hash pinned the next day by KDE Craft (craft-blueprints-kde
+# cebd8e789). Its source differs from the `continuous` build pinned
+# before (536b068) only in build flags; it bundles appimagetool build
+# 227 instead of 295, with the same mksquashfs 4.6.1.
 #
 # When @tauri-apps/cli moves, read that file again at the matching tag:
 # if a URL or a file name changed, update release.yml and this list. To
@@ -47,4 +51,4 @@ f30140a43a0a59e46db21bdefdf749b9e9f2c6946e92afabbacf98b8ae73fb4f  AppRun-x86_64
 e762bea85c8eb0d4b3508d46e5c1f037f717d0f9303ae3b4aafc8b04991fa1ef  linuxdeploy-x86_64.AppImage
 cb379f9b0733e9ad9f8bd78f8c2fa038aef2478523bb7d4c8e64ff6a1ea3501a  linuxdeploy-plugin-gtk.sh
 c107b49d84edbffc6ab226ed1007e0626a4f7aa2c3a36b7782bef62351d49e94  linuxdeploy-plugin-gstreamer.sh
-49d6a17160675a6bd1781699aae6bdf7692d98552e02a3671d2183d10547842e  linuxdeploy-plugin-appimage.AppImage
+992d502a248e14ab185448ddf6f6e7d25558cb84d4623c354c3af350c25fccb3  linuxdeploy-plugin-appimage.AppImage
