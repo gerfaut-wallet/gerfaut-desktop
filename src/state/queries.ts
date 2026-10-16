@@ -273,19 +273,32 @@ export function torDown(error: unknown): boolean {
     success, with no error for anyone to see. */
 const PRICE_NETWORK_MODE = "always";
 
+/** The currencies and price sources the settings offer, and how often
+    the price is asked. The core's table: it only changes with the app. */
+export function usePriceTable() {
+  return useQuery({
+    queryKey: ["price-table"],
+    queryFn: ipc.priceTable,
+    staleTime: Infinity,
+  });
+}
+
 /** Current BTC price, by the currency and source of the preferences,
-    refreshed every minute while fiat display is on. The key carries
-    what the price is asked by, which the store only takes once the
-    vault stored it: a new key is a price the core asks by it. */
+    asked again at the core's cadence while fiat display is on. The key
+    carries what the price is asked by, which the store only takes once
+    the vault stored it: a new key is a price the core asks by it. */
 export function useFiatRate() {
   const { fiatEnabled, fiatSource, fiatCurrency } = useUi();
+  const every = usePriceTable().data?.refresh_secs;
   return useQuery({
     queryKey: ["price", fiatSource, fiatCurrency],
     queryFn: () => ipc.fetchPrice(),
     enabled: fiatEnabled,
     networkMode: PRICE_NETWORK_MODE,
-    refetchInterval: 60_000,
-    staleTime: 55_000,
+    refetchInterval: every === undefined ? false : every * 1000,
+    // Fresh for a little less than the cadence, so the next turn of
+    // the clock always asks.
+    staleTime: every === undefined ? 0 : every * 1000 - 5_000,
     retry: 1,
   });
 }

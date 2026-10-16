@@ -12,7 +12,7 @@ import type {
 } from "../lib/ipc";
 import { useWallets } from "../state/queries";
 import { useUi } from "../state/store";
-import { PREFERENCES } from "../test/fixtures";
+import { PREFERENCES, PRICE_TABLE } from "../test/fixtures";
 import { BackendSection } from "./settings/BackendSection";
 import { SettingsView } from "./SettingsView";
 
@@ -516,6 +516,8 @@ function mockSettingsIpc(
         return undefined;
       case "set_preferences":
         return { ...PREFERENCES, ...(payload.change as PreferencesChange) };
+      case "price_table":
+        return PRICE_TABLE;
       case "live_status":
         return {
           enabled: false,

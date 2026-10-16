@@ -594,52 +594,43 @@ export type CertificateReport = { host: string } & (
 
 export type PriceSource = "coingecko" | "kraken" | "mempool_space";
 
-/** Mirror of `FiatCurrency` in gerfaut-core, in the same order: the
-    seven every source quotes, then the ones CoinGecko alone publishes. */
-export const SHARED_CURRENCIES = ["eur", "usd", "gbp", "chf", "jpy", "cad", "aud"] as const;
+/** A display currency, by the identifier gerfaut-core names it with
+    (`eur`, `try`...): the list on offer, its order, the names and which
+    source quotes what are the core's, in `PriceTable`. Its ISO code is
+    the identifier in capitals. */
+export type FiatCurrency = string;
 
-export const COINGECKO_ONLY_CURRENCIES = [
-  "inr",
-  "cny",
-  "brl",
-  "ngn",
-  "idr",
-  "pkr",
-  "bdt",
-  "rub",
-  "mxn",
-  "php",
-  "vnd",
-  "try",
-  "ars",
-  "krw",
-  "zar",
-  "thb",
-  "uah",
-  "pln",
-  "sek",
-  "sgd",
-  "hkd",
-  "aed",
-  "nzd",
-] as const;
+/** How many sources quote a currency, mirroring `CurrencyReach`. */
+export type CurrencyReach = "every" | "coingecko_only";
 
-export type FiatCurrency =
-  | (typeof SHARED_CURRENCIES)[number]
-  | (typeof COINGECKO_ONLY_CURRENCIES)[number];
+/** One currency of the table, mirroring `CurrencyEntry`. */
+export interface CurrencyEntry {
+  currency: FiatCurrency;
+  /** ISO 4217 code: the identifier, in capitals. */
+  code: string;
+  /** Its English name, read beside the code. */
+  name: string;
+  reach: CurrencyReach;
+  /** The sources that quote it, in display order. */
+  sources: PriceSource[];
+}
 
-export const ALL_CURRENCIES: readonly FiatCurrency[] = [
-  ...SHARED_CURRENCIES,
-  ...COINGECKO_ONLY_CURRENCIES,
-];
+/** One price source of the table, mirroring `SourceEntry`. */
+export interface SourceEntry {
+  source: PriceSource;
+  label: string;
+  /** The chart ranges it serves without a key, shortest first. */
+  ranges: PriceRange[];
+}
 
-/** Mirror of `PriceSource::supports_currency`: Kraken lists seven fiat
-    pairs against XBT and the mempool projects publish the same seven. */
-export function quotesCurrency(source: PriceSource, currency: FiatCurrency): boolean {
-  return (
-    source === "coingecko" ||
-    (SHARED_CURRENCIES as readonly string[]).includes(currency)
-  );
+/** What the settings offer for the fiat value, and how often its price
+    is asked, mirroring `PriceTable` in gerfaut-core. */
+export interface PriceTable {
+  /** In display order: the ones every source quotes first. */
+  currencies: CurrencyEntry[];
+  sources: SourceEntry[];
+  /** Seconds from one price to the next while the fiat value is on. */
+  refresh_secs: number;
 }
 
 /** The preferences both apps keep, mirroring `Preferences` in
@@ -668,14 +659,6 @@ export interface PriceQuote {
 }
 
 export type PriceRange = "day" | "week" | "month" | "year" | "max";
-
-/** Mirror of `PriceSource::supports` in gerfaut-core: the ranges each
-    keyless endpoint can actually serve. The UI hides the rest. */
-export const SUPPORTED_RANGES: Record<PriceSource, PriceRange[]> = {
-  kraken: ["day", "week", "month", "year", "max"],
-  coingecko: ["day", "week", "month", "year"],
-  mempool_space: ["month", "year", "max"],
-};
 
 export interface PricePoint {
   /** Unix timestamp, seconds. */
@@ -976,6 +959,7 @@ export const ipc = {
   /** Answers every preference as stored, the change applied. */
   setPreferences: (change: PreferencesChange) =>
     invoke<Preferences>("set_preferences", { change }),
+  priceTable: () => invoke<PriceTable>("price_table"),
   /** In the currency and from the source of the preferences. */
   fetchPrice: () => invoke<PriceQuote>("fetch_price"),
   fetchPriceHistory: (range: PriceRange) =>

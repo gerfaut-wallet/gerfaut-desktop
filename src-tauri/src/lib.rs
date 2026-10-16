@@ -693,6 +693,13 @@ fn public_servers(network: Network) -> Vec<gerfaut_core::chain::public::PublicSe
     gerfaut_core::chain::public::public_servers(network)
 }
 
+/// The currencies and price sources the settings offer, and how often
+/// the price is asked. A fixed table: it only changes with the core.
+#[tauri::command]
+fn price_table() -> gerfaut_core::price::PriceTable {
+    gerfaut_core::price::price_table()
+}
+
 /// The current BTC price, in the currency and from the source of the
 /// preferences. By the route the syncs take: through Tor when a backend
 /// is an onion address, and not at all when Tor is required and cannot
@@ -1214,6 +1221,7 @@ pub fn run() {
             forget_certificate,
             set_app_pref,
             set_preferences,
+            price_table,
             fetch_price,
             fetch_price_history,
             check_update,
