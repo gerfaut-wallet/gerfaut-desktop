@@ -37,8 +37,10 @@ target_fetch() {
         https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gtk/b5eb8d05b4c0ed40107fe2158c5d8527f94568ef/linuxdeploy-plugin-gtk.sh
     fetch_pinned "$LINUXDEPLOY_SUMS" linuxdeploy-plugin-gstreamer.sh \
         https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gstreamer/2a2e67491c32995a3f279ad0ecbe77abd512b42a/linuxdeploy-plugin-gstreamer.sh
+    # A tagged release, not the `continuous` one the bundler names, which
+    # is rebuilt every month.
     fetch_pinned "$LINUXDEPLOY_SUMS" linuxdeploy-plugin-appimage.AppImage \
-        https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
+        https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-appimage-x86_64.AppImage
     # The sixth one, see linux/appimage-runtime.sha256.
     fetch_pinned "$RUNTIME_SUMS" runtime-x86_64 \
         https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
