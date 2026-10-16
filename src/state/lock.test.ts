@@ -1,6 +1,7 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { AppLock, Settings } from "../lib/ipc";
+import { coreCase } from "../test/core";
 import { PREFERENCES } from "../test/fixtures";
 import { isLockedError, lockedSettings, useLock } from "./lock";
 
@@ -9,7 +10,6 @@ const PIN: AppLock = { kind: "pin", biometric: false };
 const FULL: Settings = {
   active_network: "signet",
   backends: { signet: { type: "custom_esplora", url: "https://mempool.space/signet/api" } },
-  gap_limit: 20,
   app_prefs: {
     "desktop.theme": "dark",
     "onboarding.seen": "1",
@@ -17,8 +17,9 @@ const FULL: Settings = {
   },
   electrum_certs: { "node.example:50002": "AB:CD" },
   app_lock: PIN,
-  tor: { mode: "auto", socks_proxy: null },
-  preferences: { ...PREFERENCES, unit: "sats" },
+  gap_limit: 50,
+  tor: { mode: "system", socks_proxy: "127.0.0.1:9150" },
+  preferences: { ...PREFERENCES, unit: "sats", masked: true, fiat: true },
 };
 
 describe("the settings kept behind the lock", () => {
@@ -35,6 +36,20 @@ describe("the settings kept behind the lock", () => {
     expect(shut.electrum_certs).toEqual({});
     // What the lock screen has to ask for stays.
     expect(shut.app_lock).toEqual(PIN);
+  });
+
+  it("answers the rest at the core's defaults, as the Rust side does", () => {
+    const shut = lockedSettings(FULL);
+    expect(shut.preferences).toEqual(PREFERENCES);
+    expect(shut).toEqual({
+      ...coreCase<Settings>("Settings", "fresh"),
+      active_network: FULL.active_network,
+      app_lock: PIN,
+      app_prefs: { "desktop.theme": "dark", "onboarding.seen": "1" },
+    });
+    // A copy, never the defaults themselves.
+    shut.preferences.masked = true;
+    expect(lockedSettings(FULL).preferences).toEqual(PREFERENCES);
   });
 
   it("reads a refusal from the locked vault for what it is", () => {
