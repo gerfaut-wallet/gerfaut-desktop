@@ -39,11 +39,18 @@ export function AboutSection() {
   const [result, setResult] = useState<"current" | "failed" | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
   const available = useUpdate((state) => state.status?.available ?? null);
-  const auto = useUpdate((state) => state.status?.automatic ?? true);
+  // Null until the core has said: no switch is drawn on a guess.
+  const auto = useUpdate((state) => state.status?.automatic ?? null);
   const arriving = useUpdate((state) => state.arriving);
   const heading = useRef<HTMLHeadingElement>(null);
   const torUnavailable = useUpdate((state) => state.status?.tor_unavailable ?? false);
   const link = useOpenExternal();
+
+  // A status the window could not read at startup is asked again
+  // here, where the switch needs it.
+  useEffect(() => {
+    if (useUpdate.getState().status === null) void useUpdate.getState().load();
+  }, []);
 
   // Sent here by the update notice, whose button is gone by now: the
   // card's heading takes the focus it held.
@@ -136,11 +143,17 @@ export function AboutSection() {
             title="Check for updates automatically"
             hint="Asks GitHub for the latest release at most once a day while Gerfaut is unlocked, through Tor when a backend is an onion address, and downloads nothing."
           >
-            <Toggle
-              checked={auto}
-              onChange={(on) => useUpdate.getState().setAuto(on)}
-              label="Check for updates automatically"
-            />
+            {auto === null ? (
+              // The switch's room, kept so the row does not move when
+              // the core answers.
+              <span aria-hidden className="block h-6 w-11" />
+            ) : (
+              <Toggle
+                checked={auto}
+                onChange={(on) => useUpdate.getState().setAuto(on)}
+                label="Check for updates automatically"
+              />
+            )}
           </SettingRow>
           {torUnavailable && (
             <p role="status" className="mt-1.5 font-ui text-xs text-muted">
