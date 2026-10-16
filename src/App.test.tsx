@@ -493,6 +493,12 @@ const LIVE_SHORT = {
     { wallet_id: "w-1", coverage: "partial", watched_scripts: 200, left_out_scripts: 1_040 },
     { wallet_id: "w-2", coverage: "sync_only", watched_scripts: 0, left_out_scripts: 200 },
   ],
+  left_out: {
+    reason: "live_limit",
+    limits: { per_wallet: 200, total: 2_000 },
+    own_node: false,
+    remedy: { type: "own_node", limits: { per_wallet: 20_000, total: 20_000 } },
+  },
 };
 
 /** What the core publishes for signet, the workspace network here. */
@@ -1057,6 +1063,7 @@ describe("overview", () => {
           left_out_scripts: 0,
           left_out_wallets: 0,
           wallets: [{ wallet_id: "w-1", coverage: "live", watched_scripts: 36, left_out_scripts: 0 }],
+          left_out: null,
         },
       }),
     });

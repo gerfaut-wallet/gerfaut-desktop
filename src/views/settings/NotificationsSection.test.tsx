@@ -221,6 +221,12 @@ describe("Settings › Notifications", () => {
       left_out_scripts: 1_240,
       left_out_wallets: 2,
       wallets: [],
+      left_out: {
+        reason: "live_limit",
+        limits: { per_wallet: 200, total: 2_000 },
+        own_node: false,
+        remedy: { type: "own_node", limits: { per_wallet: 20_000, total: 20_000 } },
+      },
     };
     const desk = mockDesk(short);
     desk.prefs["notify.new_tx"] = "1";
@@ -244,6 +250,12 @@ describe("Settings › Notifications", () => {
       pushed_scripts: 20_000,
       left_out_scripts: 1,
       left_out_wallets: 1,
+      left_out: {
+        reason: "live_limit",
+        limits: { per_wallet: 20_000, total: 20_000 },
+        own_node: true,
+        remedy: null,
+      },
     };
     renderCard({
       mainnet: { type: "custom_electrum", url: "ssl://node.example:50002", own_node: true },
@@ -256,10 +268,9 @@ describe("Settings › Notifications", () => {
     expect(screen.queryByRole("button", { name: "Node settings" })).not.toBeInTheDocument();
   });
 
-  /** On the user's own node, addresses left out below the cap are the
-      server's refusals: the note says so, and names the setting of the
-      server it runs that lets it take more, which no button of the app
-      reaches. */
+  /** On the user's own node, addresses the server refused: the note says
+      so, and names the setting the core named for the server it runs,
+      which no button of the app reaches. */
   it("names the node's own limit when it refuses addresses", async () => {
     useUi.setState({ notifyNewTx: true, settingsSection: "notifications" });
     const desk = mockDesk({
@@ -273,6 +284,12 @@ describe("Settings › Notifications", () => {
       left_out_wallets: 1,
       wallets: [],
       server_software: "Fulcrum 1.12.0",
+      left_out: {
+        reason: "server_refused",
+        limits: { per_wallet: 20_000, total: 20_000 },
+        own_node: true,
+        remedy: { type: "raise_server_limit", server: "fulcrum", settings: ["max_subs_per_ip"] },
+      },
     });
     desk.prefs["notify.new_tx"] = "1";
     renderCard({

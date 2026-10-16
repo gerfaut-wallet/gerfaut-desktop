@@ -12,7 +12,15 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { groupThousands } from "../lib/format";
 import { ipc } from "../lib/ipc";
-import type { BackendConfig, Coverage, Network, WalletCoverage, WatchStatus } from "../lib/ipc";
+import type {
+  BackendConfig,
+  Coverage,
+  LeftOut,
+  Network,
+  Remedy,
+  WalletCoverage,
+  WatchStatus,
+} from "../lib/ipc";
 import { keys, useInvalidateWallet } from "./queries";
 import { useUi } from "./store";
 
@@ -120,14 +128,16 @@ export function liveStatusLine(status: WatchStatus): string {
   }
 }
 
-/** What the live watch follows at most, of one wallet and in all, as
-    the core's `WatchLimits` has it: on any server, and on a node the
-    user said is their own. Past them, an address waits for the next
-    sync. */
-export const WATCH_LIMITS = {
-  any: { perWallet: 200, total: 2_000 },
-  ownNode: { perWallet: 20_000, total: 20_000 },
-} as const;
+/** What the watch takes on any server and on the user's own node, as
+    the core has it, for the words under "This is my node". The same for
+    the whole run, so asked once. */
+export function useLiveLimits() {
+  return useQuery({
+    queryKey: ["live-limits"] as const,
+    queryFn: ipc.liveLimits,
+    staleTime: Infinity,
+  });
+}
 
 /** Whether the user said this backend is their own node ("This is my
     node"). A public backend never is. */
@@ -135,10 +145,11 @@ export function isOwnNode(config: BackendConfig | undefined): boolean {
   return config !== undefined && config.type !== "public_esplora" && config.own_node === true;
 }
 
-/** Whether the live watch, running, leaves addresses to the syncs: the
+/** Why the live watch, running, leaves addresses to the syncs, and the
+    way out, as the core decides it; null when it leaves none out: the
     one case where how much of a wallet it hears is worth a word. */
-export function shortOfRoom(status: WatchStatus | undefined): boolean {
-  return status !== undefined && status.state !== "off" && status.left_out_scripts > 0;
+export function leftOutOf(status: WatchStatus | undefined): LeftOut | null {
+  return status?.left_out ?? null;
 }
 
 /** How much of one wallet the live watch hears, or null when there is
@@ -148,7 +159,7 @@ export function coverageOf(
   status: WatchStatus | undefined,
   walletId: string,
 ): WalletCoverage | null {
-  if (!shortOfRoom(status) || status!.left_out_wallets === 0) return null;
+  if (leftOutOf(status) === null) return null;
   return status!.wallets.find((wallet) => wallet.wallet_id === walletId) ?? null;
 }
 
@@ -170,75 +181,58 @@ export function waitingWords(coverage: WalletCoverage): string {
     : `${count(coverage.left_out_scripts, "address waits", "addresses wait")} for the next sync.`;
 }
 
-/** Whether the server the watch last spoke to refused part of the list:
-    the wallets then hear fewer scripts than the list holds. A script two
-    wallets share counts for each of them, so this can miss a refusal but
-    never makes one up. Without the wallets, nothing can be told. */
-export function serverRefused(status: WatchStatus): boolean {
-  if (status.wallets.length === 0) return false;
-  const heard = status.wallets.reduce((sum, wallet) => sum + wallet.watched_scripts, 0);
-  return heard < status.watched_scripts;
-}
-
-/** The note under the status when the live watch is short of room: why,
-    what that leaves to the syncs, and the way out. The why is the
-    server's refusal when it refused part of the list, the watch's own
-    limits otherwise. The way out is the user's own node; on it, the
-    setting of the node that takes more when the node refused addresses,
-    and nothing once the cap is reached. */
-export function shortOfRoomWords(status: WatchStatus, ownNode: boolean): {
+/** The note under the status when the live watch is short of room, in
+    the words of the core's verdict: why, what that leaves to the syncs,
+    and the way out, if there is one. */
+export function shortOfRoomWords(
+  status: WatchStatus,
+  leftOut: LeftOut,
+): {
   limits: string;
   waiting: string;
   remedy: string | null;
 } {
-  // On the user's own node, a list below the cap that still leaves
-  // addresses out is the server refusing them too: its own limit, which
-  // its owner can raise.
-  const refused =
-    serverRefused(status) || (ownNode && status.watched_scripts < WATCH_LIMITS.ownNode.total);
-  const limits = refused
-    ? ownNode
-      ? "Your node refuses some of the addresses the live watch asks it to follow."
-      : "The server refuses some of the addresses the live watch asks it to follow."
-    : ownNode
-      ? `The live watch follows at most ${groupThousands(String(WATCH_LIMITS.ownNode.total))} addresses, even on your own node.`
-      : `The live watch follows at most ${groupThousands(String(WATCH_LIMITS.any.perWallet))} addresses per wallet and ${groupThousands(String(WATCH_LIMITS.any.total))} in all.`;
+  const { limits, own_node: ownNode } = leftOut;
+  const limitsWords =
+    leftOut.reason === "server_refused"
+      ? ownNode
+        ? "Your node refuses some of the addresses the live watch asks it to follow."
+        : "The server refuses some of the addresses the live watch asks it to follow."
+      : ownNode
+        ? `The live watch follows at most ${groupThousands(String(limits.total))} addresses, even on your own node.`
+        : `The live watch follows at most ${groupThousands(String(limits.per_wallet))} addresses per wallet and ${groupThousands(String(limits.total))} in all.`;
   const waiting = `${count(status.left_out_scripts, "address", "addresses")} of ${count(
     status.left_out_wallets,
     "wallet",
     "wallets",
   )} ${status.left_out_scripts === 1 ? "is" : "are"} checked at the next sync instead.`;
-  const remedy = ownNode
-    ? refused
-      ? raiseWords(status.server_software ?? null)
-      : null
-    : `Connect your own node and turn on "This is my node" in Network to follow up to ${groupThousands(String(WATCH_LIMITS.ownNode.total))}.`;
-  return { limits, waiting, remedy };
+  return {
+    limits: limitsWords,
+    waiting,
+    remedy: leftOut.remedy === null ? null : remedyWords(leftOut.remedy),
+  };
 }
 
-/** What lets a node of the user's own follow more addresses, read from
-    what it answers to `server.version`: the setting each of these
-    servers documents for it. ElectrumX caps a cost per session rather
-    than a count of subscriptions; electrs by Roman Zeyde caps nothing,
-    so there is nothing to raise. Unknown software gets the general
-    advice. */
-export function raiseWords(software: string | null): string | null {
-  const name = software?.trim().toLowerCase() ?? "";
-  if (name.startsWith("fulcrum")) {
-    return "Raise max_subs_per_ip in the Fulcrum configuration to follow them all.";
+/** The way out the core names, in words: a node of one's own, or on it,
+    the setting the core named for the software it runs, phrased the way
+    that software's documentation does. */
+export function remedyWords(remedy: Remedy): string {
+  if (remedy.type === "own_node") {
+    return `Connect your own node and turn on "This is my node" in Network to follow up to ${groupThousands(String(remedy.limits.total))}.`;
   }
-  if (name.startsWith("electrumx")) {
-    return "Raise COST_SOFT_LIMIT and COST_HARD_LIMIT in the ElectrumX settings to follow them all.";
+  const settings = remedy.settings.join(" and ");
+  if (settings === "") return "Raise the subscription limit of your server to follow them all.";
+  switch (remedy.server) {
+    case "fulcrum":
+      return `Raise ${settings} in the Fulcrum configuration to follow them all.`;
+    case "electrumx":
+      return `Raise ${settings} in the ElectrumX settings to follow them all.`;
+    case "electrs_esplora":
+    case "mempool_electrs":
+      return `Raise ${settings} on this electrs to follow them all.`;
+    default:
+      return "Raise the subscription limit of your server to follow them all.";
   }
-  // Blockstream's electrs.
-  if (name.startsWith("electrs-esplora")) {
-    return "Raise --electrum-subscription-limit on this electrs to follow them all.";
-  }
-  if (name.startsWith("mempool-electrs")) {
-    return "Raise --electrum-max-subscriptions on this electrs to follow them all.";
-  }
-  if (name.startsWith("electrs/")) return null;
-  return "Raise the subscription limit of your server to follow them all.";
 }
 
 /** Whether the live connection goes to a server the person did not
