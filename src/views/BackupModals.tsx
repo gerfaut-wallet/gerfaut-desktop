@@ -25,6 +25,14 @@ import { useSyncAll } from "../state/queries";
 import { useUi } from "../state/store";
 import { FieldLabel, Segmented, Toggle } from "./settings/primitives";
 
+/** What a restore says when the backup does not open, by the core's
+    code. The cipher cannot tell a wrong password from a file altered
+    under its seal, so the first sentence names both. */
+const WRONG_PASSWORD = "Wrong password, or the file is damaged.";
+const NOT_A_BACKUP = "This is not a Gerfaut backup, or it is damaged.";
+const NEWER_BACKUP =
+  "This backup was made with a newer version of Gerfaut. Update Gerfaut to open it.";
+
 /** What "Apply node settings" would actually put in place: the server
     every wallet of a network would then talk to, and the Electrum
     certificates a restore would pin without asking again.
@@ -417,17 +425,23 @@ export function BackupRestoreModal({
     }
   };
 
-  // Only the failure a password explains is put in those words. What
-  // else the core refuses — a backup a newer Gerfaut wrote, a file
-  // that is not one — it says itself, and blaming the password for it
-  // would send someone retyping a password that was right.
+  // The sentence follows the core's code. Only the failure a password
+  // explains is put in those words: blaming the password for a file
+  // that is not a backup, or one a newer Gerfaut wrote, would send
+  // someone retyping a password that was right. What has no sentence
+  // here goes out in the core's words.
   const message = (error: unknown) => {
-    if (isCommandError(error)) {
-      return error.kind === "wrong_key"
-        ? "Wrong password, or the file is damaged."
-        : error.message;
+    if (!isCommandError(error)) return String(error);
+    switch (error.kind) {
+      case "wrong_key":
+        return WRONG_PASSWORD;
+      case "unreadable_backup":
+        return NOT_A_BACKUP;
+      case "newer_format":
+        return NEWER_BACKUP;
+      default:
+        return error.message;
     }
-    return String(error);
   };
 
   /** A restore goes whole or not at all, so a wallet the core refuses
