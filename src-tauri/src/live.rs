@@ -10,7 +10,10 @@
 //! its timers throttled and may be unloaded; a task of the process does
 //! not care. For the same reason the watch keeps running behind the
 //! lock screen: the lock is a curtain over the window, and what is
-//! posted over it names no wallet and no amount (see [`crate::notice`]).
+//! posted over it names no wallet and no amount. The core composes what
+//! a notification says, the same words as on Android, and holds the
+//! budget of twenty a minute (see [`gerfaut_core::live::notice`]); this
+//! module reads the context, and posts.
 //!
 //! The watch runs while "New transactions" is on in Settings ›
 //! Notifications, and only then: holding a connection open tells the
@@ -23,9 +26,10 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 use gerfaut_core::WalletManager;
+use gerfaut_core::live::notice::{Context, Held, Notice, Unit};
 use gerfaut_core::live::{LiveEvent, LiveEvents};
 use gerfaut_core::wallet::snapshot::SyncReport;
 use gerfaut_core::watch::{WatchLimitsChoice, WatchStatus};
@@ -35,8 +39,8 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
 #[cfg(target_os = "linux")]
-use crate::notice::NoticeId;
-use crate::notice::{self, Context, Held, Notice, NoticeKind, Unit};
+use gerfaut_core::live::notice::NoticeId;
+
 use crate::{AppState, CommandError, CommandResult};
 
 /// The preference that turns the alerts, and with them the watch, on.
@@ -52,13 +56,6 @@ const EVENT_SYNC_FAILED: &str = "live://sync-failed";
 /// through a command the lock guards.
 const EVENT_STATUS: &str = "live://status";
 
-/// Notifications posted in one window of time, whatever the backend
-/// says. A server can make a wallet look busy; it cannot make the
-/// desktop ring without end. Payments no longer coming draw on a
-/// budget of the same size of their own.
-const BUDGET: u32 = 20;
-const BUDGET_WINDOW: Duration = Duration::from_secs(60);
-
 /// Wallets with transactions held for their sync to end. Far above any
 /// vault; past it everything held is dropped rather than grown.
 const MAX_HELD_WALLETS: usize = 512;
@@ -68,47 +65,6 @@ const MAX_HELD_WALLETS: usize = 512;
 /// clock is what tells.
 const CLOCK_EVERY: Duration = Duration::from_secs(30);
 const CLOCK_JUMP: Duration = Duration::from_secs(90);
-
-/// A cap on what is posted per minute.
-#[derive(Debug)]
-pub(crate) struct Budget {
-    started: Option<Instant>,
-    spent: u32,
-}
-
-/// What the budget says about one more notification.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Allowance {
-    Post,
-    /// The last one of the window: say that more is waiting instead.
-    LastCall,
-    Silent,
-}
-
-impl Budget {
-    pub(crate) const fn new() -> Self {
-        Budget {
-            started: None,
-            spent: 0,
-        }
-    }
-
-    pub(crate) fn allow(&mut self, now: Instant) -> Allowance {
-        let fresh = self
-            .started
-            .is_none_or(|started| now.duration_since(started) >= BUDGET_WINDOW);
-        if fresh {
-            self.started = Some(now);
-            self.spent = 0;
-        }
-        self.spent = self.spent.saturating_add(1);
-        match self.spent {
-            n if n < BUDGET => Allowance::Post,
-            n if n == BUDGET => Allowance::LastCall,
-            _ => Allowance::Silent,
-        }
-    }
-}
 
 /// What the task owes the window after an event.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -174,28 +130,10 @@ impl Announcer {
     }
 }
 
-/// One budget per kind of notification: a burst of new transactions
-/// never silences a payment that is no longer coming.
-#[derive(Debug)]
-pub(crate) struct Budgets {
-    transactions: Budget,
-    dropped: Budget,
-}
-
-impl Budgets {
-    pub(crate) const fn new() -> Self {
-        Budgets {
-            transactions: Budget::new(),
-            dropped: Budget::new(),
-        }
-    }
-}
-
 /// The running watch, as the app holds it.
 pub(crate) struct LiveAlerts {
     /// The task reading the events; present while the watch runs.
     task: tokio::sync::Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
-    budgets: std::sync::Mutex<Budgets>,
     #[cfg(target_os = "linux")]
     shown: std::sync::Mutex<Shown>,
     /// The tags this run posts payments' toasts under.
@@ -207,7 +145,6 @@ impl Default for LiveAlerts {
     fn default() -> Self {
         LiveAlerts {
             task: tokio::sync::Mutex::new(None),
-            budgets: std::sync::Mutex::new(Budgets::new()),
             #[cfg(target_os = "linux")]
             shown: std::sync::Mutex::new(Shown::default()),
             #[cfg(windows)]
@@ -256,7 +193,7 @@ pub(crate) async fn enabled(manager: &WalletManager) -> bool {
 
 /// What the text depends on, read from the vault at the moment of
 /// posting: a name changed, a mask raised or a lock drawn since the
-/// sync began all count.
+/// sync began all count. Behind the lock, no wallet and no amount.
 async fn context(state: &AppState) -> Context {
     let prefs = state.manager.settings().await.app_prefs;
     let names = state
@@ -273,41 +210,8 @@ async fn context(state: &AppState) -> Context {
             _ => Unit::Btc,
         },
         masked: prefs.get(MASKED_PREF).is_some_and(|value| value == "1"),
-        locked: state.locked.load(Ordering::SeqCst),
+        details: !state.locked.load(Ordering::SeqCst),
     }
-}
-
-/// The notices the budgets let through, the last one of each kind
-/// replaced by a line saying more is waiting.
-pub(crate) fn within_budget(
-    budgets: &mut Budgets,
-    notices: Vec<Notice>,
-    now: Instant,
-) -> Vec<Notice> {
-    let mut out = Vec::new();
-    for notice in notices {
-        let (budget, last_call) = match notice.kind {
-            NoticeKind::Transaction => (
-                &mut budgets.transactions,
-                "More transactions are coming in. Open Gerfaut to see them.",
-            ),
-            NoticeKind::Dropped => (
-                &mut budgets.dropped,
-                "More pending payments are no longer coming. Open Gerfaut to see them.",
-            ),
-        };
-        match budget.allow(now) {
-            Allowance::Post => out.push(notice),
-            Allowance::LastCall => out.push(Notice {
-                title: notice::APP_TITLE.to_owned(),
-                body: last_call.to_owned(),
-                kind: notice.kind,
-                id: None,
-            }),
-            Allowance::Silent => {}
-        }
-    }
-    out
 }
 
 /// Posts through the notification plugin. On macOS nothing posted from
@@ -370,19 +274,14 @@ pub(crate) fn post(app: &tauri::AppHandle, notice: &Notice) -> Result<(), String
 /// once the alerts are off: a watch being stopped still hands out what
 /// it held, and that is dropped rather than said to someone who just
 /// turned them off. Otherwise the text is read against the vault and
-/// the lock as they are at this moment, within the budgets.
+/// the lock as they are at this moment, within the budget the core
+/// keeps.
 async fn notices_for(state: &AppState, wallet_id: &str, held: &Held) -> Vec<Notice> {
     if !enabled(&state.manager).await {
         return Vec::new();
     }
     let context = context(state).await;
-    let notices = notice::compose(wallet_id, held, &context);
-    let mut budgets = state
-        .live
-        .budgets
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    within_budget(&mut budgets, notices, Instant::now())
+    state.manager.notices(wallet_id, held, &context)
 }
 
 /// Posts what one wallet's sync amounts to. A notification that cannot
@@ -603,44 +502,29 @@ pub fn live_limits() -> WatchLimitsChoice {
 /// whether the system shows them at all. The desktop platforms report
 /// every permission as granted; this is the only honest check. It is
 /// the one way the window has to make the system ring, so it draws on
-/// the budget of the transaction alerts: a page gone wrong cannot flood
-/// with it. Behind the lock it posts nothing, like every other command
-/// that reaches the state.
+/// the budget of the transaction alerts, which the core keeps: a page
+/// gone wrong cannot flood with it. Behind the lock it posts nothing,
+/// like every other command that reaches the state.
 #[tauri::command]
 pub async fn send_test_notification(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> CommandResult<()> {
     state.unlocked()?;
-    let allowance = state
-        .live
-        .budgets
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .transactions
-        .allow(Instant::now());
-    if allowance != Allowance::Post {
+    let Some(notice) = state.manager.test_notice() else {
         return Err(CommandError::new(
             "notification",
             "too many notifications in the last minute; try again shortly",
         ));
-    }
-    post(
-        &app,
-        &Notice {
-            title: notice::APP_TITLE.to_owned(),
-            body: "This is a test. Alerts about your wallets appear like this one.".to_owned(),
-            kind: NoticeKind::Transaction,
-            id: None,
-        },
-    )
-    .map_err(|message| CommandError::new("notification", message))
+    };
+    post(&app, &notice).map_err(|message| CommandError::new("notification", message))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use gerfaut_core::live::LiveTx;
+    use gerfaut_core::live::notice::{NoticeId, NoticeKind};
     use gerfaut_core::store::{TxStage, VaultKey};
     use gerfaut_core::wallet::snapshot::{BalanceSnapshot, NewTx};
 
@@ -766,75 +650,6 @@ mod tests {
         }
     }
 
-    fn notices(kind: NoticeKind, count: usize) -> Vec<Notice> {
-        (0..count)
-            .map(|i| Notice {
-                title: "w".to_owned(),
-                body: format!("n{i}"),
-                kind,
-                id: Some(notice::NoticeId {
-                    wallet_id: "w".to_owned(),
-                    txid: format!("t{i}"),
-                }),
-            })
-            .collect()
-    }
-
-    #[test]
-    fn the_budget_caps_a_minute_and_says_more_is_waiting() {
-        let mut budget = Budgets::new();
-        let start = Instant::now();
-        let notices = notices(NoticeKind::Transaction, 50);
-        let posted = within_budget(&mut budget, notices.clone(), start);
-        assert_eq!(posted.len(), BUDGET as usize);
-        assert_eq!(posted[0].body, "n0");
-        assert_eq!(
-            posted.last().map(|notice| notice.body.as_str()),
-            Some("More transactions are coming in. Open Gerfaut to see them.")
-        );
-        // That line is about no payment: it must not take one's place.
-        assert_eq!(posted.last().and_then(|notice| notice.id.clone()), None);
-        // Nothing more inside the window, everything again after it.
-        assert!(
-            within_budget(
-                &mut budget,
-                notices.clone(),
-                start + Duration::from_secs(30)
-            )
-            .is_empty()
-        );
-        let later = within_budget(&mut budget, notices, start + BUDGET_WINDOW);
-        assert_eq!(later.len(), BUDGET as usize);
-    }
-
-    /// A minute spent on new transactions leaves the payments no longer
-    /// coming untouched, and their own flood line says what they are.
-    #[test]
-    fn a_burst_of_transactions_never_silences_a_payment_no_longer_coming() {
-        let mut budgets = Budgets::new();
-        let start = Instant::now();
-        let mut all = notices(NoticeKind::Transaction, 50);
-        all.push(Notice {
-            title: "Cold storage".to_owned(),
-            body: "A pending payment is no longer coming".to_owned(),
-            kind: NoticeKind::Dropped,
-            id: None,
-        });
-        let posted = within_budget(&mut budgets, all, start);
-        assert_eq!(posted.len(), BUDGET as usize + 1);
-        assert_eq!(
-            posted.last().map(|notice| notice.body.as_str()),
-            Some("A pending payment is no longer coming")
-        );
-
-        let flood = within_budget(&mut budgets, notices(NoticeKind::Dropped, 50), start);
-        assert_eq!(flood.len(), BUDGET as usize - 1);
-        assert_eq!(
-            flood.last().map(|notice| notice.body.as_str()),
-            Some("More pending payments are no longer coming. Open Gerfaut to see them.")
-        );
-    }
-
     /// A payment no longer coming is held with the rest of its sync and
     /// said with it, never counted into the line of the others.
     #[test]
@@ -916,7 +731,7 @@ mod tests {
             .into_iter()
             .collect();
         let posted = || runtime.block_on(notices_for(&state, &wallet.id, &held));
-        let id = notice::NoticeId {
+        let id = NoticeId {
             wallet_id: wallet.id.clone(),
             txid: "a".to_owned(),
         };
@@ -937,6 +752,7 @@ mod tests {
                 body: "Received 0.00001000 BTC · pending".to_owned(),
                 kind: NoticeKind::Transaction,
                 id: Some(id.clone()),
+                wallet_id: Some(wallet.id.clone()),
             }]
         );
 
@@ -948,6 +764,7 @@ mod tests {
                 body: "New transaction · pending".to_owned(),
                 kind: NoticeKind::Transaction,
                 id: Some(id.clone()),
+                wallet_id: Some(wallet.id.clone()),
             }]
         );
 

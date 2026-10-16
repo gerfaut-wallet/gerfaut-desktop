@@ -32,7 +32,6 @@ use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
 
 mod clipboard;
 mod live;
-mod notice;
 // Compiled on Linux for its tests too, where nothing else calls it.
 #[cfg(any(target_os = "macos", all(unix, test)))]
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
