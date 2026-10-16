@@ -5,14 +5,17 @@
 #   git tag v0.1.0 && git push origin v0.1.0
 #
 # Each target is built once, on a runner of its own, in the pinned Linux
-# container of reproducible/ (container-build.yml). The Windows installer
-# and the macOS application are installed or unpacked and started on the
-# systems they are for (smoke.yml). Nothing is drafted unless all of it
-# passed: what ships was built from this commit and seen running.
+# container of reproducible/ (container-build.yml). The AppImage is
+# started under Xvfb, the Windows installer and the macOS application
+# are installed or unpacked and started on the systems they are for
+# (smoke.yml). Nothing is drafted unless all of it passed: what ships
+# was built from this commit and seen running.
 #
 # A manual run (Actions, Release, Run workflow) is the dress rehearsal:
 # the same jobs, and the files of the release as a workflow artifact,
-# gerfaut-desktop-release. It touches no tag and no release.
+# gerfaut-desktop-release. It touches no tag and no release. The weekly
+# run does the same on main, so that a build broken between two tags
+# shows within the week rather than on release day.
 #
 # The split of privileges holds throughout. Every build, check and test
 # runs with a read-only token. The token that can write to the
@@ -25,6 +28,9 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # Mondays at 04:17 UTC, on main.
+  schedule:
+    - cron: '17 4 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -35,6 +41,13 @@ jobs:
     uses: ./.github/workflows/container-build.yml
     with:
       target: linux
+
+  linux-smoke:
+    needs: linux
+    uses: ./.github/workflows/smoke.yml
+    with:
+      target: linux
+      artifact: build-linux
 
   windows:
     uses: ./.github/workflows/container-build.yml
@@ -76,7 +89,7 @@ jobs:
   # tag carries. The release is gathered here, with its SHA256SUMS,
   # still with a read-only token.
   assemble:
-    needs: [linux, windows, macos, windows-smoke, macos-smoke]
+    needs: [linux, windows, macos, linux-smoke, windows-smoke, macos-smoke]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -127,7 +140,7 @@ jobs:
 
   # The only job that can write to the repository, and it runs nothing
   # but `gh` on the files the gate handed over. Only on a pushed tag: a
-  # manual run, even from a tag, stops at the artifact.
+  # manual run, even from a tag, and the weekly run stop at the artifact.
   draft:
     if: github.event_name == 'push' && github.ref_type == 'tag'
     needs: assemble
