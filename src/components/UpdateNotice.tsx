@@ -1,12 +1,13 @@
 import { CircleArrowUp } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useUi } from "../state/store";
-import { pendingUpdate, useUpdate } from "../state/update";
+import { useUpdate } from "../state/update";
 import { APP_VERSION } from "../views/settings/AboutSection";
 import { Button } from "./Button";
 
 /** Says once that a newer Gerfaut exists, in a strip at the top of the
- *  canvas.
+ *  canvas. Which release, if any, is the core's word: it knows what was
+ *  found and what was closed.
  *
  *  It is a piece of information and behaves like one. It takes no
  *  focus, dims nothing and blocks nothing. It is part of the layout and
@@ -23,7 +24,7 @@ import { Button } from "./Button";
  *  shows it, and it stays away from Settings › About, which says the
  *  same thing with the download beside it. */
 export function UpdateNotice() {
-  const version = useUpdate((state) => pendingUpdate(state, APP_VERSION));
+  const version = useUpdate((state) => state.status?.announce ?? null);
   const onAbout = useUi((state) => state.view === "settings" && state.settingsSection === "about");
   const ref = useRef<HTMLElement>(null);
   const shown = version !== null && !onAbout;

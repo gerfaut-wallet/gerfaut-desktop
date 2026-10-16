@@ -785,10 +785,18 @@ export interface BroadcastStatus {
   at: number;
 }
 
-export interface UpdateCheck {
-  latest: string;
-  url: string;
-  update_available: boolean;
+/** What to say about releases: all of it decided by the core, which
+    keeps the state of the check in the vault. */
+export interface UpdateStatus {
+  /** The daily check is on. */
+  automatic: boolean;
+  /** The release the notice announces; null when it has nothing to say. */
+  announce: string | null;
+  /** The newer release known, closed or not: what About offers. */
+  available: string | null;
+  /** The last check that was to go out did not: Tor is needed and could
+      not be had. */
+  tor_unavailable: boolean;
 }
 
 /** Where the live watch stands, as the core reports it. */
@@ -956,7 +964,13 @@ export const ipc = {
     invoke<PriceQuote>("fetch_price", { source, currency }),
   fetchPriceHistory: (source: PriceSource, currency: FiatCurrency, range: PriceRange) =>
     invoke<PriceHistory>("fetch_price_history", { source, currency, range }),
-  checkUpdate: () => invoke<UpdateCheck>("check_update"),
+  updateStatus: () => invoke<UpdateStatus>("update_status"),
+  /** The window is unlocked: the core checks if a check is due. */
+  updateSession: () => invoke<UpdateStatus>("update_session"),
+  /** The button in About: checks now, due or not. */
+  checkUpdate: () => invoke<UpdateStatus>("check_update"),
+  dismissUpdate: (version: string) => invoke<void>("dismiss_update", { version }),
+  setUpdateAutomatic: (automatic: boolean) => invoke<void>("set_update_automatic", { automatic }),
   liveStatus: () => invoke<LiveStatus>("live_status"),
   sendTestNotification: () => invoke<void>("send_test_notification"),
   /** Copies a secret out of sight of the clipboard history, and takes

@@ -4,13 +4,16 @@ import { Button } from "../../components/Button";
 import { OpenFailure, useOpenExternal } from "../../components/ExternalLink";
 import { Pill } from "../../components/StatusPill";
 import { isCommandError } from "../../lib/ipc";
-import { isBeta, isUpdate } from "../../lib/version";
 import { useCheckUpdate } from "../../state/queries";
 import { RELEASES_URL, useUpdate } from "../../state/update";
 import { WelcomeTour } from "../WelcomeTour";
 import { SectionCard, SettingRow, Toggle } from "./primitives";
 
 export const APP_VERSION = "0.1.0";
+
+/** Every 0.x version is a public beta; the label goes away by itself at
+    1.0.0. */
+export const BETA = APP_VERSION.startsWith("0.");
 
 /** Where a problem is reported: the issues of this repository, the one
     other address the About card opens. */
@@ -24,9 +27,9 @@ export const ISSUES_URL = "https://github.com/gerfaut-wallet/gerfaut-desktop/iss
 
     A newer release already known, from the daily check or from an
     earlier press of the button, is offered as soon as the card opens:
-    this is where the update notice sends people. The download button
-    opens the releases page this app names itself, never an address the
-    network answered.
+    this is where the update notice sends people. Which release that is
+    comes from the core. The download button opens the releases page
+    this app names itself, never an address the network answered.
 
     The check takes the route the syncs take, so with an onion backend
     it goes through Tor. When Tor cannot be had nothing is sent, and one
@@ -35,14 +38,12 @@ export function AboutSection() {
   const check = useCheckUpdate();
   const [result, setResult] = useState<"current" | "failed" | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
-  const latest = useUpdate((state) => state.latest);
-  const auto = useUpdate((state) => state.auto);
+  const available = useUpdate((state) => state.status?.available ?? null);
+  const auto = useUpdate((state) => state.status?.automatic ?? true);
   const arriving = useUpdate((state) => state.arriving);
   const heading = useRef<HTMLHeadingElement>(null);
-  const available = latest !== null && isUpdate(latest, APP_VERSION);
-  const torUnavailable = useUpdate((state) => state.torUnavailable);
+  const torUnavailable = useUpdate((state) => state.status?.tor_unavailable ?? false);
   const link = useOpenExternal();
-  const beta = isBeta(APP_VERSION);
 
   // Sent here by the update notice, whose button is gone by now: the
   // card's heading takes the focus it held.
@@ -62,7 +63,7 @@ export function AboutSection() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-ui text-sm text-text">
             Gerfaut {APP_VERSION}
-            {beta && (
+            {BETA && (
               <Pill
                 tone="pending"
                 icon={<FlaskConical size={12} strokeWidth={2} aria-hidden className="shrink-0" />}
@@ -75,7 +76,7 @@ export function AboutSection() {
           <span className="flex flex-wrap items-center gap-3">
             <span role="status" className="font-ui text-xs text-muted">
               {available
-                ? `Gerfaut ${latest} is available.`
+                ? `Gerfaut ${available} is available.`
                 : result === "failed"
                   ? "Could not reach the release page. Try again later."
                   : result === "current"
@@ -84,7 +85,7 @@ export function AboutSection() {
             </span>
             {available && (
               <Button variant="primary" onClick={() => void link.open(RELEASES_URL)}>
-                Get {latest}
+                Get {available}
               </Button>
             )}
             <Button
@@ -92,17 +93,17 @@ export function AboutSection() {
               disabled={check.isPending}
               onClick={() =>
                 check.mutate(undefined, {
-                  onSuccess: (data) => {
-                    // Here the answer is on screen already, so the
-                    // notice has nothing left to announce.
-                    useUpdate.getState().record(data?.latest, { seen: true });
-                    useUpdate.getState().setTorUnavailable(false);
+                  onSuccess: (status) => {
+                    // The core counts the release found here as seen:
+                    // the notice has nothing left to announce.
+                    useUpdate.getState().record(status);
                     setResult("current");
                   },
                   onError: (error) => {
                     const tor = isCommandError(error) && error.kind === "tor";
-                    useUpdate.getState().setTorUnavailable(tor);
                     setResult(tor ? null : "failed");
+                    // Whether Tor stood in the way is the core's to say.
+                    void useUpdate.getState().load();
                   },
                 })
               }
@@ -117,7 +118,7 @@ export function AboutSection() {
             </Button>
           </span>
         </div>
-        {beta && (
+        {BETA && (
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
             <p className="min-w-0 max-w-md font-ui text-xs text-muted">
               This is a public beta. Check addresses and amounts on your signing device, and report
@@ -154,7 +155,7 @@ export function AboutSection() {
           </Button>
         </div>
       </div>
-      <WelcomeTour open={tourOpen} onClose={() => setTourOpen(false)} beta={beta} />
+      <WelcomeTour open={tourOpen} onClose={() => setTourOpen(false)} beta={BETA} />
     </SectionCard>
   );
 }
