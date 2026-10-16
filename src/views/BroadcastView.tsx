@@ -290,6 +290,7 @@ export function BroadcastView({ network }: { network: Network }) {
                   key={entry.txid}
                   entry={entry}
                   onForget={() => forget.mutate(entry.txid)}
+                  forgetFailed={forget.isError && forget.variables === entry.txid}
                 />
               ))}
             </div>
@@ -823,10 +824,15 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
 function StatusCard({
   entry,
   onForget,
+  forgetFailed = false,
   live = false,
 }: {
   entry: RecentBroadcast;
   onForget: () => void;
+  /** The vault did not drop the record: said on the card, which stays,
+      until the next try. Not a toast: a failure does not go away by
+      itself. */
+  forgetFailed?: boolean;
   /** The one just sent: polled from the start, shown large. */
   live?: boolean;
 }) {
@@ -948,6 +954,11 @@ function StatusCard({
           </Button>
         )}
       </div>
+      {forgetFailed && (
+        <p role="status" className="mt-2 font-ui text-sm text-muted">
+          Could not forget this broadcast. Try again.
+        </p>
+      )}
       <OpenFailure url={explorer.failed} />
 
       {explorer.warning}

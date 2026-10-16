@@ -381,7 +381,9 @@ export function useRecentBroadcasts(network: Network) {
   });
 }
 
-/** Drops the vault's record of a broadcast on `network`. */
+/** Drops the vault's record of a broadcast on `network`. A refusal
+    stays in the mutation's state, and the card it was asked from says
+    it. */
 export function useForgetBroadcast(network: Network) {
   const client = useQueryClient();
   return useMutation({

@@ -99,6 +99,8 @@ function status(overrides: Partial<BroadcastStatus> = {}): BroadcastStatus {
 /** What the vault keeps, the way the core keeps it: a send the network
     took at the head, a forgotten one gone. */
 let kept: RecentBroadcast[] = [];
+/** The vault refuses to write: a forget fails. */
+let unwritable = false;
 
 function mount(preview: TxPreview = PREVIEW, standing: BroadcastStatus = status()) {
   mockIPC((cmd, args) => {
@@ -113,6 +115,7 @@ function mount(preview: TxPreview = PREVIEW, standing: BroadcastStatus = status(
     }
     if (cmd === "recent_broadcasts") return kept.filter((entry) => entry.network === payload.network);
     if (cmd === "forget_broadcast") {
+      if (unwritable) return Promise.reject({ kind: "vault", message: "vault: disk full" });
       kept = kept.filter((entry) => entry.txid !== payload.txid);
       return undefined;
     }
@@ -149,6 +152,7 @@ describe("BroadcastView", () => {
   beforeEach(() => {
     useUi.setState({ masked: false });
     kept = [];
+    unwritable = false;
   });
 
   it("tells the scanner what this page is waiting for", async () => {
@@ -642,6 +646,33 @@ describe("BroadcastView", () => {
     const asked = within(await screen.findByRole("dialog", { name: "Forget this broadcast?" }));
     await user.click(asked.getByRole("button", { name: "Forget" }));
     expect(kept).toHaveLength(0);
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Past broadcasts" })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("says so on the card when the vault does not forget", async () => {
+    kept = [
+      { txid: TXID, network: "signet", hex: HEX, backend: "mempool.space", at: 1_755_000_000 },
+    ];
+    unwritable = true;
+    const user = mount();
+    const past = () => within(screen.getByRole("region", { name: "Past broadcasts" }));
+    const forget = async () => {
+      await user.click(past().getByRole("button", { name: "Forget this broadcast" }));
+      const dialog = within(await screen.findByRole("dialog", { name: "Forget this broadcast?" }));
+      await user.click(dialog.getByRole("button", { name: "Forget" }));
+    };
+    await screen.findByRole("region", { name: "Past broadcasts" });
+    await forget();
+
+    expect(
+      await past().findByText("Could not forget this broadcast. Try again."),
+    ).toBeInTheDocument();
+    expect(kept).toHaveLength(1);
+
+    unwritable = false;
+    await forget();
     await waitFor(() =>
       expect(screen.queryByRole("region", { name: "Past broadcasts" })).not.toBeInTheDocument(),
     );
