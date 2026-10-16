@@ -270,6 +270,56 @@ sign_app() {
         --timestamp-url none "$1" > /dev/null
     rcodesign print-signature-info --config-file /dev/null "$1/Contents/MacOS/$executable" \
         > "$OUT/build-info/signature.txt"
+    check_entitlements "$OUT/build-info/signature.txt" "$entitlements" \
+        "$(archs "$1/Contents/MacOS/$executable" | wc -w)"
+}
+
+# Stops the build unless every slice of the program carries in its
+# signature the entitlements of the file, the camera among them. The
+# scope given to rcodesign is a path it matches or not: one that matched
+# nothing would sign the program without them and say nothing, and the
+# app would build, start, and be refused the camera on every Mac.
+check_entitlements() {
+    local signature="$1" entitlements="$2" slices="$3"
+    python3 - "$signature" "$entitlements" "$slices" <<'PY' || die "the signature does not carry $entitlements on every slice"
+import json, plistlib, re, sys
+
+signature, entitlements, slices = sys.argv[1], sys.argv[2], int(sys.argv[3])
+with open(entitlements, "rb") as file:
+    wanted = plistlib.load(file)
+if wanted.get("com.apple.security.device.camera") is not True:
+    sys.exit(f"{entitlements} does not grant the camera, which the QR scanner needs")
+
+
+def item(text):
+    # A YAML scalar as print-signature-info writes one: plain, or quoted.
+    if len(text) > 1 and text[0] == text[-1] == "'":
+        return text[1:-1].replace("''", "'")
+    if len(text) > 1 and text[0] == text[-1] == '"':
+        return json.loads(text)
+    return text
+
+
+def signed(record):
+    """The entitlements in one slice's signature, or None."""
+    lines = record.splitlines()
+    for at, line in enumerate(lines):
+        if line.strip() == "entitlements_plist:":
+            indent = line[: len(line) - len(line.lstrip())] + "- "
+            items = []
+            for line in lines[at + 1:]:
+                if not line.startswith(indent):
+                    break
+                items.append(item(line[len(indent):]))
+            return plistlib.loads("\n".join(items).encode())
+    return None
+
+
+with open(signature, encoding="utf-8") as file:
+    found = [signed(record) for record in re.split(r"(?m)^- path: ", file.read())[1:]]
+if len(found) != slices or any(entry != wanted for entry in found):
+    sys.exit(f"{len(found)} slices in the signature, {slices} in the program, entitlements {found}")
+PY
 }
 
 # Every date is the commit date, the entries are sorted by name, the
