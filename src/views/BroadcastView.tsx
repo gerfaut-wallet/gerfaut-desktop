@@ -404,14 +404,12 @@ const WARNING_ADVICE: Partial<Record<TxWarningKind, string>> = {
     "This signature does not fix where all of the money goes: anyone who sees the transaction before it is mined can send some or all of it somewhere else. Unless you set this up on purpose, do not broadcast it.",
 };
 
-/** Whether the outputs pay more than the inputs bring: every input's
-    value is known, and there is still no fee. The network refuses such
-    a transaction; "unknown" would send someone looking for a value
-    that is not missing. */
-function overspends(preview: TxPreview): boolean {
-  return (
-    preview.fee_sats === null && preview.inputs.every((input) => input.value_sats !== null)
-  );
+/** Whether the core is sure the network refuses this transaction for
+    something other than a missing signature: a coin already spent in a
+    block, outputs worth more than the inputs. The core decides what
+    blocks; the page only picks the words of the pill. */
+function refusedOutright(preview: TxPreview): boolean {
+  return preview.warnings.some((warning) => warning.blocking && warning.kind !== "unsigned");
 }
 
 /** Whether a figure on the preview is the PSBT's own word. The core
@@ -499,6 +497,13 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
           {preview.ready ? (
             <Pill tone="confirmed" icon={<Check size={12} strokeWidth={2} aria-hidden />}>
               Ready to broadcast
+            </Pill>
+          ) : refusedOutright(preview) ? (
+            // The core is sure the network refuses it: a coin spent in
+            // a block, outputs over the inputs. Signing again changes
+            // neither, so this is said before a missing signature.
+            <Pill tone="pending" icon={<Ban size={12} strokeWidth={2} aria-hidden />}>
+              Will be refused
             </Pill>
           ) : (
             // A status, in amber: nothing is at risk while the Broadcast
@@ -718,11 +723,11 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
       </p>
       <dl className="grid grid-cols-2 gap-3 rounded-md bg-sunken/50 p-3">
         <Fact label="Outputs">{groupThousands(String(preview.outputs.length))}</Fact>
+        {/* Outputs over the inputs never get here: the core blocks the
+            send, so a fee missing is one nobody could establish. */}
         <Fact label="Fee" note={claimed ? <Claimed /> : undefined}>
           {preview.fee_sats === null
-            ? overspends(preview)
-              ? "none, the outputs exceed the inputs"
-              : "unknown"
+            ? "unknown"
             : masked
               ? MASKED
               : `${formatAmount(preview.fee_sats, unit)}${

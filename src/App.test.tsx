@@ -700,7 +700,12 @@ const PREVIEW = {
   ready: true,
   // The core answers the tone: a screen never derives it.
   warnings: [
-    { kind: "spends_watched", severity: "info", message: "Spends coins of Cold storage." },
+    {
+      kind: "spends_watched",
+      severity: "info",
+      message: "Spends coins of Cold storage.",
+      blocking: false,
+    },
   ],
   hex: "02000000deadbeef",
 };
@@ -2591,7 +2596,8 @@ describe("broadcast page", () => {
                 {
                   kind: "unsigned",
                   severity: "alert",
-                  message: "1 of 1 inputs carry no signature: the network will refuse this transaction.",
+                  message: "The input carries no signature: the network will refuse this transaction.",
+                  blocking: true,
                 },
               ],
             }
@@ -2612,7 +2618,7 @@ describe("broadcast page", () => {
     await user.type(field, "unsigned");
     await user.click(screen.getByRole("button", { name: "Preview" }));
     expect(await screen.findByText("Not fully signed")).toBeInTheDocument();
-    expect(screen.getByText(/carry no signature/)).toBeInTheDocument();
+    expect(screen.getByText(/carries no signature/)).toBeInTheDocument();
     const main = within(screen.getByRole("main"));
     expect(main.getByRole("button", { name: "Broadcast" })).toBeDisabled();
 

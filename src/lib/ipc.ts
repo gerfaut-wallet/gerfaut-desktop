@@ -725,6 +725,10 @@ export interface TxWarning {
       takes it as given: a kind added later must not fall through a
       hand-written table into a tone nobody chose. */
   severity: TxSeverity;
+  /** The network is sure to refuse the transaction while this holds: a
+      signature missing, a coin spent in a block, outputs over the
+      inputs. The core sets it, and a preview with one is not ready. */
+  blocking: boolean;
 }
 
 /** Everything shown before a transaction is broadcast. */
@@ -742,7 +746,8 @@ export interface TxPreview {
   version: number;
   locktime: number;
   rbf: boolean;
-  /** Every input signed: the transaction can be sent. */
+  /** The transaction can be sent: every input signed, and no caution
+      `blocking`. */
   ready: boolean;
   warnings: TxWarning[];
   /** The transaction as the network takes it; present only when ready. */
