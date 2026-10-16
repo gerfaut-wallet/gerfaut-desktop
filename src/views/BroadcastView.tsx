@@ -395,7 +395,7 @@ function InputCard({
         </p>
         {error && (
           // An input error is said in words, in the text colour with its
-          // glyph, never in red: Alerte belongs to the chain (DESIGN.md).
+          // glyph, never in red: red is kept for what happens on chain.
           <div
             id="broadcast-input-error"
             role="alert"
@@ -777,8 +777,9 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
       </p>
       <dl className="grid grid-cols-2 gap-3 rounded-md bg-sunken/50 p-3">
         <Fact label="Outputs">{groupThousands(String(preview.outputs.length))}</Fact>
-        {/* Outputs over the inputs never get here: the core blocks the
-            send, so a fee missing is one nobody could establish. */}
+        {/* Outputs over amounts a wallet or a backend confirmed never get
+            here: the core blocks the send. Over amounts only the PSBT
+            declares, the fee is as unknown as they are. */}
         <Fact label="Fee" note={claimed ? <Claimed /> : undefined}>
           {preview.fee_sats === null
             ? "unknown"
