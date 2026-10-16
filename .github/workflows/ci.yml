@@ -1,13 +1,14 @@
 name: CI
 
-# Every job runs on every push to main and every pull request. The Rust
-# job needs the sibling gerfaut-core checkout, at the revision
-# .github/gerfaut-core.rev pins, the one a release compiles; gerfaut-core
-# is public, no key reads it.
+# Every job runs on every push to main, every pull request, and on
+# demand (Actions, CI, Run workflow). The Rust job needs the sibling
+# gerfaut-core checkout, at the revision .github/gerfaut-core.rev pins,
+# the one a release compiles; gerfaut-core is public, no key reads it.
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
