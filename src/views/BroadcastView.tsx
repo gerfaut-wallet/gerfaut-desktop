@@ -771,6 +771,14 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
   // PSBT's word, it is marked here as it was on the preview.
   const claimed = restsOnClaims(preview) && preview.fee_sats !== null;
   const outputsOpen = preview.warnings.some((warning) => warning.kind === "uncommitted_outputs");
+  // A fee nobody could establish: the core's own line on why, said again
+  // where the send is decided. For outputs over amounts only the PSBT
+  // declares, it is the one that says the network will refuse them if
+  // those amounts are right.
+  const whyNoFee =
+    preview.fee_sats === null
+      ? preview.warnings.find((warning) => warning.kind === "fee_unknown")?.message
+      : undefined;
   return (
     <div className="flex flex-col gap-3">
       <p className="font-ui text-sm text-text">
@@ -779,9 +787,10 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
       </p>
       <dl className="grid grid-cols-2 gap-3 rounded-md bg-sunken/50 p-3">
         <Fact label="Outputs">{groupThousands(String(preview.outputs.length))}</Fact>
-        {/* Outputs over amounts a wallet or a backend confirmed never get
-            here: the core blocks the send. Over amounts only the PSBT
-            declares, the fee is as unknown as they are. */}
+        {/* Outputs over proven amounts, or past all the bitcoin there
+            will ever be, never get here: the core blocks the send. Over
+            amounts only the PSBT declares, the fee is as unknown as they
+            are, and the line under the facts says what that means. */}
         <Fact label="Fee" note={claimed ? <Claimed /> : undefined}>
           {preview.fee_sats === null
             ? "unknown"
@@ -794,6 +803,7 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
                 }`}
         </Fact>
       </dl>
+      {whyNoFee && <p className="font-ui text-sm text-pending">{whyNoFee}</p>}
       {/* The one caution that makes the outputs above a suggestion:
           said again here, in red, where the send is decided. */}
       {outputsOpen && (

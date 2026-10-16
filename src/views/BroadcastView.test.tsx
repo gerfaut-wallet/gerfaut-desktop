@@ -311,6 +311,27 @@ describe("BroadcastView", () => {
     expect(screen.getByRole("button", { name: "Broadcast" })).toBeDisabled();
   });
 
+  /** Outputs over amounts only the PSBT declares stay sendable: the
+      node goes by the real coins. The last look before the send says
+      what happens if the declared amounts are right. */
+  it("says at the confirmation when declared amounts would be refused", async () => {
+    const line =
+      "The outputs pay more than the inputs bring, by the amounts this transaction declares for its coins: if those are right, the network will refuse it.";
+    const user = mount({
+      ...PREVIEW,
+      fee_sats: null,
+      fee_rate_sat_vb: null,
+      amounts_declared: true,
+      warnings: [warning("fee_unknown", "info", line)],
+    });
+    await preview(user);
+    expect(screen.getByText("Ready to broadcast")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Broadcast" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(dialog.getByText("unknown")).toBeInTheDocument();
+    expect(dialog.getByText(line)).toHaveClass("text-pending");
+  });
+
   /** A spend still in the mempool is the node's to judge: this one may
       replace it. The caution stays red, and the send stays possible. */
   it("leaves a red caution that blocks nothing to the node", async () => {
