@@ -465,16 +465,6 @@ const WARNING_ADVICE: Partial<Record<TxWarningKind, string>> = {
     "This signature does not fix where all of the money goes: anyone who sees the transaction before it is mined can send some or all of it somewhere else. Unless you set this up on purpose, do not broadcast it.",
 };
 
-/** Whether a figure on the preview is the PSBT's own word: the core
-    says so when a value shown for a coin is one nothing proves, no
-    watched wallet, no backend and no previous transaction, and a total
-    or a fee summed over such a coin rests on the same claim. Only a
-    PSBT carries the values of what it spends, so what this marks is
-    always its. */
-function restsOnClaims(preview: TxPreview): boolean {
-  return preview.amounts_declared;
-}
-
 /** The mark on a figure nobody confirmed: amber, and in words, since a
     colour alone tells nothing to a reader who cannot see it. It keeps
     its own case and tracking wherever it sits: in a heading set in
@@ -532,7 +522,9 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
   // A fee that rests on the PSBT's word is marked everywhere it shows,
   // the diagram included: a figure that looks confirmed in one place
   // and doubtful in another is read from the confident one.
-  const claimed = restsOnClaims(preview);
+  // `amounts_declared`: a value shown for a coin is one nothing proves,
+  // and a total or a fee summed over it rests on the same word.
+  const claimed = preview.amounts_declared;
   const feeNote = claimed && preview.fee_sats !== null ? <Claimed /> : undefined;
 
   return (
@@ -774,7 +766,7 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
   const { masked, unit } = useUi();
   // The last figure read before an irreversible send: if it is the
   // PSBT's word, it is marked here as it was on the preview.
-  const claimed = restsOnClaims(preview) && preview.fee_sats !== null;
+  const claimed = preview.amounts_declared && preview.fee_sats !== null;
   const outputsOpen = preview.warnings.some((warning) => warning.kind === "uncommitted_outputs");
   // A fee nobody could establish: the core's own line on why, said again
   // where the send is decided. For outputs over amounts nothing proves,
