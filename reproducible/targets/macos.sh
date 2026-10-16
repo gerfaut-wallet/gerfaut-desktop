@@ -184,6 +184,15 @@ print(next(i for i in json.load(open(sys.argv[1]))["bundle"]["icon"] if i.endswi
         "$APP/src-tauri/tauri.conf.json"
 }
 
+# The entitlements file bundle.macOS.entitlements names, relative to
+# src-tauri as for Tauri's bundler.
+entitlements_source() {
+    python3 -c 'import json, os, sys
+path = json.load(open(sys.argv[1]))["bundle"]["macOS"]["entitlements"]
+print(os.path.normpath(os.path.join(os.path.dirname(sys.argv[1]), path)))' \
+        "$APP/src-tauri/tauri.conf.json"
+}
+
 # The processors a Mach-O file is for, as llvm-lipo lists them.
 archs() {
     llvm-lipo -archs "$1" | xargs
@@ -242,13 +251,23 @@ macho_summary() {
 # An ad hoc signature, as Tauri's bundler writes it when asked to sign
 # with the identity "-": the binary and the bundle sealed together
 # (_CodeSignature/CodeResources), the identifier taken from
-# CFBundleIdentifier, the hardened runtime on, which is Tauri's default.
-# No key, so no certificate, no time and no server.
+# CFBundleIdentifier, the hardened runtime on, which is Tauri's default,
+# and the entitlements of bundle.macOS.entitlements on the program. The
+# hardened runtime refuses the camera to a program that does not hold
+# com.apple.security.device.camera, NSCameraUsageDescription or not, and
+# the QR scanner needs it. No key, so no certificate, no time and no
+# server.
 sign_app() {
-    local executable
+    local executable entitlements
     executable="$(plist_value "$1/Contents/Info.plist" CFBundleExecutable)"
+    entitlements="$(entitlements_source)"
+    [ -f "$entitlements" ] || die "no entitlements file at $entitlements"
     # --config-file /dev/null: no configuration file on the machine is read.
-    rcodesign sign --config-file /dev/null --code-signature-flags runtime --timestamp-url none "$1" > /dev/null
+    # The entitlements are scoped to the program, the one Mach-O file of
+    # the bundle, as Tauri's bundler hands them to codesign for it.
+    rcodesign sign --config-file /dev/null --code-signature-flags runtime \
+        --entitlements-xml-file "Contents/MacOS/$executable:$entitlements" \
+        --timestamp-url none "$1" > /dev/null
     rcodesign print-signature-info --config-file /dev/null "$1/Contents/MacOS/$executable" \
         > "$OUT/build-info/signature.txt"
 }

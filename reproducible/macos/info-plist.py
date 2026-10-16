@@ -83,9 +83,15 @@ def main() -> None:
     config = json.loads((tauri / "tauri.conf.json").read_text(encoding="utf-8"))
     bundle = config.get("bundle", {})
 
-    for key in ("macOS", "fileAssociations", "resources", "externalBin"):
+    for key in ("fileAssociations", "resources", "externalBin"):
         if key in bundle:
             fail(f"bundle.{key} is not handled")
+    # Of bundle.macOS, the entitlements alone: they go into the
+    # signature (macos.sh) and leave the plist as it is, where the other
+    # keys, minimumSystemVersion or infoPlist among them, change it.
+    for key in bundle.get("macOS", {}):
+        if key != "entitlements":
+            fail(f"bundle.macOS.{key} is not handled")
     if "deep-link" in config.get("plugins", {}):
         fail("the deep-link plugin adds CFBundleURLTypes, which is not handled")
     for name in ("tauri.macos.conf.json", "tauri.macos.conf.json5", "Tauri.macos.toml"):
