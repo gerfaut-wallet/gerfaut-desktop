@@ -304,6 +304,26 @@ describe("BroadcastView", () => {
     expect(screen.queryByText("Not fully signed")).not.toBeInTheDocument();
   });
 
+  /** The pill and the Broadcast button read one thing: a wire whose
+      two fields disagree cannot leave a refused transaction sendable. */
+  it("keeps the pill and the button on the same state", async () => {
+    const user = mount({ ...PREVIEW, ready: true, readiness: "refused" });
+    await preview(user);
+    expect(screen.getByText("Will be refused")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Broadcast" })).toBeDisabled();
+  });
+
+  /** A core that sends no readiness is read through `ready`, the way
+      the phone reads it: ready, or not fully signed. */
+  it("falls back on ready when the core names no state", async () => {
+    const { readiness: _omitted, ...bare } = PREVIEW;
+    void _omitted;
+    const user = mount({ ...bare, ready: false, hex: null });
+    await preview(user);
+    expect(screen.getByText("Not fully signed")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Broadcast" })).toBeDisabled();
+  });
+
   /** A spend still in the mempool is the node's to judge: this one may
       replace it. The caution stays red, and the send stays possible. */
   it("leaves a red caution that blocks nothing to the node", async () => {

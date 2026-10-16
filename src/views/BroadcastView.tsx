@@ -41,7 +41,7 @@ import type {
   TxPreview,
   TxWarningKind,
 } from "../lib/ipc";
-import { isCommandError } from "../lib/ipc";
+import { isCommandError, readinessOf } from "../lib/ipc";
 import { explorerTxUrl } from "../lib/explorer";
 import {
   MASKED,
@@ -250,7 +250,7 @@ export function BroadcastView({ network }: { network: Network }) {
               </Button>
               <Button
                 variant="primary"
-                disabled={!preview.data.ready || broadcast.isPending}
+                disabled={readinessOf(preview.data) !== "ready" || broadcast.isPending}
                 onClick={() => setConfirmOpen(true)}
               >
                 <Radio size={16} strokeWidth={1.5} aria-hidden />
@@ -548,11 +548,11 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
         <div className="flex flex-wrap items-center gap-2">
           <Pill tone="neutral">{preview.source === "psbt" ? "PSBT" : "Raw transaction"}</Pill>
           {/* Where it stands is the core's word, read as it comes. */}
-          {preview.readiness === "ready" ? (
+          {readinessOf(preview) === "ready" ? (
             <Pill tone="confirmed" icon={<Check size={12} strokeWidth={2} aria-hidden />}>
               Ready to broadcast
             </Pill>
-          ) : preview.readiness === "refused" ? (
+          ) : readinessOf(preview) === "refused" ? (
             // The core is sure the network refuses it: a coin spent in
             // a block, outputs over the inputs. Signing again changes
             // neither, so this is said before a missing signature.
