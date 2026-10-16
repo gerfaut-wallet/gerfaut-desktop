@@ -777,13 +777,10 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
   const claimed = restsOnClaims(preview) && preview.fee_sats !== null;
   const outputsOpen = preview.warnings.some((warning) => warning.kind === "uncommitted_outputs");
   // A fee nobody could establish: the core's own line on why, said again
-  // where the send is decided. For outputs over amounts only the PSBT
-  // declares, it is the one that says the network will refuse them if
-  // those amounts are right.
-  const whyNoFee =
-    preview.fee_sats === null
-      ? preview.warnings.find((warning) => warning.kind === "fee_unknown")?.message
-      : undefined;
+  // where the send is decided. For outputs over amounts nothing proves,
+  // it is the one that says the network will refuse them if those
+  // amounts are right.
+  const whyNoFee = preview.fee_unknown_reason;
   return (
     <div className="flex flex-col gap-3">
       <p className="font-ui text-sm text-text">

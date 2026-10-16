@@ -68,6 +68,7 @@ const PREVIEW: TxPreview = {
   ],
   fee_sats: 210,
   fee_rate_sat_vb: 1.5,
+  fee_unknown_reason: null,
   amounts_declared: false,
   vsize: 141,
   weight: 561,
@@ -316,13 +317,16 @@ describe("BroadcastView", () => {
       what happens if the declared amounts are right. */
   it("says at the confirmation when declared amounts would be refused", async () => {
     const line =
-      "The outputs pay more than the inputs bring, by the amounts this transaction declares for its coins: if those are right, the network will refuse it.";
+      "The outputs pay more than the inputs bring, by amounts nothing proves: if those amounts are right, the network will refuse this transaction.";
+    // The reason is the core's field, read as it comes: the cautions
+    // are not searched for it.
     const user = mount({
       ...PREVIEW,
       fee_sats: null,
       fee_rate_sat_vb: null,
+      fee_unknown_reason: line,
       amounts_declared: true,
-      warnings: [warning("fee_unknown", "info", line)],
+      warnings: [],
     });
     await preview(user);
     expect(screen.getByText("Ready to broadcast")).toBeInTheDocument();

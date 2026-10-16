@@ -747,6 +747,9 @@ export interface TxPreview {
   outputs: TxOutputPreview[];
   fee_sats: number | null;
   fee_rate_sat_vb: number | null;
+  /** Why there is no fee, in the words of the core's caution: what the
+      confirmation repeats. Null when there is a fee. */
+  fee_unknown_reason: string | null;
   /** A value shown for an input is only what the PSBT declares: no
       watched wallet, no backend and no previous transaction proves it.
       The inputs total and the fee rest on that word then. */
