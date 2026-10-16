@@ -836,23 +836,34 @@ export interface LiveStatus {
   status: WatchStatus;
 }
 
+/** A failed command. A failure of the core comes under the core's own
+    code (`ErrorCode` in gerfaut-core), the same one the Android app
+    reads; `locked` and `notification` are this app's. */
 export interface CommandError {
   kind:
     | "unrecognized_input"
     | "private_material"
     | "invalid_input"
+    /** An animated QR code announces more parts than Gerfaut reads. */
+    | "too_many_parts"
     | "network_mismatch"
     | "wallet_not_found"
     | "duplicate_wallet"
     | "vault"
     /** The vault, or a backup, would not open with the key given: the
-        password is wrong or the file is damaged. Any other refusal of a
-        file — one a newer Gerfaut wrote, say — stays `vault`. */
+        password is wrong or the file is damaged. Nothing else comes
+        under this kind. */
     | "wrong_key"
+    /** What was handed over as a backup is not a Gerfaut backup, or is
+        damaged outside what the password guards. */
+    | "unreadable_backup"
+    /** A vault or backup written by a newer Gerfaut. */
+    | "newer_format"
     /** Another Gerfaut holds the vault: a second copy running on the
         same data directory. Only ever met at startup. */
     | "vault_in_use"
     | "sync"
+    | "broadcast"
     | "backend_unavailable"
     | "descriptor"
     | "tor"

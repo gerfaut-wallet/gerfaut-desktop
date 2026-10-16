@@ -188,7 +188,8 @@ export function BroadcastView({ network }: { network: Network }) {
   const inputError: InputError | null = fileError
     ? { headline: fileError }
     : preview.error
-      ? isCommandError(preview.error) && preview.error.kind === "invalid_input"
+      ? isCommandError(preview.error) &&
+        (preview.error.kind === "invalid_input" || preview.error.kind === "too_many_parts")
         ? { headline: UNREADABLE_TRANSACTION, detail: preview.error.message }
         : {
             headline: isCommandError(preview.error)
