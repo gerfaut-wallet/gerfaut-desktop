@@ -355,6 +355,10 @@ export type BranchState =
   | { kind: "no_coins" }
   | { kind: "needs_preimage" };
 
+/** The tone the core shows a branch's state in: confirmed when it is
+    open, pending when it opens in under thirty days, neutral otherwise. */
+export type BranchTone = "confirmed" | "pending" | "neutral";
+
 /** One way to spend: a top-level alternative of the policy. */
 export interface PolicyBranch {
   /** Stable within the snapshot: `b0`, `b1`... */
@@ -369,6 +373,7 @@ export interface PolicyBranch {
   timelocks: Timelock[];
   state: BranchState;
   spendable_now: boolean;
+  tone: BranchTone;
 }
 
 /** A wallet's policy read against the chain. A watched address has no
@@ -380,6 +385,8 @@ export interface PolicySnapshot {
   /** The normalized policy with key labels: `or(pk(Key A),and(pk(Key B),older(52560)))`. */
   policy: string;
   keys: PolicyKey[];
+  /** In reading order: the primary paths, then recovery, emergency and
+      the rest, each from the nearest lock to the farthest. */
   branches: PolicyBranch[];
   /** Chain tip at the last sync; null when the wallet never synced, in
       which case every absolute lock is locked with nothing left to

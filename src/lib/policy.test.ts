@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   BranchRole,
   BranchState,
+  BranchTone,
   Condition,
   PolicyBranch,
   PolicyKey,
@@ -15,7 +16,6 @@ import {
   countdown,
   describePolicy,
   hasTimeBasedLocks,
-  orderBranches,
   policyDigest,
   remainingWords,
   timelockText,
@@ -64,6 +64,8 @@ function relative(blocks: number, state: Timelock["state"], required = true): Ti
   return { lock: { kind: "relative", lock: { kind: "blocks", blocks } }, required, state };
 }
 
+/** A branch as the core hands it over. The tone is the core's to give:
+    a test about it names it, the others take a stand-in. */
 function branch(
   id: string,
   role: BranchRole,
@@ -71,6 +73,7 @@ function branch(
   condition: Condition,
   state: BranchState,
   timelocks: Timelock[] = [],
+  tone: BranchTone = state.kind === "spendable_now" ? "confirmed" : "neutral",
 ): PolicyBranch {
   return {
     id,
@@ -81,6 +84,7 @@ function branch(
     timelocks,
     state,
     spendable_now: state.kind === "spendable_now",
+    tone,
   };
 }
 
@@ -319,27 +323,6 @@ describe("describePolicy", () => {
   });
 });
 
-describe("orderBranches", () => {
-  it("puts the primary first and the timed paths by lock length", () => {
-    const wallet = snapshot({
-      branches: [
-        branch("b0", "emergency", "Emergency", and(key("k1"), older(52_560)), { kind: "no_coins" }, [
-          relative(52_560, { kind: "no_coins", blocks: 52_560, seconds: null }),
-        ]),
-        branch("b1", "recovery", "Recovery", and(key("k2"), older(4_320)), { kind: "no_coins" }, [
-          relative(4_320, { kind: "no_coins", blocks: 4_320, seconds: null }),
-        ]),
-        branch("b2", "primary", "Primary", key("k0"), OPEN),
-      ],
-    });
-    expect(orderBranches(wallet).map((entry) => entry.label)).toEqual([
-      "Primary",
-      "Recovery",
-      "Emergency",
-    ]);
-  });
-});
-
 describe("conditionOutline", () => {
   it("keeps a flat threshold on one line", () => {
     expect(conditionOutline(thresh(2, key("k0"), key("k1"), key("k2")), KEYS)).toEqual({
@@ -411,54 +394,51 @@ describe("timelockText", () => {
 });
 
 describe("branchStatus", () => {
-  it("colours only the thresholds", () => {
+  it("takes the core's tone and says it in a glyph and words too", () => {
     expect(branchStatus(branch("b", "primary", "Primary", key("k0"), OPEN))).toEqual({
       tone: "confirmed",
       glyph: "check",
       text: "Spendable now",
     });
-    const soon = branchStatus(
-      branch("b", "primary", "Primary", key("k0"), { kind: "locked", until: blocksLeft(1_432) }),
-    );
+    const locked: BranchState = { kind: "locked", until: blocksLeft(1_432) };
+    const soon = branchStatus(branch("b", "primary", "Primary", key("k0"), locked, [], "pending"));
     expect(soon.tone).toBe("pending");
+    expect(soon.glyph).toBe("clock");
     expect(soon.text).toMatch(/^In 1.432 blocks ≈ 10 days$/);
-    const far = branchStatus(
-      branch("b", "primary", "Primary", key("k0"), { kind: "locked", until: blocksLeft(52_560) }),
-    );
-    expect(far.tone).toBe("neutral");
-    expect(far.glyph).toBe("clock");
-  });
-
-  it("turns amber under thirty days, not at them", () => {
-    const tone = (blocks: number) =>
-      branchStatus(
-        branch("b", "primary", "Primary", key("k0"), { kind: "locked", until: blocksLeft(blocks) }),
-      ).tone;
-    // 4 320 blocks are thirty days to the minute: still neutral.
-    expect(tone(4_320)).toBe("neutral");
-    expect(tone(4_319)).toBe("pending");
+    // The same state in another tone keeps its words: the colour is
+    // the core's call alone.
+    const far = branchStatus(branch("b", "primary", "Primary", key("k0"), locked, [], "neutral"));
+    expect(far).toEqual({ ...soon, tone: "neutral" });
   });
 
   it("counts coins, the next to open, and the ones still waiting", () => {
     const mixed = branchStatus(
-      branch("b", "recovery", "Recovery", key("k1"), {
-        kind: "per_coin",
-        unlocked: 3,
-        waiting: 2,
-        locked: 1,
-        next: blocksLeft(1_728),
-      }),
+      branch(
+        "b",
+        "recovery",
+        "Recovery",
+        key("k1"),
+        { kind: "per_coin", unlocked: 3, waiting: 2, locked: 1, next: blocksLeft(1_728) },
+        [],
+        "pending",
+      ),
     );
-    expect(mixed.text).toBe("3 of 6 coins unlocked · next in 12 days · 2 waiting for a block");
-    expect(mixed.tone).toBe("pending");
+    expect(mixed).toEqual({
+      tone: "pending",
+      glyph: "clock",
+      text: "3 of 6 coins unlocked · next in 12 days · 2 waiting for a block",
+    });
+    // Every coin open: the core says confirmed, and the pill checks.
     const all = branchStatus(
-      branch("b", "recovery", "Recovery", key("k1"), {
-        kind: "per_coin",
-        unlocked: 2,
-        waiting: 0,
-        locked: 0,
-        next: null,
-      }),
+      branch(
+        "b",
+        "recovery",
+        "Recovery",
+        key("k1"),
+        { kind: "per_coin", unlocked: 2, waiting: 0, locked: 0, next: null },
+        [],
+        "confirmed",
+      ),
     );
     expect(all).toEqual({ tone: "confirmed", glyph: "check", text: "2 of 2 coins unlocked" });
     expect(branchStatus(branch("b", "recovery", "Recovery", key("k1"), { kind: "no_coins" }))).toEqual({
@@ -475,7 +455,7 @@ describe("branchStatus", () => {
 describe("countdown", () => {
   it("measures the nearest coin against the longest relative lock", () => {
     const state: BranchState = { kind: "per_coin", unlocked: 1, waiting: 0, locked: 2, next: blocksLeft(42_480) };
-    const [, recovery] = orderBranches(liana(state));
+    const [, recovery] = liana(state).branches;
     const timer = countdown(recovery);
     expect(timer?.perCoin).toBe(true);
     expect(timer?.progress).toBeCloseTo((52_560 - 42_480) / 52_560, 5);
@@ -535,8 +515,9 @@ describe("policyDigest", () => {
   });
 
   it("leads with the primary path when it is the one that waits", () => {
-    // Every path waits: the core makes the nearest one primary. The row
-    // says where that one stands, not where the path behind it does.
+    // Every path waits: the core makes the nearest one primary and lists
+    // it first. The row says where that one stands, not where the path
+    // behind it does.
     const counting = (blocks: number, state: BranchState): PolicyBranch =>
       branch(
         `b${blocks}`,
@@ -549,13 +530,13 @@ describe("policyDigest", () => {
     const perCoin = snapshot({
       coins: 2,
       branches: [
-        counting(52_560, { kind: "per_coin", unlocked: 0, waiting: 0, locked: 2, next: blocksLeft(50_000) }),
         counting(4_320, { kind: "per_coin", unlocked: 1, waiting: 0, locked: 1, next: blocksLeft(1_440) }),
+        counting(52_560, { kind: "per_coin", unlocked: 0, waiting: 0, locked: 2, next: blocksLeft(50_000) }),
       ],
     });
     expect(digestText(policyDigest(perCoin))).toBe("1 of 2 coins unlocked");
     const empty = snapshot({
-      branches: [counting(52_560, { kind: "no_coins" }), counting(4_320, { kind: "no_coins" })],
+      branches: [counting(4_320, { kind: "no_coins" }), counting(52_560, { kind: "no_coins" })],
     });
     expect(digestText(policyDigest(empty))).toBe("Spendable after 30 days");
   });
