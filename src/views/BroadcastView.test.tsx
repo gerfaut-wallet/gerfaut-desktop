@@ -74,7 +74,6 @@ const PREVIEW: TxPreview = {
   version: 2,
   locktime: 0,
   rbf: true,
-  ready: true,
   readiness: "ready",
   warnings: [],
   hex: HEX,
@@ -248,7 +247,6 @@ describe("BroadcastView", () => {
       ...PREVIEW,
       fee_sats: null,
       fee_rate_sat_vb: null,
-      ready: false,
       readiness: "refused",
       hex: null,
       warnings: [
@@ -273,7 +271,6 @@ describe("BroadcastView", () => {
   it("never calls ready a transaction whose coin is spent in a block", async () => {
     const user = mount({
       ...PREVIEW,
-      ready: false,
       readiness: "refused",
       hex: null,
       warnings: [
@@ -298,29 +295,18 @@ describe("BroadcastView", () => {
   /** The pill says what the core says, as it says it: the screen works
       nothing out of the cautions, which may say more or less. */
   it("reads the pill off the core, never off the cautions", async () => {
-    const user = mount({ ...PREVIEW, ready: false, readiness: "refused", hex: null });
+    const user = mount({ ...PREVIEW, readiness: "refused", hex: null });
     await preview(user);
     expect(screen.getByText("Will be refused")).toHaveAttribute("data-tone", "pending");
     expect(screen.queryByText("Not fully signed")).not.toBeInTheDocument();
   });
 
-  /** The pill and the Broadcast button read one thing: a wire whose
-      two fields disagree cannot leave a refused transaction sendable. */
+  /** The pill and the Broadcast button read one thing: a refused
+      transaction is never sendable, hex or no hex. */
   it("keeps the pill and the button on the same state", async () => {
-    const user = mount({ ...PREVIEW, ready: true, readiness: "refused" });
+    const user = mount({ ...PREVIEW, readiness: "refused" });
     await preview(user);
     expect(screen.getByText("Will be refused")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Broadcast" })).toBeDisabled();
-  });
-
-  /** A core that sends no readiness is read through `ready`, the way
-      the phone reads it: ready, or not fully signed. */
-  it("falls back on ready when the core names no state", async () => {
-    const { readiness: _omitted, ...bare } = PREVIEW;
-    void _omitted;
-    const user = mount({ ...bare, ready: false, hex: null });
-    await preview(user);
-    expect(screen.getByText("Not fully signed")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Broadcast" })).toBeDisabled();
   });
 
@@ -477,7 +463,6 @@ describe("BroadcastView", () => {
   it("says a transaction is not fully signed in amber, and keeps it", async () => {
     const user = mount({
       ...PREVIEW,
-      ready: false,
       readiness: "unsigned",
       hex: null,
       warnings: [warning("unsigned", "alert", "Some inputs carry no signature yet.", true)],

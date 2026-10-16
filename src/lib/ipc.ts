@@ -738,20 +738,6 @@ export interface TxWarning {
     when both hold, since a signature does not bring back a spent coin. */
 export type TxReadiness = "ready" | "refused" | "unsigned";
 
-/** Where a preview stands, the one thing the pill and the Broadcast
-    button both read. A preview that names none reads as what `ready`
-    says: ready, or not fully signed, the two states every core knew. */
-export function readinessOf(preview: Pick<TxPreview, "ready" | "readiness">): TxReadiness {
-  switch (preview.readiness) {
-    case "ready":
-    case "refused":
-    case "unsigned":
-      return preview.readiness;
-    default:
-      return preview.ready ? "ready" : "unsigned";
-  }
-}
-
 /** Everything shown before a transaction is broadcast. */
 export interface TxPreview {
   txid: string;
@@ -767,12 +753,10 @@ export interface TxPreview {
   version: number;
   locktime: number;
   rbf: boolean;
-  /** The transaction can be sent: every input signed, and no caution
-      `blocking`. The same as `readiness` being "ready". */
-  ready: boolean;
-  /** Where it stands; read it through `readinessOf`, which stands in
-      when a core sends none. */
-  readiness?: TxReadiness;
+  /** Where it stands: the one thing the pill and the Broadcast button
+      both read. The core also sends `ready`, derived from this, which
+      the page leaves alone. */
+  readiness: TxReadiness;
   warnings: TxWarning[];
   /** The transaction as the network takes it; present only when ready. */
   hex: string | null;
