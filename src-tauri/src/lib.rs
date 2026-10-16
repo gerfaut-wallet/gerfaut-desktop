@@ -233,8 +233,14 @@ pub struct PickedBackup {
 /// only apply to a lone extended key; everything else fixes its own.
 /// `network` is the one the wallet is about to be added on, which the
 /// first address shown is derived for.
+///
+/// On a worker thread, like [`assemble_qr`]: a synchronous command runs
+/// on the main thread, which also draws the window, and the input is
+/// whatever was pasted, a file of 64 KiB or a descriptor of a hundred
+/// keys among it. Reading it there froze the window for as long as the
+/// core took, and a panic in the parser took the whole app down.
 #[tauri::command]
-fn parse_input(
+async fn parse_input(
     input: String,
     script: Option<ScriptKind>,
     derivation: Option<DerivationChoice>,
@@ -245,17 +251,26 @@ fn parse_input(
         derivation,
         network,
     };
-    Ok(gerfaut_core::input::parse_input_with_options(
-        &input, &options,
-    )?)
+    tauri::async_runtime::spawn_blocking(move || {
+        gerfaut_core::input::parse_input_with_options(&input, &options)
+    })
+    .await
+    .map_err(|e| internal(format!("the input could not be read: {e}")))?
+    .map_err(CommandError::from)
 }
 
 /// Reads a server address scanned or pasted into the backend settings:
 /// the Electrum one-liner `host:port:s|t`, an `ssl://`/`tcp://` address,
-/// or an `http(s)://` Esplora endpoint.
+/// or an `http(s)://` Esplora endpoint. On a worker thread, for the
+/// same reason as [`parse_input`].
 #[tauri::command]
-fn parse_backend(input: String) -> CommandResult<ScannedBackend> {
-    Ok(gerfaut_core::chain::connect::parse_backend(&input)?)
+async fn parse_backend(input: String) -> CommandResult<ScannedBackend> {
+    tauri::async_runtime::spawn_blocking(move || {
+        gerfaut_core::chain::connect::parse_backend(&input)
+    })
+    .await
+    .map_err(|e| internal(format!("the address could not be read: {e}")))?
+    .map_err(CommandError::from)
 }
 
 /// Assembles the QR frames scanned so far (plain, UR, BBQr). The core
@@ -1197,8 +1212,45 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{CommandError, assemble_qr, bare_file_name};
+    use super::{CommandError, assemble_qr, bare_file_name, parse_backend, parse_input};
     use gerfaut_core::error::CoreError;
+
+    /// Pasted material and a server address are read off the main
+    /// thread and answer as before; what the core refuses comes back
+    /// in its words, a descriptor miniscript would have panicked on
+    /// among it.
+    #[test]
+    fn pasted_text_is_read_on_a_worker() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let address = "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx";
+        let parsed = runtime
+            .block_on(parse_input(address.to_owned(), None, None, None))
+            .unwrap();
+        assert!(
+            parsed
+                .networks
+                .contains(&gerfaut_core::network::Network::Signet)
+        );
+        let hardened = "wpkh(tpubDDnGNapGEY6AZAdQbfRJgMg9fvz8pUBrLwvyvUqEgcUfgzM6zc2eVK4vY9x9L5FJWdX8WumXuLEDV5zDZnTfbn87vLe9XceCFwTu9so9Kks/84h/0/*)";
+        let refused = runtime
+            .block_on(parse_input(hardened.to_owned(), None, None, None))
+            .unwrap_err();
+        assert_eq!(refused.kind, "invalid_input");
+        assert!(
+            refused.message.contains("key origin"),
+            "{}",
+            refused.message
+        );
+
+        let backend = runtime
+            .block_on(parse_backend("node.example.org:50002:s".to_owned()))
+            .unwrap();
+        assert_eq!(backend.url, "ssl://node.example.org:50002");
+        let refused = runtime
+            .block_on(parse_backend(format!("ssl://{address}:50002")))
+            .unwrap_err();
+        assert_eq!(refused.kind, "invalid_input");
+    }
 
     /// The assembly runs off the main thread and answers as before.
     #[test]
