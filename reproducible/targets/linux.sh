@@ -12,10 +12,11 @@
 #   .deb       unpacked and written again by dpkg-deb, which honours
 #              SOURCE_DATE_EPOCH and sorts the archive members
 #   .rpm       the two time tags overwritten in place (rpm-normalise.py)
-#   .AppImage  the AppDir the bundler leaves behind fixed in two ways,
-#              the icon linuxdeploy links at its root and the date of
-#              every file, then the AppImage written again from it with
-#              the same pinned plugin and runtime
+#   .AppImage  the AppDir the bundler leaves behind fixed in three ways,
+#              the Wayland libraries left to the system, the icon
+#              linuxdeploy links at its root and the date of every file,
+#              then the AppImage written again from it with the same
+#              pinned plugin and runtime
 
 TRIPLE=x86_64-unknown-linux-gnu
 LINUXDEPLOY_SUMS="$APP/.github/linuxdeploy.sha256"
@@ -114,11 +115,24 @@ canonical_rpm() {
     rpm --checksig "$to" > /dev/null || die "the normalised rpm fails its own digests"
 }
 
-# Two things in the AppDir the bundler leaves behind depend on the
-# machine, and the recipe fixes both before it writes the AppImage again
-# from that AppDir, with the plugin, the runtime and the environment the
-# bundler used: the bundler's last step, repeated. The contents of the
-# files are left as they are.
+# The recipe writes the AppImage again from the AppDir the bundler
+# leaves behind, with the plugin, the runtime and the environment the
+# bundler used: the bundler's last step, repeated. Before that it takes
+# four libraries out and fixes two things that depend on the machine.
+# The contents of the files it keeps are left as they are.
+#
+# The Wayland libraries, libwayland-client, -cursor, -egl and -server.
+# linuxdeploy copies those of the image (Ubuntu 22.04, Wayland 1.20)
+# because GTK and WebKit link them, so they are loaded first and the
+# system's Mesa gets them too. A newer Mesa needs newer symbols (Mesa 26
+# asks for wl_display_dispatch_queue_timeout, Wayland 1.24), fails to
+# load, and WebKit stops on "Could not create default EGL display": a
+# white window (tauri-apps/tauri#15976). The system's GTK and Mesa
+# bring their own, so they are left to it, as the AppImage excludelist
+# does for libwayland-client (AppImageCommunity/pkg2appimage#559). The
+# linuxdeploy Tauri pins predates that entry and ignores
+# LINUXDEPLOY_EXCLUDED_LIBRARIES, and the bundler passes it no
+# --exclude-library (tauri-apps/tauri#15662).
 #
 # The icon linuxdeploy links at the root of the AppDir, named after the
 # Icon= key of the desktop entry. The linuxdeploy Tauri pins takes the
@@ -136,9 +150,15 @@ canonical_rpm() {
 # newer image did not. Every file and directory is dated
 # SOURCE_DATE_EPOCH first.
 rewrite_appimage() {
-    local appimage="$1" appdir name link best icon size preference
+    local appimage="$1" appdir lib left name link best icon size preference
     appdir="$(find "$(dirname "$appimage")" -mindepth 1 -maxdepth 1 -type d -name '*.AppDir')"
     [ -n "$appdir" ] && [ "$(printf '%s\n' "$appdir" | wc -l)" -eq 1 ] || die "not one AppDir next to $appimage"
+    for lib in client.so.0 cursor.so.0 egl.so.1 server.so.0; do
+        rm -f "$appdir/usr/lib/libwayland-$lib"
+    done
+    left="$(find "$appdir" -name 'libwayland-*')"
+    [ -z "$left" ] || die "a Wayland library is still in the AppDir: $left"
+    log "AppImage: libwayland-client, -cursor, -egl and -server left to the system"
     name="$(sed -n 's/^Icon=//p' "$appdir"/usr/share/applications/*.desktop)"
     [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || die "no single Icon= key in the desktop entry of the AppDir"
     link="$appdir/$name.png"
