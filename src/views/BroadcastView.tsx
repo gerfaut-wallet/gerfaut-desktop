@@ -588,7 +588,12 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
           </h2>
           <ul className="flex flex-col gap-2">
             {preview.warnings.map((warning) => {
-              const advice = WARNING_ADVICE[warning.kind];
+              // Checking the amounts is advice for amounts nothing
+              // proves: a coin the previous transaction proves needs none.
+              const advice =
+                warning.kind === "input_unknown" && !preview.amounts_declared
+                  ? undefined
+                  : WARNING_ADVICE[warning.kind];
               return (
                 // The core answers the one question that picks the tone,
                 // so the same caution never reads red here and amber on

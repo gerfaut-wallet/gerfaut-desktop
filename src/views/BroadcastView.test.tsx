@@ -480,6 +480,9 @@ describe("BroadcastView", () => {
     });
     await preview(user);
     expect(screen.queryByText("as the PSBT claims")).not.toBeInTheDocument();
+    // Nor the advice to check the amounts on the signing device: they
+    // are proven.
+    expect(screen.queryByText(/check the amounts on the signing device/)).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Broadcast" }));
     const dialog = within(await screen.findByRole("dialog"));
     expect(dialog.queryByText("as the PSBT claims")).not.toBeInTheDocument();
