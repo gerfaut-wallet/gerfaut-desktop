@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 // Tauri expects a fixed dev server address.
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
   clearScreen: false,
   server: {
@@ -11,6 +11,10 @@ export default defineConfig({
     strictPort: true,
     // The Rust build writes into src-tauri/target while vite runs.
     watch: { ignored: ["**/src-tauri/**"] },
+    // The tests read the reference JSON of the gerfaut-core checkout
+    // beside this one (src/test/core.ts); the app serves nothing from
+    // outside this folder.
+    fs: mode === "test" ? { allow: [".", "../gerfaut-core/tests/bridge"] } : undefined,
   },
   envPrefix: ["VITE_", "TAURI_ENV_"],
   build: {
@@ -22,4 +26,4 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     globals: true,
   },
-});
+}));
