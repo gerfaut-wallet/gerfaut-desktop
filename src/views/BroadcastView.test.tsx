@@ -666,9 +666,10 @@ describe("BroadcastView", () => {
     await screen.findByRole("region", { name: "Past broadcasts" });
     await forget();
 
-    expect(
-      await past().findByText("Could not forget this broadcast. Try again."),
-    ).toBeInTheDocument();
+    const said = await past().findByRole("alert");
+    expect(said).toHaveTextContent("Could not forget this broadcast. Try again.");
+    // Amber, as the link nothing opened: the record only stays.
+    expect(said).toHaveClass("border-pending/25", "bg-pending-surface", "text-pending");
     expect(kept).toHaveLength(1);
 
     unwritable = false;

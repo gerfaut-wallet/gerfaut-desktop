@@ -954,10 +954,12 @@ function StatusCard({
           </Button>
         )}
       </div>
+      {/* Amber, as the link nothing opened below it: nothing on chain
+          moves and no privacy is spent, the record simply stays. */}
       {forgetFailed && (
-        <p role="status" className="mt-2 font-ui text-sm text-muted">
+        <Notice tone="info" role="alert" className="mt-2">
           Could not forget this broadcast. Try again.
-        </p>
+        </Notice>
       )}
       <OpenFailure url={explorer.failed} />
 
