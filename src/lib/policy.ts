@@ -1,6 +1,8 @@
 // Words for a wallet's policy. Pure functions from the core's snapshot
 // to sentences, states and figures: the page lays them out, the tests
-// read them straight, and the two never disagree on a phrase.
+// read them straight, and the two never disagree on a phrase. The order
+// of the branches and the tone of their state are the core's: nothing
+// here sorts or colours.
 
 import {
   durationWords,
@@ -11,6 +13,7 @@ import {
 } from "./format";
 import type {
   BranchRole,
+  BranchTone,
   Condition,
   LockState,
   PolicyBranch,
@@ -23,43 +26,6 @@ import type {
 /** Ten minutes a block: the basis of every block-to-time estimate. */
 export const BLOCK_SECONDS = 600;
 
-/** Under this much left a lock reads as approaching: amber rather than
-    the neutral of a wait still far off. Thirty days exactly are not
-    yet under it. */
-export const APPROACHING_SECONDS = 30 * 86_400;
-
-// --- order ----------------------------------------------------------------
-
-const ROLE_RANK: Record<BranchRole, number> = {
-  primary: 0,
-  recovery: 1,
-  emergency: 2,
-  other: 3,
-};
-
-/** The full duration of a relative lock, or the distance of an absolute
-    one from the tip and the clock: how the core ranks timed branches. */
-function lockSeconds(timelock: Timelock, snapshot: PolicySnapshot): number {
-  const inner = timelock.lock.lock;
-  switch (inner.kind) {
-    case "blocks":
-      return inner.blocks * BLOCK_SECONDS;
-    case "seconds":
-      return inner.seconds;
-    case "height":
-      // Never synced, no tip: the lock is as far as its height.
-      return Math.max(0, inner.height - (snapshot.tip_height ?? 0)) * BLOCK_SECONDS;
-    case "time":
-      return Math.max(0, inner.unix - snapshot.computed_at);
-  }
-}
-
-function farthest(branch: PolicyBranch, snapshot: PolicySnapshot): number {
-  return branch.timelocks
-    .filter((timelock) => timelock.required)
-    .reduce((worst, timelock) => Math.max(worst, lockSeconds(timelock, snapshot)), 0);
-}
-
 /** The longest required relative lock of a branch, in seconds: the
     wait that decides when one of its coins opens. Zero without one. */
 function relativeWait(branch: PolicyBranch): number {
@@ -70,21 +36,6 @@ function relativeWait(branch: PolicyBranch): number {
     total = Math.max(total, inner.kind === "blocks" ? inner.blocks * BLOCK_SECONDS : inner.seconds);
   }
   return total;
-}
-
-/** Branches in reading order: the primary paths first, then the timed
-    ones from the nearest lock to the farthest, the rest last. The core
-    lists them as the policy wrote them; the page reads them by role. */
-export function orderBranches(snapshot: PolicySnapshot): PolicyBranch[] {
-  return snapshot.branches
-    .map((branch, index) => ({
-      branch,
-      index,
-      rank: ROLE_RANK[branch.role],
-      far: farthest(branch, snapshot),
-    }))
-    .sort((a, b) => a.rank - b.rank || a.far - b.far || a.index - b.index)
-    .map((entry) => entry.branch);
 }
 
 // --- keys -----------------------------------------------------------------
@@ -300,17 +251,14 @@ export function timelockText(timelock: Timelock): string {
 
 // --- state ----------------------------------------------------------------
 
-export type StatusTone = "confirmed" | "pending" | "neutral";
+/** The core's tone, as the pill takes it. */
+export type StatusTone = BranchTone;
 export type StatusGlyph = "check" | "clock" | "coins" | "lock";
 
 export interface BranchStatus {
   tone: StatusTone;
   glyph: StatusGlyph;
   text: string;
-}
-
-function approaching(remaining: Remaining): boolean {
-  return remaining.remaining_seconds !== null && remaining.remaining_seconds < APPROACHING_SECONDS;
 }
 
 /** "1 432 blocks ≈ 10 days" when the figure is in blocks, "10 days"
@@ -341,22 +289,18 @@ function coinsPhrase(unlocked: number, total: number): string {
   } unlocked`;
 }
 
-/** The state pill of a branch: tone, glyph and words. Colour arrives
-    only at the thresholds — Lichen when open, Ambre under thirty days,
-    neutral before — and the glyph and the words say it without it. */
+/** The state pill of a branch: tone, glyph and words. The tone is the
+    core's — Lichen when open, Ambre under thirty days, neutral before —
+    and the glyph and the words say it without the colour. */
 export function branchStatus(branch: PolicyBranch): BranchStatus {
-  const { state } = branch;
+  const { state, tone } = branch;
   switch (state.kind) {
     case "spendable_now":
-      return { tone: "confirmed", glyph: "check", text: "Spendable now" };
+      return { tone, glyph: "check", text: "Spendable now" };
     case "locked":
       // No tip to measure from: locked, for an unknown time.
-      if (!known(state.until)) return { tone: "neutral", glyph: "clock", text: "Locked" };
-      return {
-        tone: approaching(state.until) ? "pending" : "neutral",
-        glyph: "clock",
-        text: `In ${remainingWords(state.until)}`,
-      };
+      if (!known(state.until)) return { tone, glyph: "clock", text: "Locked" };
+      return { tone, glyph: "clock", text: `In ${remainingWords(state.until)}` };
     case "per_coin": {
       const total = state.unlocked + state.waiting + state.locked;
       const parts = [coinsPhrase(state.unlocked, total)];
@@ -370,20 +314,13 @@ export function branchStatus(branch: PolicyBranch): BranchStatus {
       if (state.waiting > 0) {
         parts.push(`${groupThousands(String(state.waiting))} waiting for a block`);
       }
-      const text = parts.join(" · ");
-      if (state.locked === 0 && state.waiting === 0 && state.unlocked > 0) {
-        return { tone: "confirmed", glyph: "check", text };
-      }
-      return {
-        tone: state.next && approaching(state.next) ? "pending" : "neutral",
-        glyph: "clock",
-        text,
-      };
+      // Every coin open: the check the core's tone calls for.
+      return { tone, glyph: tone === "confirmed" ? "check" : "clock", text: parts.join(" · ") };
     }
     case "no_coins":
-      return { tone: "neutral", glyph: "coins", text: "No coins yet" };
+      return { tone, glyph: "coins", text: "No coins yet" };
     case "needs_preimage":
-      return { tone: "neutral", glyph: "lock", text: "Needs a secret" };
+      return { tone, glyph: "lock", text: "Needs a secret" };
   }
 }
 
@@ -429,9 +366,7 @@ export function describePolicy(snapshot: PolicySnapshot): string {
       return condition && subject ? `${subject} ${keyVerb(condition)}.` : "";
     }
     case "miniscript":
-      return orderBranches(snapshot)
-        .map((branch) => branchSentence(branch, snapshot))
-        .join(" ");
+      return snapshot.branches.map((branch) => branchSentence(branch, snapshot)).join(" ");
   }
 }
 
@@ -549,7 +484,7 @@ export function policyDigest(snapshot: PolicySnapshot): PolicyDigest {
     case "multisig":
       return keysDigest(snapshot);
     case "miniscript": {
-      const branches = orderBranches(snapshot);
+      const { branches } = snapshot;
       // A primary path that waits is the wallet's only way to spend:
       // where it stands comes before any later path's. Unless nothing
       // is known of its lock yet: then the keys are all the row can say.

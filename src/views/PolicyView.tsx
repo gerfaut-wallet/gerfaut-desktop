@@ -17,7 +17,6 @@ import {
   countdown,
   describePolicy,
   hasTimeBasedLocks,
-  orderBranches,
   remainingWords,
   timelockText,
 } from "../lib/policy";
@@ -118,7 +117,7 @@ function Body({ snapshot, wallet }: { snapshot: PolicySnapshot; wallet?: WalletK
           say it all. */}
       {snapshot.kind !== "single_key" && (
         <div className={CARDS}>
-          {orderBranches(snapshot).map((branch) => (
+          {snapshot.branches.map((branch) => (
             <BranchCard key={branch.id} branch={branch} keys={snapshot.keys} />
           ))}
         </div>

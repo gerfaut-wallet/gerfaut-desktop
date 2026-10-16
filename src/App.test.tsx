@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import type {
   AddressEntry,
+  BranchTone,
   LockVerdict,
   ParsedInput,
   PolicyKey,
@@ -121,6 +122,7 @@ const SINGLE_KEY_POLICY: PolicySnapshot = {
       timelocks: [],
       state: { kind: "spendable_now" },
       spendable_now: true,
+      tone: "confirmed",
     },
   ],
   tip_height: 200_000,
@@ -159,9 +161,8 @@ const NEXT_COIN = {
   unlocks_at_unix: POLICY_AT + 42_480 * 600,
 };
 
-/** A Liana-style wallet: Key A any time, Key B after a year-long wait.
-    The core lists branches as the policy wrote them; here the recovery
-    path comes first on purpose, so the page has to put them in order. */
+/** A Liana-style wallet: Key A any time, Key B after a year-long wait,
+    the primary path first as the core lists it. */
 const LIANA_POLICY: PolicySnapshot = {
   kind: "miniscript",
   script: "witness_script",
@@ -169,6 +170,17 @@ const LIANA_POLICY: PolicySnapshot = {
   policy: "or(pk(Key A),and(pk(Key B),older(52560)))",
   keys: [KEY_A, KEY_B],
   branches: [
+    {
+      id: "b0",
+      role: "primary",
+      label: "Primary",
+      summary: "Key A",
+      condition: { kind: "key", key_id: "k0" },
+      timelocks: [],
+      state: { kind: "spendable_now" },
+      spendable_now: true,
+      tone: "confirmed",
+    },
     {
       id: "b1",
       role: "recovery",
@@ -192,16 +204,7 @@ const LIANA_POLICY: PolicySnapshot = {
       ],
       state: { kind: "per_coin", unlocked: 1, waiting: 0, locked: 2, next: NEXT_COIN },
       spendable_now: false,
-    },
-    {
-      id: "b0",
-      role: "primary",
-      label: "Primary",
-      summary: "Key A",
-      condition: { kind: "key", key_id: "k0" },
-      timelocks: [],
-      state: { kind: "spendable_now" },
-      spendable_now: true,
+      tone: "neutral",
     },
   ],
   tip_height: 200_000,
@@ -236,6 +239,7 @@ const MULTISIG_POLICY: PolicySnapshot = {
       timelocks: [],
       state: { kind: "spendable_now" },
       spendable_now: true,
+      tone: "confirmed",
     },
   ],
   tip_height: 200_000,
@@ -262,6 +266,7 @@ const ANY_KEY_POLICY: PolicySnapshot = {
       timelocks: [],
       state: { kind: "spendable_now" },
       spendable_now: true,
+      tone: "confirmed",
     },
     {
       id: "b1",
@@ -272,6 +277,7 @@ const ANY_KEY_POLICY: PolicySnapshot = {
       timelocks: [],
       state: { kind: "spendable_now" },
       spendable_now: true,
+      tone: "confirmed",
     },
   ],
 };
@@ -301,6 +307,7 @@ const ANY_OF_THREE_POLICY: PolicySnapshot = {
       timelocks: [],
       state: { kind: "spendable_now" },
       spendable_now: true,
+      tone: "confirmed",
     },
   ],
 };
@@ -340,7 +347,7 @@ function unsynced(): PolicySnapshot {
 
 /** Key A behind an absolute time lock `seconds` ahead of the clock: a
     lock the chain judges by a median time that trails the clock. */
-function timeLocked(seconds: number): PolicySnapshot {
+function timeLocked(seconds: number, tone: BranchTone): PolicySnapshot {
   const unix = POLICY_AT + seconds;
   const remaining = { remaining_blocks: null, remaining_seconds: seconds, unlocks_at_unix: unix };
   return {
@@ -374,14 +381,15 @@ function timeLocked(seconds: number): PolicySnapshot {
         ],
         state: { kind: "locked", until: remaining },
         spendable_now: false,
+        tone,
       },
     ],
   };
 }
 
 /** Key A behind an absolute height lock still `blocks` ahead of the tip:
-    the only path, and it waits. */
-function heightLocked(blocks: number): PolicySnapshot {
+    the only path, and it waits, in the tone the core gives it. */
+function heightLocked(blocks: number, tone: BranchTone = "neutral"): PolicySnapshot {
   const height = 200_000 + blocks;
   const remaining = {
     remaining_blocks: blocks,
@@ -419,6 +427,7 @@ function heightLocked(blocks: number): PolicySnapshot {
         ],
         state: { kind: "locked", until: remaining },
         spendable_now: false,
+        tone,
       },
     ],
   };
@@ -1494,8 +1503,8 @@ describe("policy page", () => {
     expect(screen.queryByText(/device's clock/)).not.toBeInTheDocument();
   });
 
-  it("turns amber only when a lock is within thirty days", async () => {
-    walletIpc({ wallet_policy: () => heightLocked(1_432) });
+  it("draws in amber a lock the core calls near", async () => {
+    walletIpc({ wallet_policy: () => heightLocked(1_432, "pending") });
     renderApp();
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: /Spendable in 10 days/ }));
@@ -1521,7 +1530,7 @@ describe("policy page", () => {
   });
 
   it("says the clock decides a time lock, and what it has left", async () => {
-    walletIpc({ wallet_policy: () => timeLocked(10 * 86_400) });
+    walletIpc({ wallet_policy: () => timeLocked(10 * 86_400, "pending") });
     renderApp();
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: /Spendable in 10 days/ }));
