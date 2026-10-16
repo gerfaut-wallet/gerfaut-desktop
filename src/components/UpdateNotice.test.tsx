@@ -8,6 +8,7 @@ import type { Settings, UpdateStatus } from "../lib/ipc";
 import { useLock } from "../state/lock";
 import { useUi } from "../state/store";
 import { RELEASES_URL, useUpdate } from "../state/update";
+import { PREFERENCES } from "../test/fixtures";
 import { APP_VERSION } from "../views/settings/AboutSection";
 
 const { openUrl } = vi.hoisted(() => ({ openUrl: vi.fn() }));
@@ -21,6 +22,7 @@ const SETTINGS: Settings = {
   electrum_certs: {},
   app_lock: null,
   tor: { mode: "auto", socks_proxy: null },
+  preferences: PREFERENCES,
 };
 
 /** What a check finds: a newer release, nothing newer, or no answer.

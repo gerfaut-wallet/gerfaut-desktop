@@ -29,7 +29,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
 
 use gerfaut_core::WalletManager;
-use gerfaut_core::live::notice::{Context, Held, Notice, Unit};
+use gerfaut_core::live::notice::{Context, Held, Notice};
 use gerfaut_core::live::{LiveEvent, LiveEvents};
 use gerfaut_core::wallet::snapshot::SyncReport;
 use gerfaut_core::watch::{WatchLimitsChoice, WatchStatus};
@@ -42,11 +42,6 @@ use tauri_plugin_notification::NotificationExt;
 use gerfaut_core::live::notice::NoticeId;
 
 use crate::{AppState, CommandError, CommandResult};
-
-/// The preference that turns the alerts, and with them the watch, on.
-pub(crate) const NOTIFY_PREF: &str = "notify.new_tx";
-const UNIT_PREF: &str = "display.unit";
-const MASKED_PREF: &str = "desktop.masked";
 
 /// A wallet was synced by the watch: the window reads it again.
 const EVENT_WALLET_SYNCED: &str = "live://wallet-synced";
@@ -181,21 +176,17 @@ impl Shown {
     }
 }
 
-/// Whether the person asked to be told.
+/// Whether the person asked to be told: the preference that turns the
+/// alerts, and with them the watch, on.
 pub(crate) async fn enabled(manager: &WalletManager) -> bool {
-    manager
-        .settings()
-        .await
-        .app_prefs
-        .get(NOTIFY_PREF)
-        .is_some_and(|value| value == "1")
+    manager.preferences().await.notify_new_tx
 }
 
 /// What the text depends on, read from the vault at the moment of
 /// posting: a name changed, a mask raised or a lock drawn since the
 /// sync began all count. Behind the lock, no wallet and no amount.
 async fn context(state: &AppState) -> Context {
-    let prefs = state.manager.settings().await.app_prefs;
+    let preferences = state.manager.preferences().await;
     let names = state
         .manager
         .list_wallets(None)
@@ -205,11 +196,8 @@ async fn context(state: &AppState) -> Context {
         .collect();
     Context {
         names,
-        unit: match prefs.get(UNIT_PREF).map(String::as_str) {
-            Some("sats") => Unit::Sats,
-            _ => Unit::Btc,
-        },
-        masked: prefs.get(MASKED_PREF).is_some_and(|value| value == "1"),
+        unit: preferences.unit,
+        masked: preferences.masked,
         details: !state.locked.load(Ordering::SeqCst),
     }
 }
@@ -528,6 +516,14 @@ mod tests {
     use gerfaut_core::store::{TxStage, VaultKey};
     use gerfaut_core::wallet::snapshot::{BalanceSnapshot, NewTx};
 
+    /// The change that turns the alerts on or off.
+    fn alerts(on: bool) -> gerfaut_core::prefs::PreferencesChange {
+        gerfaut_core::prefs::PreferencesChange {
+            notify_new_tx: Some(on),
+            ..Default::default()
+        }
+    }
+
     fn tx(wallet_id: &str, txid: &str, stage: TxStage) -> LiveTx {
         LiveTx {
             wallet_id: wallet_id.to_owned(),
@@ -739,11 +735,7 @@ mod tests {
         assert_eq!(posted(), vec![]);
 
         runtime
-            .block_on(
-                state
-                    .manager
-                    .set_app_pref(NOTIFY_PREF.to_owned(), "1".to_owned()),
-            )
+            .block_on(state.manager.set_preferences(alerts(true)))
             .unwrap();
         assert_eq!(
             posted(),
@@ -770,11 +762,7 @@ mod tests {
 
         state.locked.store(false, Ordering::SeqCst);
         runtime
-            .block_on(
-                state
-                    .manager
-                    .set_app_pref(NOTIFY_PREF.to_owned(), "0".to_owned()),
-            )
+            .block_on(state.manager.set_preferences(alerts(false)))
             .unwrap();
         assert_eq!(posted(), vec![]);
     }
@@ -807,11 +795,11 @@ mod tests {
         let manager = WalletManager::open(dir.path(), VaultKey::Raw([7u8; 32])).unwrap();
         assert!(!runtime.block_on(enabled(&manager)));
         runtime
-            .block_on(manager.set_app_pref(NOTIFY_PREF.to_owned(), "1".to_owned()))
+            .block_on(manager.set_preferences(alerts(true)))
             .unwrap();
         assert!(runtime.block_on(enabled(&manager)));
         runtime
-            .block_on(manager.set_app_pref(NOTIFY_PREF.to_owned(), "0".to_owned()))
+            .block_on(manager.set_preferences(alerts(false)))
             .unwrap();
         assert!(!runtime.block_on(enabled(&manager)));
     }

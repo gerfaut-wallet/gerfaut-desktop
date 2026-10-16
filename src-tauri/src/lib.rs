@@ -18,6 +18,7 @@ use gerfaut_core::input::{DerivationChoice, ImportOptions, ParsedInput, ScriptKi
 use gerfaut_core::lock::{AppLock, LockKind, LockVerdict};
 use gerfaut_core::manager::SyncAllReport;
 use gerfaut_core::network::Network;
+use gerfaut_core::prefs::{Preferences, PreferencesChange};
 use gerfaut_core::store::{Settings, VaultKey};
 use gerfaut_core::wallet::meta::{WalletIcon, WalletMeta};
 use gerfaut_core::wallet::policy::PolicySnapshot;
@@ -489,8 +490,9 @@ async fn settings_of(state: &AppState) -> Settings {
 }
 
 /// The one preference the lock screen is drawn from. The rest of them
-/// say what the shell remembers — the unit, the masked amounts, the
-/// transactions last broadcast — and wait for the unlock.
+/// say what the shell remembers — the sidebar, the range of the price
+/// chart — and wait for the unlock: the shared preferences read as
+/// their defaults until then.
 const THEME_PREF: &str = "desktop.theme";
 /// Whether the welcome tour has been through. Behind the lock this has
 /// to survive with the theme: without it the app reads as a vault with
@@ -571,23 +573,32 @@ async fn forget_certificate(state: tauri::State<'_, AppState>, host: String) -> 
     Ok(state.manager.forget_certificate(&host).await?)
 }
 
-/// Writes one preference. The one that turns the alerts on or off
-/// starts or stops the live watch in the same breath, so the window
-/// has no second call to forget.
+/// Writes one preference of this app alone: the theme, the sidebar.
 #[tauri::command]
 async fn set_app_pref(
-    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     key: String,
     value: String,
 ) -> CommandResult<()> {
     state.unlocked()?;
-    let alerts = key == live::NOTIFY_PREF;
-    state.manager.set_app_pref(key, value).await?;
-    if alerts {
+    Ok(state.manager.set_app_pref(key, value).await?)
+}
+
+/// Changes some of the preferences both apps keep, and answers them all
+/// as stored. A change of the alerts starts or stops the live watch in
+/// the same breath, so the window has no second call to forget.
+#[tauri::command]
+async fn set_preferences(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    change: PreferencesChange,
+) -> CommandResult<Preferences> {
+    state.unlocked()?;
+    let stored = state.manager.set_preferences(change).await?;
+    if change.notify_new_tx.is_some() {
         live::apply(&app).await;
     }
-    Ok(())
+    Ok(stored)
 }
 
 #[tauri::command]
@@ -680,32 +691,34 @@ fn public_servers(network: Network) -> Vec<gerfaut_core::chain::public::PublicSe
     gerfaut_core::chain::public::public_servers(network)
 }
 
-/// The current BTC price, by the route the syncs take: through Tor
-/// when a backend is an onion address, and not at all when Tor is
-/// required and cannot be had. That case answers `tor`.
+/// The currencies and price sources the settings offer, and how often
+/// the price is asked. A fixed table: it only changes with the core.
+#[tauri::command]
+fn price_table() -> gerfaut_core::price::PriceTable {
+    gerfaut_core::price::price_table()
+}
+
+/// The current BTC price, in the currency and from the source of the
+/// preferences. By the route the syncs take: through Tor when a backend
+/// is an onion address, and not at all when Tor is required and cannot
+/// be had. That case answers `tor`.
 #[tauri::command]
 async fn fetch_price(
     state: tauri::State<'_, AppState>,
-    source: gerfaut_core::price::PriceSource,
-    currency: gerfaut_core::price::FiatCurrency,
 ) -> CommandResult<gerfaut_core::price::PriceQuote> {
     state.unlocked()?;
-    Ok(state.manager.fetch_price(source, currency).await?)
+    Ok(state.manager.fetch_price().await?)
 }
 
-/// A BTC price series, by the same route as [`fetch_price`].
+/// A BTC price series, by the same preferences and the same route as
+/// [`fetch_price`].
 #[tauri::command]
 async fn fetch_price_history(
     state: tauri::State<'_, AppState>,
-    source: gerfaut_core::price::PriceSource,
-    currency: gerfaut_core::price::FiatCurrency,
     range: gerfaut_core::price::PriceRange,
 ) -> CommandResult<gerfaut_core::price::PriceHistory> {
     state.unlocked()?;
-    Ok(state
-        .manager
-        .fetch_price_history(source, currency, range)
-        .await?)
+    Ok(state.manager.fetch_price_history(range).await?)
 }
 
 /// The repository whose releases the app compares itself with.
@@ -1256,6 +1269,8 @@ pub fn run() {
             trust_certificate,
             forget_certificate,
             set_app_pref,
+            set_preferences,
+            price_table,
             fetch_price,
             fetch_price_history,
             check_update,
@@ -1633,6 +1648,7 @@ mod tests {
     use gerfaut_core::WalletManager;
     use gerfaut_core::lock::LockKind;
     use gerfaut_core::network::Network;
+    use gerfaut_core::prefs::{Preferences, PreferencesChange};
     use gerfaut_core::store::VaultKey;
 
     use super::AppState;
@@ -1714,7 +1730,14 @@ mod tests {
         };
         pref("desktop.theme", "dark");
         pref("onboarding.seen", "1");
-        pref("display.unit", "sats");
+        pref("desktop.sidebar", "collapsed");
+        let shared = runtime
+            .block_on(state.manager.set_preferences(PreferencesChange {
+                masked: Some(true),
+                fiat: Some(true),
+                ..PreferencesChange::default()
+            }))
+            .unwrap();
         runtime
             .block_on(state.manager.set_active_network(Network::Signet))
             .unwrap();
@@ -1745,6 +1768,7 @@ mod tests {
         assert_eq!(shut.app_lock.map(|lock| lock.kind), Some(LockKind::Pin));
         assert!(shut.backends.is_empty());
         assert!(shut.electrum_certs.is_empty());
+        assert_eq!(shut.preferences, Preferences::default());
 
         // And in full once a secret went through.
         runtime
@@ -1752,7 +1776,8 @@ mod tests {
             .unwrap();
         let open = runtime.block_on(super::settings_of(&state));
         assert_eq!(open.electrum_certs.len(), 1);
-        assert!(open.app_prefs.contains_key("display.unit"));
+        assert!(open.app_prefs.contains_key("desktop.sidebar"));
+        assert_eq!(open.preferences, shared);
     }
 
     /// The network the redacted settings name is the one the wallets

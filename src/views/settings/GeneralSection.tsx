@@ -1,53 +1,18 @@
 import { Coins, Monitor, Moon, Sun, SunMoon } from "lucide-react";
 import { Select } from "../../components/Select";
-import { COINGECKO_ONLY_CURRENCIES, SHARED_CURRENCIES, quotesCurrency } from "../../lib/ipc";
-import type { FiatCurrency, PriceSource } from "../../lib/ipc";
+import type { CurrencyReach } from "../../lib/ipc";
 import { formatCurrency, relativeTime } from "../../lib/format";
-import { liveAnswer, torDown, useFiatRate } from "../../state/queries";
+import { liveAnswer, torDown, useFiatRate, usePriceTable } from "../../state/queries";
 import { useUi } from "../../state/store";
 import type { ThemePref } from "../../state/store";
 import { SectionCard, Segmented, SettingRow, Toggle } from "./primitives";
 
-/** Plain names beside the codes: a list of thirty triplets is not a
-    list anyone can read. */
-const CURRENCY_NAME: Record<FiatCurrency, string> = {
-  eur: "Euro",
-  usd: "US dollar",
-  gbp: "Pound sterling",
-  chf: "Swiss franc",
-  jpy: "Japanese yen",
-  cad: "Canadian dollar",
-  aud: "Australian dollar",
-  inr: "Indian rupee",
-  cny: "Chinese yuan",
-  brl: "Brazilian real",
-  ngn: "Nigerian naira",
-  idr: "Indonesian rupiah",
-  pkr: "Pakistani rupee",
-  bdt: "Bangladeshi taka",
-  rub: "Russian ruble",
-  mxn: "Mexican peso",
-  php: "Philippine peso",
-  vnd: "Vietnamese dong",
-  try: "Turkish lira",
-  ars: "Argentine peso",
-  krw: "South Korean won",
-  zar: "South African rand",
-  thb: "Thai baht",
-  uah: "Ukrainian hryvnia",
-  pln: "Polish zloty",
-  sek: "Swedish krona",
-  sgd: "Singapore dollar",
-  hkd: "Hong Kong dollar",
-  aed: "UAE dirham",
-  nzd: "New Zealand dollar",
+/** The heading each currency is listed under: how many sources quote
+    it, as the core's table says. */
+const REACH_GROUP: Record<CurrencyReach, string> = {
+  every: "Every source",
+  coingecko_only: "CoinGecko only",
 };
-
-const PRICE_SOURCES: { value: PriceSource; label: string }[] = [
-  { value: "coingecko", label: "CoinGecko" },
-  { value: "kraken", label: "Kraken" },
-  { value: "mempool_space", label: "mempool.space" },
-];
 
 /** How the app reads: amounts and theme. */
 export function GeneralSection() {
@@ -71,6 +36,11 @@ function DisplayCard() {
     fiatSource,
     setFiatSource,
   } = useUi();
+  // What is on offer, in the core's order: the currencies with the
+  // sources that quote each, and the sources by name.
+  const table = usePriceTable().data;
+  const chosen = table?.currencies.find((entry) => entry.currency === fiatCurrency);
+  const quotedBy = chosen?.sources ?? [];
 
   return (
     <SectionCard icon={<Coins size={18} strokeWidth={1.5} />} title="Display">
@@ -103,20 +73,12 @@ function DisplayCard() {
             className="w-40"
             value={fiatCurrency}
             onChange={setFiatCurrency}
-            options={[
-              ...SHARED_CURRENCIES.map((currency) => ({
-                value: currency,
-                label: currency.toUpperCase(),
-                hint: CURRENCY_NAME[currency],
-                group: "Every source",
-              })),
-              ...COINGECKO_ONLY_CURRENCIES.map((currency) => ({
-                value: currency,
-                label: currency.toUpperCase(),
-                hint: CURRENCY_NAME[currency],
-                group: "CoinGecko only",
-              })),
-            ]}
+            options={(table?.currencies ?? []).map((entry) => ({
+              value: entry.currency,
+              label: entry.code,
+              hint: entry.name,
+              group: REACH_GROUP[entry.reach],
+            }))}
           />
         </SettingRow>
         <div>
@@ -128,16 +90,17 @@ function DisplayCard() {
               label="Price source"
               value={fiatSource}
               onChange={setFiatSource}
-              options={PRICE_SOURCES.map((source) => ({
-                ...source,
-                disabled: !quotesCurrency(source.value, fiatCurrency),
+              options={(table?.sources ?? []).map((entry) => ({
+                value: entry.source,
+                label: entry.label,
+                disabled: !quotedBy.includes(entry.source),
               }))}
             />
           </SettingRow>
-          {!quotesCurrency("kraken", fiatCurrency) && (
+          {chosen?.reach === "coingecko_only" && (
             <p className="mt-1.5 font-ui text-xs text-muted">
               CoinGecko is the only source that quotes{" "}
-              {fiatCurrency.toUpperCase()}.
+              {chosen.code}.
             </p>
           )}
           {/* Required by the CoinGecko API terms whenever their data
