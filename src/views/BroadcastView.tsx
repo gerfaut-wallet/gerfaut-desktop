@@ -36,6 +36,7 @@ import { BRANCH_ROLES, TxDiagram } from "../components/TxDiagram";
 import type { BranchRole, TxBranch } from "../components/TxDiagram";
 import type {
   Network,
+  RecentBroadcast,
   TxInputPreview,
   TxOutputPreview,
   TxPreview,
@@ -55,10 +56,11 @@ import {
 } from "../lib/format";
 import {
   useBroadcastTransaction,
+  useForgetBroadcast,
   usePreviewTransaction,
+  useRecentBroadcasts,
   useTransactionStatus,
 } from "../state/queries";
-import type { RecentBroadcast } from "../state/store";
 import { useUi } from "../state/store";
 
 /** PSBT file magic, BIP-174: a binary file that starts with it is
@@ -108,9 +110,11 @@ interface InputError {
     confirms. Gerfaut signs nothing here: what comes in signed goes out
     untouched, and what comes in unsigned goes back to the signer. */
 export function BroadcastView({ network }: { network: Network }) {
-  const { recentBroadcasts, rememberBroadcast, forgetBroadcast, showToast } = useUi();
+  const { showToast } = useUi();
   const preview = usePreviewTransaction();
   const broadcast = useBroadcastTransaction();
+  const recent = useRecentBroadcasts(network);
+  const forget = useForgetBroadcast(network);
   const [raw, setRaw] = useState("");
   const [scanOpen, setScanOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -161,7 +165,6 @@ export function BroadcastView({ network }: { network: Network }) {
         backend: report.backend,
         at: report.at,
       };
-      rememberBroadcast(entry);
       setSent(entry);
       showToast("Transaction broadcast");
     } catch {
@@ -188,7 +191,8 @@ export function BroadcastView({ network }: { network: Network }) {
   const inputError: InputError | null = fileError
     ? { headline: fileError }
     : preview.error
-      ? isCommandError(preview.error) && preview.error.kind === "invalid_input"
+      ? isCommandError(preview.error) &&
+        (preview.error.kind === "invalid_input" || preview.error.kind === "too_many_parts")
         ? { headline: UNREADABLE_TRANSACTION, detail: preview.error.message }
         : {
             headline: isCommandError(preview.error)
@@ -202,9 +206,7 @@ export function BroadcastView({ network }: { network: Network }) {
       : String(broadcast.error)
     : null;
 
-  const history = recentBroadcasts.filter(
-    (entry) => entry.network === network && entry.txid !== sent?.txid,
-  );
+  const history = (recent.data ?? []).filter((entry) => entry.txid !== sent?.txid);
 
   return (
     <div className="pb-8">
@@ -262,7 +264,7 @@ export function BroadcastView({ network }: { network: Network }) {
 
         {sent && (
           <>
-            <StatusCard entry={sent} onForget={() => forgetBroadcast(sent.txid)} live />
+            <StatusCard entry={sent} onForget={() => forget.mutate(sent.txid)} live />
             {/* The status is inserted, it does not replace: what was
                 just sent is exactly when one wants to re-read what it
                 does. The two platforms differ in the facts they can
@@ -287,7 +289,8 @@ export function BroadcastView({ network }: { network: Network }) {
                 <StatusCard
                   key={entry.txid}
                   entry={entry}
-                  onForget={() => forgetBroadcast(entry.txid)}
+                  onForget={() => forget.mutate(entry.txid)}
+                  forgetFailed={forget.isError && forget.variables === entry.txid}
                 />
               ))}
             </div>
@@ -821,10 +824,15 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
 function StatusCard({
   entry,
   onForget,
+  forgetFailed = false,
   live = false,
 }: {
   entry: RecentBroadcast;
   onForget: () => void;
+  /** The vault did not drop the record: said on the card, which stays,
+      until the next try. Not a toast: a failure does not go away by
+      itself. */
+  forgetFailed?: boolean;
   /** The one just sent: polled from the start, shown large. */
   live?: boolean;
 }) {
@@ -946,6 +954,13 @@ function StatusCard({
           </Button>
         )}
       </div>
+      {/* Amber, as the link nothing opened below it: nothing on chain
+          moves and no privacy is spent, the record simply stays. */}
+      {forgetFailed && (
+        <Notice tone="info" role="alert" className="mt-2">
+          Could not forget this broadcast. Try again.
+        </Notice>
+      )}
       <OpenFailure url={explorer.failed} />
 
       {explorer.warning}

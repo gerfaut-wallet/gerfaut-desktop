@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BroadcastView, MAX_TRANSACTION_FILE_BYTES } from "./BroadcastView";
-import type { BroadcastStatus, TxPreview, TxWarning } from "../lib/ipc";
+import type { BroadcastStatus, RecentBroadcast, TxPreview, TxWarning } from "../lib/ipc";
 import { useUi } from "../state/store";
 import { formatFiat } from "../lib/format";
 
@@ -96,10 +96,29 @@ function status(overrides: Partial<BroadcastStatus> = {}): BroadcastStatus {
   };
 }
 
+/** What the vault keeps, the way the core keeps it: a send the network
+    took at the head, a forgotten one gone. */
+let kept: RecentBroadcast[] = [];
+/** The vault refuses to write: a forget fails. */
+let unwritable = false;
+
 function mount(preview: TxPreview = PREVIEW, standing: BroadcastStatus = status()) {
-  mockIPC((cmd) => {
+  mockIPC((cmd, args) => {
+    const payload = (args ?? {}) as Record<string, string>;
     if (cmd === "preview_transaction") return preview;
-    if (cmd === "broadcast_transaction") return REPORT;
+    if (cmd === "broadcast_transaction") {
+      kept = [
+        { ...REPORT, network: payload.network as RecentBroadcast["network"], hex: payload.hex },
+        ...kept.filter((entry) => entry.txid !== REPORT.txid),
+      ];
+      return REPORT;
+    }
+    if (cmd === "recent_broadcasts") return kept.filter((entry) => entry.network === payload.network);
+    if (cmd === "forget_broadcast") {
+      if (unwritable) return Promise.reject({ kind: "vault", message: "vault: disk full" });
+      kept = kept.filter((entry) => entry.txid !== payload.txid);
+      return undefined;
+    }
     if (cmd === "transaction_status") return standing;
     if (cmd === "fetch_price") return { rate: RATE, currency: "eur", at: 0, source: "coingecko" };
     return undefined;
@@ -131,7 +150,9 @@ async function send(user: ReturnType<typeof userEvent.setup>) {
 
 describe("BroadcastView", () => {
   beforeEach(() => {
-    useUi.setState({ masked: false, recentBroadcasts: [] });
+    useUi.setState({ masked: false });
+    kept = [];
+    unwritable = false;
   });
 
   it("tells the scanner what this page is waiting for", async () => {
@@ -382,6 +403,27 @@ describe("BroadcastView", () => {
     expect(field).toHaveAttribute("aria-describedby", alert.id);
   });
 
+  /** A QR frame pasted with a count of parts past what Gerfaut reads
+      is text the page cannot read either, under a code of its own. */
+  it("says what to paste when a pasted qr code has too many parts", async () => {
+    const user = mount();
+    mockIPC((cmd) => {
+      if (cmd === "preview_transaction") {
+        throw {
+          kind: "too_many_parts",
+          message: "invalid qr: this QR code announces 6000 parts, more than Gerfaut reads",
+        };
+      }
+      return undefined;
+    });
+    await user.type(screen.getByLabelText("Signed transaction"), "ur:crypto-psbt/1-6000/x");
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/^This is not a transaction Gerfaut can read\./);
+    expect(alert).toHaveTextContent("announces 6000 parts");
+  });
+
   /** The error answered what was typed; typing again answers it. It
       goes at the first keystroke, and the hint comes back in the slot
       it held, so Preview stays where it was. */
@@ -584,13 +626,12 @@ describe("BroadcastView", () => {
   });
 
   it("asks before forgetting a past broadcast, and forgets only on yes", async () => {
-    useUi.setState({
-      recentBroadcasts: [
-        { txid: TXID, network: "signet", hex: HEX, backend: "mempool.space", at: 1_755_000_000 },
-      ],
-    });
+    kept = [
+      { txid: TXID, network: "signet", hex: HEX, backend: "mempool.space", at: 1_755_000_000 },
+    ];
     const user = mount();
     const past = () => within(screen.getByRole("region", { name: "Past broadcasts" }));
+    await screen.findByRole("region", { name: "Past broadcasts" });
     await user.click(past().getByRole("button", { name: "Forget this broadcast" }));
 
     const dialog = within(await screen.findByRole("dialog", { name: "Forget this broadcast?" }));
@@ -599,13 +640,43 @@ describe("BroadcastView", () => {
     expect(dialog.getByText(/on the network and is untouched/)).toBeInTheDocument();
 
     await user.click(dialog.getByRole("button", { name: "Cancel" }));
-    expect(useUi.getState().recentBroadcasts).toHaveLength(1);
+    expect(kept).toHaveLength(1);
 
     await user.click(past().getByRole("button", { name: "Forget this broadcast" }));
     const asked = within(await screen.findByRole("dialog", { name: "Forget this broadcast?" }));
     await user.click(asked.getByRole("button", { name: "Forget" }));
-    expect(useUi.getState().recentBroadcasts).toHaveLength(0);
-    expect(screen.queryByRole("region", { name: "Past broadcasts" })).not.toBeInTheDocument();
+    expect(kept).toHaveLength(0);
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Past broadcasts" })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("says so on the card when the vault does not forget", async () => {
+    kept = [
+      { txid: TXID, network: "signet", hex: HEX, backend: "mempool.space", at: 1_755_000_000 },
+    ];
+    unwritable = true;
+    const user = mount();
+    const past = () => within(screen.getByRole("region", { name: "Past broadcasts" }));
+    const forget = async () => {
+      await user.click(past().getByRole("button", { name: "Forget this broadcast" }));
+      const dialog = within(await screen.findByRole("dialog", { name: "Forget this broadcast?" }));
+      await user.click(dialog.getByRole("button", { name: "Forget" }));
+    };
+    await screen.findByRole("region", { name: "Past broadcasts" });
+    await forget();
+
+    const said = await past().findByRole("alert");
+    expect(said).toHaveTextContent("Could not forget this broadcast. Try again.");
+    // Amber, as the link nothing opened: the record only stays.
+    expect(said).toHaveClass("border-pending/25", "bg-pending-surface", "text-pending");
+    expect(kept).toHaveLength(1);
+
+    unwritable = false;
+    await forget();
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Past broadcasts" })).not.toBeInTheDocument(),
+    );
   });
 
   it("prices a preview line in the chosen unit only, never in fiat", async () => {

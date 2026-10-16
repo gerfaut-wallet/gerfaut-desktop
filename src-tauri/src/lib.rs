@@ -12,12 +12,13 @@ use gerfaut_core::backup::{
 use gerfaut_core::chain::BackendConfig;
 use gerfaut_core::chain::connect::ScannedBackend;
 use gerfaut_core::chain::tor::{TorRoute, TorSettings, TorStatus};
-use gerfaut_core::error::{CoreError, VaultError};
+use gerfaut_core::error::CoreError;
 use gerfaut_core::input::qr::QrProgress;
 use gerfaut_core::input::{DerivationChoice, ImportOptions, ParsedInput, ScriptKind};
 use gerfaut_core::lock::{AppLock, LockKind, LockVerdict};
 use gerfaut_core::manager::SyncAllReport;
 use gerfaut_core::network::Network;
+use gerfaut_core::prefs::{Preferences, PreferencesChange};
 use gerfaut_core::store::{Settings, VaultKey};
 use gerfaut_core::wallet::meta::{WalletIcon, WalletMeta};
 use gerfaut_core::wallet::policy::PolicySnapshot;
@@ -32,7 +33,6 @@ use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
 
 mod clipboard;
 mod live;
-mod notice;
 // Compiled on Linux for its tests too, where nothing else calls it.
 #[cfg(any(target_os = "macos", all(unix, test)))]
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -56,32 +56,12 @@ impl CommandError {
     }
 }
 
+/// The core names its failures, and the name goes through as it is:
+/// the screens decide on it, the way the Android app does on the same
+/// name.
 impl From<CoreError> for CommandError {
     fn from(error: CoreError) -> Self {
-        let kind = match &error {
-            CoreError::UnrecognizedInput(_) => "unrecognized_input",
-            CoreError::PrivateMaterialRejected => "private_material",
-            CoreError::InvalidInput { .. } => "invalid_input",
-            CoreError::NetworkMismatch { .. } => "network_mismatch",
-            CoreError::WalletNotFound(_) => "wallet_not_found",
-            CoreError::DuplicateWallet(_) => "duplicate_wallet",
-            // The one vault failure a password explains, named apart so
-            // the screen says "wrong password" for it and for nothing
-            // else: a backup written by a newer Gerfaut is refused in
-            // the core's own words, not blamed on the person typing.
-            CoreError::Vault(VaultError::WrongKeyOrCorrupted) => "wrong_key",
-            // Another Gerfaut holds the vault: the screen says to switch
-            // to it, not that anything is broken.
-            CoreError::Vault(VaultError::AlreadyOpen) => "vault_in_use",
-            CoreError::Vault(_) => "vault",
-            CoreError::Sync { .. } => "sync",
-            CoreError::Broadcast { .. } => "broadcast",
-            CoreError::BackendUnavailable(_) => "backend_unavailable",
-            CoreError::Descriptor(_) => "descriptor",
-            CoreError::Tor(_) => "tor",
-            CoreError::Internal(_) => "internal",
-        };
-        CommandError::new(kind, error.to_string())
+        CommandError::new(error.code().as_str(), error.to_string())
     }
 }
 
@@ -510,8 +490,9 @@ async fn settings_of(state: &AppState) -> Settings {
 }
 
 /// The one preference the lock screen is drawn from. The rest of them
-/// say what the shell remembers — the unit, the masked amounts, the
-/// transactions last broadcast — and wait for the unlock.
+/// say what the shell remembers — the sidebar, the range of the price
+/// chart — and wait for the unlock: the shared preferences read as
+/// their defaults until then.
 const THEME_PREF: &str = "desktop.theme";
 /// Whether the welcome tour has been through. Behind the lock this has
 /// to survive with the theme: without it the app reads as a vault with
@@ -592,23 +573,32 @@ async fn forget_certificate(state: tauri::State<'_, AppState>, host: String) -> 
     Ok(state.manager.forget_certificate(&host).await?)
 }
 
-/// Writes one preference. The one that turns the alerts on or off
-/// starts or stops the live watch in the same breath, so the window
-/// has no second call to forget.
+/// Writes one preference of this app alone: the theme, the sidebar.
 #[tauri::command]
 async fn set_app_pref(
-    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     key: String,
     value: String,
 ) -> CommandResult<()> {
     state.unlocked()?;
-    let alerts = key == live::NOTIFY_PREF;
-    state.manager.set_app_pref(key, value).await?;
-    if alerts {
+    Ok(state.manager.set_app_pref(key, value).await?)
+}
+
+/// Changes some of the preferences both apps keep, and answers them all
+/// as stored. A change of the alerts starts or stops the live watch in
+/// the same breath, so the window has no second call to forget.
+#[tauri::command]
+async fn set_preferences(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    change: PreferencesChange,
+) -> CommandResult<Preferences> {
+    state.unlocked()?;
+    let stored = state.manager.set_preferences(change).await?;
+    if change.notify_new_tx.is_some() {
         live::apply(&app).await;
     }
-    Ok(())
+    Ok(stored)
 }
 
 #[tauri::command]
@@ -676,55 +666,125 @@ async fn transaction_status(
     Ok(state.manager.transaction_status(network, &hex).await?)
 }
 
+/// The last transactions broadcast on this network, newest first, as
+/// the vault keeps them.
+#[tauri::command]
+async fn recent_broadcasts(
+    state: tauri::State<'_, AppState>,
+    network: Network,
+) -> CommandResult<Vec<gerfaut_core::broadcast::RecentBroadcast>> {
+    state.unlocked()?;
+    Ok(state.manager.recent_broadcasts(network).await)
+}
+
+/// Drops the vault's record of a broadcast; the transaction itself is
+/// on the network and untouched.
+#[tauri::command]
+async fn forget_broadcast(state: tauri::State<'_, AppState>, txid: String) -> CommandResult<()> {
+    state.unlocked()?;
+    Ok(state.manager.forget_broadcast(&txid).await?)
+}
+
 /// The public servers offered for a network, in settings order.
 #[tauri::command]
 fn public_servers(network: Network) -> Vec<gerfaut_core::chain::public::PublicServer> {
     gerfaut_core::chain::public::public_servers(network)
 }
 
-/// The current BTC price, by the route the syncs take: through Tor
-/// when a backend is an onion address, and not at all when Tor is
-/// required and cannot be had. That case answers `tor`.
+/// The currencies and price sources the settings offer, and how often
+/// the price is asked. A fixed table: it only changes with the core.
+#[tauri::command]
+fn price_table() -> gerfaut_core::price::PriceTable {
+    gerfaut_core::price::price_table()
+}
+
+/// The current BTC price, in the currency and from the source of the
+/// preferences. By the route the syncs take: through Tor when a backend
+/// is an onion address, and not at all when Tor is required and cannot
+/// be had. That case answers `tor`.
 #[tauri::command]
 async fn fetch_price(
     state: tauri::State<'_, AppState>,
-    source: gerfaut_core::price::PriceSource,
-    currency: gerfaut_core::price::FiatCurrency,
 ) -> CommandResult<gerfaut_core::price::PriceQuote> {
     state.unlocked()?;
-    Ok(state.manager.fetch_price(source, currency).await?)
+    Ok(state.manager.fetch_price().await?)
 }
 
-/// A BTC price series, by the same route as [`fetch_price`].
+/// A BTC price series, by the same preferences and the same route as
+/// [`fetch_price`].
 #[tauri::command]
 async fn fetch_price_history(
     state: tauri::State<'_, AppState>,
-    source: gerfaut_core::price::PriceSource,
-    currency: gerfaut_core::price::FiatCurrency,
     range: gerfaut_core::price::PriceRange,
 ) -> CommandResult<gerfaut_core::price::PriceHistory> {
     state.unlocked()?;
-    Ok(state
-        .manager
-        .fetch_price_history(source, currency, range)
-        .await?)
+    Ok(state.manager.fetch_price_history(range).await?)
 }
 
 /// The repository whose releases the app compares itself with.
 const RELEASES_REPO: &str = "gerfaut-wallet/gerfaut-desktop";
 
-/// Asks for the latest release, by the route the syncs take: through
-/// Tor when a backend is an onion address, and not at all when Tor is
-/// required and cannot be had. That case answers `tor`, which the
-/// screen words apart from "could not check".
+/// The version this build runs, the one the core compares releases with.
+fn running_version(app: &tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+/// What to say about releases, as the core decides it. Reads only.
+#[tauri::command]
+async fn update_status(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> CommandResult<gerfaut_core::updates::UpdateStatus> {
+    state.unlocked()?;
+    Ok(state.manager.update_status(&running_version(&app)).await)
+}
+
+/// The window is unlocked and on its way: the core asks for the latest
+/// release if a check is due, and says what to announce. Never behind
+/// the lock, which refuses it here.
+#[tauri::command]
+async fn update_session(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> CommandResult<gerfaut_core::updates::UpdateStatus> {
+    state.unlocked()?;
+    Ok(state
+        .manager
+        .update_session(RELEASES_REPO, &running_version(&app))
+        .await)
+}
+
+/// Asks for the latest release now, by the route the syncs take:
+/// through Tor when a backend is an onion address, and not at all when
+/// Tor is required and cannot be had. That case answers `tor`, which
+/// the screen words apart from "could not check".
 #[tauri::command]
 async fn check_update(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-) -> CommandResult<gerfaut_core::updates::UpdateCheck> {
+) -> CommandResult<gerfaut_core::updates::UpdateStatus> {
     state.unlocked()?;
-    let current = app.package_info().version.to_string();
-    Ok(state.manager.check_update(RELEASES_REPO, &current).await?)
+    Ok(state
+        .manager
+        .check_update(RELEASES_REPO, &running_version(&app))
+        .await?)
+}
+
+/// Closes the notice on the release it announced.
+#[tauri::command]
+async fn dismiss_update(state: tauri::State<'_, AppState>, version: String) -> CommandResult<()> {
+    state.unlocked()?;
+    Ok(state.manager.dismiss_update(&version).await?)
+}
+
+/// Turns the daily check on or off.
+#[tauri::command]
+async fn set_update_automatic(
+    state: tauri::State<'_, AppState>,
+    automatic: bool,
+) -> CommandResult<()> {
+    state.unlocked()?;
+    Ok(state.manager.set_update_automatic(automatic).await?)
 }
 
 // --- tor ---------------------------------------------------------------
@@ -1190,6 +1250,8 @@ pub fn run() {
             preview_transaction,
             broadcast_transaction,
             transaction_status,
+            recent_broadcasts,
+            forget_broadcast,
             sync_wallet,
             rescan_wallet,
             load_more_history,
@@ -1207,9 +1269,15 @@ pub fn run() {
             trust_certificate,
             forget_certificate,
             set_app_pref,
+            set_preferences,
+            price_table,
             fetch_price,
             fetch_price_history,
             check_update,
+            update_status,
+            update_session,
+            dismiss_update,
+            set_update_automatic,
             app_lock,
             set_app_lock,
             clear_app_lock,
@@ -1224,6 +1292,7 @@ pub fn run() {
             set_tor_settings,
             tor_connect,
             live::live_status,
+            live::live_limits,
             live::send_test_notification,
             clipboard::copy_sensitive
         ])
@@ -1339,33 +1408,81 @@ mod tests {
         assert_eq!(refused.kind, "invalid_input");
     }
 
-    /// A wrong backup password has a kind of its own, so the screen can
-    /// say "wrong password" for that and for nothing else. A file a
-    /// newer Gerfaut wrote — a newer envelope, or a newer payload
-    /// schema — reaches the screen in the core's words.
+    /// A failure crosses in the form the core writes down for both
+    /// bridges, `CoreError.json` of its reference files in the
+    /// gerfaut-core checkout beside this repository: the code as `kind`
+    /// and the error's words as `message`, nothing else.
     #[test]
-    fn a_wrong_key_is_told_apart_from_a_file_this_build_cannot_read() {
+    fn a_failure_crosses_in_the_form_the_core_writes_down() {
+        use serde_json::Value;
+
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../gerfaut-core/tests/bridge/CoreError.json"
+        );
+        let text = std::fs::read_to_string(path).expect("gerfaut-core beside this repository");
+        let cases: Value = serde_json::from_str(&text).expect("the reference file is JSON");
+        let keys = |value: &Value| -> Vec<String> {
+            let mut keys: Vec<String> = value
+                .as_object()
+                .expect("an object")
+                .keys()
+                .cloned()
+                .collect();
+            keys.sort();
+            keys
+        };
+        let sent = serde_json::to_value(CommandError::from(CoreError::WalletNotFound(
+            "w1".to_owned(),
+        )))
+        .expect("a failure serializes");
+        let case = &cases["wallet_not_found"];
+        assert_eq!(keys(&sent), keys(case));
+        assert_eq!(sent["kind"], case["kind"]);
+    }
+
+    /// The code the core gives is the kind the screens read, unchanged,
+    /// with the core's words beside it. A wrong password, a file that
+    /// is not a backup and one a newer Gerfaut wrote arrive under three
+    /// kinds, so the screen says "wrong password" for the first and for
+    /// nothing else.
+    #[test]
+    fn the_core_code_goes_through_as_the_kind() {
         use gerfaut_core::error::VaultError;
 
-        let wrong = CommandError::from(CoreError::Vault(VaultError::WrongKeyOrCorrupted));
-        assert_eq!(wrong.kind, "wrong_key");
-
-        let envelope = CommandError::from(CoreError::Vault(VaultError::UnsupportedVersion(9)));
-        assert_eq!(envelope.kind, "vault");
+        let relayed = |error: CoreError| {
+            let code = error.code().as_str();
+            let words = error.to_string();
+            let relayed = CommandError::from(error);
+            assert_eq!(relayed.kind, code);
+            assert_eq!(relayed.message, words);
+            relayed.kind
+        };
         assert_eq!(
-            envelope.message,
-            "vault version 9 is not supported by this build"
+            relayed(CoreError::Vault(VaultError::WrongKeyOrCorrupted)),
+            "wrong_key"
         );
-
-        let schema = CommandError::from(CoreError::InvalidInput {
-            kind: "backup",
-            detail: "backup version 2 needs a newer Gerfaut".to_owned(),
-        });
-        assert_eq!(schema.kind, "invalid_input");
         assert_eq!(
-            schema.message,
-            "invalid backup: backup version 2 needs a newer Gerfaut"
+            relayed(CoreError::UnreadableBackup(
+                "this is not a Gerfaut backup".to_owned()
+            )),
+            "unreadable_backup"
         );
+        assert_eq!(
+            relayed(CoreError::NewerBackup(
+                "this backup was written by a newer Gerfaut (backup version 2)".to_owned()
+            )),
+            "newer_format"
+        );
+        assert_eq!(
+            relayed(CoreError::Vault(VaultError::UnsupportedVersion(9))),
+            "newer_format"
+        );
+        assert_eq!(
+            relayed(CoreError::Vault(VaultError::AlreadyOpen)),
+            "vault_in_use"
+        );
+        assert_eq!(relayed(CoreError::TooManyParts(6_000)), "too_many_parts");
     }
 
     /// A test instance on its own directory is an app of its own, and
@@ -1564,6 +1681,7 @@ mod tests {
     use gerfaut_core::WalletManager;
     use gerfaut_core::lock::LockKind;
     use gerfaut_core::network::Network;
+    use gerfaut_core::prefs::{Preferences, PreferencesChange};
     use gerfaut_core::store::VaultKey;
 
     use super::AppState;
@@ -1631,9 +1749,9 @@ mod tests {
     }
 
     /// Behind the lock the settings answer the theme and the kind of
-    /// secret to ask for. A backend, an accepted certificate or the
-    /// last transactions broadcast, sitting in the webview's cache, are
-    /// there to be read.
+    /// secret to ask for. A backend, an accepted certificate or another
+    /// preference, sitting in the webview's cache, are there to be
+    /// read.
     #[test]
     fn the_settings_read_behind_the_lock_carry_nothing_of_the_vault() {
         let dir = tempfile::tempdir().unwrap();
@@ -1645,7 +1763,14 @@ mod tests {
         };
         pref("desktop.theme", "dark");
         pref("onboarding.seen", "1");
-        pref("broadcast.recent", "[{\"txid\":\"ab\"}]");
+        pref("desktop.sidebar", "collapsed");
+        let shared = runtime
+            .block_on(state.manager.set_preferences(PreferencesChange {
+                masked: Some(true),
+                fiat: Some(true),
+                ..PreferencesChange::default()
+            }))
+            .unwrap();
         runtime
             .block_on(state.manager.set_active_network(Network::Signet))
             .unwrap();
@@ -1676,6 +1801,7 @@ mod tests {
         assert_eq!(shut.app_lock.map(|lock| lock.kind), Some(LockKind::Pin));
         assert!(shut.backends.is_empty());
         assert!(shut.electrum_certs.is_empty());
+        assert_eq!(shut.preferences, Preferences::default());
 
         // And in full once a secret went through.
         runtime
@@ -1683,7 +1809,8 @@ mod tests {
             .unwrap();
         let open = runtime.block_on(super::settings_of(&state));
         assert_eq!(open.electrum_certs.len(), 1);
-        assert!(open.app_prefs.contains_key("broadcast.recent"));
+        assert!(open.app_prefs.contains_key("desktop.sidebar"));
+        assert_eq!(open.preferences, shared);
     }
 
     /// The network the redacted settings name is the one the wallets

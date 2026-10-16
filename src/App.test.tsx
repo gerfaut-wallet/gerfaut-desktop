@@ -6,16 +6,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import type {
   AddressEntry,
+  BranchTone,
   LockVerdict,
   ParsedInput,
   PolicyKey,
   PolicySnapshot,
+  PreferencesChange,
   Settings,
   WalletMeta,
   WalletSnapshot,
+  WatchLimitsChoice,
 } from "./lib/ipc";
 import { useLock } from "./state/lock";
 import { useUi } from "./state/store";
+import { coreCase } from "./test/core";
+import { PREFERENCES, PRICE_TABLE, preferencesHeld } from "./test/fixtures";
 
 // A vault opened before: the welcome tour is behind this user, so the
 // app lands on itself the way it does every other day.
@@ -40,6 +45,7 @@ const SETTINGS: Settings = {
   electrum_certs: {},
   app_lock: null,
   tor: { mode: "auto", socks_proxy: null },
+  preferences: PREFERENCES,
 };
 
 /** A SHA-256 fingerprint in the shape openssl prints, as the core sends it. */
@@ -121,6 +127,7 @@ const SINGLE_KEY_POLICY: PolicySnapshot = {
       timelocks: [],
       state: { kind: "spendable_now" },
       spendable_now: true,
+      tone: "confirmed",
     },
   ],
   tip_height: 200_000,
@@ -159,9 +166,8 @@ const NEXT_COIN = {
   unlocks_at_unix: POLICY_AT + 42_480 * 600,
 };
 
-/** A Liana-style wallet: Key A any time, Key B after a year-long wait.
-    The core lists branches as the policy wrote them; here the recovery
-    path comes first on purpose, so the page has to put them in order. */
+/** A Liana-style wallet: Key A any time, Key B after a year-long wait,
+    the primary path first as the core lists it. */
 const LIANA_POLICY: PolicySnapshot = {
   kind: "miniscript",
   script: "witness_script",
@@ -169,6 +175,17 @@ const LIANA_POLICY: PolicySnapshot = {
   policy: "or(pk(Key A),and(pk(Key B),older(52560)))",
   keys: [KEY_A, KEY_B],
   branches: [
+    {
+      id: "b0",
+      role: "primary",
+      label: "Primary",
+      summary: "Key A",
+      condition: { kind: "key", key_id: "k0" },
+      timelocks: [],
+      state: { kind: "spendable_now" },
+      spendable_now: true,
+      tone: "confirmed",
+    },
     {
       id: "b1",
       role: "recovery",
@@ -192,16 +209,7 @@ const LIANA_POLICY: PolicySnapshot = {
       ],
       state: { kind: "per_coin", unlocked: 1, waiting: 0, locked: 2, next: NEXT_COIN },
       spendable_now: false,
-    },
-    {
-      id: "b0",
-      role: "primary",
-      label: "Primary",
-      summary: "Key A",
-      condition: { kind: "key", key_id: "k0" },
-      timelocks: [],
-      state: { kind: "spendable_now" },
-      spendable_now: true,
+      tone: "neutral",
     },
   ],
   tip_height: 200_000,
@@ -236,6 +244,7 @@ const MULTISIG_POLICY: PolicySnapshot = {
       timelocks: [],
       state: { kind: "spendable_now" },
       spendable_now: true,
+      tone: "confirmed",
     },
   ],
   tip_height: 200_000,
@@ -262,6 +271,7 @@ const ANY_KEY_POLICY: PolicySnapshot = {
       timelocks: [],
       state: { kind: "spendable_now" },
       spendable_now: true,
+      tone: "confirmed",
     },
     {
       id: "b1",
@@ -272,6 +282,7 @@ const ANY_KEY_POLICY: PolicySnapshot = {
       timelocks: [],
       state: { kind: "spendable_now" },
       spendable_now: true,
+      tone: "confirmed",
     },
   ],
 };
@@ -301,6 +312,7 @@ const ANY_OF_THREE_POLICY: PolicySnapshot = {
       timelocks: [],
       state: { kind: "spendable_now" },
       spendable_now: true,
+      tone: "confirmed",
     },
   ],
 };
@@ -340,7 +352,7 @@ function unsynced(): PolicySnapshot {
 
 /** Key A behind an absolute time lock `seconds` ahead of the clock: a
     lock the chain judges by a median time that trails the clock. */
-function timeLocked(seconds: number): PolicySnapshot {
+function timeLocked(seconds: number, tone: BranchTone): PolicySnapshot {
   const unix = POLICY_AT + seconds;
   const remaining = { remaining_blocks: null, remaining_seconds: seconds, unlocks_at_unix: unix };
   return {
@@ -374,14 +386,15 @@ function timeLocked(seconds: number): PolicySnapshot {
         ],
         state: { kind: "locked", until: remaining },
         spendable_now: false,
+        tone,
       },
     ],
   };
 }
 
 /** Key A behind an absolute height lock still `blocks` ahead of the tip:
-    the only path, and it waits. */
-function heightLocked(blocks: number): PolicySnapshot {
+    the only path, and it waits, in the tone the core gives it. */
+function heightLocked(blocks: number, tone: BranchTone = "neutral"): PolicySnapshot {
   const height = 200_000 + blocks;
   const remaining = {
     remaining_blocks: blocks,
@@ -419,6 +432,7 @@ function heightLocked(blocks: number): PolicySnapshot {
         ],
         state: { kind: "locked", until: remaining },
         spendable_now: false,
+        tone,
       },
     ],
   };
@@ -493,6 +507,12 @@ const LIVE_SHORT = {
     { wallet_id: "w-1", coverage: "partial", watched_scripts: 200, left_out_scripts: 1_040 },
     { wallet_id: "w-2", coverage: "sync_only", watched_scripts: 0, left_out_scripts: 200 },
   ],
+  left_out: {
+    reason: "live_limit",
+    limits: { per_wallet: 200, total: 2_000 },
+    own_node: false,
+    remedy: { type: "own_node", limits: { per_wallet: 20_000, total: 20_000 } },
+  },
 };
 
 /** What the core publishes for signet, the workspace network here. */
@@ -544,13 +564,17 @@ function withFiat(overrides: Record<string, (args: Record<string, unknown>) => u
   return walletIpc({
     get_settings: () => ({
       ...SETTINGS,
-      app_prefs: { ...SETTINGS.app_prefs, "display.fiat": "1" },
+      preferences: { ...PREFERENCES, fiat: true },
     }),
     ...overrides,
   });
 }
 
 function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => unknown> = {}) {
+  // What the core holds of the preferences: the ones the vault answers,
+  // with every change applied.
+  const vault = (overrides.get_settings?.({}) ?? SETTINGS) as Settings;
+  const held = preferencesHeld(vault.preferences);
   mockIPC((cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
     if (overrides[cmd]) return overrides[cmd](payload);
@@ -590,10 +614,16 @@ function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => 
         };
       case "wallet_policy":
         return SINGLE_KEY_POLICY;
+      case "recent_broadcasts":
+        return [];
       case "sync_all":
         return { reports: [], failures: [] };
       case "set_app_pref":
         return undefined;
+      case "set_preferences":
+        return held(payload.change as PreferencesChange);
+      case "price_table":
+        return PRICE_TABLE;
       case "fetch_price":
         return { rate: 100_000, currency: "eur", source: "coingecko", at: 1_755_000_000 };
       case "fetch_price_history":
@@ -1057,6 +1087,7 @@ describe("overview", () => {
           left_out_scripts: 0,
           left_out_wallets: 0,
           wallets: [{ wallet_id: "w-1", coverage: "live", watched_scripts: 36, left_out_scripts: 0 }],
+          left_out: null,
         },
       }),
     });
@@ -1494,8 +1525,8 @@ describe("policy page", () => {
     expect(screen.queryByText(/device's clock/)).not.toBeInTheDocument();
   });
 
-  it("turns amber only when a lock is within thirty days", async () => {
-    walletIpc({ wallet_policy: () => heightLocked(1_432) });
+  it("draws in amber a lock the core calls near", async () => {
+    walletIpc({ wallet_policy: () => heightLocked(1_432, "pending") });
     renderApp();
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: /Spendable in 10 days/ }));
@@ -1521,7 +1552,7 @@ describe("policy page", () => {
   });
 
   it("says the clock decides a time lock, and what it has left", async () => {
-    walletIpc({ wallet_policy: () => timeLocked(10 * 86_400) });
+    walletIpc({ wallet_policy: () => timeLocked(10 * 86_400, "pending") });
     renderApp();
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: /Spendable in 10 days/ }));
@@ -1699,7 +1730,7 @@ describe("display settings", () => {
       get_settings: () => ({
         ...SETTINGS,
         active_network: "mainnet",
-        app_prefs: { ...SETTINGS.app_prefs, "display.fiat": "1" },
+        preferences: { ...PREFERENCES, fiat: true },
       }),
       list_wallets: () => [wallet],
       wallet_snapshot: () => ({ ...SNAPSHOT, meta: wallet }),
@@ -1711,7 +1742,9 @@ describe("display settings", () => {
     renderApp(client);
     const user = userEvent.setup();
     expect(await screen.findAllByText("€150.00")).toHaveLength(2);
-    expect(screen.getByText("+11.1%")).toBeInTheDocument();
+    // The series is asked once the table says which ranges the source
+    // serves.
+    expect(await screen.findByText("+11.1%")).toBeInTheDocument();
 
     down = true;
     await act(async () => {
@@ -1748,7 +1781,7 @@ describe("display settings", () => {
       get_settings: () => ({
         ...SETTINGS,
         active_network: "mainnet",
-        app_prefs: { ...SETTINGS.app_prefs, "display.fiat": "1" },
+        preferences: { ...PREFERENCES, fiat: true },
       }),
       list_wallets: () => [wallet],
       wallet_snapshot: () => ({ ...SNAPSHOT, meta: wallet }),
@@ -1765,7 +1798,9 @@ describe("display settings", () => {
     renderApp(client);
     const user = userEvent.setup();
     expect(await screen.findAllByText("€150.00")).toHaveLength(2);
-    expect(screen.getByText("+11.1%")).toBeInTheDocument();
+    // The series is asked once the table says which ranges the source
+    // serves.
+    expect(await screen.findByText("+11.1%")).toBeInTheDocument();
 
     try {
       down = true;
@@ -1909,8 +1944,20 @@ describe("display settings", () => {
     );
   });
 
-  it("offers every currency and moves the source when only one quotes it", async () => {
-    walletIpc();
+  it("offers every currency the core lists and keeps the source it answers", async () => {
+    // The core keeps a currency with a source that quotes it: picking
+    // one only CoinGecko publishes, with Kraken on, answers CoinGecko.
+    let held = { ...PREFERENCES };
+    const changes: PreferencesChange[] = [];
+    walletIpc({
+      set_preferences: (args) => {
+        const change = args.change as PreferencesChange;
+        changes.push(change);
+        held = { ...held, ...change };
+        if (held.fiat_currency === "inr") held = { ...held, price_source: "coingecko" };
+        return held;
+      },
+    });
     renderApp();
     const user = userEvent.setup();
     await screen.findByText("Bitcoin price");
@@ -1919,8 +1966,8 @@ describe("display settings", () => {
     const currency = await screen.findByRole("combobox", { name: "Fiat currency" });
     await user.click(currency);
     const list = await screen.findByRole("listbox", { name: "Fiat currency" });
-    expect(within(list).getAllByRole("option")).toHaveLength(30);
-    // The seven every source quotes come first, under their own group,
+    expect(within(list).getAllByRole("option")).toHaveLength(PRICE_TABLE.currencies.length);
+    // The ones every source quotes come first, under their own group,
     // each with its plain name beside the code.
     expect(within(list).getByText("Every source")).toBeInTheDocument();
     expect(within(list).getByText("CoinGecko only")).toBeInTheDocument();
@@ -1929,11 +1976,21 @@ describe("display settings", () => {
 
     // A shared currency leaves every source available.
     await user.click(within(list).getByRole("option", { name: /^JPY/ }));
+    await waitFor(() => expect(useUi.getState().fiatCurrency).toBe("jpy"));
     expect(screen.getByRole("radio", { name: "Kraken" })).toBeEnabled();
-    expect(useUi.getState().fiatSource).toBe("coingecko");
+    await user.click(screen.getByRole("radio", { name: "Kraken" }));
+    await waitFor(() => expect(useUi.getState().fiatSource).toBe("kraken"));
 
     await choose(user, "Fiat currency", "INR");
-    expect(useUi.getState().fiatCurrency).toBe("inr");
+    await waitFor(() => expect(useUi.getState().fiatCurrency).toBe("inr"));
+    // The screen takes the source the core kept, and asked for nothing
+    // but the currency.
+    expect(useUi.getState().fiatSource).toBe("coingecko");
+    expect(changes).toEqual([
+      { fiat_currency: "jpy" },
+      { price_source: "kraken" },
+      { fiat_currency: "inr" },
+    ]);
     expect(screen.getByRole("radio", { name: "Kraken" })).toBeDisabled();
     expect(screen.getByRole("radio", { name: "mempool.space" })).toBeDisabled();
     expect(
@@ -2525,12 +2582,17 @@ describe("electrum certificates", () => {
 describe("broadcast page", () => {
   it("previews a transaction, confirms, and follows it", async () => {
     const broadcastCalls: unknown[] = [];
+    // The vault's list: the core keeps what the network took.
+    let kept: unknown[] = [];
     walletIpc({
       preview_transaction: () => PREVIEW,
       broadcast_transaction: (args) => {
         broadcastCalls.push(args);
-        return { txid: PREVIEW.txid, backend: "mempool.space", at: 1_755_000_000 };
+        const report = { txid: PREVIEW.txid, backend: "mempool.space", at: 1_755_000_000 };
+        kept = [{ ...report, network: args.network, hex: args.hex }];
+        return report;
       },
+      recent_broadcasts: () => kept,
       transaction_status: () => ({
         txid: PREVIEW.txid,
         found: true,
@@ -2579,10 +2641,11 @@ describe("broadcast page", () => {
     expect(
       main.getByRole("button", { name: "Broadcast another transaction" }),
     ).toHaveClass("bg-primary");
-    expect(useUi.getState().recentBroadcasts[0]).toMatchObject({
-      txid: PREVIEW.txid,
-      backend: "mempool.space",
-    });
+    // Sent again from the top, it is a past broadcast, as the vault
+    // says.
+    await user.click(main.getByRole("button", { name: "Broadcast another transaction" }));
+    const past = within(await screen.findByRole("region", { name: "Past broadcasts" }));
+    expect(past.getByText(/Sent .* · mempool\.space/)).toBeInTheDocument();
   });
 
   it("keeps an unsigned transaction on the machine and shows the node's refusal verbatim", async () => {
@@ -2837,6 +2900,8 @@ describe("add wallet flow", () => {
           return receiveEntries(0);
         case "fetch_price_history":
           return PRICE_HISTORY;
+        case "price_table":
+          return PRICE_TABLE;
         case "set_app_pref":
           return undefined;
         case "tor_status":
@@ -3103,6 +3168,8 @@ describe("the app lock", () => {
           return receiveEntries(0);
         case "fetch_price_history":
           return PRICE_HISTORY;
+        case "price_table":
+          return PRICE_TABLE;
         case "set_app_pref":
           return undefined;
         case "sync_all":
@@ -3146,6 +3213,8 @@ describe("the app lock", () => {
           return receiveEntries(0);
         case "fetch_price_history":
           return PRICE_HISTORY;
+        case "price_table":
+          return PRICE_TABLE;
         case "set_app_pref":
           return undefined;
         case "sync_all":
@@ -3176,7 +3245,11 @@ describe("the app lock", () => {
     let unlocked = false;
     const pending: (() => void)[] = [];
     const seen: string[] = [];
-    const full: Settings = { ...LOCKED, app_prefs: { "desktop.masked": "1" } };
+    const full: Settings = {
+      ...LOCKED,
+      app_prefs: {},
+      preferences: { ...PREFERENCES, masked: true },
+    };
     mockIPC((cmd) => {
       seen.push(cmd);
       switch (cmd) {
@@ -3198,6 +3271,8 @@ describe("the app lock", () => {
           return receiveEntries(0);
         case "fetch_price_history":
           return PRICE_HISTORY;
+        case "price_table":
+          return PRICE_TABLE;
         case "set_app_pref":
           return undefined;
         case "sync_all":
@@ -3373,6 +3448,9 @@ describe("the app lock", () => {
     await user.click(screen.getByRole("button", { name: /unlock/i }));
     await screen.findByRole("navigation", { name: "Navigation" });
     expect(client.getQueryData(["wallets", "signet"])).toBeDefined();
+    const limits = coreCase<WatchLimitsChoice>("WatchLimitsChoice", "current");
+    client.setQueryData(["price-table"], PRICE_TABLE);
+    client.setQueryData(["live-limits"], limits);
 
     await user.keyboard("{Control>}l{/Control}");
     await screen.findByText("Locked");
@@ -3385,6 +3463,10 @@ describe("the app lock", () => {
     const kept = client.getQueryData<Settings>(["settings"]);
     expect(kept?.app_lock).toEqual(LOCKED.app_lock);
     expect(kept?.electrum_certs).toEqual({});
+    // The constants of the build stay: the currency and source menus,
+    // the ranges of the price card, come back with the screen.
+    expect(client.getQueryData(["price-table"])).toEqual(PRICE_TABLE);
+    expect(client.getQueryData(["live-limits"])).toEqual(limits);
   });
 
   it("asks the vault about its own network from the first read after an unlock", async () => {
@@ -3415,6 +3497,8 @@ describe("the app lock", () => {
           return receiveEntries(0);
         case "fetch_price_history":
           return PRICE_HISTORY;
+        case "price_table":
+          return PRICE_TABLE;
         case "set_app_pref":
           return undefined;
         case "sync_all":
@@ -3548,6 +3632,8 @@ describe("the welcome tour", () => {
           return receiveEntries(0);
         case "fetch_price_history":
           return PRICE_HISTORY;
+        case "price_table":
+          return PRICE_TABLE;
         case "set_app_pref":
           return undefined;
         case "sync_all":
@@ -3712,6 +3798,8 @@ describe("tor", () => {
           return receiveEntries(0);
         case "fetch_price_history":
           return PRICE_HISTORY;
+        case "price_table":
+          return PRICE_TABLE;
         case "set_app_pref":
           return undefined;
         case "sync_all":
@@ -3757,6 +3845,8 @@ describe("tor", () => {
           return receiveEntries(0);
         case "fetch_price_history":
           return PRICE_HISTORY;
+        case "price_table":
+          return PRICE_TABLE;
         case "set_app_pref":
           return undefined;
         case "sync_all":
@@ -3802,6 +3892,8 @@ describe("tor", () => {
           return receiveEntries(0);
         case "fetch_price_history":
           return PRICE_HISTORY;
+        case "price_table":
+          return PRICE_TABLE;
         case "set_app_pref":
           return undefined;
         case "sync_all":

@@ -1,9 +1,11 @@
 name: CI
 
 # Every job runs on every push to main, every pull request, and on
-# demand (Actions, CI, Run workflow). The Rust job needs the sibling
-# gerfaut-core checkout, at the revision .github/gerfaut-core.rev pins,
-# the one a release compiles; gerfaut-core is public, no key reads it.
+# demand (Actions, CI, Run workflow). The frontend and Rust jobs need the
+# sibling gerfaut-core checkout, at the revision .github/gerfaut-core.rev
+# pins, the one a release compiles: the Rust job builds against it, and
+# the frontend tests read its reference JSON (src/test/core.ts).
+# gerfaut-core is public, no key reads it.
 on:
   push:
     branches: [main]
@@ -19,17 +21,36 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          path: gerfaut-desktop
           persist-credentials: false
+
+      - name: Read the pinned gerfaut-core revision
+        id: core
+        run: echo "rev=$(cat gerfaut-desktop/.github/gerfaut-core.rev)" >> "$GITHUB_OUTPUT"
+
+      # Only its reference JSON is read here: nothing of it runs.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: gerfaut-wallet/gerfaut-core
+          ref: ${{ steps.core.outputs.rev }}
+          path: gerfaut-core
+          persist-credentials: false
+
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24.19.0
           cache: npm
+          cache-dependency-path: gerfaut-desktop/package-lock.json
       - run: npm ci
+        working-directory: gerfaut-desktop
       - name: Type check
+        working-directory: gerfaut-desktop
         run: npx tsc -b
       - name: Test
+        working-directory: gerfaut-desktop
         run: npx vitest run
       - name: Build
+        working-directory: gerfaut-desktop
         run: npx vite build
 
   rust:

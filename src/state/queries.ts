@@ -33,6 +33,10 @@ export const keys = {
   txDetail: (id: string, txid: string) => ["tx", id, txid] as const,
   receive: (id: string) => ["receive", id] as const,
   liveStatus: ["live-status"] as const,
+  /** Constants of the build, which say nothing of the vault: the lock
+      keeps them in the cache. */
+  priceTable: ["price-table"] as const,
+  liveLimits: ["live-limits"] as const,
 };
 
 /** What kept the vault shut at startup, or null. Asked once: only a
@@ -273,16 +277,32 @@ export function torDown(error: unknown): boolean {
     success, with no error for anyone to see. */
 const PRICE_NETWORK_MODE = "always";
 
-/** Current BTC price, refreshed every minute while fiat display is on. */
+/** The currencies and price sources the settings offer, and how often
+    the price is asked. The core's table: it only changes with the app. */
+export function usePriceTable() {
+  return useQuery({
+    queryKey: keys.priceTable,
+    queryFn: ipc.priceTable,
+    staleTime: Infinity,
+  });
+}
+
+/** Current BTC price, by the currency and source of the preferences,
+    asked again at the core's cadence while fiat display is on. The key
+    carries what the price is asked by, which the store only takes once
+    the vault stored it: a new key is a price the core asks by it. */
 export function useFiatRate() {
   const { fiatEnabled, fiatSource, fiatCurrency } = useUi();
+  const every = usePriceTable().data?.refresh_secs;
   return useQuery({
     queryKey: ["price", fiatSource, fiatCurrency],
-    queryFn: () => ipc.fetchPrice(fiatSource, fiatCurrency),
+    queryFn: () => ipc.fetchPrice(),
     enabled: fiatEnabled,
     networkMode: PRICE_NETWORK_MODE,
-    refetchInterval: 60_000,
-    staleTime: 55_000,
+    refetchInterval: every === undefined ? false : every * 1000,
+    // Fresh for a little less than the cadence, so the next turn of
+    // the clock always asks.
+    staleTime: every === undefined ? 0 : every * 1000 - 5_000,
     retry: 1,
   });
 }
@@ -305,7 +325,7 @@ export function liveAnswer<T extends { currency: FiatCurrency }>(
 }
 
 /** Price series for the overview chart, from the configured source in
-    the configured currency.
+    the configured currency, which the core reads from the preferences.
  *
  *  `enabled` is the fiat setting and nothing else. A price request is a
  *  request to a third party from this machine at the moment Gerfaut
@@ -317,7 +337,7 @@ export function usePriceHistory(range: PriceRange, enabled: boolean) {
   const { fiatSource, fiatCurrency } = useUi();
   return useQuery({
     queryKey: ["price-history", fiatSource, fiatCurrency, range],
-    queryFn: () => ipc.fetchPriceHistory(fiatSource, fiatCurrency, range),
+    queryFn: () => ipc.fetchPriceHistory(range),
     enabled,
     networkMode: PRICE_NETWORK_MODE,
     staleTime: range === "day" ? 5 * 60_000 : 30 * 60_000,
@@ -333,11 +353,42 @@ export function usePreviewTransaction() {
   });
 }
 
-/** Sends a ready transaction through the configured backend. */
+/** The last transactions sent on a network, newest first. */
+const recentBroadcastsKey = (network: Network) => ["recent-broadcasts", network] as const;
+
+/** Sends a ready transaction through the configured backend. The vault
+    keeps what the network took, so the list of past broadcasts is read
+    again. */
 export function useBroadcastTransaction() {
+  const client = useQueryClient();
   return useMutation({
     mutationFn: (args: { network: Network; hex: string }) =>
       ipc.broadcastTransaction(args.network, args.hex),
+    onSuccess: (_, args) => {
+      void client.invalidateQueries({ queryKey: recentBroadcastsKey(args.network) });
+    },
+  });
+}
+
+/** The transactions this app sent on `network`, newest first, as the
+    vault keeps them. A read of the vault and nothing else: it is
+    answered offline too, where the default would hold it back. */
+export function useRecentBroadcasts(network: Network) {
+  return useQuery({
+    queryKey: recentBroadcastsKey(network),
+    queryFn: () => ipc.recentBroadcasts(network),
+    networkMode: "always",
+  });
+}
+
+/** Drops the vault's record of a broadcast on `network`. A refusal
+    stays in the mutation's state, and the card it was asked from says
+    it. */
+export function useForgetBroadcast(network: Network) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (txid: string) => ipc.forgetBroadcast(txid),
+    onSettled: () => client.invalidateQueries({ queryKey: recentBroadcastsKey(network) }),
   });
 }
 

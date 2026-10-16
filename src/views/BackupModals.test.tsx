@@ -468,17 +468,76 @@ describe("restoring a backup", () => {
     ).toBeInTheDocument();
   });
 
-  it("repeats the core's refusal of a file a newer Gerfaut wrote", async () => {
-    // A password that was right must not be blamed: the core names the
-    // file's version, in its own words, and those words reach the
-    // screen as they are. Both the envelope and the payload can be
-    // newer than this build.
+  it("says a file far too large to be a backup in a sentence", async () => {
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "pick_backup_file":
+          return Promise.reject({
+            kind: "invalid_input",
+            message: "this file is far too large to be a Gerfaut backup",
+          });
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderModal(<BackupRestoreModal open onClose={() => {}} activeNetwork="signet" />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /open a file/i }));
+
+    expect(
+      await screen.findByText("This file is far too large to be a Gerfaut backup."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^this file/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open backup/i })).toBeDisabled();
+  });
+
+  it("says a file that is not a backup is not one", async () => {
+    // A picture, a vault, a QR code of something else: the password is
+    // not in question, and saying it is would send someone retyping a
+    // password that may well be right.
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "pick_backup_file":
+          return PICKED;
+        case "preview_backup":
+          return Promise.reject({
+            kind: "unreadable_backup",
+            message: "invalid backup: this is not a Gerfaut backup",
+          });
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderModal(<BackupRestoreModal open onClose={() => {}} activeNetwork="signet" />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /open a file/i }));
+    await screen.findByText(/Backup read from/);
+    await user.type(screen.getByLabelText("Password"), "correct horse");
+    await user.click(screen.getByRole("button", { name: /open backup/i }));
+
+    expect(
+      await screen.findByText("This is not a Gerfaut backup, or it is damaged."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/wrong password/i)).not.toBeInTheDocument();
+  });
+
+  it("says a newer Gerfaut made the backup, whichever layer is newer", async () => {
+    // A password that was right must not be blamed. The envelope, the
+    // key profile and the payload can each be newer than this build;
+    // the core gives all three one code, and the screen one sentence.
     const refusals = [
       {
-        kind: "invalid_input",
-        message: "invalid backup: backup version 2 needs a newer Gerfaut",
+        kind: "newer_format",
+        message:
+          "invalid backup: this backup was written by a newer Gerfaut (backup version 2); update Gerfaut to open it",
       },
-      { kind: "vault", message: "vault version 3 is not supported by this build" },
+      {
+        kind: "newer_format",
+        message:
+          "invalid backup: this backup was written by a newer Gerfaut (file version 3); update Gerfaut to open it",
+      },
     ];
     let attempt = 0;
     mockIPC((cmd) => {
@@ -493,19 +552,18 @@ describe("restoring a backup", () => {
     });
     renderModal(<BackupRestoreModal open onClose={() => {}} activeNetwork="signet" />);
     const user = userEvent.setup();
+    const sentence =
+      "This backup was made with a newer version of Gerfaut. Update Gerfaut to open it.";
 
     await user.click(screen.getByRole("button", { name: /open a file/i }));
     await screen.findByText(/Backup read from/);
     await user.type(screen.getByLabelText("Password"), "correct horse");
     await user.click(screen.getByRole("button", { name: /open backup/i }));
-    expect(
-      await screen.findByText("invalid backup: backup version 2 needs a newer Gerfaut"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(sentence)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /open backup/i }));
-    expect(
-      await screen.findByText("vault version 3 is not supported by this build"),
-    ).toBeInTheDocument();
+    await waitFor(() => expect(attempt).toBe(2));
+    expect(await screen.findByText(sentence)).toBeInTheDocument();
     expect(screen.queryByText(/wrong password/i)).not.toBeInTheDocument();
   });
 

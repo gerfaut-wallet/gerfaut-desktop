@@ -5,13 +5,12 @@ import { useState } from "react";
 import { Button } from "../../components/Button";
 import { Notice } from "../../components/Notice";
 import { ipc, isCommandError } from "../../lib/ipc";
-import type { Settings, WatchState, WatchStatus } from "../../lib/ipc";
+import type { LeftOut, Settings, WatchState, WatchStatus } from "../../lib/ipc";
 import {
-  isOwnNode,
   LIVE_NO_WALLET_LINE,
+  leftOutOf,
   liveStatusKey,
   liveStatusLine,
-  shortOfRoom,
   shortOfRoomWords,
   useLiveStatus,
   usesAutomaticBackend,
@@ -25,9 +24,9 @@ import { GHOST_ON_TINT, SaveFailure, SectionCard, SettingRow, Toggle } from "./p
     or on it, the node's own setting. Amber, under the status: nothing
     is at risk, a payment to those addresses only shows later. Which
     wallets, the badges in Settings › Wallets and on each Overview say. */
-function ShortOfRoomNote({ status, ownNode }: { status: WatchStatus; ownNode: boolean }) {
+function ShortOfRoomNote({ status, leftOut }: { status: WatchStatus; leftOut: LeftOut }) {
   const openSettings = useUi((state) => state.openSettings);
-  const words = shortOfRoomWords(status, ownNode);
+  const words = shortOfRoomWords(status, leftOut);
   return (
     <Notice
       tone="info"
@@ -35,7 +34,7 @@ function ShortOfRoomNote({ status, ownNode }: { status: WatchStatus; ownNode: bo
       action={
         // The node settings are the way out only off one's own node: on
         // it, what is left to change is in the node's configuration.
-        !ownNode && words.remedy !== null ? (
+        leftOut.remedy?.type === "own_node" ? (
           <Button
             variant="ghost"
             className={GHOST_ON_TINT}
@@ -106,7 +105,7 @@ export function NotificationsSection({
   const noWallet = notifyNewTx && off && wallets.data?.length === 0;
   const starting = notifyNewTx && turningOn && off && !noWallet;
   const automatic = usesAutomaticBackend(settings.backends, settings.active_network);
-  const ownNode = isOwnNode(settings.backends[settings.active_network]);
+  const leftOut = leftOutOf(status);
 
   return (
     <SectionCard icon={<Bell size={18} strokeWidth={1.5} />} title="Notifications">
@@ -155,8 +154,8 @@ export function NotificationsSection({
           {notifyNewTx && status?.state === "reconnecting" && status.detail && (
             <p className="mt-1 break-words font-ui text-xs text-muted">{status.detail}</p>
           )}
-          {notifyNewTx && status && shortOfRoom(status) && (
-            <ShortOfRoomNote status={status} ownNode={ownNode} />
+          {notifyNewTx && status && leftOut && (
+            <ShortOfRoomNote status={status} leftOut={leftOut} />
           )}
           <p className="mt-1.5 max-w-xl font-ui text-xs text-muted">
             While this is on, Gerfaut keeps one connection open to your backend, which learns

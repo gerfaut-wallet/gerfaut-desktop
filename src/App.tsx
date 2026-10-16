@@ -8,7 +8,6 @@ import { Sidebar } from "./shell/Sidebar";
 import { useLiveEvents } from "./state/live";
 import { isLockedError, lockedSettings, useLock, useLockShortcut } from "./state/lock";
 import { useUpdateCheck } from "./state/update";
-import { isBeta } from "./lib/version";
 import { LockScreen } from "./views/LockScreen";
 import { WelcomeTour } from "./views/WelcomeTour";
 import type { Settings } from "./lib/ipc";
@@ -29,10 +28,18 @@ import { PolicyView } from "./views/PolicyView";
 import { ReceiveView } from "./views/ReceiveView";
 import { StartupFailure } from "./views/StartupFailure";
 import { SettingsView } from "./views/SettingsView";
-import { APP_VERSION } from "./views/settings/AboutSection";
+import { BETA } from "./views/settings/AboutSection";
 import { TransactionsView } from "./views/TransactionsView";
 import { TxDetailModal } from "./views/TxDetailModal";
 import { UtxosView } from "./views/UtxosView";
+
+/** The queries the lock leaves in the cache: the settings, cut down
+    below, and the constants of the build. */
+const KEPT_BEHIND_THE_LOCK = new Set<unknown>([
+  keys.settings[0],
+  keys.priceTable[0],
+  keys.liveLimits[0],
+]);
 
 export default function App() {
   const startup = useStartupFailure();
@@ -91,7 +98,7 @@ export default function App() {
 
   useLayoutEffect(() => {
     if (!settings.data || hydrated.current) return;
-    hydratePrefs(settings.data.app_prefs);
+    hydratePrefs(settings.data);
     hydrated.current = !useLock.getState().locked;
     if (hydrated.current) setPrefsReady(true);
   }, [settings.data, hydratePrefs]);
@@ -110,11 +117,14 @@ export default function App() {
   // place. The curtain falling empties it of everything the vault
   // answered — descriptors, balances, addresses —
   // and cuts the settings entry down to the theme rather than dropping
-  // it, which would lose the ramp the lock screen is painted in.
+  // it, which would lose the ramp the lock screen is painted in. The
+  // price table and the watch's limits stay: constants of the build,
+  // asked once, that the currency and source menus, the ranges of the
+  // price card and the words under "This is my node" are drawn from.
   useEffect(() => {
     if (locked) {
       wasLocked.current = true;
-      client.removeQueries({ predicate: (query) => query.queryKey[0] !== "settings" });
+      client.removeQueries({ predicate: (query) => !KEPT_BEHIND_THE_LOCK.has(query.queryKey[0]) });
       client.setQueryData<Settings>(keys.settings, (cached) =>
         cached === undefined ? cached : lockedSettings(cached),
       );
@@ -128,7 +138,7 @@ export default function App() {
         if (client.getQueryState(keys.settings)?.status !== "success") return;
         const fresh = client.getQueryData<Settings>(keys.settings);
         if (!fresh || hydrated.current || useLock.getState().locked) return;
-        hydratePrefs(fresh.app_prefs);
+        hydratePrefs(fresh);
         hydrated.current = true;
         setPrefsReady(true);
       });
@@ -284,7 +294,7 @@ export default function App() {
       <WelcomeTour
         open={tourOpen}
         onClose={() => setTourOpen(false)}
-        beta={isBeta(APP_VERSION)}
+        beta={BETA}
       />
       <Toast />
     </div>

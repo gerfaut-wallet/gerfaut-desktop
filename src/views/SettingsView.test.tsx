@@ -3,9 +3,16 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { BackendConfig, ScannedBackend, Settings, WalletMeta } from "../lib/ipc";
+import type {
+  BackendConfig,
+  PreferencesChange,
+  ScannedBackend,
+  Settings,
+  WalletMeta,
+} from "../lib/ipc";
 import { useWallets } from "../state/queries";
 import { useUi } from "../state/store";
+import { PREFERENCES, PRICE_TABLE } from "../test/fixtures";
 import { BackendSection } from "./settings/BackendSection";
 import { SettingsView } from "./SettingsView";
 
@@ -47,6 +54,7 @@ const SETTINGS: Settings = {
   electrum_certs: {},
   app_lock: null,
   tor: { mode: "auto", socks_proxy: null },
+  preferences: PREFERENCES,
 };
 
 function renderBackend(
@@ -68,6 +76,12 @@ function renderBackend(
 
 /** Answers the commands the section makes on its own, plus the address
     the core reads out of the scan. */
+/** What the core's watch takes, for the words under "This is my node". */
+const LIVE_LIMITS = {
+  any: { per_wallet: 200, total: 2_000 },
+  own_node: { per_wallet: 20_000, total: 20_000 },
+};
+
 function mockBackendIpc(reply: ScannedBackend | { error: string }) {
   const calls: { cmd: string; args: unknown }[] = [];
   mockIPC((cmd, args) => {
@@ -80,6 +94,7 @@ function mockBackendIpc(reply: ScannedBackend | { error: string }) {
         return Promise.reject({ kind: "server", message: reply.error }) as never;
       return reply;
     }
+    if (cmd === "live_limits") return LIVE_LIMITS;
     throw new Error(`unexpected command ${cmd}`);
   });
   return calls;
@@ -364,9 +379,12 @@ describe("this is my node", () => {
     const user = userEvent.setup();
     const ownNode = toggle("This is my node");
     expect(ownNode).toHaveAttribute("aria-checked", "false");
-    // What it does and when to leave it off, read out with its name.
-    expect(ownNode).toHaveAccessibleDescription(
-      "The live watch then follows up to 20 000 addresses instead of 2 000. Leave it off for a server you do not run: it would refuse most of them, and learn every one.",
+    // What it does and when to leave it off, read out with its name,
+    // in the limits the core keeps.
+    await waitFor(() =>
+      expect(ownNode).toHaveAccessibleDescription(
+        "The live watch then follows up to 20 000 addresses instead of 2 000. Leave it off for a server you do not run: it would refuse most of them, and learn every one.",
+      ),
     );
 
     await user.click(ownNode);
@@ -506,6 +524,12 @@ function mockSettingsIpc(
         return [WALLET];
       case "set_app_pref":
         return undefined;
+      case "live_limits":
+        return LIVE_LIMITS;
+      case "set_preferences":
+        return { ...PREFERENCES, ...(payload.change as PreferencesChange) };
+      case "price_table":
+        return PRICE_TABLE;
       case "live_status":
         return {
           enabled: false,
@@ -793,6 +817,12 @@ describe("settings sections", () => {
         { wallet_id: "w-2", coverage: "sync_only", watched_scripts: 0, left_out_scripts: 200 },
         { wallet_id: "w-3", coverage: "live", watched_scripts: 12, left_out_scripts: 0 },
       ],
+      left_out: {
+        reason: "live_limit",
+        limits: LIVE_LIMITS.any,
+        own_node: false,
+        remedy: { type: "own_node", limits: LIVE_LIMITS.own_node },
+      },
     };
     mockSettingsIpc({ live_status: () => ({ enabled: true, status: short }) });
     useUi.setState({ settingsSection: "wallets" });
@@ -967,7 +997,7 @@ describe("a setting the vault refuses", () => {
   /** The Rust side starts the watch on what the vault holds: a switch
       left on over a refused write would promise alerts nobody sends. */
   it("turns the alerts switch back off", async () => {
-    mockSettingsIpc({ set_app_pref: refused });
+    mockSettingsIpc({ set_preferences: refused });
     act(() => useUi.getState().openSettings("notifications"));
     renderSettings();
     const user = userEvent.setup();

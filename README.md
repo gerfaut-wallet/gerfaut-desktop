@@ -1,6 +1,6 @@
 # gerfaut-desktop
 
-[Gerfaut](https://github.com/gerfaut-wallet) for Windows, macOS, and Linux, a Bitcoin watch-only wallet.
+[Gerfaut](https://github.com/gerfaut-wallet) for Linux, macOS, and Windows, a Bitcoin watch-only wallet.
 
 ![Status: public beta](https://img.shields.io/badge/status-public%20beta-yellow) ![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-blue)
 

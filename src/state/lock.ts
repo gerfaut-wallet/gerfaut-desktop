@@ -33,9 +33,9 @@ export function isLockedError(error: unknown): boolean {
     The Rust side cuts them the same way when it answers behind the
     lock. It is done here as well because the copy already in the cache
     when the curtain falls was answered in full — backends, accepted
-    certificates — and dropping the entry outright
-    would lose the theme and flash the splash on the way to the lock
-    screen. */
+    certificates, the shared preferences — and dropping the entry
+    outright would lose the theme and flash the splash on the way to
+    the lock screen. */
 export function lockedSettings(settings: Settings): Settings {
   const kept: Settings["app_prefs"] = {};
   for (const key of LOCKED_PREFS) {
@@ -43,12 +43,33 @@ export function lockedSettings(settings: Settings): Settings {
     if (value !== undefined) kept[key] = value;
   }
   return {
-    ...settings,
-    backends: {},
-    electrum_certs: {},
+    ...SHUT,
+    preferences: { ...SHUT.preferences },
+    tor: { ...SHUT.tor },
+    active_network: settings.active_network,
+    app_lock: settings.app_lock,
     app_prefs: kept,
   };
 }
+
+/** What the Rust side answers behind the lock for everything it does
+    not keep: the defaults of the core's `Settings`, the shared
+    preferences among them. */
+const SHUT: Omit<Settings, "active_network" | "app_lock" | "app_prefs"> = {
+  backends: {},
+  gap_limit: 20,
+  electrum_certs: {},
+  tor: { mode: "auto", socks_proxy: null },
+  preferences: {
+    unit: "btc",
+    masked: false,
+    fiat: false,
+    fiat_currency: "eur",
+    price_source: "coingecko",
+    notify_new_tx: false,
+    explorer_ack: false,
+  },
+};
 
 /** The preferences that survive the curtain, the same two the Rust side
     keeps: the theme, so the lock screen is not painted in the wrong one,

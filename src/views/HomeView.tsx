@@ -28,7 +28,7 @@ import {
   relativeTime,
   truncateMiddle,
 } from "../lib/format";
-import { SUPPORTED_RANGES, isCommandError } from "../lib/ipc";
+import { isCommandError } from "../lib/ipc";
 import type { PriceRange, TxSummary, WalletMeta, WalletSnapshot } from "../lib/ipc";
 import { policyDigest } from "../lib/policy";
 import { balanceSeries } from "../lib/series";
@@ -36,6 +36,7 @@ import {
   liveAnswer,
   torDown,
   usePriceHistory,
+  usePriceTable,
   useRenameWallet,
   useSnapshot,
   useUtxos,
@@ -401,16 +402,19 @@ function LinkRow({
 
 function PriceCard() {
   const { fiatEnabled, fiatSource, fiatCurrency, priceRange, setPriceRange } = useUi();
-  // The compact widget offers no "max": a lifetime of price says
-  // nothing at a glance.
-  const ranges: PriceRange[] = SUPPORTED_RANGES[fiatSource].filter(
-    (range) => range !== "max",
-  );
+  // The ranges the source serves, as the core's table lists them. The
+  // compact widget offers no "max": a lifetime of price says nothing at
+  // a glance.
+  const table = usePriceTable().data;
+  const served = table?.sources.find((entry) => entry.source === fiatSource)?.ranges ?? [];
+  const ranges: PriceRange[] = served.filter((range) => range !== "max");
   const range = ranges.includes(priceRange) ? priceRange : (ranges[0] ?? "month");
   // Fiat off means silent: the card used to ask CoinGecko for a year of
   // price at every launch whatever the setting said, which tells a
   // third party this machine opened a bitcoin wallet just now.
-  const history = usePriceHistory(range, fiatEnabled);
+  // Asked once the ranges are known, so the range asked for is one the
+  // source serves, and the series is asked once.
+  const history = usePriceHistory(range, fiatEnabled && table !== undefined);
   const radio = useRadioGroup(ranges, range, setPriceRange);
   // A refresh that failed shows no price, like the amounts: the series
   // before it stays in the cache, and its last point is not today's.

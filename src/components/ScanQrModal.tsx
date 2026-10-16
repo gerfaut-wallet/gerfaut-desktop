@@ -6,6 +6,16 @@ import { Modal } from "./Modal";
 
 type ScanState = "starting" | "scanning" | "denied" | "unavailable";
 
+/** What the scanner says when the core turns down what it collected:
+    a code with more parts than Gerfaut reads in a sentence of its own,
+    the same as on Android, anything else in the core's words. */
+function refusal(error: unknown): string {
+  if (!isCommandError(error)) return String(error);
+  return error.kind === "too_many_parts"
+    ? "This code has more parts than Gerfaut can read."
+    : error.message;
+}
+
 /** Camera QR scanner: frames are decoded locally with jsQR, nothing
     leaves the machine. Animated codes (UR, BBQr) are assembled by the
     core frame after frame; the modal reports the progress and closes
@@ -104,7 +114,7 @@ export function ScanQrModal({
         // A refusal landing after the modal closed belongs to a scan the
         // user walked away from, and must not surface in the next one.
         if (done) return;
-        giveUp(isCommandError(err) ? err.message : String(err));
+        giveUp(refusal(err));
       } finally {
         assembling = false;
       }

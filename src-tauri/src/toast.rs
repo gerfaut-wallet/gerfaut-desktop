@@ -20,7 +20,7 @@ use std::collections::hash_map::RandomState;
 use std::hash::BuildHasher;
 use std::path::Path;
 
-use crate::notice::NoticeId;
+use gerfaut_core::live::notice::NoticeId;
 
 /// The group every notice about a payment is posted in. A toast is
 /// known by its tag and its group together.
@@ -67,7 +67,10 @@ pub(crate) fn app_id<'a>(exe_dir: &Path, identifier: &'a str) -> &'a str {
 /// the plugin instead, without the tag: a notice beside its pending one
 /// is better than no notice at all.
 #[cfg(windows)]
-pub(crate) fn post(app: &tauri::AppHandle, notice: &crate::notice::Notice) -> Result<(), String> {
+pub(crate) fn post(
+    app: &tauri::AppHandle,
+    notice: &gerfaut_core::live::notice::Notice,
+) -> Result<(), String> {
     use tauri::Manager;
     use tauri_plugin_notification::NotificationExt;
 

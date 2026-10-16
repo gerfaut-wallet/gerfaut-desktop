@@ -3,7 +3,7 @@ name = "gerfaut-desktop"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.91"
-description = "Gerfaut for Windows, macOS, and Linux, a Bitcoin watch-only wallet"
+description = "Gerfaut for Linux, macOS, and Windows, a Bitcoin watch-only wallet"
 repository = "https://github.com/gerfaut-wallet/gerfaut-desktop"
 license = "AGPL-3.0-only"
 publish = false
@@ -56,6 +56,9 @@ windows = { version = "0.61", features = ["Data_Xml_Dom", "Foundation_Collection
 [dev-dependencies]
 # A vault of their own for the tests that open one.
 tempfile = "3"
+# Reads the reference JSON of gerfaut-core; the version Tauri already
+# pulls in, so nothing new is compiled.
+serde_json = "1"
 
 # Cargo only honours [patch] in the root manifest: the same pin as in
 # gerfaut-core, see the note there.

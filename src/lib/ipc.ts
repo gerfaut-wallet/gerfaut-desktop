@@ -2,6 +2,7 @@
 // serde DTOs one to one; if a field changes there, it changes here.
 
 import { invoke } from "@tauri-apps/api/core";
+import type { Unit } from "./format";
 
 export type Network = "mainnet" | "signet" | "testnet4" | "regtest";
 
@@ -355,6 +356,10 @@ export type BranchState =
   | { kind: "no_coins" }
   | { kind: "needs_preimage" };
 
+/** The tone the core shows a branch's state in: confirmed when it is
+    open, pending when it opens in under thirty days, neutral otherwise. */
+export type BranchTone = "confirmed" | "pending" | "neutral";
+
 /** One way to spend: a top-level alternative of the policy. */
 export interface PolicyBranch {
   /** Stable within the snapshot: `b0`, `b1`... */
@@ -369,6 +374,7 @@ export interface PolicyBranch {
   timelocks: Timelock[];
   state: BranchState;
   spendable_now: boolean;
+  tone: BranchTone;
 }
 
 /** A wallet's policy read against the chain. A watched address has no
@@ -380,6 +386,8 @@ export interface PolicySnapshot {
   /** The normalized policy with key labels: `or(pk(Key A),and(pk(Key B),older(52560)))`. */
   policy: string;
   keys: PolicyKey[];
+  /** In reading order: the primary paths, then recovery, emergency and
+      the rest, each from the nearest lock to the farthest. */
   branches: PolicyBranch[];
   /** Chain tip at the last sync; null when the wallet never synced, in
       which case every absolute lock is locked with nothing left to
@@ -501,6 +509,9 @@ export interface Settings {
   app_lock: AppLock | null;
   /** How `.onion` backends reach Tor. */
   tor: TorSettings;
+  /** What both apps keep with the same meaning; `app_prefs` holds what
+      is this app's alone. */
+  preferences: Preferences;
 }
 
 // --- backup ---------------------------------------------------------------
@@ -590,53 +601,61 @@ export type CertificateReport = { host: string } & (
 
 export type PriceSource = "coingecko" | "kraken" | "mempool_space";
 
-/** Mirror of `FiatCurrency` in gerfaut-core, in the same order: the
-    seven every source quotes, then the ones CoinGecko alone publishes. */
-export const SHARED_CURRENCIES = ["eur", "usd", "gbp", "chf", "jpy", "cad", "aud"] as const;
+/** A display currency, by the identifier gerfaut-core names it with
+    (`eur`, `try`...): the list on offer, its order, the names and which
+    source quotes what are the core's, in `PriceTable`. Its ISO code is
+    the identifier in capitals. */
+export type FiatCurrency = string;
 
-export const COINGECKO_ONLY_CURRENCIES = [
-  "inr",
-  "cny",
-  "brl",
-  "ngn",
-  "idr",
-  "pkr",
-  "bdt",
-  "rub",
-  "mxn",
-  "php",
-  "vnd",
-  "try",
-  "ars",
-  "krw",
-  "zar",
-  "thb",
-  "uah",
-  "pln",
-  "sek",
-  "sgd",
-  "hkd",
-  "aed",
-  "nzd",
-] as const;
+/** How many sources quote a currency, mirroring `CurrencyReach`. */
+export type CurrencyReach = "every" | "coingecko_only";
 
-export type FiatCurrency =
-  | (typeof SHARED_CURRENCIES)[number]
-  | (typeof COINGECKO_ONLY_CURRENCIES)[number];
-
-export const ALL_CURRENCIES: readonly FiatCurrency[] = [
-  ...SHARED_CURRENCIES,
-  ...COINGECKO_ONLY_CURRENCIES,
-];
-
-/** Mirror of `PriceSource::supports_currency`: Kraken lists seven fiat
-    pairs against XBT and the mempool projects publish the same seven. */
-export function quotesCurrency(source: PriceSource, currency: FiatCurrency): boolean {
-  return (
-    source === "coingecko" ||
-    (SHARED_CURRENCIES as readonly string[]).includes(currency)
-  );
+/** One currency of the table, mirroring `CurrencyEntry`. */
+export interface CurrencyEntry {
+  currency: FiatCurrency;
+  /** ISO 4217 code: the identifier, in capitals. */
+  code: string;
+  /** Its English name, read beside the code. */
+  name: string;
+  reach: CurrencyReach;
+  /** The sources that quote it, in display order. */
+  sources: PriceSource[];
 }
+
+/** One price source of the table, mirroring `SourceEntry`. */
+export interface SourceEntry {
+  source: PriceSource;
+  label: string;
+  /** The chart ranges it serves without a key, shortest first. */
+  ranges: PriceRange[];
+}
+
+/** What the settings offer for the fiat value, and how often its price
+    is asked, mirroring `PriceTable` in gerfaut-core. */
+export interface PriceTable {
+  /** In display order: the ones every source quotes first. */
+  currencies: CurrencyEntry[];
+  sources: SourceEntry[];
+  /** Seconds from one price to the next while the fiat value is on. */
+  refresh_secs: number;
+}
+
+/** The preferences both apps keep, mirroring `Preferences` in
+    gerfaut-core. A vault that never stored one answers its default. */
+export interface Preferences {
+  unit: Unit;
+  masked: boolean;
+  fiat: boolean;
+  fiat_currency: FiatCurrency;
+  /** Always one that quotes `fiat_currency`: the core sees to it. */
+  price_source: PriceSource;
+  notify_new_tx: boolean;
+  explorer_ack: boolean;
+}
+
+/** A change to some of the preferences; what is left out keeps its
+    value. */
+export type PreferencesChange = Partial<Preferences>;
 
 export interface PriceQuote {
   /** Price of 1 BTC in the currency. */
@@ -647,14 +666,6 @@ export interface PriceQuote {
 }
 
 export type PriceRange = "day" | "week" | "month" | "year" | "max";
-
-/** Mirror of `PriceSource::supports` in gerfaut-core: the ranges each
-    keyless endpoint can actually serve. The UI hides the rest. */
-export const SUPPORTED_RANGES: Record<PriceSource, PriceRange[]> = {
-  kraken: ["day", "week", "month", "year", "max"],
-  coingecko: ["day", "week", "month", "year"],
-  mempool_space: ["month", "year", "max"],
-};
 
 export interface PricePoint {
   /** Unix timestamp, seconds. */
@@ -785,10 +796,29 @@ export interface BroadcastStatus {
   at: number;
 }
 
-export interface UpdateCheck {
-  latest: string;
-  url: string;
-  update_available: boolean;
+/** A transaction handed to the network from this app, kept by the
+    vault so the broadcast page can show where it stands after a
+    restart. */
+export interface RecentBroadcast {
+  txid: string;
+  network: Network;
+  hex: string;
+  backend: string;
+  at: number;
+}
+
+/** What to say about releases: all of it decided by the core, which
+    keeps the state of the check in the vault. */
+export interface UpdateStatus {
+  /** The daily check is on. */
+  automatic: boolean;
+  /** The release the notice announces; null when it has nothing to say. */
+  announce: string | null;
+  /** The newer release known, closed or not: what About offers. */
+  available: string | null;
+  /** The last check that was to go out did not: Tor is needed and could
+      not be had. */
+  tor_unavailable: boolean;
 }
 
 /** Where the live watch stands, as the core reports it. */
@@ -816,7 +846,45 @@ export interface WatchStatus {
   /** What an Electrum server says it runs ("Fulcrum 1.12.0"); null over
       the other transports, and from a core that predates it. */
   server_software?: string | null;
+  /** Why Live leaves addresses to the syncs and the way out, as the core
+      decides it: present exactly while it runs and leaves some out. */
+  left_out?: LeftOut | null;
 }
+
+/** What the live watch takes of one wallet and in all. */
+export interface WatchLimits {
+  per_wallet: number;
+  total: number;
+}
+
+/** The two sets of limits "This is my node" chooses between. */
+export interface WatchLimitsChoice {
+  any: WatchLimits;
+  own_node: WatchLimits;
+}
+
+/** The core's verdict on what Live leaves to the syncs. */
+export interface LeftOut {
+  /** The server, as soon as it refused any address; Live's limits
+      otherwise. */
+  reason: "live_limit" | "server_refused";
+  /** What Live takes under the backend in use. */
+  limits: WatchLimits;
+  /** The backend is the user's own node. */
+  own_node: boolean;
+  /** Null when nothing the user can do takes more. */
+  remedy: Remedy | null;
+}
+
+/** An Electrum server whose subscription limit the core can name. */
+export type ServerSoftware = "fulcrum" | "electrumx" | "electrs_esplora" | "mempool_electrs";
+
+export type Remedy =
+  /** A node of one's own, marked "This is my node": Live takes `limits`. */
+  | { type: "own_node"; limits: WatchLimits }
+  /** The setting of the user's node to raise: none named when the core
+      does not know its software. */
+  | { type: "raise_server_limit"; server: ServerSoftware | null; settings: string[] };
 
 /** Whether Live hears a wallet whole, in part, or not at all. */
 export type Coverage = "live" | "partial" | "sync_only";
@@ -828,6 +896,9 @@ export interface WalletCoverage {
   watched_scripts: number;
   /** Scripts of the wallet left to the regular syncs. */
   left_out_scripts: number;
+  /** Of those, the ones the server refused; the rest are past Live's
+      limits. */
+  refused_scripts?: number;
 }
 
 export interface LiveStatus {
@@ -836,23 +907,34 @@ export interface LiveStatus {
   status: WatchStatus;
 }
 
+/** A failed command. A failure of the core comes under the core's own
+    code (`ErrorCode` in gerfaut-core), the same one the Android app
+    reads; `locked` and `notification` are this app's. */
 export interface CommandError {
   kind:
     | "unrecognized_input"
     | "private_material"
     | "invalid_input"
+    /** An animated QR code announces more parts than Gerfaut reads. */
+    | "too_many_parts"
     | "network_mismatch"
     | "wallet_not_found"
     | "duplicate_wallet"
     | "vault"
     /** The vault, or a backup, would not open with the key given: the
-        password is wrong or the file is damaged. Any other refusal of a
-        file — one a newer Gerfaut wrote, say — stays `vault`. */
+        password is wrong or the file is damaged. Nothing else comes
+        under this kind. */
     | "wrong_key"
+    /** What was handed over as a backup is not a Gerfaut backup, or is
+        damaged outside what the password guards. */
+    | "unreadable_backup"
+    /** A vault or backup written by a newer Gerfaut. */
+    | "newer_format"
     /** Another Gerfaut holds the vault: a second copy running on the
         same data directory. Only ever met at startup. */
     | "vault_in_use"
     | "sync"
+    | "broadcast"
     | "backend_unavailable"
     | "descriptor"
     | "tor"
@@ -943,6 +1025,10 @@ export const ipc = {
     invoke<BroadcastReport>("broadcast_transaction", { network, hex }),
   transactionStatus: (network: Network, hex: string) =>
     invoke<BroadcastStatus>("transaction_status", { network, hex }),
+  /** The last transactions sent on this network, newest first. */
+  recentBroadcasts: (network: Network) =>
+    invoke<RecentBroadcast[]>("recent_broadcasts", { network }),
+  forgetBroadcast: (txid: string) => invoke<void>("forget_broadcast", { txid }),
   setActiveNetwork: (network: Network) => invoke<void>("set_active_network", { network }),
   setBackend: (network: Network, config: BackendConfig) =>
     invoke<void>("set_backend", { network, config }),
@@ -952,12 +1038,23 @@ export const ipc = {
     invoke<void>("trust_certificate", { url, fingerprint }),
   forgetCertificate: (host: string) => invoke<void>("forget_certificate", { host }),
   setAppPref: (key: string, value: string) => invoke<void>("set_app_pref", { key, value }),
-  fetchPrice: (source: PriceSource, currency: FiatCurrency) =>
-    invoke<PriceQuote>("fetch_price", { source, currency }),
-  fetchPriceHistory: (source: PriceSource, currency: FiatCurrency, range: PriceRange) =>
-    invoke<PriceHistory>("fetch_price_history", { source, currency, range }),
-  checkUpdate: () => invoke<UpdateCheck>("check_update"),
+  /** Answers every preference as stored, the change applied. */
+  setPreferences: (change: PreferencesChange) =>
+    invoke<Preferences>("set_preferences", { change }),
+  priceTable: () => invoke<PriceTable>("price_table"),
+  /** In the currency and from the source of the preferences. */
+  fetchPrice: () => invoke<PriceQuote>("fetch_price"),
+  fetchPriceHistory: (range: PriceRange) =>
+    invoke<PriceHistory>("fetch_price_history", { range }),
+  updateStatus: () => invoke<UpdateStatus>("update_status"),
+  /** The window is unlocked: the core checks if a check is due. */
+  updateSession: () => invoke<UpdateStatus>("update_session"),
+  /** The button in About: checks now, due or not. */
+  checkUpdate: () => invoke<UpdateStatus>("check_update"),
+  dismissUpdate: (version: string) => invoke<void>("dismiss_update", { version }),
+  setUpdateAutomatic: (automatic: boolean) => invoke<void>("set_update_automatic", { automatic }),
   liveStatus: () => invoke<LiveStatus>("live_status"),
+  liveLimits: () => invoke<WatchLimitsChoice>("live_limits"),
   sendTestNotification: () => invoke<void>("send_test_notification"),
   /** Copies a secret out of sight of the clipboard history, and takes
       it off the clipboard later unless something else was copied
