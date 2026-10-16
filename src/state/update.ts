@@ -2,7 +2,7 @@
 //
 // The core decides all of it and keeps it in the vault: when the app
 // asks GitHub on its own (at most once a day, never within a day of the
-// first session, and a day Tor is needed and cannot be had does not
+// first session, and a day Tor is needed and not running does not
 // count), which release is worth announcing (never a pre-release) and
 // which one the user closed. This store holds what the core said last,
 // and tells it when the window is unlocked and when the user answers.
@@ -11,8 +11,10 @@
 // nothing else: no identifier goes with it, but GitHub sees the address
 // it comes from. It takes the route the syncs take: with an onion
 // backend the core sends it through Tor, and when Tor cannot be had it
-// sends nothing and says so. The button in Settings › About goes the
-// same way.
+// sends nothing and says so. The check of a session never starts the
+// built-in Tor for itself: it goes through the system's Tor or the one
+// a sync or Live brought up, or waits for the next hour. The button in
+// Settings › About goes the same way, and may start Tor.
 //
 // No address the network answers is ever opened: the only page this
 // app opens is `RELEASES_URL`, written here. Behind the lock nothing
