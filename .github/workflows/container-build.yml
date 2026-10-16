@@ -4,10 +4,9 @@
 # build-info directory leave as the artifact build-<target>.
 #
 # Called once per target by release.yml, and for macOS by
-# macos-reference.yml. The job holds no token and no secret but the
-# read-only deploy key of gerfaut-core and, for macOS, the key that opens
-# the Apple SDK in the cache, each in the one step that needs it. The
-# build itself runs in a container with no network.
+# macos-reference.yml. The job holds no token and no secret but, for
+# macOS, the key that opens the Apple SDK in the cache, in the one step
+# that needs it. The build itself runs in a container with no network.
 
 name: Container build
 
@@ -31,8 +30,6 @@ on:
         type: boolean
         default: false
     secrets:
-      core-deploy-key:
-        required: true
       apple-sdk-cache-key:
         description: macos only, APPLE_SDK_CACHE_KEY, which opens what apple-sdk.yml sealed
         required: false
@@ -89,7 +86,6 @@ jobs:
         with:
           repository: gerfaut-wallet/gerfaut-core
           ref: ${{ steps.core.outputs.rev }}
-          ssh-key: ${{ secrets.core-deploy-key }}
           path: gerfaut-core
           persist-credentials: false
 

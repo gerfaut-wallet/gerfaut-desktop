@@ -4,23 +4,34 @@
 # The secret key never leaves this machine. CI only ever builds.
 #
 # The Release workflow built each file in the pinned container and
-# wrote SHA256SUMS. This script signs the list only if it is, byte for
-# byte, the one a successful run of the workflow wrote for the push of
-# this tag, the draft holds exactly the five files of a release, and
-# each one has the hash the list gives it.
+# wrote SHA256SUMS. This script signs the list only if the tag names the
+# same commit in this clone and on GitHub, a commit of main; the list
+# is, byte for byte, the one a successful run of the workflow wrote for
+# the push of this tag, at that commit; the draft holds exactly the five
+# files of a release; and each one has the hash the list gives it.
 #
 # Usage:  pwsh scripts/sign-release.ps1 v0.1.0
-#         (works on the draft release before you click Publish)
+#         (works on the draft release before you click Publish; run it
+#         from a clone that has the tag, see Get-ReleaseCommit)
 
 param([Parameter(Mandatory)][string]$Tag)
 $ErrorActionPreference = "Stop"
 $repo = "gerfaut-wallet/gerfaut-desktop"
+. (Join-Path $PSScriptRoot "release-checks.ps1")
 
 if ($Tag -notmatch '^v(\d+\.\d+\.\d+)$') { throw "not a release tag: $Tag" }
 $version = $Matches[1]
+foreach ($tool in "gh", "git") {
+    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw "$tool not found - install it first" }
+}
 if (-not (Get-Command minisign -ErrorAction SilentlyContinue)) {
     throw "minisign not found - install it first (https://jedisct1.github.io/minisign/)"
 }
+
+Write-Output "checking what $Tag names..."
+# GERFAUT_SIGN_TEST_ORIGIN is for tests only: see Assert-OriginUrl.
+$commit = Get-ReleaseCommit -RepoDir (Split-Path $PSScriptRoot -Parent) -Tag $Tag -Slug $repo -TestOrigin $env:GERFAUT_SIGN_TEST_ORIGIN
+Write-Output "  $Tag is $commit here and on GitHub, a commit of main"
 
 $dir = Join-Path ([System.IO.Path]::GetTempPath()) "gerfaut-desktop-sign-$Tag"
 $ci = "$dir-ci"
@@ -39,17 +50,10 @@ $expected = @(
     "Gerfaut_${version}_universal.zip",
     "Gerfaut_${version}_x64-setup.exe"
 ) | Sort-Object
-$present = Get-ChildItem $dir -File |
-    Where-Object { $_.Name -ne "SHA256SUMS" -and $_.Name -ne "SHA256SUMS.minisig" } |
-    ForEach-Object Name | Sort-Object
-$difference = Compare-Object $expected $present
-if ($difference) {
-    $difference | ForEach-Object {
-        $side = if ($_.SideIndicator -eq "<=") { "missing" } else { "unexpected" }
-        Write-Output "  $side : $($_.InputObject)"
-    }
-    throw "the draft does not hold exactly the five files of $Tag"
-}
+$present = @(Get-ChildItem $dir -File |
+    Where-Object { $_.Name -cne "SHA256SUMS" -and $_.Name -cne "SHA256SUMS.minisig" } |
+    ForEach-Object Name)
+Assert-ExactNames -Have $present -Want $expected -What "the draft does not hold exactly the five files of $Tag"
 
 # The list the workflow wrote: one "<hash>  <name>" line per file, LF,
 # nothing else. It is signed byte for byte as it is.
@@ -67,23 +71,17 @@ if ($lines.Count -ne $expected.Count -or (Compare-Object $expected ($listed.Keys
     throw "SHA256SUMS does not list exactly the five files, once each"
 }
 
-# Anyone who can write to the repository can change a draft, not the
-# artifact of a finished run. The list must be the one the Release
-# workflow left in its artifact, in a successful run started by the push
-# of this tag, at the commit the tag names.
-$commit = gh api "repos/$repo/commits/refs/tags/$Tag" --jq .sha
-if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') { throw "could not find the commit $Tag names" }
-$runs = gh run list --repo $repo --workflow release.yml --event push --branch $Tag --status success --json databaseId,headSha
-if ($LASTEXITCODE -ne 0) { throw "gh run list failed" }
-$run = @(($runs -join "`n") | ConvertFrom-Json | Where-Object { $_.headSha -eq $commit })[0]
-if (-not $run) { throw "no successful Release run for the push of $Tag at $commit" }
-gh run download $run.databaseId --repo $repo --name gerfaut-desktop-release --dir $ci
-if ($LASTEXITCODE -ne 0) { throw "could not download the files of Release run $($run.databaseId)" }
+# The list must be the one the Release workflow left in its artifact,
+# in a successful run started by the push of this tag, at the commit the
+# tag names.
+$run = Find-ReleaseRun -Slug $repo -Tag $Tag -Commit $commit
+gh run download $run --repo $repo --name gerfaut-desktop-release --dir $ci
+if ($LASTEXITCODE -ne 0) { throw "could not download the files of Release run $run" }
 $written = Join-Path $ci "SHA256SUMS"
 if (-not (Test-Path $written) -or (Get-FileHash $written).Hash -ne (Get-FileHash $sums).Hash) {
-    throw "the SHA256SUMS of the draft is not the one Release run $($run.databaseId) wrote"
+    throw "the SHA256SUMS of the draft is not the one Release run $run wrote"
 }
-Write-Output "  SHA256SUMS written by Release run $($run.databaseId), $Tag at $commit"
+Write-Output "  SHA256SUMS written by Release run $run, $Tag at $commit"
 
 foreach ($name in $expected) {
     $have = (Get-FileHash (Join-Path $dir $name) -Algorithm SHA256).Hash.ToLower()
