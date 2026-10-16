@@ -1,9 +1,9 @@
 name: CI
 
-# The frontend job runs on every event. The Rust job needs the sibling
-# gerfaut-core checkout, at the revision .github/gerfaut-core.rev pins,
-# the one a release compiles. gerfaut-core is public: no key reads it.
-# The Rust job only runs on a push.
+# Every job runs on every push to main and every pull request. The Rust
+# job needs the sibling gerfaut-core checkout, at the revision
+# .github/gerfaut-core.rev pins, the one a release compiles; gerfaut-core
+# is public, no key reads it.
 on:
   push:
     branches: [main]
@@ -32,7 +32,6 @@ jobs:
         run: npx vite build
 
   rust:
-    if: github.event_name == 'push'
     # The image the release builds on, so a failure here is a failure the
     # release would have hit too.
     runs-on: ubuntu-22.04
