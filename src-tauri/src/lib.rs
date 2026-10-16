@@ -220,21 +220,21 @@ fn is_device_name(name: &str) -> bool {
 }
 
 /// Writes a file the person asked for in a save dialog: a transaction
-/// history, a sealed backup. On Unix a file created here is theirs
-/// alone, where the usual umask would have let every account of the
-/// machine read it; a file it replaces keeps the mode it had, which is
-/// the person's choice. Windows gives a new file the access list of its
-/// folder.
+/// history, a sealed backup. Under the core's rule for every file about
+/// the wallets: on Unix a file created here is theirs alone, where the
+/// usual umask would have let every account of the machine read it, and
+/// a file it replaces keeps the mode it had, which is the person's
+/// choice.
 fn write_owner_only(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    options.open(path)?.write_all(bytes)
+    gerfaut_core::store::owner_only(
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true),
+    )
+    .open(path)?
+    .write_all(bytes)
 }
 
 /// Closes the vault's directory to other accounts on Unix. The core
