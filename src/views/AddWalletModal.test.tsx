@@ -87,6 +87,23 @@ describe("AddWalletModal", () => {
     useUi.setState({ addWalletOpen: false });
   });
 
+  /** The webview offers back what was typed in a field before: the
+      material and the name of a wallet are kept out of that memory,
+      and the material out of the spell checker. */
+  it("keeps the material and the name out of the webview's memory", async () => {
+    mockIPC((cmd) => (cmd === "parse_input" ? PARSED_TPUB : undefined));
+    useUi.setState({ addWalletOpen: true });
+    renderModal();
+    const material = screen.getByLabelText(/descriptor, extended public key/i);
+    expect(material).toHaveAttribute("autocomplete", "off");
+    expect(material).toHaveAttribute("spellcheck", "false");
+    const user = userEvent.setup();
+    await user.type(material, "tpubDDnGNapGEY6...");
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await screen.findByText(/recognized as/i);
+    expect(screen.getByLabelText("Name")).toHaveAttribute("autocomplete", "off");
+  });
+
   /** The hints name how the addresses start on the network the wallet
       goes to, the ones the person compares with their own wallet: a
       signet wallet never shows a mainnet prefix. */

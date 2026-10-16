@@ -184,6 +184,15 @@ print(next(i for i in json.load(open(sys.argv[1]))["bundle"]["icon"] if i.endswi
         "$APP/src-tauri/tauri.conf.json"
 }
 
+# The entitlements file bundle.macOS.entitlements names, relative to
+# src-tauri as for Tauri's bundler.
+entitlements_source() {
+    python3 -c 'import json, os, sys
+path = json.load(open(sys.argv[1]))["bundle"]["macOS"]["entitlements"]
+print(os.path.normpath(os.path.join(os.path.dirname(sys.argv[1]), path)))' \
+        "$APP/src-tauri/tauri.conf.json"
+}
+
 # The processors a Mach-O file is for, as llvm-lipo lists them.
 archs() {
     llvm-lipo -archs "$1" | xargs
@@ -242,15 +251,75 @@ macho_summary() {
 # An ad hoc signature, as Tauri's bundler writes it when asked to sign
 # with the identity "-": the binary and the bundle sealed together
 # (_CodeSignature/CodeResources), the identifier taken from
-# CFBundleIdentifier, the hardened runtime on, which is Tauri's default.
-# No key, so no certificate, no time and no server.
+# CFBundleIdentifier, the hardened runtime on, which is Tauri's default,
+# and the entitlements of bundle.macOS.entitlements on the program. The
+# hardened runtime refuses the camera to a program that does not hold
+# com.apple.security.device.camera, NSCameraUsageDescription or not, and
+# the QR scanner needs it. No key, so no certificate, no time and no
+# server.
 sign_app() {
-    local executable
+    local executable entitlements
     executable="$(plist_value "$1/Contents/Info.plist" CFBundleExecutable)"
+    entitlements="$(entitlements_source)"
+    [ -f "$entitlements" ] || die "no entitlements file at $entitlements"
     # --config-file /dev/null: no configuration file on the machine is read.
-    rcodesign sign --config-file /dev/null --code-signature-flags runtime --timestamp-url none "$1" > /dev/null
+    # The entitlements are scoped to the program, the one Mach-O file of
+    # the bundle, as Tauri's bundler hands them to codesign for it.
+    rcodesign sign --config-file /dev/null --code-signature-flags runtime \
+        --entitlements-xml-file "Contents/MacOS/$executable:$entitlements" \
+        --timestamp-url none "$1" > /dev/null
     rcodesign print-signature-info --config-file /dev/null "$1/Contents/MacOS/$executable" \
         > "$OUT/build-info/signature.txt"
+    check_entitlements "$OUT/build-info/signature.txt" "$entitlements" \
+        "$(archs "$1/Contents/MacOS/$executable" | wc -w)"
+}
+
+# Stops the build unless every slice of the program carries in its
+# signature the entitlements of the file, the camera among them. The
+# scope given to rcodesign is a path it matches or not: one that matched
+# nothing would sign the program without them and say nothing, and the
+# app would build, start, and be refused the camera on every Mac.
+check_entitlements() {
+    local signature="$1" entitlements="$2" slices="$3"
+    python3 - "$signature" "$entitlements" "$slices" <<'PY' || die "the signature does not carry $entitlements on every slice"
+import json, plistlib, re, sys
+
+signature, entitlements, slices = sys.argv[1], sys.argv[2], int(sys.argv[3])
+with open(entitlements, "rb") as file:
+    wanted = plistlib.load(file)
+if wanted.get("com.apple.security.device.camera") is not True:
+    sys.exit(f"{entitlements} does not grant the camera, which the QR scanner needs")
+
+
+def item(text):
+    # A YAML scalar as print-signature-info writes one: plain, or quoted.
+    if len(text) > 1 and text[0] == text[-1] == "'":
+        return text[1:-1].replace("''", "'")
+    if len(text) > 1 and text[0] == text[-1] == '"':
+        return json.loads(text)
+    return text
+
+
+def signed(record):
+    """The entitlements in one slice's signature, or None."""
+    lines = record.splitlines()
+    for at, line in enumerate(lines):
+        if line.strip() == "entitlements_plist:":
+            indent = line[: len(line) - len(line.lstrip())] + "- "
+            items = []
+            for line in lines[at + 1:]:
+                if not line.startswith(indent):
+                    break
+                items.append(item(line[len(indent):]))
+            return plistlib.loads("\n".join(items).encode())
+    return None
+
+
+with open(signature, encoding="utf-8") as file:
+    found = [signed(record) for record in re.split(r"(?m)^- path: ", file.read())[1:]]
+if len(found) != slices or any(entry != wanted for entry in found):
+    sys.exit(f"{len(found)} slices in the signature, {slices} in the program, entitlements {found}")
+PY
 }
 
 # Every date is the commit date, the entries are sorted by name, the

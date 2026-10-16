@@ -97,6 +97,7 @@ function PasswordField({
           type={hidden ? "password" : "text"}
           value={value}
           autoComplete="off"
+          spellCheck={false}
           onChange={(event) => onChange(event.target.value)}
           className="field-focus h-11 w-full rounded-sm border border-transparent bg-sunken px-3 pr-11 font-ui text-sm text-text"
         />

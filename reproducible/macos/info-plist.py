@@ -9,6 +9,12 @@ in tauri-bundler/src/bundle/macos/app.rs (tauri-cli 2.11.4), and the text
 follows the XML writer of the plist crate it uses: a tab per level, five
 characters escaped, no newline at the end.
 
+src-tauri/Info.plist is merged in last, as tauri-cli does on a Mac
+(merge_plist() in tauri-cli/src/helpers/plist.rs, then the end of
+create_info_plist()): a key Tauri already wrote takes the new value in
+its place, a new key comes after Tauri's, in the order of the file. Only
+string values are handled, which is all Gerfaut's file holds.
+
 The script handles the configuration Gerfaut has and nothing more. A
 setting that would add a key, a file or a signature option makes it stop,
 so a change of tauri.conf.json cannot silently give a bundle that differs
@@ -19,6 +25,7 @@ compares the result with a bundle Tauri makes on a Mac.
 from __future__ import annotations
 
 import json
+import plistlib
 import re
 import sys
 from pathlib import Path
@@ -54,6 +61,21 @@ def binary_name(tauri: Path, config: dict) -> str:
     return package.group(1)
 
 
+def merged_keys(tauri: Path) -> list[tuple[str, str]]:
+    """The keys of src-tauri/Info.plist, in the order of the file."""
+    path = tauri / "Info.plist"
+    if not path.exists():
+        return []
+    with path.open("rb") as file:
+        merged = plistlib.load(file, dict_type=dict)
+    if not isinstance(merged, dict):
+        fail("src-tauri/Info.plist does not hold a dictionary")
+    for key, value in merged.items():
+        if not isinstance(value, str):
+            fail(f"src-tauri/Info.plist: {key} is not a string, which is not handled")
+    return list(merged.items())
+
+
 def main() -> None:
     if len(sys.argv) != 3:
         fail("usage: info-plist.py <src-tauri directory> <Info.plist to write>")
@@ -61,13 +83,17 @@ def main() -> None:
     config = json.loads((tauri / "tauri.conf.json").read_text(encoding="utf-8"))
     bundle = config.get("bundle", {})
 
-    for key in ("macOS", "fileAssociations", "resources", "externalBin"):
+    for key in ("fileAssociations", "resources", "externalBin"):
         if key in bundle:
             fail(f"bundle.{key} is not handled")
+    # Of bundle.macOS, the entitlements alone: they go into the
+    # signature (macos.sh) and leave the plist as it is, where the other
+    # keys, minimumSystemVersion or infoPlist among them, change it.
+    for key in bundle.get("macOS", {}):
+        if key != "entitlements":
+            fail(f"bundle.macOS.{key} is not handled")
     if "deep-link" in config.get("plugins", {}):
         fail("the deep-link plugin adds CFBundleURLTypes, which is not handled")
-    if (tauri / "Info.plist").exists():
-        fail("src-tauri/Info.plist would be merged into the plist, which is not handled")
     for name in ("tauri.macos.conf.json", "tauri.macos.conf.json5", "Tauri.macos.toml"):
         if (tauri / name).exists():
             fail(f"{name} would be merged into the configuration, which is not handled")
@@ -104,6 +130,12 @@ def main() -> None:
     ]
     if "copyright" in bundle:
         entries.append(("NSHumanReadableCopyright", bundle["copyright"]))
+    for key, value in merged_keys(tauri):
+        position = next((i for i, (name, _) in enumerate(entries) if name == key), None)
+        if position is None:
+            entries.append((key, value))
+        else:
+            entries[position] = (key, value)
 
     lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',

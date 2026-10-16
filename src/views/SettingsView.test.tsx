@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BackendConfig, ScannedBackend, Settings, WalletMeta } from "../lib/ipc";
@@ -105,6 +105,25 @@ afterEach(() => {
 });
 
 describe("saving a server address", () => {
+  /** The webview offers back what was typed in a field before: the
+      address of someone's node is kept out of that memory, and out of
+      the spell checker. */
+  it("keeps the address out of the webview's memory", () => {
+    mockBackendIpc({ error: "unused" });
+    renderBackend();
+    for (const name of ["Host", "Port"]) {
+      expect(field(name)).toHaveAttribute("autocomplete", "off");
+    }
+    expect(field("Host")).toHaveAttribute("spellcheck", "false");
+    cleanup();
+    renderBackend(() => {}, {
+      ...SETTINGS,
+      backends: { mainnet: { type: "custom_esplora", url: "https://node.local/api" } },
+    });
+    expect(field("Server URL")).toHaveAttribute("autocomplete", "off");
+    expect(field("Server URL")).toHaveAttribute("spellcheck", "false");
+  });
+
   /** A port typed into the host field: the core would only call the
       whole a bad IPv6 literal, so the section says where the port goes
       before anything is asked of it. */

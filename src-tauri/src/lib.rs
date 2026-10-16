@@ -219,6 +219,39 @@ fn is_device_name(name: &str) -> bool {
         && chars.next().is_none()
 }
 
+/// Writes a file the person asked for in a save dialog: a transaction
+/// history, a sealed backup. Under the core's rule for every file about
+/// the wallets: on Unix a file created here is theirs alone, where the
+/// usual umask would have let every account of the machine read it, and
+/// a file it replaces keeps the mode it had, which is the person's
+/// choice.
+fn write_owner_only(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    gerfaut_core::store::owner_only(
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true),
+    )
+    .open(path)?
+    .write_all(bytes)
+}
+
+/// Closes the vault's directory to other accounts on Unix. The core
+/// creates it that way, but the webview, or an earlier build, may have
+/// made it first with the usual mode, and the directory is the app's
+/// own: its data directory, or in a development build the one
+/// `GERFAUT_DATA_DIR` names for a test instance.
+#[cfg(unix)]
+fn restrict_data_dir(dir: &std::path::Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = std::fs::metadata(dir)?.permissions().mode();
+    if mode & 0o077 != 0 {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode & 0o700))?;
+    }
+    Ok(())
+}
+
 /// A backup file the person picked: its name for the screen, its bytes
 /// as the base64 the core opens.
 #[derive(Debug, Clone, Serialize)]
@@ -233,8 +266,14 @@ pub struct PickedBackup {
 /// only apply to a lone extended key; everything else fixes its own.
 /// `network` is the one the wallet is about to be added on, which the
 /// first address shown is derived for.
+///
+/// On a worker thread, like [`assemble_qr`]: a synchronous command runs
+/// on the main thread, which also draws the window, and the input is
+/// whatever was pasted, a file of 64 KiB or a descriptor of a hundred
+/// keys among it. Reading it there froze the window for as long as the
+/// core took, and a panic in the parser took the whole app down.
 #[tauri::command]
-fn parse_input(
+async fn parse_input(
     input: String,
     script: Option<ScriptKind>,
     derivation: Option<DerivationChoice>,
@@ -245,17 +284,26 @@ fn parse_input(
         derivation,
         network,
     };
-    Ok(gerfaut_core::input::parse_input_with_options(
-        &input, &options,
-    )?)
+    tauri::async_runtime::spawn_blocking(move || {
+        gerfaut_core::input::parse_input_with_options(&input, &options)
+    })
+    .await
+    .map_err(|e| internal(format!("the input could not be read: {e}")))?
+    .map_err(CommandError::from)
 }
 
 /// Reads a server address scanned or pasted into the backend settings:
 /// the Electrum one-liner `host:port:s|t`, an `ssl://`/`tcp://` address,
-/// or an `http(s)://` Esplora endpoint.
+/// or an `http(s)://` Esplora endpoint. On a worker thread, for the
+/// same reason as [`parse_input`].
 #[tauri::command]
-fn parse_backend(input: String) -> CommandResult<ScannedBackend> {
-    Ok(gerfaut_core::chain::connect::parse_backend(&input)?)
+async fn parse_backend(input: String) -> CommandResult<ScannedBackend> {
+    tauri::async_runtime::spawn_blocking(move || {
+        gerfaut_core::chain::connect::parse_backend(&input)
+    })
+    .await
+    .map_err(|e| internal(format!("the address could not be read: {e}")))?
+    .map_err(CommandError::from)
 }
 
 /// Assembles the QR frames scanned so far (plain, UR, BBQr). The core
@@ -589,7 +637,7 @@ async fn export_transactions_csv(
     let Some(path) = show_dialog(dialog, DialogKind::Save).await? else {
         return Ok(None);
     };
-    std::fs::write(&path, result.csv.as_bytes())
+    write_owner_only(&path, result.csv.as_bytes())
         .map_err(|e| internal(format!("could not write {}: {e}", path.display())))?;
     Ok(Some(result.rows))
 }
@@ -805,7 +853,7 @@ async fn save_backup_file(
     let Some(path) = show_dialog(dialog, DialogKind::Save).await? else {
         return Ok(false);
     };
-    std::fs::write(&path, bytes)
+    write_owner_only(&path, &bytes)
         .map_err(|e| internal(format!("could not write {}: {e}", path.display())))?;
     Ok(true)
 }
@@ -984,6 +1032,13 @@ fn open_vault(app: &tauri::AppHandle) -> CommandResult<()> {
         data_dir(app).map_err(|e| internal(format!("no data directory for the vault: {e}")))?;
     let key = vault_key(&data_dir).map_err(|e| CommandError::new("vault", e))?;
     let manager = WalletManager::open(&data_dir, key)?;
+    #[cfg(unix)]
+    if let Err(error) = restrict_data_dir(&data_dir) {
+        eprintln!(
+            "gerfaut: the data directory {} stays open to other accounts: {error}",
+            data_dir.display()
+        );
+    }
     // A vault that holds a lock opens shut: the first frame the
     // webview draws is the lock screen, and until a secret goes
     // through, the commands below answer nothing about it.
@@ -1197,8 +1252,74 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{CommandError, assemble_qr, bare_file_name};
+    use super::{CommandError, assemble_qr, bare_file_name, parse_backend, parse_input};
     use gerfaut_core::error::CoreError;
+
+    /// On Unix a file written from a save dialog is its owner's alone
+    /// when it is created, and one it replaces keeps its mode; the
+    /// vault's directory is closed to other accounts.
+    #[cfg(unix)]
+    #[test]
+    fn saved_files_and_the_data_directory_are_their_owners_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode =
+            |path: &std::path::Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        let dir = tempfile::tempdir().unwrap();
+        let fresh = dir.path().join("transactions.csv");
+        super::write_owner_only(&fresh, b"date,amount\n").unwrap();
+        assert_eq!(mode(&fresh), 0o600);
+        assert_eq!(std::fs::read(&fresh).unwrap(), b"date,amount\n");
+
+        let theirs = dir.path().join("shared.csv");
+        std::fs::write(&theirs, b"a much longer file than the export").unwrap();
+        std::fs::set_permissions(&theirs, std::fs::Permissions::from_mode(0o644)).unwrap();
+        super::write_owner_only(&theirs, b"short").unwrap();
+        assert_eq!(mode(&theirs), 0o644);
+        assert_eq!(std::fs::read(&theirs).unwrap(), b"short");
+
+        let data = dir.path().join("data");
+        std::fs::create_dir(&data).unwrap();
+        std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o755)).unwrap();
+        super::restrict_data_dir(&data).unwrap();
+        assert_eq!(mode(&data), 0o700);
+    }
+
+    /// Pasted material and a server address are read off the main
+    /// thread and answer as before; what the core refuses comes back
+    /// in its words, a descriptor miniscript would have panicked on
+    /// among it.
+    #[test]
+    fn pasted_text_is_read_on_a_worker() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let address = "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx";
+        let parsed = runtime
+            .block_on(parse_input(address.to_owned(), None, None, None))
+            .unwrap();
+        assert!(
+            parsed
+                .networks
+                .contains(&gerfaut_core::network::Network::Signet)
+        );
+        let hardened = "wpkh(tpubDDnGNapGEY6AZAdQbfRJgMg9fvz8pUBrLwvyvUqEgcUfgzM6zc2eVK4vY9x9L5FJWdX8WumXuLEDV5zDZnTfbn87vLe9XceCFwTu9so9Kks/84h/0/*)";
+        let refused = runtime
+            .block_on(parse_input(hardened.to_owned(), None, None, None))
+            .unwrap_err();
+        assert_eq!(refused.kind, "invalid_input");
+        assert!(
+            refused.message.contains("key origin"),
+            "{}",
+            refused.message
+        );
+
+        let backend = runtime
+            .block_on(parse_backend("node.example.org:50002:s".to_owned()))
+            .unwrap();
+        assert_eq!(backend.url, "ssl://node.example.org:50002");
+        let refused = runtime
+            .block_on(parse_backend(format!("ssl://{address}:50002")))
+            .unwrap_err();
+        assert_eq!(refused.kind, "invalid_input");
+    }
 
     /// The assembly runs off the main thread and answers as before.
     #[test]

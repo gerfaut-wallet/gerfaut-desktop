@@ -215,6 +215,7 @@ function WalletTitle({ meta }: { meta: WalletMeta }) {
         {editing ? (
           <input
             ref={inputRef}
+            autoComplete="off"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {

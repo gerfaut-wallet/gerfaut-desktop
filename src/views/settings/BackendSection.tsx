@@ -317,6 +317,7 @@ export function BackendSection({
                 setOnion(false);
               }}
               spellCheck={false}
+              autoComplete="off"
               placeholder="https://node.example.org:3002/api"
               className="field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted"
             />
@@ -342,6 +343,7 @@ export function BackendSection({
                 setOnion(false);
               }}
               spellCheck={false}
+              autoComplete="off"
               placeholder="node.example.org or xxxxxxxx.onion"
               className="field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted"
             />
@@ -358,6 +360,7 @@ export function BackendSection({
                 setOnion(false);
               }}
               inputMode="numeric"
+              autoComplete="off"
               placeholder="50002"
               className="field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted"
             />
