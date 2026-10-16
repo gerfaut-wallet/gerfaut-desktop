@@ -219,6 +219,39 @@ fn is_device_name(name: &str) -> bool {
         && chars.next().is_none()
 }
 
+/// Writes a file the person asked for in a save dialog: a transaction
+/// history, a sealed backup. On Unix a file created here is theirs
+/// alone, where the usual umask would have let every account of the
+/// machine read it; a file it replaces keeps the mode it had, which is
+/// the person's choice. Windows gives a new file the access list of its
+/// folder.
+fn write_owner_only(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)?.write_all(bytes)
+}
+
+/// Closes the vault's directory to other accounts on Unix. The core
+/// creates it that way, but the webview, or an earlier build, may have
+/// made it first with the usual mode, and the directory is the app's
+/// own: its data directory, or in a development build the one
+/// `GERFAUT_DATA_DIR` names for a test instance.
+#[cfg(unix)]
+fn restrict_data_dir(dir: &std::path::Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = std::fs::metadata(dir)?.permissions().mode();
+    if mode & 0o077 != 0 {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode & 0o700))?;
+    }
+    Ok(())
+}
+
 /// A backup file the person picked: its name for the screen, its bytes
 /// as the base64 the core opens.
 #[derive(Debug, Clone, Serialize)]
@@ -604,7 +637,7 @@ async fn export_transactions_csv(
     let Some(path) = show_dialog(dialog, DialogKind::Save).await? else {
         return Ok(None);
     };
-    std::fs::write(&path, result.csv.as_bytes())
+    write_owner_only(&path, result.csv.as_bytes())
         .map_err(|e| internal(format!("could not write {}: {e}", path.display())))?;
     Ok(Some(result.rows))
 }
@@ -820,7 +853,7 @@ async fn save_backup_file(
     let Some(path) = show_dialog(dialog, DialogKind::Save).await? else {
         return Ok(false);
     };
-    std::fs::write(&path, bytes)
+    write_owner_only(&path, &bytes)
         .map_err(|e| internal(format!("could not write {}: {e}", path.display())))?;
     Ok(true)
 }
@@ -999,6 +1032,13 @@ fn open_vault(app: &tauri::AppHandle) -> CommandResult<()> {
         data_dir(app).map_err(|e| internal(format!("no data directory for the vault: {e}")))?;
     let key = vault_key(&data_dir).map_err(|e| CommandError::new("vault", e))?;
     let manager = WalletManager::open(&data_dir, key)?;
+    #[cfg(unix)]
+    if let Err(error) = restrict_data_dir(&data_dir) {
+        eprintln!(
+            "gerfaut: the data directory {} stays open to other accounts: {error}",
+            data_dir.display()
+        );
+    }
     // A vault that holds a lock opens shut: the first frame the
     // webview draws is the lock screen, and until a secret goes
     // through, the commands below answer nothing about it.
@@ -1214,6 +1254,35 @@ pub fn run() {
 mod tests {
     use super::{CommandError, assemble_qr, bare_file_name, parse_backend, parse_input};
     use gerfaut_core::error::CoreError;
+
+    /// On Unix a file written from a save dialog is its owner's alone
+    /// when it is created, and one it replaces keeps its mode; the
+    /// vault's directory is closed to other accounts.
+    #[cfg(unix)]
+    #[test]
+    fn saved_files_and_the_data_directory_are_their_owners_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode =
+            |path: &std::path::Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        let dir = tempfile::tempdir().unwrap();
+        let fresh = dir.path().join("transactions.csv");
+        super::write_owner_only(&fresh, b"date,amount\n").unwrap();
+        assert_eq!(mode(&fresh), 0o600);
+        assert_eq!(std::fs::read(&fresh).unwrap(), b"date,amount\n");
+
+        let theirs = dir.path().join("shared.csv");
+        std::fs::write(&theirs, b"a much longer file than the export").unwrap();
+        std::fs::set_permissions(&theirs, std::fs::Permissions::from_mode(0o644)).unwrap();
+        super::write_owner_only(&theirs, b"short").unwrap();
+        assert_eq!(mode(&theirs), 0o644);
+        assert_eq!(std::fs::read(&theirs).unwrap(), b"short");
+
+        let data = dir.path().join("data");
+        std::fs::create_dir(&data).unwrap();
+        std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o755)).unwrap();
+        super::restrict_data_dir(&data).unwrap();
+        assert_eq!(mode(&data), 0o700);
+    }
 
     /// Pasted material and a server address are read off the main
     /// thread and answer as before; what the core refuses comes back
