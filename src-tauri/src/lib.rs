@@ -12,7 +12,7 @@ use gerfaut_core::backup::{
 use gerfaut_core::chain::BackendConfig;
 use gerfaut_core::chain::connect::ScannedBackend;
 use gerfaut_core::chain::tor::{TorRoute, TorSettings, TorStatus};
-use gerfaut_core::error::{CoreError, VaultError};
+use gerfaut_core::error::CoreError;
 use gerfaut_core::input::qr::QrProgress;
 use gerfaut_core::input::{DerivationChoice, ImportOptions, ParsedInput, ScriptKind};
 use gerfaut_core::lock::{AppLock, LockKind, LockVerdict};
@@ -56,32 +56,12 @@ impl CommandError {
     }
 }
 
+/// The core names its failures, and the name goes through as it is:
+/// the screens decide on it, the way the Android app does on the same
+/// name.
 impl From<CoreError> for CommandError {
     fn from(error: CoreError) -> Self {
-        let kind = match &error {
-            CoreError::UnrecognizedInput(_) => "unrecognized_input",
-            CoreError::PrivateMaterialRejected => "private_material",
-            CoreError::InvalidInput { .. } => "invalid_input",
-            CoreError::NetworkMismatch { .. } => "network_mismatch",
-            CoreError::WalletNotFound(_) => "wallet_not_found",
-            CoreError::DuplicateWallet(_) => "duplicate_wallet",
-            // The one vault failure a password explains, named apart so
-            // the screen says "wrong password" for it and for nothing
-            // else: a backup written by a newer Gerfaut is refused in
-            // the core's own words, not blamed on the person typing.
-            CoreError::Vault(VaultError::WrongKeyOrCorrupted) => "wrong_key",
-            // Another Gerfaut holds the vault: the screen says to switch
-            // to it, not that anything is broken.
-            CoreError::Vault(VaultError::AlreadyOpen) => "vault_in_use",
-            CoreError::Vault(_) => "vault",
-            CoreError::Sync { .. } => "sync",
-            CoreError::Broadcast { .. } => "broadcast",
-            CoreError::BackendUnavailable(_) => "backend_unavailable",
-            CoreError::Descriptor(_) => "descriptor",
-            CoreError::Tor(_) => "tor",
-            CoreError::Internal(_) => "internal",
-        };
-        CommandError::new(kind, error.to_string())
+        CommandError::new(error.code().as_str(), error.to_string())
     }
 }
 
@@ -1339,33 +1319,48 @@ mod tests {
         assert_eq!(refused.kind, "invalid_input");
     }
 
-    /// A wrong backup password has a kind of its own, so the screen can
-    /// say "wrong password" for that and for nothing else. A file a
-    /// newer Gerfaut wrote — a newer envelope, or a newer payload
-    /// schema — reaches the screen in the core's words.
+    /// The code the core gives is the kind the screens read, unchanged,
+    /// with the core's words beside it. A wrong password, a file that
+    /// is not a backup and one a newer Gerfaut wrote arrive under three
+    /// kinds, so the screen says "wrong password" for the first and for
+    /// nothing else.
     #[test]
-    fn a_wrong_key_is_told_apart_from_a_file_this_build_cannot_read() {
+    fn the_core_code_goes_through_as_the_kind() {
         use gerfaut_core::error::VaultError;
 
-        let wrong = CommandError::from(CoreError::Vault(VaultError::WrongKeyOrCorrupted));
-        assert_eq!(wrong.kind, "wrong_key");
-
-        let envelope = CommandError::from(CoreError::Vault(VaultError::UnsupportedVersion(9)));
-        assert_eq!(envelope.kind, "vault");
+        let relayed = |error: CoreError| {
+            let code = error.code().as_str();
+            let words = error.to_string();
+            let relayed = CommandError::from(error);
+            assert_eq!(relayed.kind, code);
+            assert_eq!(relayed.message, words);
+            relayed.kind
+        };
         assert_eq!(
-            envelope.message,
-            "vault version 9 is not supported by this build"
+            relayed(CoreError::Vault(VaultError::WrongKeyOrCorrupted)),
+            "wrong_key"
         );
-
-        let schema = CommandError::from(CoreError::InvalidInput {
-            kind: "backup",
-            detail: "backup version 2 needs a newer Gerfaut".to_owned(),
-        });
-        assert_eq!(schema.kind, "invalid_input");
         assert_eq!(
-            schema.message,
-            "invalid backup: backup version 2 needs a newer Gerfaut"
+            relayed(CoreError::UnreadableBackup(
+                "this is not a Gerfaut backup".to_owned()
+            )),
+            "unreadable_backup"
         );
+        assert_eq!(
+            relayed(CoreError::NewerBackup(
+                "this backup was written by a newer Gerfaut (backup version 2)".to_owned()
+            )),
+            "newer_format"
+        );
+        assert_eq!(
+            relayed(CoreError::Vault(VaultError::UnsupportedVersion(9))),
+            "newer_format"
+        );
+        assert_eq!(
+            relayed(CoreError::Vault(VaultError::AlreadyOpen)),
+            "vault_in_use"
+        );
+        assert_eq!(relayed(CoreError::TooManyParts(6_000)), "too_many_parts");
     }
 
     /// A test instance on its own directory is an app of its own, and

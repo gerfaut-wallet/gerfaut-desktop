@@ -184,6 +184,32 @@ describe("ScanQrModal", () => {
     expect(assembleCalls.at(-1)).toEqual(["wpkh(tpub.../0/*)"]);
   });
 
+  it("says in plain words that a code has more parts than Gerfaut reads", async () => {
+    // The core turns the count away before decoding a part; the words
+    // it gives are for logs.
+    frames.push("ur:crypto-psbt/1-6000/aaaa", null, "wpkh(tpub.../0/*)");
+    mockAssembly((received) => {
+      if (received[0].startsWith("ur:")) {
+        return Promise.reject({
+          kind: "too_many_parts",
+          message: "invalid qr: this QR code announces 6000 parts, more than Gerfaut reads",
+        }) as unknown as QrProgress;
+      }
+      return { format: "plain", received: 1, total: 1, complete: true, text: received[0], warnings: [] };
+    });
+    const onScan = vi.fn();
+    render(<ScanQrModal open onClose={vi.fn()} onScan={onScan} />);
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    await tick();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /^This code has more parts than Gerfaut can read\.$/,
+    );
+    // The camera stays on, and the next code goes through.
+    await tick();
+    await tick();
+    await waitFor(() => expect(onScan).toHaveBeenCalledWith("wpkh(tpub.../0/*)", []));
+  });
+
   it("says it once, however long the camera stays on the refused code", async () => {
     // A camera pointed at a PSBT sees it every tick, not once.
     frames.push("B$HP0100ff", "B$HP0100ff", "B$HP0100ff", "wpkh(tpub.../0/*)");

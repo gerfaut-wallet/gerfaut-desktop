@@ -382,6 +382,27 @@ describe("BroadcastView", () => {
     expect(field).toHaveAttribute("aria-describedby", alert.id);
   });
 
+  /** A QR frame pasted with a count of parts past what Gerfaut reads
+      is text the page cannot read either, under a code of its own. */
+  it("says what to paste when a pasted qr code has too many parts", async () => {
+    const user = mount();
+    mockIPC((cmd) => {
+      if (cmd === "preview_transaction") {
+        throw {
+          kind: "too_many_parts",
+          message: "invalid qr: this QR code announces 6000 parts, more than Gerfaut reads",
+        };
+      }
+      return undefined;
+    });
+    await user.type(screen.getByLabelText("Signed transaction"), "ur:crypto-psbt/1-6000/x");
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/^This is not a transaction Gerfaut can read\./);
+    expect(alert).toHaveTextContent("announces 6000 parts");
+  });
+
   /** The error answered what was typed; typing again answers it. It
       goes at the first keystroke, and the hint comes back in the slot
       it held, so Preview stays where it was. */
