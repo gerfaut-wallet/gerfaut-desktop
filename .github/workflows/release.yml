@@ -13,7 +13,9 @@
 #
 # A manual run (Actions, Release, Run workflow) is the dress rehearsal:
 # the same jobs, and the files of the release as a workflow artifact,
-# gerfaut-desktop-release. It touches no tag and no release.
+# gerfaut-desktop-release. It touches no tag and no release. The weekly
+# run does the same on main, so that a build broken between two tags
+# shows within the week rather than on release day.
 #
 # The split of privileges holds throughout. Every build, check and test
 # runs with a read-only token. The token that can write to the
@@ -26,6 +28,9 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # Mondays at 04:17 UTC, on main.
+  schedule:
+    - cron: '17 4 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -135,7 +140,7 @@ jobs:
 
   # The only job that can write to the repository, and it runs nothing
   # but `gh` on the files the gate handed over. Only on a pushed tag: a
-  # manual run, even from a tag, stops at the artifact.
+  # manual run, even from a tag, and the weekly run stop at the artifact.
   draft:
     if: github.event_name == 'push' && github.ref_type == 'tag'
     needs: assemble
