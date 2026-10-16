@@ -468,6 +468,30 @@ describe("restoring a backup", () => {
     ).toBeInTheDocument();
   });
 
+  it("says a file far too large to be a backup in a sentence", async () => {
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "pick_backup_file":
+          return Promise.reject({
+            kind: "invalid_input",
+            message: "this file is far too large to be a Gerfaut backup",
+          });
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderModal(<BackupRestoreModal open onClose={() => {}} activeNetwork="signet" />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /open a file/i }));
+
+    expect(
+      await screen.findByText("This file is far too large to be a Gerfaut backup."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^this file/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open backup/i })).toBeDisabled();
+  });
+
   it("says a file that is not a backup is not one", async () => {
     // A picture, a vault, a QR code of something else: the password is
     // not in question, and saying it is would send someone retyping a
