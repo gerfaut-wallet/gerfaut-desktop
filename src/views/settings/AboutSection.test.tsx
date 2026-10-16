@@ -2,8 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { isBeta } from "../../lib/version";
-import { APP_VERSION, AboutSection, ISSUES_URL } from "./AboutSection";
+import { APP_VERSION, AboutSection, BETA, ISSUES_URL } from "./AboutSection";
 
 const { openUrl } = vi.hoisted(() => ({ openUrl: vi.fn() }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
@@ -19,10 +18,9 @@ function renderAbout() {
 }
 
 /** Every 0.x version is a public beta, and 1.0.0 is the first that is
-    not: which of the two the card shows follows the version it prints.
-    The rule itself is tested with `isBeta`. */
+    not: which of the two the card shows follows the version it prints. */
 describe("the About card", () => {
-  it.runIf(isBeta(APP_VERSION))(
+  it.runIf(BETA)(
     "marks the version as a beta, and opens the issues to report a problem",
     async () => {
       const user = renderAbout();
@@ -41,7 +39,7 @@ describe("the About card", () => {
     },
   );
 
-  it.skipIf(isBeta(APP_VERSION))("says nothing of a beta from 1.0.0 on", () => {
+  it.skipIf(BETA)("says nothing of a beta from 1.0.0 on", () => {
     renderAbout();
     expect(screen.queryByText("Beta")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Report a problem" })).not.toBeInTheDocument();

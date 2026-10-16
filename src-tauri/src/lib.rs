@@ -692,18 +692,67 @@ async fn fetch_price_history(
 /// The repository whose releases the app compares itself with.
 const RELEASES_REPO: &str = "gerfaut-wallet/gerfaut-desktop";
 
-/// Asks for the latest release, by the route the syncs take: through
-/// Tor when a backend is an onion address, and not at all when Tor is
-/// required and cannot be had. That case answers `tor`, which the
-/// screen words apart from "could not check".
+/// The version this build runs, the one the core compares releases with.
+fn running_version(app: &tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+/// What to say about releases, as the core decides it. Reads only.
+#[tauri::command]
+async fn update_status(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> CommandResult<gerfaut_core::updates::UpdateStatus> {
+    state.unlocked()?;
+    Ok(state.manager.update_status(&running_version(&app)).await)
+}
+
+/// The window is unlocked and on its way: the core asks for the latest
+/// release if a check is due, and says what to announce. Never behind
+/// the lock, which refuses it here.
+#[tauri::command]
+async fn update_session(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> CommandResult<gerfaut_core::updates::UpdateStatus> {
+    state.unlocked()?;
+    Ok(state
+        .manager
+        .update_session(RELEASES_REPO, &running_version(&app))
+        .await)
+}
+
+/// Asks for the latest release now, by the route the syncs take:
+/// through Tor when a backend is an onion address, and not at all when
+/// Tor is required and cannot be had. That case answers `tor`, which
+/// the screen words apart from "could not check".
 #[tauri::command]
 async fn check_update(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-) -> CommandResult<gerfaut_core::updates::UpdateCheck> {
+) -> CommandResult<gerfaut_core::updates::UpdateStatus> {
     state.unlocked()?;
-    let current = app.package_info().version.to_string();
-    Ok(state.manager.check_update(RELEASES_REPO, &current).await?)
+    Ok(state
+        .manager
+        .check_update(RELEASES_REPO, &running_version(&app))
+        .await?)
+}
+
+/// Closes the notice on the release it announced.
+#[tauri::command]
+async fn dismiss_update(state: tauri::State<'_, AppState>, version: String) -> CommandResult<()> {
+    state.unlocked()?;
+    Ok(state.manager.dismiss_update(&version).await?)
+}
+
+/// Turns the daily check on or off.
+#[tauri::command]
+async fn set_update_automatic(
+    state: tauri::State<'_, AppState>,
+    automatic: bool,
+) -> CommandResult<()> {
+    state.unlocked()?;
+    Ok(state.manager.set_update_automatic(automatic).await?)
 }
 
 // --- tor ---------------------------------------------------------------
@@ -1189,6 +1238,10 @@ pub fn run() {
             fetch_price,
             fetch_price_history,
             check_update,
+            update_status,
+            update_session,
+            dismiss_update,
+            set_update_automatic,
             app_lock,
             set_app_lock,
             clear_app_lock,

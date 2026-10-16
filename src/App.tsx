@@ -8,7 +8,6 @@ import { Sidebar } from "./shell/Sidebar";
 import { useLiveEvents } from "./state/live";
 import { isLockedError, lockedSettings, useLock, useLockShortcut } from "./state/lock";
 import { useUpdateCheck } from "./state/update";
-import { isBeta } from "./lib/version";
 import { LockScreen } from "./views/LockScreen";
 import { WelcomeTour } from "./views/WelcomeTour";
 import type { Settings } from "./lib/ipc";
@@ -29,7 +28,7 @@ import { PolicyView } from "./views/PolicyView";
 import { ReceiveView } from "./views/ReceiveView";
 import { StartupFailure } from "./views/StartupFailure";
 import { SettingsView } from "./views/SettingsView";
-import { APP_VERSION } from "./views/settings/AboutSection";
+import { BETA } from "./views/settings/AboutSection";
 import { TransactionsView } from "./views/TransactionsView";
 import { TxDetailModal } from "./views/TxDetailModal";
 import { UtxosView } from "./views/UtxosView";
@@ -284,7 +283,7 @@ export default function App() {
       <WelcomeTour
         open={tourOpen}
         onClose={() => setTourOpen(false)}
-        beta={isBeta(APP_VERSION)}
+        beta={BETA}
       />
       <Toast />
     </div>
