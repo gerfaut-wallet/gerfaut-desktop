@@ -78,7 +78,7 @@ export function AboutSection() {
                 Beta
               </Pill>
             )}
-            <span className="font-ui text-xs text-muted">for Windows, macOS, and Linux</span>
+            <span className="font-ui text-xs text-muted">for Linux, macOS, and Windows</span>
           </p>
           <span className="flex flex-wrap items-center gap-3">
             <span role="status" className="font-ui text-xs text-muted">
