@@ -2,11 +2,8 @@ name: CI
 
 # The frontend job runs on every event. The Rust job needs the sibling
 # gerfaut-core checkout, at the revision .github/gerfaut-core.rev pins,
-# the one a release compiles. It reads it with the read-only deploy key
-# the release workflows pass to container-build.yml, and it only runs on
-# a push: once this repository is public, a pull request from a fork
-# carries no secret and the job would fail for a reason that has
-# nothing to do with the code in it.
+# the one a release compiles. gerfaut-core is public: no key reads it.
+# The Rust job only runs on a push.
 on:
   push:
     branches: [main]
@@ -49,13 +46,12 @@ jobs:
         id: core
         run: echo "rev=$(cat gerfaut-desktop/.github/gerfaut-core.rev)" >> "$GITHUB_OUTPUT"
 
-      # The key is not left configured: some 800 crates run their build
-      # scripts and proc macros in the steps below.
+      # No credentials left in .git/config: some 800 crates run their
+      # build scripts and proc macros in the steps below.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: gerfaut-wallet/gerfaut-core
           ref: ${{ steps.core.outputs.rev }}
-          ssh-key: ${{ secrets.CORE_DEPLOY_KEY }}
           path: gerfaut-core
           persist-credentials: false
 

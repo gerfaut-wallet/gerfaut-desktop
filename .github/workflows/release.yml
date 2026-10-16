@@ -35,16 +35,12 @@ jobs:
     uses: ./.github/workflows/container-build.yml
     with:
       target: linux
-    secrets:
-      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
 
   windows:
     uses: ./.github/workflows/container-build.yml
     with:
       target: windows
       accept-microsoft-license: true
-    secrets:
-      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
 
   windows-smoke:
     needs: windows
@@ -65,7 +61,6 @@ jobs:
       target: macos
       apple-sdk-key: ${{ needs.apple-sdk.outputs.key }}
     secrets:
-      core-deploy-key: ${{ secrets.CORE_DEPLOY_KEY }}
       apple-sdk-cache-key: ${{ secrets.APPLE_SDK_CACHE_KEY }}
 
   macos-smoke:
