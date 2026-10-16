@@ -32,6 +32,10 @@ const WRONG_PASSWORD = "Wrong password, or the file is damaged.";
 const NOT_A_BACKUP = "This is not a Gerfaut backup, or it is damaged.";
 const NEWER_BACKUP =
   "This backup was made with a newer version of Gerfaut. Update Gerfaut to open it.";
+/** The file dialog reads no further than the largest backup the core
+    accepts, and refuses a file past it with `invalid_input`, the one
+    refusal of its own. The sentence is Android's. */
+const TOO_LARGE = "This file is far too large to be a Gerfaut backup.";
 
 /** What "Apply node settings" would actually put in place: the server
     every wallet of a network would then talk to, and the Electrum
@@ -421,7 +425,8 @@ export function BackupRestoreModal({
     } catch (error) {
       // A file too large, gone, or unreadable: say so rather than
       // leaving a button that does nothing.
-      setProblem(message(error));
+      const tooLarge = isCommandError(error) && error.kind === "invalid_input";
+      setProblem(tooLarge ? TOO_LARGE : message(error));
     }
   };
 
