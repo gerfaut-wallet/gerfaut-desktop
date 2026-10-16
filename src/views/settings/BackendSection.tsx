@@ -13,7 +13,7 @@ import {
   usePublicServers,
   useTrustCertificate,
 } from "../../state/queries";
-import { isOwnNode, WATCH_LIMITS } from "../../state/live";
+import { isOwnNode, useLiveLimits } from "../../state/live";
 import { useUi } from "../../state/store";
 import { CertificateDialog } from "./CertificatesSection";
 import { FieldLabel, SectionCard, Toggle } from "./primitives";
@@ -495,15 +495,16 @@ function OwnNodeSwitch({
   checked: boolean;
   onChange: (checked: boolean) => void;
 }) {
+  const limits = useLiveLimits().data;
   return (
     <div className="mt-4 flex items-start justify-between gap-6 border-t border-border pt-4">
       <div className="min-w-0 max-w-xl">
         <p className="font-ui text-sm font-medium text-text">This is my node</p>
         <p id="own-node-hint" className="mt-0.5 font-ui text-xs text-muted">
-          The live watch then follows up to{" "}
-          {groupThousands(String(WATCH_LIMITS.ownNode.total))} addresses instead of{" "}
-          {groupThousands(String(WATCH_LIMITS.any.total))}. Leave it off for a server you do not
-          run: it would refuse most of them, and learn every one.
+          {limits &&
+            `The live watch then follows up to ${groupThousands(String(limits.own_node.total))} addresses instead of ${groupThousands(String(limits.any.total))}. `}
+          Leave it off for a server you do not run: it would refuse most of them, and learn every
+          one.
         </p>
       </div>
       <div className="shrink-0 pt-0.5">

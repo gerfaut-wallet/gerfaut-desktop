@@ -3,17 +3,16 @@ import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { WatchStatus } from "../lib/ipc";
+import type { LeftOut, ServerSoftware, WatchStatus } from "../lib/ipc";
 import {
   LIVE_STATUS,
   LIVE_SYNC_FAILED,
   LIVE_WALLET_SYNCED,
   coverageOf,
   isOwnNode,
+  leftOutOf,
   liveStatusLine,
-  raiseWords,
-  serverRefused,
-  shortOfRoom,
+  remedyWords,
   shortOfRoomWords,
   useLiveEvents,
   useLiveStatus,
@@ -80,6 +79,15 @@ describe("room in the live watch", () => {
     coverage: "partial" as const,
     watched_scripts: 200,
     left_out_scripts: 40,
+    refused_scripts: 0,
+  };
+  const ANY = { per_wallet: 200, total: 2_000 };
+  const OWN = { per_wallet: 20_000, total: 20_000 };
+  const capped: LeftOut = {
+    reason: "live_limit",
+    limits: ANY,
+    own_node: false,
+    remedy: { type: "own_node", limits: OWN },
   };
 
   it("is the user's own node only for a custom server they said is theirs", () => {
@@ -90,123 +98,83 @@ describe("room in the live watch", () => {
     expect(isOwnNode({ type: "custom_esplora", url: "https://n/api", own_node: true })).toBe(true);
   });
 
-  it("says a wallet's coverage only while the running watch leaves some out", () => {
+  it("says a wallet's coverage only while the core says the watch leaves some out", () => {
     const short: WatchStatus = {
       ...OFF,
       state: "connected",
       left_out_scripts: 40,
       left_out_wallets: 1,
       wallets: [partial],
+      left_out: capped,
     };
-    expect(shortOfRoom(short)).toBe(true);
+    expect(leftOutOf(short)).toEqual(capped);
     expect(coverageOf(short, "w-1")).toEqual(partial);
     expect(coverageOf(short, "w-other")).toBe(null);
-    // Off, the counters mean nothing: no badge, whatever they hold.
-    expect(shortOfRoom({ ...short, state: "off" })).toBe(false);
-    expect(coverageOf({ ...short, state: "off" }, "w-1")).toBe(null);
-    // Room for everything: every wallet is live, and nothing is said.
-    const roomy = { ...short, left_out_scripts: 0, left_out_wallets: 0 };
-    expect(shortOfRoom(roomy)).toBe(false);
+    // No verdict, off or with room for everything: no badge.
+    const roomy = { ...short, left_out_scripts: 0, left_out_wallets: 0, left_out: null };
+    expect(leftOutOf(roomy)).toBe(null);
     expect(coverageOf(roomy, "w-1")).toBe(null);
     expect(coverageOf(undefined, "w-1")).toBe(null);
   });
 
-  /** The setting each server documents, read from its `server.version`
-      answer: ElectrumX caps a cost per session, not a count, and the two
-      electrs forks name their flags differently. */
-  it("names the setting that lets the user's node follow more", () => {
-    expect(raiseWords("Fulcrum 1.12.0")).toBe(
-      "Raise max_subs_per_ip in the Fulcrum configuration to follow them all.",
-    );
-    expect(raiseWords("ElectrumX 1.18.0")).toBe(
-      "Raise COST_SOFT_LIMIT and COST_HARD_LIMIT in the ElectrumX settings to follow them all.",
-    );
-    expect(raiseWords("electrs-esplora 0.4.1")).toBe(
-      "Raise --electrum-subscription-limit on this electrs to follow them all.",
-    );
-    expect(raiseWords("mempool-electrs 3.4.0-dev")).toBe(
-      "Raise --electrum-max-subscriptions on this electrs to follow them all.",
-    );
-    // Caps nothing: there is no setting to name.
-    expect(raiseWords("electrs/0.10.9")).toBe(null);
-    expect(raiseWords("SomethingElse 2.0")).toBe(
-      "Raise the subscription limit of your server to follow them all.",
-    );
-    expect(raiseWords(null)).toBe(
-      "Raise the subscription limit of your server to follow them all.",
-    );
-  });
-
-  it("puts the node's setting after what waits, and nothing at the cap", () => {
-    const refused: WatchStatus = {
+  it("words the reason, what waits, and the way out the core gives", () => {
+    const short: WatchStatus = {
       ...OFF,
       state: "connected",
-      watched_scripts: 4_000,
-      pushed_scripts: 3_700,
-      left_out_scripts: 300,
-      left_out_wallets: 1,
-      server_software: "ElectrumX 1.18.0",
+      left_out_scripts: 1_240,
+      left_out_wallets: 2,
+      left_out: capped,
     };
-    expect(shortOfRoomWords(refused, true)).toEqual({
+    expect(shortOfRoomWords(short, capped)).toEqual({
+      limits: "The live watch follows at most 200 addresses per wallet and 2\u00a0000 in all.",
+      waiting: "1\u00a0240 addresses of 2 wallets are checked at the next sync instead.",
+      remedy: 'Connect your own node and turn on "This is my node" in Network to follow up to 20\u00a0000.',
+    });
+    // At the limits of the user's own node: nothing takes more.
+    expect(
+      shortOfRoomWords(short, { reason: "live_limit", limits: OWN, own_node: true, remedy: null }),
+    ).toMatchObject({
+      limits: "The live watch follows at most 20\u00a0000 addresses, even on your own node.",
+      remedy: null,
+    });
+    expect(shortOfRoomWords(short, { ...capped, reason: "server_refused" }).limits).toBe(
+      "The server refuses some of the addresses the live watch asks it to follow.",
+    );
+    const one = { ...short, left_out_scripts: 1, left_out_wallets: 1 };
+    expect(
+      shortOfRoomWords(one, {
+        reason: "server_refused",
+        limits: OWN,
+        own_node: true,
+        remedy: {
+          type: "raise_server_limit",
+          server: "electrumx",
+          settings: ["COST_SOFT_LIMIT", "COST_HARD_LIMIT"],
+        },
+      }),
+    ).toEqual({
       limits: "Your node refuses some of the addresses the live watch asks it to follow.",
-      waiting: "300 addresses of 1 wallet are checked at the next sync instead.",
+      waiting: "1 address of 1 wallet is checked at the next sync instead.",
       remedy:
         "Raise COST_SOFT_LIMIT and COST_HARD_LIMIT in the ElectrumX settings to follow them all.",
     });
-    expect(shortOfRoomWords({ ...refused, watched_scripts: 20_000 }, true).remedy).toBe(null);
   });
 
-  /** The Electrum server of mempool.space takes 100 subscriptions per
-      connection: a list of 150, far below the watch's own limits, leaves
-      50 out because the server refused them, and the note says so. */
-  it("blames the server, not the watch's limits, for what it refused", () => {
-    const refusing: WatchStatus = {
-      ...OFF,
-      state: "connected",
-      watched_scripts: 150,
-      pushed_scripts: 100,
-      left_out_scripts: 50,
-      left_out_wallets: 1,
-      wallets: [{ wallet_id: "w-1", coverage: "partial", watched_scripts: 100, left_out_scripts: 50 }],
-    };
-    expect(serverRefused(refusing)).toBe(true);
-    expect(shortOfRoomWords(refusing, false)).toEqual({
-      limits: "The server refuses some of the addresses the live watch asks it to follow.",
-      waiting: "50 addresses of 1 wallet are checked at the next sync instead.",
-      remedy: 'Connect your own node and turn on "This is my node" in Network to follow up to 20\u00a0000.',
-    });
-
-    // The list full on the user's own node, and the node took half of
-    // it: its own limit, Blockstream's electrs here, not the watch's.
-    const halfTaken: WatchStatus = {
-      ...refusing,
-      watched_scripts: 20_000,
-      pushed_scripts: 10_000,
-      left_out_scripts: 10_000,
-      wallets: [
-        { wallet_id: "w-1", coverage: "partial", watched_scripts: 10_000, left_out_scripts: 10_000 },
-      ],
-      server_software: "electrs-esplora 0.4.1",
-    };
-    expect(shortOfRoomWords(halfTaken, true)).toMatchObject({
-      limits: "Your node refuses some of the addresses the live watch asks it to follow.",
-      remedy: "Raise --electrum-subscription-limit on this electrs to follow them all.",
-    });
-
-    // Every script heard, one of them by two wallets: past the caps,
-    // not refused.
-    const capped: WatchStatus = {
-      ...refusing,
-      watched_scripts: 3,
-      wallets: [
-        { wallet_id: "w-1", coverage: "partial", watched_scripts: 2, left_out_scripts: 50 },
-        { wallet_id: "w-2", coverage: "live", watched_scripts: 2, left_out_scripts: 0 },
-      ],
-    };
-    expect(serverRefused(capped)).toBe(false);
-    expect(shortOfRoomWords(capped, false).limits).toBe(
-      "The live watch follows at most 200 addresses per wallet and 2\u00a0000 in all.",
+  /** The settings come from the core; the words around them follow what
+      each server's documentation calls them. */
+  it("names the setting of the user's node the way its software does", () => {
+    const raise = (server: ServerSoftware | null, settings: string[]) =>
+      remedyWords({ type: "raise_server_limit", server, settings });
+    expect(raise("fulcrum", ["max_subs_per_ip"])).toBe(
+      "Raise max_subs_per_ip in the Fulcrum configuration to follow them all.",
     );
+    expect(raise("electrs_esplora", ["--electrum-subscription-limit"])).toBe(
+      "Raise --electrum-subscription-limit on this electrs to follow them all.",
+    );
+    expect(raise("mempool_electrs", ["--electrum-max-subscriptions"])).toBe(
+      "Raise --electrum-max-subscriptions on this electrs to follow them all.",
+    );
+    expect(raise(null, [])).toBe("Raise the subscription limit of your server to follow them all.");
   });
 });
 
