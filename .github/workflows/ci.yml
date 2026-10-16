@@ -90,3 +90,18 @@ jobs:
       - name: Test
         working-directory: gerfaut-desktop/src-tauri
         run: cargo test
+
+  # What scripts/sign-release.ps1 checks before it signs a release, on
+  # throwaway git repositories: no key, no network. Pester comes with
+  # the runner image.
+  signing-checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Test
+        shell: pwsh
+        run: |
+          Import-Module Pester -MinimumVersion 5.5
+          Invoke-Pester -Path scripts -CI
