@@ -297,6 +297,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
               }}
               rows={5}
               spellCheck={false}
+              autoComplete="off"
               aria-invalid={error !== null}
               placeholder="wpkh([fingerprint/84h/0h/0h]xpub.../0/*)"
               className="field-focus selectable w-full resize-none rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text placeholder:text-muted"
@@ -491,6 +492,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
               <input
                 id="wallet-name"
                 autoFocus
+                autoComplete="off"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 onKeyDown={(event) => {

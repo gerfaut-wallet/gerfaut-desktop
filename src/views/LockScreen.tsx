@@ -96,6 +96,7 @@ export function LockScreen() {
                   pattern={pin ? "[0-9]*" : undefined}
                   maxLength={pin ? 12 : undefined}
                   autoComplete="off"
+                  spellCheck={false}
                   onChange={(event) => {
                     const next = event.target.value;
                     setSecret(pin ? next.replace(/\D/g, "") : next);

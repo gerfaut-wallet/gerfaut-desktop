@@ -209,6 +209,7 @@ export function WalletsSection({
                         <span className="flex items-center gap-1.5">
                           <input
                             autoFocus
+                            autoComplete="off"
                             value={renaming.name}
                             onChange={(event) =>
                               setRenaming({ id: wallet.id, name: event.target.value })
