@@ -15,9 +15,11 @@ import type {
   Settings,
   WalletMeta,
   WalletSnapshot,
+  WatchLimitsChoice,
 } from "./lib/ipc";
 import { useLock } from "./state/lock";
 import { useUi } from "./state/store";
+import { coreCase } from "./test/core";
 import { PREFERENCES, PRICE_TABLE, preferencesHeld } from "./test/fixtures";
 
 // A vault opened before: the welcome tour is behind this user, so the
@@ -3446,6 +3448,9 @@ describe("the app lock", () => {
     await user.click(screen.getByRole("button", { name: /unlock/i }));
     await screen.findByRole("navigation", { name: "Navigation" });
     expect(client.getQueryData(["wallets", "signet"])).toBeDefined();
+    const limits = coreCase<WatchLimitsChoice>("WatchLimitsChoice", "current");
+    client.setQueryData(["price-table"], PRICE_TABLE);
+    client.setQueryData(["live-limits"], limits);
 
     await user.keyboard("{Control>}l{/Control}");
     await screen.findByText("Locked");
@@ -3458,6 +3463,10 @@ describe("the app lock", () => {
     const kept = client.getQueryData<Settings>(["settings"]);
     expect(kept?.app_lock).toEqual(LOCKED.app_lock);
     expect(kept?.electrum_certs).toEqual({});
+    // The constants of the build stay: the currency and source menus,
+    // the ranges of the price card, come back with the screen.
+    expect(client.getQueryData(["price-table"])).toEqual(PRICE_TABLE);
+    expect(client.getQueryData(["live-limits"])).toEqual(limits);
   });
 
   it("asks the vault about its own network from the first read after an unlock", async () => {

@@ -33,6 +33,10 @@ export const keys = {
   txDetail: (id: string, txid: string) => ["tx", id, txid] as const,
   receive: (id: string) => ["receive", id] as const,
   liveStatus: ["live-status"] as const,
+  /** Constants of the build, which say nothing of the vault: the lock
+      keeps them in the cache. */
+  priceTable: ["price-table"] as const,
+  liveLimits: ["live-limits"] as const,
 };
 
 /** What kept the vault shut at startup, or null. Asked once: only a
@@ -277,7 +281,7 @@ const PRICE_NETWORK_MODE = "always";
     the price is asked. The core's table: it only changes with the app. */
 export function usePriceTable() {
   return useQuery({
-    queryKey: ["price-table"],
+    queryKey: keys.priceTable,
     queryFn: ipc.priceTable,
     staleTime: Infinity,
   });
@@ -377,7 +381,9 @@ export function useRecentBroadcasts(network: Network) {
   });
 }
 
-/** Drops the vault's record of a broadcast on `network`. */
+/** Drops the vault's record of a broadcast on `network`. A refusal
+    stays in the mutation's state, and the card it was asked from says
+    it. */
 export function useForgetBroadcast(network: Network) {
   const client = useQueryClient();
   return useMutation({

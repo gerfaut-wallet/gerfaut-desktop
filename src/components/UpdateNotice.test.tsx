@@ -42,12 +42,15 @@ interface Core {
   /** The release the notice was closed on. */
   dismissed: string | null;
   torUnavailable: boolean;
-  /** How many sessions the window opened. */
+  /** How many sessions the window opened, counted as they are asked:
+      one asked behind the lock counts too, refused or not. */
   sessions: number;
   /** How many times GitHub was asked. */
   checks: number;
   /** The app lock is set and the window has not been unlocked yet. */
   locked: boolean;
+  /** The core answers nothing about releases. */
+  silent: boolean;
 }
 
 function statusOf(core: Core): UpdateStatus {
@@ -60,6 +63,7 @@ function statusOf(core: Core): UpdateStatus {
 }
 
 const LOCKED = { kind: "locked", message: "Gerfaut is locked." };
+const SILENT = { kind: "internal", message: "no answer" };
 
 /** A vault with no wallet, which is all the notice needs, and a core
     that answers about releases as `options` say. */
@@ -75,6 +79,7 @@ function mockCore(options: Partial<Core> & { lock?: boolean } = {}): Core {
     sessions: 0,
     checks: 0,
     locked: lock ?? false,
+    silent: false,
     ...rest,
   };
   /** One request to GitHub, as the core would make it. */
@@ -108,10 +113,12 @@ function mockCore(options: Partial<Core> & { lock?: boolean } = {}): Core {
         return undefined;
       case "update_status":
         if (core.locked) return Promise.reject(LOCKED);
+        if (core.silent) return Promise.reject(SILENT);
         return statusOf(core);
       case "update_session":
-        if (core.locked) return Promise.reject(LOCKED);
         core.sessions += 1;
+        if (core.locked) return Promise.reject(LOCKED);
+        if (core.silent) return Promise.reject(SILENT);
         if (core.automatic && core.due && ask()) core.due = false;
         return statusOf(core);
       case "check_update": {
@@ -379,6 +386,25 @@ describe("the About card", () => {
     await waitFor(() => expect(core.automatic).toBe(true));
     await waitFor(() => expect(core.sessions).toBe(sessions + 1));
     expect(toggle).toBeChecked();
+  });
+
+  it("draws no switch before the core has said whether the check is on", async () => {
+    const core = mockCore({ automatic: false, due: false, silent: true });
+    renderApp();
+    const user = userEvent.setup();
+    await settled(core);
+    await user.click(await screen.findByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "About" }));
+    expect(await screen.findByText("Check for updates automatically")).toBeInTheDocument();
+    // Long enough for the card's own read to have come back refused.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(screen.queryByRole("switch", { name: "Check for updates automatically" })).toBeNull();
+
+    // The core answers: the card asks again when it opens next.
+    core.silent = false;
+    await user.click(screen.getByRole("button", { name: "General" }));
+    const toggle = await openAbout(user);
+    expect(toggle).not.toBeChecked();
   });
 
   it("answers a check asked by hand, and the notice stays quiet about it", async () => {
