@@ -13,7 +13,6 @@ const FULL: Settings = {
     "desktop.theme": "dark",
     "onboarding.seen": "1",
     "display.unit": "sats",
-    "broadcast.recent": '[{"txid":"ab","hex":"00","network":"signet"}]',
   },
   electrum_certs: { "node.example:50002": "AB:CD" },
   app_lock: PIN,

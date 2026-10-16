@@ -333,11 +333,40 @@ export function usePreviewTransaction() {
   });
 }
 
-/** Sends a ready transaction through the configured backend. */
+/** The last transactions sent on a network, newest first. */
+const recentBroadcastsKey = (network: Network) => ["recent-broadcasts", network] as const;
+
+/** Sends a ready transaction through the configured backend. The vault
+    keeps what the network took, so the list of past broadcasts is read
+    again. */
 export function useBroadcastTransaction() {
+  const client = useQueryClient();
   return useMutation({
     mutationFn: (args: { network: Network; hex: string }) =>
       ipc.broadcastTransaction(args.network, args.hex),
+    onSuccess: (_, args) => {
+      void client.invalidateQueries({ queryKey: recentBroadcastsKey(args.network) });
+    },
+  });
+}
+
+/** The transactions this app sent on `network`, newest first, as the
+    vault keeps them. A read of the vault and nothing else: it is
+    answered offline too, where the default would hold it back. */
+export function useRecentBroadcasts(network: Network) {
+  return useQuery({
+    queryKey: recentBroadcastsKey(network),
+    queryFn: () => ipc.recentBroadcasts(network),
+    networkMode: "always",
+  });
+}
+
+/** Drops the vault's record of a broadcast on `network`. */
+export function useForgetBroadcast(network: Network) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (txid: string) => ipc.forgetBroadcast(txid),
+    onSettled: () => client.invalidateQueries({ queryKey: recentBroadcastsKey(network) }),
   });
 }
 

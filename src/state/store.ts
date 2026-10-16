@@ -4,7 +4,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import { ALL_CURRENCIES, quotesCurrency } from "../lib/ipc";
-import type { FiatCurrency, Network, PriceRange, PriceSource } from "../lib/ipc";
+import type { FiatCurrency, PriceRange, PriceSource } from "../lib/ipc";
 import { ipc } from "../lib/ipc";
 import type { Unit } from "../lib/format";
 
@@ -30,19 +30,6 @@ export type SettingsSection =
   | "notifications"
   | "backup"
   | "about";
-
-/** A transaction handed to the network from this app, kept so the
-    broadcast page can show where it stands after a restart. */
-export interface RecentBroadcast {
-  txid: string;
-  network: Network;
-  hex: string;
-  backend: string;
-  at: number;
-}
-
-/** How many past broadcasts are remembered. */
-export const RECENT_BROADCASTS = 10;
 
 interface UiState {
   view: CanvasView;
@@ -75,8 +62,6 @@ interface UiState {
   toast: string | null;
   /** Last sync failure per wallet id, cleared on the next success. */
   syncErrors: Record<string, string>;
-  /** Transactions broadcast from this app, newest first. */
-  recentBroadcasts: RecentBroadcast[];
 
   setView: (view: CanvasView) => void;
   setSettingsSection: (section: SettingsSection) => void;
@@ -102,8 +87,6 @@ interface UiState {
   markTourSeen: () => void;
   showToast: (message: string) => void;
   setSyncError: (walletId: string, message: string | null) => void;
-  rememberBroadcast: (entry: RecentBroadcast) => void;
-  forgetBroadcast: (txid: string) => void;
   /** Applies preferences loaded from the vault at startup. */
   hydratePrefs: (prefs: Record<string, string>) => void;
 }
@@ -118,27 +101,6 @@ let toastTimer: ReturnType<typeof setTimeout> | undefined;
     says a refusal. */
 function persist(key: string, value: string) {
   void ipc.setAppPref(key, value).catch(() => {});
-}
-
-/** Reads the remembered broadcasts; anything malformed is dropped. */
-function parseRecentBroadcasts(raw: string | undefined): RecentBroadcast[] {
-  if (!raw) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(
-        (entry): entry is RecentBroadcast =>
-          typeof entry === "object" &&
-          entry !== null &&
-          typeof (entry as RecentBroadcast).txid === "string" &&
-          typeof (entry as RecentBroadcast).hex === "string" &&
-          typeof (entry as RecentBroadcast).network === "string",
-      )
-      .slice(0, RECENT_BROADCASTS);
-  } catch {
-    return [];
-  }
 }
 
 export const useUi = create<UiState>((set, get) => ({
@@ -161,7 +123,6 @@ export const useUi = create<UiState>((set, get) => ({
   tourDismissed: false,
   toast: null,
   syncErrors: {},
-  recentBroadcasts: [],
 
   setView: (view) => set({ view, selectedTxid: null }),
   setSettingsSection: (settingsSection) => set({ settingsSection }),
@@ -255,19 +216,6 @@ export const useUi = create<UiState>((set, get) => ({
       }
       return { syncErrors };
     }),
-  rememberBroadcast: (entry) => {
-    const recentBroadcasts = [
-      entry,
-      ...get().recentBroadcasts.filter((known) => known.txid !== entry.txid),
-    ].slice(0, RECENT_BROADCASTS);
-    set({ recentBroadcasts });
-    persist("broadcast.recent", JSON.stringify(recentBroadcasts));
-  },
-  forgetBroadcast: (txid) => {
-    const recentBroadcasts = get().recentBroadcasts.filter((known) => known.txid !== txid);
-    set({ recentBroadcasts });
-    persist("broadcast.recent", JSON.stringify(recentBroadcasts));
-  },
   hydratePrefs: (prefs) => {
     const theme = (prefs["desktop.theme"] as ThemePref) ?? "light";
     const unit = prefs["display.unit"] === "sats" ? "sats" : "btc";
@@ -278,7 +226,6 @@ export const useUi = create<UiState>((set, get) => ({
       ? storedSource
       : "coingecko";
     set({
-      recentBroadcasts: parseRecentBroadcasts(prefs["broadcast.recent"]),
       theme: ["light", "dark", "system"].includes(theme) ? theme : "light",
       masked: prefs["desktop.masked"] === "1",
       // Both are opt-in: an explicit "1" is the only yes.

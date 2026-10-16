@@ -676,6 +676,25 @@ async fn transaction_status(
     Ok(state.manager.transaction_status(network, &hex).await?)
 }
 
+/// The last transactions broadcast on this network, newest first, as
+/// the vault keeps them.
+#[tauri::command]
+async fn recent_broadcasts(
+    state: tauri::State<'_, AppState>,
+    network: Network,
+) -> CommandResult<Vec<gerfaut_core::broadcast::RecentBroadcast>> {
+    state.unlocked()?;
+    Ok(state.manager.recent_broadcasts(network).await)
+}
+
+/// Drops the vault's record of a broadcast; the transaction itself is
+/// on the network and untouched.
+#[tauri::command]
+async fn forget_broadcast(state: tauri::State<'_, AppState>, txid: String) -> CommandResult<()> {
+    state.unlocked()?;
+    Ok(state.manager.forget_broadcast(&txid).await?)
+}
+
 /// The public servers offered for a network, in settings order.
 #[tauri::command]
 fn public_servers(network: Network) -> Vec<gerfaut_core::chain::public::PublicServer> {
@@ -1190,6 +1209,8 @@ pub fn run() {
             preview_transaction,
             broadcast_transaction,
             transaction_status,
+            recent_broadcasts,
+            forget_broadcast,
             sync_wallet,
             rescan_wallet,
             load_more_history,
@@ -1631,9 +1652,9 @@ mod tests {
     }
 
     /// Behind the lock the settings answer the theme and the kind of
-    /// secret to ask for. A backend, an accepted certificate or the
-    /// last transactions broadcast, sitting in the webview's cache, are
-    /// there to be read.
+    /// secret to ask for. A backend, an accepted certificate or another
+    /// preference, sitting in the webview's cache, are there to be
+    /// read.
     #[test]
     fn the_settings_read_behind_the_lock_carry_nothing_of_the_vault() {
         let dir = tempfile::tempdir().unwrap();
@@ -1645,7 +1666,7 @@ mod tests {
         };
         pref("desktop.theme", "dark");
         pref("onboarding.seen", "1");
-        pref("broadcast.recent", "[{\"txid\":\"ab\"}]");
+        pref("display.unit", "sats");
         runtime
             .block_on(state.manager.set_active_network(Network::Signet))
             .unwrap();
@@ -1683,7 +1704,7 @@ mod tests {
             .unwrap();
         let open = runtime.block_on(super::settings_of(&state));
         assert_eq!(open.electrum_certs.len(), 1);
-        assert!(open.app_prefs.contains_key("broadcast.recent"));
+        assert!(open.app_prefs.contains_key("display.unit"));
     }
 
     /// The network the redacted settings name is the one the wallets
