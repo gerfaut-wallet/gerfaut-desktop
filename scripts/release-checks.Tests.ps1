@@ -115,3 +115,67 @@ Describe "Get-ReleaseCommit" {
         { Get-ReleaseCommit -RepoDir $signer -Tag v0.1.0 -Slug "gerfaut-wallet/gerfaut-mobile" } | Should -Throw "*not gerfaut-wallet/gerfaut-mobile*"
     }
 }
+
+Describe "Find-ReleaseRun" {
+    BeforeAll {
+        $commit = "1" * 40
+        $other = "2" * 40
+    }
+
+    It "returns the run at the commit the tag names" {
+        Mock gh {
+            $global:LASTEXITCODE = 0
+            "[{`"databaseId`":11,`"headSha`":`"$other`"},{`"databaseId`":12,`"headSha`":`"$commit`"}]"
+        }
+        Find-ReleaseRun -Slug gerfaut-wallet/gerfaut-desktop -Tag v0.1.0 -Commit $commit | Should -Be 12
+        # A list such as databaseId,headSha reaches the mock as an array
+        # and gh as one argument.
+        Should -Invoke gh -Times 1 -Exactly -ParameterFilter {
+            ($args | ForEach-Object { $_ -join "," }) -join " " -eq
+                "run list --repo gerfaut-wallet/gerfaut-desktop --workflow release.yml --event push --branch v0.1.0 --status success --json databaseId,headSha"
+        }
+    }
+
+    It "refuses when no successful run of the push is at that commit" {
+        Mock gh {
+            $global:LASTEXITCODE = 0
+            "[{`"databaseId`":11,`"headSha`":`"$other`"}]"
+        }
+        { Find-ReleaseRun -Slug gerfaut-wallet/gerfaut-desktop -Tag v0.1.0 -Commit $commit } | Should -Throw "*no successful Release run*"
+    }
+
+    It "refuses when there is no run at all" {
+        Mock gh { $global:LASTEXITCODE = 0; "[]" }
+        { Find-ReleaseRun -Slug gerfaut-wallet/gerfaut-desktop -Tag v0.1.0 -Commit $commit } | Should -Throw "*no successful Release run*"
+    }
+}
+
+Describe "Assert-ExactNames" {
+    BeforeAll {
+        $want = "a.deb", "b.exe", "c.zip"
+    }
+
+    It "accepts the same names in another order" {
+        { Assert-ExactNames -Have "c.zip", "a.deb", "b.exe" -Want $want -What "draft" } | Should -Not -Throw
+    }
+
+    It "refuses a file too many" {
+        { Assert-ExactNames -Have "a.deb", "b.exe", "c.zip", "d.msi" -Want $want -What "draft" } | Should -Throw "*unexpected: d.msi*"
+    }
+
+    It "refuses a missing file" {
+        { Assert-ExactNames -Have "a.deb", "c.zip" -Want $want -What "draft" } | Should -Throw "*missing: b.exe*"
+    }
+
+    It "refuses a name given twice" {
+        { Assert-ExactNames -Have "a.deb", "b.exe", "c.zip", "c.zip" -Want $want -What "list" } | Should -Throw "*more than once: c.zip*"
+    }
+
+    It "refuses a name that differs only in case" {
+        { Assert-ExactNames -Have "A.deb", "b.exe", "c.zip" -Want $want -What "draft" } | Should -Throw "*unexpected: A.deb*"
+    }
+
+    It "refuses an empty draft" {
+        { Assert-ExactNames -Have @() -Want $want -What "draft" } | Should -Throw "*missing: a.deb*"
+    }
+}

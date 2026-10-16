@@ -52,3 +52,36 @@ function Get-ReleaseCommit {
         default { throw "git merge-base failed on $local" }
     }
 }
+
+# The id of the successful run of the Release workflow that the push of
+# the tag started, at the commit the tag names. Anyone who can write to
+# the repository can change a draft, not the artifacts of a finished
+# run, so these are what the draft is held against.
+function Find-ReleaseRun {
+    param(
+        [Parameter(Mandatory)][string]$Slug,
+        [Parameter(Mandatory)][string]$Tag,
+        [Parameter(Mandatory)][string]$Commit
+    )
+    $runs = gh run list --repo $Slug --workflow release.yml --event push --branch $Tag --status success --json databaseId,headSha
+    if ($LASTEXITCODE -ne 0) { throw "gh run list failed" }
+    $run = @(($runs -join "`n") | ConvertFrom-Json | Where-Object { $_.headSha -eq $Commit })[0]
+    if (-not $run) { throw "no successful Release run for the push of $Tag at $Commit" }
+    return $run.databaseId
+}
+
+# Throws unless $Have holds the names in $Want, each once, and nothing
+# else; the message lists what is missing, unexpected or doubled.
+function Assert-ExactNames {
+    param(
+        [AllowEmptyCollection()][string[]]$Have,
+        [Parameter(Mandatory)][string[]]$Want,
+        [Parameter(Mandatory)][string]$What
+    )
+    $problems = @(
+        $Want | Where-Object { $_ -cnotin $Have } | ForEach-Object { "missing: $_" }
+        $Have | Where-Object { $_ -cnotin $Want } | ForEach-Object { "unexpected: $_" }
+        $Have | Group-Object -CaseSensitive | Where-Object Count -gt 1 | ForEach-Object { "more than once: $($_.Name)" }
+    )
+    if ($problems) { throw "$What`n  $($problems -join "`n  ")" }
+}
