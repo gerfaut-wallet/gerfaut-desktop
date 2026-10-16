@@ -216,8 +216,8 @@ tauri_build() {
 
 # Which commits the artefacts were built from. A build against a core
 # other than the pinned one is allowed for development, and it must not
-# be mistaken for a release build afterwards: the file says so, and
-# compare.py reads it.
+# be mistaken for a release build afterwards: the file says so, and the
+# Release workflow refuses it.
 write_sources() {
     {
         echo "gerfaut-desktop ${GERFAUT_DESKTOP_REV:-unknown}"

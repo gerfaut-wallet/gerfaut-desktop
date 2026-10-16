@@ -53,17 +53,17 @@ npm run tauri dev      # run it
 npm run tauri build    # installers, under src-tauri/target/release/bundle
 ```
 
-To build the Linux packages, the Windows installer or the macOS application in a pinned container, where two builds of the same commit give the same bytes, see [docs/REPRODUCIBLE-BUILDS.md](docs/REPRODUCIBLE-BUILDS.md).
+Release files come out of the pinned Linux container in `reproducible/`, the Windows installer and the macOS application included. To build them the way CI does, run `reproducible/build.sh linux`, `windows` or `macos`. You need git and Docker (or Podman), and `reproducible/build.sh --help` lists what each target asks for.
 
 ## Releases
 
-Every `v*` tag is built by CI in the pinned container of `reproducible/`, twice, and published on the [releases page](https://github.com/gerfaut-wallet/gerfaut-desktop/releases) only if both builds give the same bytes: `Gerfaut_<version>_amd64.AppImage`, `Gerfaut_<version>_amd64.deb`, `Gerfaut-<version>-1.x86_64.rpm`, `Gerfaut_<version>_x64-setup.exe` and `Gerfaut_<version>_universal.zip`. You can rebuild any of them and compare, see [docs/REPRODUCIBLE-BUILDS.md](docs/REPRODUCIBLE-BUILDS.md). Each release ships a `SHA256SUMS` manifest signed with the author's [minisign](https://jedisct1.github.io/minisign/) key:
+CI builds every `v*` tag in the pinned container of `reproducible/`, tests the installer on Windows and the app on two Macs, and drafts the release for the [releases page](https://github.com/gerfaut-wallet/gerfaut-desktop/releases): `Gerfaut_<version>_amd64.AppImage`, `Gerfaut_<version>_amd64.deb`, `Gerfaut-<version>-1.x86_64.rpm`, `Gerfaut_<version>_x64-setup.exe` and `Gerfaut_<version>_universal.zip`. Each release ships a `SHA256SUMS` manifest signed with the author's [minisign](https://jedisct1.github.io/minisign/) key:
 
 ```
 RWTz3c4gUmglCX5Uvjthigz1ts3TS3ZSdhRNpFgOJRW/Wr4XjGlqTR3O
 ```
 
-Download `SHA256SUMS` and `SHA256SUMS.minisig` next to your installer, then verify in two steps: `minisign -Vm SHA256SUMS -P <key>` proves the manifest comes from the author, and `sha256sum --check SHA256SUMS --ignore-missing` proves your file matches it.
+Download `SHA256SUMS` and `SHA256SUMS.minisig` next to your installer, then verify in two steps: `minisign -Vm SHA256SUMS -P <key>` proves the manifest comes from the author, and `sha256sum --check SHA256SUMS --ignore-missing` proves your file matches it. [Verify a download](https://gerfaut-wallet.com/docs/getting-started/verify-your-download) walks through both steps on Linux, macOS and Windows.
 
 ## License
 

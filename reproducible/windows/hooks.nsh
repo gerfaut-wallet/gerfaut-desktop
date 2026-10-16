@@ -1,4 +1,4 @@
-; Included by Tauri's installer template when the reproducible build
+; Included by Tauri's installer template when the container build
 ; bundles the Windows installer (reproducible/targets/windows.sh).
 ;
 ; By default makensis stores the modification time of every file it

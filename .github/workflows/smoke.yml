@@ -3,8 +3,8 @@
 # program starts: this installs or unpacks it, checks what the system
 # makes of it, and starts it. It compiles nothing.
 #
-# Called by reproducible.yml and release.yml with build 1 of the target,
-# the files a release ships.
+# Called by release.yml with the build of the target, the files a
+# release ships.
 
 name: Smoke test
 
@@ -47,8 +47,8 @@ jobs:
           $have = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
           "$have  $($setup.Name)"
           if ($have -ne $want) { throw "the hash differs from the one in SHA256SUMS ($want)" }
-          # Unsigned today. The day this changes, the page about
-          # reproducible builds has to say how a signature is set aside.
+          # Unsigned today. The day this changes, this check and the
+          # release notes about SmartScreen change with it.
           $signature = (Get-AuthenticodeSignature $setup).Status
           if ($signature -ne 'NotSigned') { throw "unexpected Authenticode status: $signature" }
           "SETUP=$($setup.FullName)" >> $env:GITHUB_ENV

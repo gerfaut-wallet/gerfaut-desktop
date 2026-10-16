@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
 # Builds the Gerfaut desktop artefacts of one target in the pinned
-# container.
+# container, the way the Release workflow builds them.
 #
-#   reproducible/build.sh linux            build once into reproducible/out/linux
-#   reproducible/build.sh linux --twice    build twice and compare the hashes
+#   reproducible/build.sh linux            into reproducible/out/linux
 #   reproducible/build.sh windows --accept-microsoft-license
 #   reproducible/build.sh macos --macos-sdk <directory of the Apple SDK tarballs>
 #
 # The script exports both source trees from git, so the working tree, the
 # checkout location and the host toolchain have no say in the result. It
-# needs git and docker or podman, nothing else. Read
-# docs/REPRODUCIBLE-BUILDS.md before trusting it.
+# needs git and docker or podman, nothing else. The macOS build needs the
+# Apple SDK, made from Xcode: see reproducible/make-apple-sdk.sh.
 # shellcheck source-path=SCRIPTDIR
 set -euo pipefail
 
@@ -18,7 +17,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
 
 usage() {
-    sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     cat <<'USAGE'
 
 Options:
@@ -26,7 +25,6 @@ Options:
   --out DIR       output directory (default: reproducible/out/<target>)
   --ref REF       commit to build (default: HEAD)
   --image NAME    image to build and run (default: gerfaut-desktop-rb:<target>)
-  --twice         build twice and fail if the artefacts differ
   --skip-image    reuse the image already built
   --no-cache      download everything again instead of reusing the volume
   --any-core      accept a gerfaut-core checkout other than the pinned one
@@ -38,7 +36,7 @@ Options:
                   (https://go.microsoft.com/fwlink/?LinkId=2086102)
   --macos-sdk DIR  macos only: the directory that holds the Apple SDK
                   tarballs you made from Xcode, see
-                  docs/REPRODUCIBLE-BUILDS.md; the build refuses a file
+                  reproducible/make-apple-sdk.sh; the build refuses a file
                   whose sha256 is not the one in
                   reproducible/macos/apple-sdk.sha256
 
@@ -61,7 +59,6 @@ core="${GERFAUT_CORE_DIR:-$repo/../gerfaut-core}"
 out="$here/out/$target"
 ref=HEAD
 image="gerfaut-desktop-rb:$target"
-twice=0
 with_image=1
 use_cache=1
 any_core=0
@@ -76,7 +73,6 @@ while [ $# -gt 0 ]; do
         --ref) ref="$2"; shift 2 ;;
         --image) image="$2"; shift 2 ;;
         --jobs) jobs="$2"; shift 2 ;;
-        --twice) twice=1; shift ;;
         --skip-image) with_image=0; shift ;;
         --no-cache) use_cache=0; shift ;;
         --any-core) any_core=1; shift ;;
@@ -220,24 +216,6 @@ run_build() {
 
 echo "==> gerfaut-desktop $commit, gerfaut-core $core_rev"
 mkdir -p "$out"
-if [ "$twice" -eq 0 ]; then
-    run_build "$out"
-    echo
-    echo "==> artefacts in $out"
-    exit 0
-fi
-
-echo "==> build 1 of 2"
-run_build "$out/build-1"
-echo "==> build 2 of 2"
-run_build "$out/build-2"
-
+run_build "$out"
 echo
-# compare.py runs in the image that has just built, so a Windows build
-# does not pull in the Linux image for a comparison.
-if GERFAUT_COMPARE_IMAGE="${GERFAUT_COMPARE_IMAGE:-$image}" "$here/compare.sh" "$out/build-1" "$out/build-2"; then
-    echo "==> reproducible: both builds produced the same artefacts"
-else
-    echo "==> NOT reproducible: the two builds differ" >&2
-    exit 1
-fi
+echo "==> artefacts in $out"

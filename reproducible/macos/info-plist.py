@@ -12,7 +12,7 @@ characters escaped, no newline at the end.
 The script handles the configuration Gerfaut has and nothing more. A
 setting that would add a key, a file or a signature option makes it stop,
 so a change of tauri.conf.json cannot silently give a bundle that differs
-from Tauri's. The macos-reference job of the Reproducible build workflow
+from Tauri's. The macOS reference workflow (macos-reference.yml)
 compares the result with a bundle Tauri makes on a Mac.
 """
 

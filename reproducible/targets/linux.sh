@@ -75,9 +75,14 @@ target_build() {
 }
 
 # No path of the build machine in the binary: the remap flags turn every
-# one of them into /gerfaut, /cargo or /rustup.
+# one of them into /gerfaut, /cargo or /rustup. One path of the user's
+# machine is expected: x11rb, which arboard reads the X11 clipboard with,
+# reaches the X server through /tmp/.X11-unix/X<display>.
 check_binary() {
-    if strings -n 6 "$1" | grep -E '^/(build|cache|opt|root|home|tmp)/' > /dev/null; then
+    local found
+    found="$(strings -n 6 "$1" | grep -E '^/(build|cache|opt|root|home|tmp)/' | grep -vx '/tmp/\.X11-unix/X' || true)"
+    if [ -n "$found" ]; then
+        printf '%s\n' "$found" | LC_ALL=C sort -u | head -n 20 >&2 || true
         die "the binary embeds a path of the build container"
     fi
 }

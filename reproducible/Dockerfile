@@ -1,11 +1,9 @@
-# Pinned toolchain for reproducible Gerfaut desktop builds.
+# Pinned toolchain the Gerfaut desktop releases are built with.
 #
 # One file, one stage per target. `base` holds what every target shares:
 # the operating system, the compiler and Node. `linux` adds what the
 # Linux packages need, `windows` what the cross-built Windows installer
-# needs, `macos` what the cross-built macOS application needs. `tools`
-# adds diffoscope and is only ever used to explain a mismatch, never to
-# build.
+# needs, `macos` what the cross-built macOS application needs.
 #
 # Everything that can reach an artefact is frozen:
 #   - the base image by digest;
@@ -199,7 +197,7 @@ ARG XWIN_SHA256=d870eb4b2f390878af6da1ccd3cf321d22fcb72720984853b4be732ae597fc88
 # aws-lc), llvm-lib archives it and llvm-rc compiles the version
 # resource. The linker is not in this list: it is the rust-lld of the
 # pinned Rust toolchain. makensis comes with its stubs, the head of
-# every installer it writes, so the nsis package is part of the promise.
+# every installer it writes, so the nsis package is pinned like the rest.
 RUN apt-get update --error-on=any \
  && apt-get install -y --no-install-recommends clang-15 llvm-15 nsis \
  && rm -rf /var/lib/apt/lists/* \
@@ -301,15 +299,3 @@ RUN apt-get update --error-on=any \
  && apt-get install -y --no-install-recommends cpio zip \
  && rm -rf /var/lib/apt/lists/* \
  && dpkg-query -W -f '${Package} ${Version} ${Architecture}\n' | sort > /etc/gerfaut-image-packages
-
-
-# --- Explaining a mismatch ----------------------------------------------
-# diffoscope, with what it needs to read an rpm header, to list a
-# Windows installer and to print a hex dump.
-FROM linux AS tools
-
-RUN apt-get update --error-on=any \
- && apt-get install -y --no-install-recommends diffoscope-minimal p7zip-full python3-rpm xxd \
- && rm -rf /var/lib/apt/lists/*
-
-ENTRYPOINT []
