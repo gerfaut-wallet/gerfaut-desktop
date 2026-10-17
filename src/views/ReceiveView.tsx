@@ -11,7 +11,8 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { renderSVG } from "uqr";
 import { AddressChip } from "../components/AddressChip";
-import { StackedAmount } from "../components/Amount";
+import { StackedAmount, useFiatCredit } from "../components/Amount";
+import { PriceCredit } from "../components/PriceCredit";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { Notice } from "../components/Notice";
@@ -53,6 +54,10 @@ export function ReceiveView({ walletId }: { walletId: string }) {
   // next one before "Next address" is pressed.
   const addresses = useReceiveAddresses(walletId, Math.min(offset + 1, MAX_LOOKAHEAD));
   const list = useAddressList(walletId);
+  const credit = useFiatCredit();
+  const funded = [...(list.data?.external ?? []), ...(list.data?.internal ?? [])].some(
+    (row) => row.balance_sats > 0,
+  );
   const { copy: copyText, copied } = useClipboard();
   const [qrOpen, setQrOpen] = useState(false);
 
@@ -267,6 +272,8 @@ export function ReceiveView({ walletId }: { walletId: string }) {
                 Long keychains are capped: only the first 200 addresses of each are listed.
               </p>
             )}
+            {/* Once, under the cards, for the balances they price. */}
+            {funded && <PriceCredit credit={credit} className="-mt-2 px-1 text-right" />}
           </>
         )}
       </div>

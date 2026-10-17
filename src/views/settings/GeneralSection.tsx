@@ -1,4 +1,5 @@
 import { Coins, Monitor, Moon, Sun, SunMoon } from "lucide-react";
+import { PriceCredit } from "../../components/PriceCredit";
 import { Select } from "../../components/Select";
 import type { CurrencyReach } from "../../lib/ipc";
 import { formatCurrency, relativeTime } from "../../lib/format";
@@ -103,11 +104,6 @@ function DisplayCard() {
               {chosen.code}.
             </p>
           )}
-          {/* Required by the CoinGecko API terms whenever their data
-              is on screen. */}
-          {fiatSource === "coingecko" && (
-            <p className="mt-1.5 font-ui text-[11px] text-muted">Powered by CoinGecko</p>
-          )}
         </div>
         {fiatEnabled && <RatePreview />}
       </div>
@@ -168,10 +164,14 @@ function RatePreview() {
     return <p className="font-ui text-xs text-muted">Fetching the current price…</p>;
   }
   // The price itself, not a wallet's amount: it stays what bitcoin
-  // fetches whichever network is open.
+  // fetches whichever network is open. Under it, the credit its source
+  // asks for, as the core gives it with the price.
   return (
-    <p className="tabular text-xs text-muted">
-      1 BTC = {formatCurrency(quote.rate, fiatCurrency)} · updated {relativeTime(quote.at)}
-    </p>
+    <div>
+      <p className="tabular text-xs text-muted">
+        1 BTC = {formatCurrency(quote.rate, fiatCurrency)} · updated {relativeTime(quote.at)}
+      </p>
+      <PriceCredit credit={quote.credit} className="mt-1" />
+    </div>
   );
 }

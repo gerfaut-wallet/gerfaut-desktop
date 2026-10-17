@@ -76,7 +76,13 @@ function open(detail: TxDetail = DETAIL, network: Network = "signet") {
     if (cmd === "tx_detail") return detail;
     if (cmd === "get_settings") return { active_network: network, app_prefs: {} };
     if (cmd === "fetch_price") {
-      return { rate: RATE, currency: "eur", source: "coingecko", at: MINED_AT };
+      return {
+        rate: RATE,
+        currency: "eur",
+        source: "coingecko",
+        at: MINED_AT,
+        credit: "Powered by CoinGecko",
+      };
     }
     return undefined;
   });
@@ -254,6 +260,10 @@ describe("TxDetailModal", () => {
     expect(
       await screen.findByText(formatFiat(-150_210, RATE, "eur", "mainnet")),
     ).toBeInTheDocument();
+    // Credited once, under the figure it priced.
+    const hero = within(screen.getByRole("region", { name: "Summary" }));
+    expect(hero.getByText("Powered by CoinGecko")).toBeInTheDocument();
+    expect(screen.getAllByText("Powered by CoinGecko")).toHaveLength(1);
     const outputs = within(screen.getByRole("region", { name: "Outputs" }));
     expect(outputs.getByText("0.00150000 BTC")).toBeInTheDocument();
     expect(
@@ -269,6 +279,8 @@ describe("TxDetailModal", () => {
     expect(
       hero.queryByText(formatFiat(-150_210, RATE, "eur", "mainnet")),
     ).not.toBeInTheDocument();
+    // No source priced that zero.
+    expect(hero.queryByText("Powered by CoinGecko")).not.toBeInTheDocument();
   });
 
   it("reads in the order the questions come in", async () => {

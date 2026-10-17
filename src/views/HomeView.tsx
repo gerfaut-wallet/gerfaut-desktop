@@ -14,7 +14,8 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Balance, ListAmount } from "../components/Amount";
+import { Balance, ListAmount, useFiatCredit } from "../components/Amount";
+import { PriceCredit } from "../components/PriceCredit";
 import { BalanceChart } from "../components/BalanceChart";
 import { CoverageBadge } from "../components/CoverageBadge";
 import { LoadFailure } from "../components/LoadFailure";
@@ -415,10 +416,15 @@ function PriceCard() {
   // Asked once the ranges are known, so the range asked for is one the
   // source serves, and the series is asked once.
   const history = usePriceHistory(range, fiatEnabled && table !== undefined);
+  const amountsCredit = useFiatCredit();
   const radio = useRadioGroup(ranges, range, setPriceRange);
   // A refresh that failed shows no price, like the amounts: the series
   // before it stays in the cache, and its last point is not today's.
   const answer = liveAnswer(history, fiatCurrency);
+  // Once on the overview, under the price: the credit of the series,
+  // or of the quote behind the balance and the activity when the
+  // series did not come.
+  const credit = answer?.credit ?? amountsCredit;
   const points = answer?.points ?? [];
   const first = points[0];
   const last = points[points.length - 1];
@@ -490,6 +496,7 @@ function PriceCard() {
               : "The price source did not answer."}
         </p>
       )}
+      <PriceCredit credit={credit} className="mt-2" />
     </Card>
   );
 }

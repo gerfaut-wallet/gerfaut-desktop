@@ -575,6 +575,10 @@ function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => 
   // with every change applied.
   const vault = (overrides.get_settings?.({}) ?? SETTINGS) as Settings;
   const held = preferencesHeld(vault.preferences);
+  // The source the price comes from, and the credit it asks for, as
+  // the core answers them: the preferences' own.
+  let source = vault.preferences.price_source;
+  const credit = () => (source === "coingecko" ? "Powered by CoinGecko" : null);
   mockIPC((cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
     if (overrides[cmd]) return overrides[cmd](payload);
@@ -620,14 +624,17 @@ function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => 
         return { reports: [], failures: [] };
       case "set_app_pref":
         return undefined;
-      case "set_preferences":
-        return held(payload.change as PreferencesChange);
+      case "set_preferences": {
+        const stored = held(payload.change as PreferencesChange);
+        source = stored.price_source;
+        return stored;
+      }
       case "price_table":
         return PRICE_TABLE;
       case "fetch_price":
-        return { rate: 100_000, currency: "eur", source: "coingecko", at: 1_755_000_000 };
+        return { rate: 100_000, currency: "eur", source, at: 1_755_000_000, credit: credit() };
       case "fetch_price_history":
-        return PRICE_HISTORY;
+        return { ...PRICE_HISTORY, source, credit: credit() };
       // The live watch is off unless a test turns it on.
       case "live_status":
         return { enabled: false, status: LIVE_OFF };
@@ -2023,16 +2030,69 @@ describe("display settings", () => {
     ).toBeInTheDocument();
   });
 
-  it("credits CoinGecko while its data is on screen", async () => {
-    walletIpc();
+  /** CoinGecko's terms ask for its credit close to its data: once on
+      each screen that shows a price or an amount it priced, under it,
+      as the core hands it over. mempool.space asks for none. */
+  it("credits CoinGecko under its data, once a screen", async () => {
+    const wallet: WalletMeta = { ...WALLET, network: "mainnet" };
+    walletIpc({
+      get_settings: () => ({
+        ...SETTINGS,
+        active_network: "mainnet",
+        preferences: { ...PREFERENCES, fiat: true },
+      }),
+      list_wallets: () => [wallet],
+      wallet_snapshot: () => ({ ...SNAPSHOT, meta: wallet }),
+    });
     renderApp();
     const user = userEvent.setup();
-    await screen.findByText("Bitcoin price");
-    await user.click(sidebar().getByRole("button", { name: "Settings" }));
-    await screen.findByRole("radio", { name: "mempool.space" });
+    expect(await screen.findByText("+11.1%")).toBeInTheDocument();
+    expect(screen.queryByText("Powered by CoinGecko")).not.toBeInTheDocument();
+
+    await openSettings(user, "General");
+    expect(await screen.findByText(/^1 BTC =/)).toBeInTheDocument();
     expect(screen.queryByText("Powered by CoinGecko")).not.toBeInTheDocument();
     await user.click(screen.getByRole("radio", { name: "CoinGecko" }));
+    // Under the rate it comes with.
+    const credit = await screen.findByText("Powered by CoinGecko");
+    expect(screen.getByText(/^1 BTC =/).compareDocumentPosition(credit)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+
+    // The overview: once, under the price, for the balance and the
+    // activity as well.
+    await user.click(sidebar().getByRole("button", { name: "Overview" }));
+    expect(await screen.findAllByText("Powered by CoinGecko")).toHaveLength(1);
+    const card = screen.getByRole("region", { name: "Bitcoin price" });
+    expect(within(card).getByText("Powered by CoinGecko")).toBeInTheDocument();
+
+    await user.click(sidebar().getByRole("button", { name: "Transactions" }));
+    expect(await screen.findAllByText("Powered by CoinGecko")).toHaveLength(1);
+    await user.click(sidebar().getByRole("button", { name: "UTXOs" }));
+    expect(await screen.findAllByText("Powered by CoinGecko")).toHaveLength(1);
+    await user.click(sidebar().getByRole("button", { name: "Receive" }));
+    expect(await screen.findAllByText("Powered by CoinGecko")).toHaveLength(1);
+
+    // Amounts hidden, no fiat amount left to credit on the list.
+    useUi.setState({ masked: true });
+    await waitFor(() => expect(screen.queryByText("Powered by CoinGecko")).not.toBeInTheDocument());
+  });
+
+  it("credits nothing for a test network's zero", async () => {
+    walletIpc({
+      get_settings: () => ({
+        ...SETTINGS,
+        preferences: { ...PREFERENCES, fiat: true, price_source: "coingecko" },
+      }),
+    });
+    renderApp();
+    const user = userEvent.setup();
+    // The price on the overview is the real one, credited.
     expect(await screen.findByText("Powered by CoinGecko")).toBeInTheDocument();
+    // A signet wallet's amounts are zero in euros: no price behind them.
+    await user.click(sidebar().getByRole("button", { name: "Transactions" }));
+    expect(await screen.findByText("€0.00")).toBeInTheDocument();
+    expect(screen.queryByText("Powered by CoinGecko")).not.toBeInTheDocument();
   });
 
   it("saves the shared gap limit from settings", async () => {

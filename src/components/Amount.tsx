@@ -34,6 +34,18 @@ export function useFiatValue(sats: number): string | null {
   return formatFiat(sats, quote.rate, fiatCurrency, network);
 }
 
+/** The credit the price source asks for under the fiat amounts of a
+    screen, while they show one priced by its quote: the conditions of
+    `useFiatValue`, on mainnet. Off mainnet every fiat value is zero,
+    which no source priced. Null when the source asks for none. */
+export function useFiatCredit(): string | null {
+  const { fiatEnabled, fiatCurrency, masked } = useUi();
+  const quote = liveAnswer(useFiatRate(), fiatCurrency);
+  const network = useSettings().data?.active_network;
+  if (!fiatEnabled || masked || !quote || network !== "mainnet") return null;
+  return quote.credit;
+}
+
 /** Headline balance figure: UI face with tabular figures, masked-aware.
     One line in the chosen unit — never both units — with the fiat value
     below when that display is on. Sized to read, not to shout. */
