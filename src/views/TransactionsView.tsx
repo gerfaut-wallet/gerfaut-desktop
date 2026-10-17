@@ -1,8 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import { Button } from "../components/Button";
-import { useFiatCredit } from "../components/Amount";
 import { LoadFailure } from "../components/LoadFailure";
-import { PriceCredit } from "../components/PriceCredit";
 import { SyncIndicator } from "../components/SyncIndicator";
 import { MASKED, formatAmount } from "../lib/format";
 import { useLoadMoreHistory, useSnapshot, useSyncing } from "../state/queries";
@@ -16,7 +14,6 @@ export function TransactionsView({ walletId }: { walletId: string }) {
   const snapshot = useSnapshot(walletId);
   const syncing = useSyncing();
   const loadMore = useLoadMoreHistory();
-  const credit = useFiatCredit();
 
   if (snapshot.isPending) {
     return <p className="px-1 py-4 font-ui text-sm text-muted">Loading wallet…</p>;
@@ -89,8 +86,6 @@ export function TransactionsView({ walletId }: { walletId: string }) {
           </div>
         )}
       </div>
-      {/* Under the list, outside its scroll: always in view. */}
-      {txs.length > 0 && <PriceCredit credit={credit} className="px-1 pt-2 text-right" />}
     </div>
   );
 }

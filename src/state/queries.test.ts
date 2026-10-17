@@ -7,7 +7,6 @@ const QUOTE: PriceQuote = {
   currency: "eur",
   source: "coingecko",
   at: 1_755_000_000,
-  credit: "Powered by CoinGecko",
 };
 
 /** A price display uses the last answer only while it still holds. */

@@ -36,8 +36,7 @@ import { useTxDetail } from "../state/queries";
 import { useClipboard } from "../state/clipboard";
 import { useUi } from "../state/store";
 import { AddressChip } from "../components/AddressChip";
-import { UnitAmount, useAmountText, useFiatCredit, useFiatValue } from "../components/Amount";
-import { PriceCredit } from "../components/PriceCredit";
+import { UnitAmount, useAmountText, useFiatValue } from "../components/Amount";
 import { Button, IconButton } from "../components/Button";
 import { OpenFailure, useExplorer } from "../components/ExternalLink";
 import { Modal } from "../components/Modal";
@@ -169,7 +168,6 @@ function Summary({ detail, onExplorer }: { detail: TxDetail; onExplorer: (() => 
   const { masked, unit } = useUi();
   const sats = detail.summary.net_sats;
   const fiat = useFiatValue(sats);
-  const credit = useFiatCredit();
   const status = detail.summary.status;
   const timestamp = status.state === "confirmed" ? status.timestamp : null;
   const coinbase = detail.extras?.is_coinbase ?? false;
@@ -191,7 +189,6 @@ function Summary({ detail, onExplorer }: { detail: TxDetail; onExplorer: (() => 
             {masked ? MASKED : formatAmountSigned(sats, unit)}
           </p>
           {fiat && <p className="tabular mt-1 text-[13px] text-muted">{fiat}</p>}
-          {fiat && <PriceCredit credit={credit} className="mt-1" />}
         </div>
         <div className="flex flex-col items-end gap-2.5">
           <div className="flex items-center gap-2">

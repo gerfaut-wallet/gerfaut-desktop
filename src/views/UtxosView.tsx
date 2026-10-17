@@ -1,7 +1,5 @@
-import { useFiatCredit } from "../components/Amount";
 import { SyncIndicator } from "../components/SyncIndicator";
 import { LoadFailure } from "../components/LoadFailure";
-import { PriceCredit } from "../components/PriceCredit";
 import { MASKED, formatAmount } from "../lib/format";
 import { useSnapshot, useSyncing, useUtxos } from "../state/queries";
 import { useUi } from "../state/store";
@@ -14,7 +12,6 @@ export function UtxosView({ walletId }: { walletId: string }) {
   const snapshot = useSnapshot(walletId);
   const utxos = useUtxos(walletId, true);
   const syncing = useSyncing();
-  const credit = useFiatCredit();
 
   if (snapshot.isPending) {
     return <p className="px-1 py-4 font-ui text-sm text-muted">Loading wallet…</p>;
@@ -78,10 +75,6 @@ export function UtxosView({ walletId }: { walletId: string }) {
           <UtxoTable utxos={utxos.data ?? []} />
         )}
       </div>
-      {/* Under the table, outside its scroll: always in view. */}
-      {(utxos.data?.length ?? 0) > 0 && (
-        <PriceCredit credit={credit} className="px-1 pt-2 text-right" />
-      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { Coins, Monitor, Moon, Sun, SunMoon } from "lucide-react";
-import { PriceCredit } from "../../components/PriceCredit";
+import { useCreditFor } from "../../components/PriceCredit";
 import { Select } from "../../components/Select";
 import type { CurrencyReach } from "../../lib/ipc";
 import { formatCurrency, relativeTime } from "../../lib/format";
@@ -151,6 +151,8 @@ function RatePreview() {
   // The line says what the amounts do: the same answer, by the same
   // rule, or the reason they show none.
   const quote = liveAnswer(rate, fiatCurrency);
+  // The rate on screen is the source's: the screen credits it.
+  useCreditFor(quote?.source);
   if (rate.isError) {
     return (
       <p className="font-ui text-xs text-pending">
@@ -164,14 +166,10 @@ function RatePreview() {
     return <p className="font-ui text-xs text-muted">Fetching the current price…</p>;
   }
   // The price itself, not a wallet's amount: it stays what bitcoin
-  // fetches whichever network is open. Under it, the credit its source
-  // asks for, as the core gives it with the price.
+  // fetches whichever network is open.
   return (
-    <div>
-      <p className="tabular text-xs text-muted">
-        1 BTC = {formatCurrency(quote.rate, fiatCurrency)} · updated {relativeTime(quote.at)}
-      </p>
-      <PriceCredit credit={quote.credit} className="mt-1" />
-    </div>
+    <p className="tabular text-xs text-muted">
+      1 BTC = {formatCurrency(quote.rate, fiatCurrency)} · updated {relativeTime(quote.at)}
+    </p>
   );
 }

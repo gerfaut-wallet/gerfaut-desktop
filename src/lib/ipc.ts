@@ -628,6 +628,16 @@ export interface SourceEntry {
   label: string;
   /** The chart ranges it serves without a key, shortest first. */
   ranges: PriceRange[];
+  /** What its terms ask to be shown with its data, or null: once on
+      each screen that shows a price or an amount it priced. */
+  credit: Credit | null;
+}
+
+/** The credit a price source asks for, mirroring `Credit`: its words,
+    and the page they link to. */
+export interface Credit {
+  text: string;
+  url: string;
 }
 
 /** What the settings offer for the fiat value, and how often its price
@@ -663,11 +673,6 @@ export interface PriceQuote {
   currency: FiatCurrency;
   source: PriceSource;
   at: number;
-  /** What the source asks to be shown with its data, word for word
-      ("Powered by CoinGecko"), or null when it asks for nothing: once
-      per screen that shows this price or an amount priced by it, under
-      the data. */
-  credit: string | null;
 }
 
 export type PriceRange = "day" | "week" | "month" | "year" | "max";
@@ -684,8 +689,6 @@ export interface PriceHistory {
   source: PriceSource;
   range: PriceRange;
   at: number;
-  /** As for `PriceQuote.credit`. */
-  credit: string | null;
 }
 
 // --- broadcast ------------------------------------------------------------

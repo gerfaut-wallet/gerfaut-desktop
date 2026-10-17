@@ -395,7 +395,13 @@ const currencyEntry = object<ipc.CurrencyEntry>("CurrencyEntry")({
   sources: array(priceSource),
 });
 const priceRange: Schema<ipc.PriceRange> = literal("PriceRange", "day", "week", "month", "year", "max");
-const sourceEntry = object<ipc.SourceEntry>("SourceEntry")({ source: priceSource, label: str, ranges: array(priceRange) });
+const credit = object<ipc.Credit>("Credit")({ text: str, url: str });
+const sourceEntry = object<ipc.SourceEntry>("SourceEntry")({
+  source: priceSource,
+  label: str,
+  ranges: array(priceRange),
+  credit: nullable(credit),
+});
 const priceTable = object<ipc.PriceTable>("PriceTable")({
   currencies: array(currencyEntry),
   sources: array(sourceEntry),
@@ -425,7 +431,6 @@ const priceQuote = object<ipc.PriceQuote>("PriceQuote")({
   currency: fiatCurrency,
   source: priceSource,
   at: num,
-  credit: nullable(str),
 });
 const pricePoint = object<ipc.PricePoint>("PricePoint")({ t: num, rate: num });
 const priceHistory = object<ipc.PriceHistory>("PriceHistory")({
@@ -434,7 +439,6 @@ const priceHistory = object<ipc.PriceHistory>("PriceHistory")({
   source: priceSource,
   range: priceRange,
   at: num,
-  credit: nullable(str),
 });
 const settings = object<ipc.Settings>("Settings")({
   active_network: network,
@@ -696,6 +700,7 @@ const CONTRACT: Record<string, AnySchema | Away> = {
   Context: { away: LIVE_STAYS_IN_RUST },
   CoreError: commandError,
   Coverage: coverage,
+  Credit: credit,
   CurrencyEntry: currencyEntry,
   CurrencyReach: currencyReach,
   DerivationChoice: derivationChoice,
