@@ -43,7 +43,7 @@ import type {
   TxPreview,
   TxWarningKind,
 } from "../lib/ipc";
-import { isCommandError } from "../lib/ipc";
+import { FALSE_PROOF, errorMessage, isCommandError, isFalseProof } from "../lib/ipc";
 import { explorerTxUrl } from "../lib/explorer";
 import {
   MASKED,
@@ -195,17 +195,9 @@ export function BroadcastView({ network }: { network: Network }) {
       ? isCommandError(preview.error) &&
         (preview.error.kind === "invalid_input" || preview.error.kind === "too_many_parts")
         ? { headline: UNREADABLE_TRANSACTION, detail: preview.error.message }
-        : {
-            headline: isCommandError(preview.error)
-              ? preview.error.message
-              : String(preview.error),
-          }
+        : { headline: errorMessage(preview.error) }
       : null;
-  const broadcastError = broadcast.error
-    ? isCommandError(broadcast.error)
-      ? broadcast.error.message
-      : String(broadcast.error)
-    : null;
+  const broadcastError = broadcast.error ? errorMessage(broadcast.error) : null;
 
   const history = (recent.data ?? []).filter((entry) => entry.txid !== sent?.txid);
 
@@ -969,7 +961,11 @@ function StatusCard({
         {!watching && <p>Not checked since this session opened.</p>}
         {watching && status.isPending && <p>Asking the backend…</p>}
         {watching && status.isError && (
-          <p>The backend did not answer. Try again in a moment.</p>
+          <p>
+            {isFalseProof(status.error)
+              ? FALSE_PROOF
+              : "The backend did not answer. Try again in a moment."}
+          </p>
         )}
         {standing &&
           (standing.confirmed ? (

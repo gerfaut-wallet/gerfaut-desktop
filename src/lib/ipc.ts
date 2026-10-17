@@ -977,6 +977,9 @@ export interface CommandError {
         same data directory. Only ever met at startup. */
     | "vault_in_use"
     | "sync"
+    /** A server answered with a proof of a confirmation that does not
+        hold, and no other server answered in its place. */
+    | "false_proof"
     | "broadcast"
     | "backend_unavailable"
     | "descriptor"
@@ -1000,10 +1003,23 @@ export function isCommandError(error: unknown): error is CommandError {
   );
 }
 
+/** What the app says when a server sent a false proof: the core's own
+    words name the server and the check that failed, which tells a
+    person nothing they can act on. */
+export const FALSE_PROOF =
+  "A server sent a false proof of a confirmation, so Gerfaut stopped trusting its answer. No other server answered in its place. Try again later, or use your own node.";
+
 /** What a failed call says: the command's own message, or the error as
-    text when it did not come from a command. */
+    text when it did not come from a command. A false proof is said in
+    the app's words. */
 export function errorMessage(error: unknown): string {
+  if (isFalseProof(error)) return FALSE_PROOF;
   return isCommandError(error) ? error.message : String(error);
+}
+
+/** Whether a call failed on a server's false proof, by the core's code. */
+export function isFalseProof(error: unknown): boolean {
+  return isCommandError(error) && error.kind === "false_proof";
 }
 
 // --- commands ----------------------------------------------------------

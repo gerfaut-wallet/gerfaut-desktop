@@ -17,7 +17,7 @@ import type {
   PriceRange,
   WalletIconId,
 } from "../lib/ipc";
-import { ipc, isCommandError } from "../lib/ipc";
+import { errorMessage, ipc, isCommandError, isFalseProof } from "../lib/ipc";
 import { useUi } from "./store";
 
 // What a sync found is announced by the Rust side, which posts the
@@ -165,7 +165,7 @@ export function useSyncWallet() {
     onError: (error, id) =>
       useUi
         .getState()
-        .setSyncError(id, isCommandError(error) ? error.message : String(error)),
+        .setSyncError(id, errorMessage(error)),
     onSettled: (_data, _error, id) => invalidate(id),
   });
 }
@@ -193,7 +193,7 @@ export function useRescanWallet() {
     onError: (error, id) =>
       useUi
         .getState()
-        .setSyncError(id, isCommandError(error) ? error.message : String(error)),
+        .setSyncError(id, errorMessage(error)),
     onSettled: (_data, _error, id) => invalidate(id),
   });
 }
@@ -215,7 +215,11 @@ export function useLoadMoreHistory() {
       useUi
         .getState()
         .showToast(
-          isCommandError(error) ? "Could not reach the backend" : "Could not load more",
+          isFalseProof(error)
+            ? "Nothing loaded: a server sent a false proof"
+            : isCommandError(error)
+              ? "Could not reach the backend"
+              : "Could not load more",
         ),
   });
 }

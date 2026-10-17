@@ -674,6 +674,7 @@ const errorCode: Schema<ErrorCode> = literal(
   "newer_format",
   "vault_in_use",
   "sync",
+  "false_proof",
   "broadcast",
   "backend_unavailable",
   "descriptor",

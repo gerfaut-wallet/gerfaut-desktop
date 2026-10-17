@@ -1,6 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import type { ReactNode } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { renderHook, waitFor } from "@testing-library/react";
+import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { afterEach, describe, expect, it } from "vitest";
+import { FALSE_PROOF } from "../lib/ipc";
 import type { PriceQuote } from "../lib/ipc";
-import { liveAnswer } from "./queries";
+import { coreCase } from "../test/core";
+import { useUi } from "./store";
+import { liveAnswer, useSyncWallet } from "./queries";
 
 const QUOTE: PriceQuote = {
   rate: 100_000,
@@ -33,5 +41,27 @@ describe("the price a display may use", () => {
 
   it("is none in another currency than the one chosen", () => {
     expect(liveAnswer({ isError: false, data: QUOTE, fetchStatus: "idle" }, "usd")).toBeNull();
+  });
+});
+
+/** A sync the core gave up on for a server's false proof: the wallet
+    says it in the app's words, not in the core's, which name a check a
+    person cannot act on. */
+describe("a sync refused for a false proof", () => {
+  afterEach(() => clearMocks());
+
+  it("is said in the app's words under the wallet", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "sync_wallet") return Promise.reject(coreCase("CoreError", "false_proof"));
+      throw new Error(`unexpected command ${cmd}`);
+    });
+    useUi.setState({ syncErrors: {} });
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client }, children);
+    const { result } = renderHook(() => useSyncWallet(), { wrapper });
+
+    result.current.mutate("w1");
+    await waitFor(() => expect(useUi.getState().syncErrors.w1).toBe(FALSE_PROOF));
   });
 });
