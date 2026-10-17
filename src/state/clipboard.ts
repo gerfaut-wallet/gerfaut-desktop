@@ -7,8 +7,9 @@
 // person copied something else since. The webview can write the
 // clipboard but not read it back without a permission prompt, so it
 // could not tell whose copy is there. When the Rust side cannot copy
-// it, nothing is copied, and the toast says so: the webview's
-// clipboard would keep it in the history for good.
+// it, the webview's clipboard does, and the toast says plainly that
+// nothing will take it off: a copy is never refused, and never left
+// there without a word.
 //
 // An address or a transaction is on the chain for anyone to read: it
 // keeps the webview's plain clipboard.
@@ -21,26 +22,33 @@ import { useUi } from "./store";
 const COPIED_FOR_MS = 1500;
 
 /** What a copy came to: on the clipboard for good, on it until the
-    seconds run out, or refused. */
-export type Copied = { kept: true } | { kept: false; seconds: number } | null;
+    seconds run out, or refused. `unguarded` is a secret that went to
+    the plain clipboard, which nothing will clear. */
+export type Copied =
+  | { kept: true; unguarded?: true }
+  | { kept: false; seconds: number }
+  | null;
 
-/** What the toast says when a secret could not be copied the safe way. */
-export const NOT_COPIED = "Not copied: the clipboard did not answer. Select the text to copy it by hand.";
+/** What the toast says of a secret on the plain clipboard. */
+export const UNGUARDED =
+  "Copied, but Gerfaut could not clear it after a minute. Clear your clipboard once you have pasted it.";
+/** How long that toast stays: long enough to read twice. */
+export const UNGUARDED_FOR_MS = 7000;
+/** What the toast says of a secret no clipboard took. */
+export const NOT_COPIED = "Not copied: the clipboard did not answer.";
 
 async function write(text: string, sensitive: boolean): Promise<Copied> {
   if (sensitive) {
     try {
       return { kept: false, seconds: await ipc.copySensitive(text) };
     } catch {
-      // The system clipboard would not open on that side. A plain copy
-      // would land in the clipboard history, and the cloud clipboard,
-      // without the person knowing: none at all, said out loud.
-      return null;
+      // The system clipboard would not open on that side: the plain one
+      // takes it, and the toast says nothing will clear it.
     }
   }
   try {
     await navigator.clipboard.writeText(text);
-    return { kept: true };
+    return sensitive ? { kept: true, unguarded: true } : { kept: true };
   } catch {
     return null;
   }
@@ -58,14 +66,17 @@ export function stayWords(seconds: number): string {
 /** The toast after a copy: "Copied", or "Copied for 1 minute" when the
     clipboard lets go of it by itself. */
 export function copiedWords(words: string, copied: Exclude<Copied, null>): string {
-  return copied.kept ? words : `${words} for ${stayWords(copied.seconds)}`;
+  if (!copied.kept) return `${words} for ${stayWords(copied.seconds)}`;
+  return copied.unguarded ? UNGUARDED : words;
 }
 
 /** A copy button's state and action. `toast` is what the confirmation
     says, null for none; `sensitive` sends the text through the Rust
     side. `copy` resolves to what happened, null when the clipboard
     refused: the caller says so where the text can be copied by hand,
-    except for a secret, which the toast tells of when there is one. */
+    except for a secret, which the toast tells of when there is one. A
+    secret on the plain clipboard is always told of, whatever `toast`
+    says: it is the one thing the person has to act on. */
 export function useClipboard({
   sensitive = false,
   toast = "Copied",
@@ -88,7 +99,8 @@ export function useClipboard({
       setCopied(true);
       clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), COPIED_FOR_MS);
-      if (toast !== null) showToast(copiedWords(toast, result));
+      if (result.kept && result.unguarded) showToast(UNGUARDED, UNGUARDED_FOR_MS);
+      else if (toast !== null) showToast(copiedWords(toast, result));
       return result;
     },
     [sensitive, toast, showToast],
