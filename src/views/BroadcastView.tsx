@@ -374,6 +374,7 @@ function InputCard({
         value={raw}
         onChange={(event) => onChange(event.target.value)}
         spellCheck={false}
+        autoComplete="off"
         rows={7}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? "broadcast-input-error" : "broadcast-input-hint"}
