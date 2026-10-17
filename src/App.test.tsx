@@ -939,15 +939,15 @@ describe("overview", () => {
     // 90k -> 100k over the mocked series.
     expect(await screen.findByText("+11.1%")).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: /bitcoin price/i })).not.toBeInTheDocument();
-    // The compact widget offers no Max range, and mempool.space, the
-    // default, nothing under a month.
+    // The compact widget offers no Max range; mempool.space, the
+    // default, serves the others.
     expect(screen.queryByRole("radio", { name: "Max" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("radio", { name: "1D" })).not.toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "1M" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "1Y" })).toBeInTheDocument();
+    for (const range of ["1D", "1W", "1M", "1Y"]) {
+      expect(screen.getByRole("radio", { name: range })).toBeInTheDocument();
+    }
   });
 
-  it("offers the short ranges CoinGecko serves", async () => {
+  it("offers the ranges CoinGecko serves", async () => {
     walletIpc({
       get_settings: () => ({
         ...SETTINGS,
