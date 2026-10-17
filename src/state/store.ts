@@ -109,7 +109,7 @@ const UNTIL_THE_VAULT_ANSWERS: Preferences = {
   masked: false,
   fiat: false,
   fiat_currency: "eur",
-  price_source: "coingecko",
+  price_source: "mempool_space",
   notify_new_tx: false,
   explorer_ack: false,
 };

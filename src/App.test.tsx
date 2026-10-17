@@ -932,10 +932,26 @@ describe("overview", () => {
     // 90k -> 100k over the mocked series.
     expect(await screen.findByText("+11.1%")).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: /bitcoin price/i })).not.toBeInTheDocument();
-    // The compact widget offers no Max range.
+    // The compact widget offers no Max range, and mempool.space, the
+    // default, nothing under a month.
     expect(screen.queryByRole("radio", { name: "Max" })).not.toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "1D" })).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "1D" })).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "1M" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "1Y" })).toBeInTheDocument();
+  });
+
+  it("offers the short ranges CoinGecko serves", async () => {
+    walletIpc({
+      get_settings: () => ({
+        ...SETTINGS,
+        preferences: { ...PREFERENCES, fiat: true, price_source: "coingecko" },
+      }),
+    });
+    renderApp();
+    expect(await screen.findByText("+11.1%")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "1D" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "1W" })).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Max" })).not.toBeInTheDocument();
   });
 
   /** With an onion backend the core sends the price through Tor, and
@@ -1946,7 +1962,8 @@ describe("display settings", () => {
 
   it("offers every currency the core lists and keeps the source it answers", async () => {
     // The core keeps a currency with a source that quotes it: picking
-    // one only CoinGecko publishes, with Kraken on, answers CoinGecko.
+    // one only CoinGecko publishes, with mempool.space on, answers
+    // CoinGecko.
     let held = { ...PREFERENCES };
     const changes: PreferencesChange[] = [];
     walletIpc({
@@ -1974,12 +1991,20 @@ describe("display settings", () => {
     expect(within(list).getByRole("option", { name: /JPY Japanese yen/ })).toBeInTheDocument();
     expect(within(list).getByRole("option", { name: /NGN Nigerian naira/ })).toBeInTheDocument();
 
-    // A shared currency leaves every source available.
+    // A shared currency leaves every source available, mempool.space
+    // first, as the core lists them.
     await user.click(within(list).getByRole("option", { name: /^JPY/ }));
     await waitFor(() => expect(useUi.getState().fiatCurrency).toBe("jpy"));
-    expect(screen.getByRole("radio", { name: "Kraken" })).toBeEnabled();
-    await user.click(screen.getByRole("radio", { name: "Kraken" }));
-    await waitFor(() => expect(useUi.getState().fiatSource).toBe("kraken"));
+    const sources = within(screen.getByRole("radiogroup", { name: "Price source" }));
+    expect(sources.getAllByRole("radio").map((radio) => radio.textContent)).toEqual([
+      "mempool.space",
+      "CoinGecko",
+    ]);
+    expect(screen.getByRole("radio", { name: "mempool.space" })).toBeChecked();
+    await user.click(screen.getByRole("radio", { name: "CoinGecko" }));
+    await waitFor(() => expect(useUi.getState().fiatSource).toBe("coingecko"));
+    await user.click(screen.getByRole("radio", { name: "mempool.space" }));
+    await waitFor(() => expect(useUi.getState().fiatSource).toBe("mempool_space"));
 
     await choose(user, "Fiat currency", "INR");
     await waitFor(() => expect(useUi.getState().fiatCurrency).toBe("inr"));
@@ -1988,10 +2013,10 @@ describe("display settings", () => {
     expect(useUi.getState().fiatSource).toBe("coingecko");
     expect(changes).toEqual([
       { fiat_currency: "jpy" },
-      { price_source: "kraken" },
+      { price_source: "coingecko" },
+      { price_source: "mempool_space" },
       { fiat_currency: "inr" },
     ]);
-    expect(screen.getByRole("radio", { name: "Kraken" })).toBeDisabled();
     expect(screen.getByRole("radio", { name: "mempool.space" })).toBeDisabled();
     expect(
       screen.getByText("CoinGecko is the only source that quotes INR."),
@@ -2004,9 +2029,10 @@ describe("display settings", () => {
     const user = userEvent.setup();
     await screen.findByText("Bitcoin price");
     await user.click(sidebar().getByRole("button", { name: "Settings" }));
-    expect(await screen.findByText("Powered by CoinGecko")).toBeInTheDocument();
-    await user.click(screen.getByRole("radio", { name: "Kraken" }));
+    await screen.findByRole("radio", { name: "mempool.space" });
     expect(screen.queryByText("Powered by CoinGecko")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: "CoinGecko" }));
+    expect(await screen.findByText("Powered by CoinGecko")).toBeInTheDocument();
   });
 
   it("saves the shared gap limit from settings", async () => {

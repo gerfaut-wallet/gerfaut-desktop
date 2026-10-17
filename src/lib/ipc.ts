@@ -599,7 +599,7 @@ export type CertificateReport = { host: string } & (
   | { status: "unreachable"; detail: string }
 );
 
-export type PriceSource = "coingecko" | "kraken" | "mempool_space";
+export type PriceSource = "mempool_space" | "coingecko";
 
 /** A display currency, by the identifier gerfaut-core names it with
     (`eur`, `try`...): the list on offer, its order, the names and which
@@ -663,6 +663,11 @@ export interface PriceQuote {
   currency: FiatCurrency;
   source: PriceSource;
   at: number;
+  /** What the source asks to be shown with its data, word for word
+      ("Powered by CoinGecko"), or null when it asks for nothing: once
+      per screen that shows this price or an amount priced by it, under
+      the data. */
+  credit: string | null;
 }
 
 export type PriceRange = "day" | "week" | "month" | "year" | "max";
@@ -679,6 +684,8 @@ export interface PriceHistory {
   source: PriceSource;
   range: PriceRange;
   at: number;
+  /** As for `PriceQuote.credit`. */
+  credit: string | null;
 }
 
 // --- broadcast ------------------------------------------------------------

@@ -65,7 +65,7 @@ const SHUT: Omit<Settings, "active_network" | "app_lock" | "app_prefs"> = {
     masked: false,
     fiat: false,
     fiat_currency: "eur",
-    price_source: "coingecko",
+    price_source: "mempool_space",
     notify_new_tx: false,
     explorer_ack: false,
   },

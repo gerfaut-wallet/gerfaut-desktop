@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { PriceQuote } from "../lib/ipc";
 import { liveAnswer } from "./queries";
 
-const QUOTE: PriceQuote = { rate: 100_000, currency: "eur", source: "coingecko", at: 1_755_000_000 };
+const QUOTE: PriceQuote = {
+  rate: 100_000,
+  currency: "eur",
+  source: "coingecko",
+  at: 1_755_000_000,
+  credit: "Powered by CoinGecko",
+};
 
 /** A price display uses the last answer only while it still holds. */
 describe("the price a display may use", () => {

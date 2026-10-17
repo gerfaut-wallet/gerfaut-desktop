@@ -383,7 +383,7 @@ const certificateReport = tagged<ipc.CertificateReport>("CertificateReport")("st
 
 // --- prices and preferences ------------------------------------------------
 
-const priceSource: Schema<ipc.PriceSource> = literal("PriceSource", "coingecko", "kraken", "mempool_space");
+const priceSource: Schema<ipc.PriceSource> = literal("PriceSource", "mempool_space", "coingecko");
 /** A plain string here: the list of currencies is the core's alone. */
 const fiatCurrency: Schema<ipc.FiatCurrency> = str;
 const currencyReach: Schema<ipc.CurrencyReach> = literal("CurrencyReach", "every", "coingecko_only");
@@ -420,7 +420,13 @@ const preferencesChange = object<ipc.PreferencesChange>("PreferencesChange")({
   notify_new_tx: optional(bool),
   explorer_ack: optional(bool),
 });
-const priceQuote = object<ipc.PriceQuote>("PriceQuote")({ rate: num, currency: fiatCurrency, source: priceSource, at: num });
+const priceQuote = object<ipc.PriceQuote>("PriceQuote")({
+  rate: num,
+  currency: fiatCurrency,
+  source: priceSource,
+  at: num,
+  credit: nullable(str),
+});
 const pricePoint = object<ipc.PricePoint>("PricePoint")({ t: num, rate: num });
 const priceHistory = object<ipc.PriceHistory>("PriceHistory")({
   points: array(pricePoint),
@@ -428,6 +434,7 @@ const priceHistory = object<ipc.PriceHistory>("PriceHistory")({
   source: priceSource,
   range: priceRange,
   at: num,
+  credit: nullable(str),
 });
 const settings = object<ipc.Settings>("Settings")({
   active_network: network,

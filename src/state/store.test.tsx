@@ -72,7 +72,7 @@ describe("the shared preferences", () => {
       masked: true,
       fiat: true,
       fiat_currency: "usd",
-      price_source: "kraken",
+      price_source: "coingecko",
     },
   };
 
@@ -100,15 +100,15 @@ describe("the shared preferences", () => {
     expect(state.masked).toBe(true);
     expect(state.fiatEnabled).toBe(true);
     expect(state.fiatCurrency).toBe("usd");
-    expect(state.fiatSource).toBe("kraken");
+    expect(state.fiatSource).toBe("coingecko");
     expect(state.theme).toBe("dark");
     expect(state.sidebarCollapsed).toBe(true);
   });
 
   it("shows the pair the price is asked by as the core stored it", async () => {
-    // A currency only CoinGecko quotes, picked over Kraken: the core
-    // keeps the currency and moves the source.
-    useUi.setState({ fiatSource: "kraken" });
+    // A currency only CoinGecko quotes, picked over mempool.space: the
+    // core keeps the currency and moves the source.
+    useUi.setState({ fiatSource: "mempool_space" });
     const changes = mockCore((change) => ({
       ...PREFERENCES,
       ...change,
@@ -124,10 +124,10 @@ describe("the shared preferences", () => {
 
   it("leaves the pair as it was when the vault refuses", async () => {
     const changes = mockCore(() => Promise.reject({ kind: "vault", message: "disk full" }));
-    useUi.getState().setFiatSource("kraken");
-    await waitFor(() => expect(changes).toEqual([{ price_source: "kraken" }]));
+    useUi.getState().setFiatSource("coingecko");
+    await waitFor(() => expect(changes).toEqual([{ price_source: "coingecko" }]));
     await Promise.resolve();
-    expect(useUi.getState().fiatSource).toBe("coingecko");
+    expect(useUi.getState().fiatSource).toBe("mempool_space");
   });
 
   it("hides the amounts at once, and keeps them hidden when the vault refuses", async () => {
@@ -152,12 +152,12 @@ describe("the shared preferences", () => {
         new Promise((resolve) => pending.push(() => resolve({ ...PREFERENCES, ...change }))),
     );
     useUi.getState().setUnit("sats");
-    useUi.getState().setFiatSource("kraken");
+    useUi.getState().setFiatSource("coingecko");
     await waitFor(() => expect(changes).toEqual([{ unit: "sats" }]));
     pending.shift()!();
     await waitFor(() => expect(changes).toHaveLength(2));
-    expect(changes[1]).toEqual({ price_source: "kraken" });
+    expect(changes[1]).toEqual({ price_source: "coingecko" });
     pending.shift()!();
-    await waitFor(() => expect(useUi.getState().fiatSource).toBe("kraken"));
+    await waitFor(() => expect(useUi.getState().fiatSource).toBe("coingecko"));
   });
 });
