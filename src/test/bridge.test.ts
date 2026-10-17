@@ -529,6 +529,7 @@ const txWarningKind: Schema<ipc.TxWarningKind> = literal(
   "locked",
   "input_unknown",
   "input_spent",
+  "in_mempool",
   "input_mismatch",
   "fee_unknown",
   "dust_output",
@@ -542,7 +543,19 @@ const txWarning = object<ipc.TxWarning>("TxWarning")({
   severity: txSeverity,
   blocking: bool,
 });
-const txReadiness: Schema<ipc.TxReadiness> = literal("TxReadiness", "ready", "refused", "unsigned");
+const txReadiness: Schema<ipc.TxReadiness> = literal(
+  "TxReadiness",
+  "ready",
+  "refused",
+  "unsigned",
+  "in_mempool",
+);
+const feeRateBasis: Schema<ipc.FeeRateBasis> = literal(
+  "FeeRateBasis",
+  "exact",
+  "estimated",
+  "upper_bound",
+);
 const txPreview = object<ipc.TxPreview>("TxPreview")({
   txid: str,
   source: txSource,
@@ -551,8 +564,10 @@ const txPreview = object<ipc.TxPreview>("TxPreview")({
   outputs: array(txOutputPreview),
   fee_sats: nullable(num),
   fee_rate_sat_vb: nullable(num),
+  fee_rate_basis: feeRateBasis,
   fee_unknown_reason: nullable(str),
   amounts_declared: bool,
+  amounts_listed: bool,
   vsize: num,
   weight: num,
   size: num,
@@ -717,6 +732,7 @@ const CONTRACT: Record<string, AnySchema | Away> = {
   ExportResult: {
     away: "the CSV is written to its file on the Rust side (export_transactions_csv); the window hears the row count",
   },
+  FeeRateBasis: feeRateBasis,
   FiatCurrency: fiatCurrency,
   ImportChoices: importChoices,
   ImportOptions: {

@@ -741,6 +741,9 @@ export type TxWarningKind =
   | "locked"
   | "input_unknown"
   | "input_spent"
+  /** This very transaction is already waiting in the mempool: sending it
+      again does no harm. */
+  | "in_mempool"
   | "input_mismatch"
   | "fee_unknown"
   | "dust_output"
@@ -772,8 +775,16 @@ export interface TxWarning {
 
 /** Where a transaction stands before it is sent, decided by the core:
     the words of the readiness pill. `refused` comes before `unsigned`
-    when both hold, since a signature does not bring back a spent coin. */
-export type TxReadiness = "ready" | "refused" | "unsigned";
+    when both hold, since a signature does not bring back a spent coin.
+    `in_mempool`: signed, and already waiting to be mined; it can be sent
+    again, which does no harm. */
+export type TxReadiness = "ready" | "refused" | "unsigned" | "in_mempool";
+
+/** What the fee rate is measured on: the transaction as it will be sent
+    (`exact`), an estimate of it once the missing signatures are in
+    (`estimated`), or, their weight unknown, the most it can be
+    (`upper_bound`). */
+export type FeeRateBasis = "exact" | "estimated" | "upper_bound";
 
 /** Everything shown before a transaction is broadcast. */
 export interface TxPreview {
@@ -783,7 +794,10 @@ export interface TxPreview {
   inputs: TxInputPreview[];
   outputs: TxOutputPreview[];
   fee_sats: number | null;
+  /** The fee over the size the transaction has once signed: see
+      `fee_rate_basis`. */
   fee_rate_sat_vb: number | null;
+  fee_rate_basis: FeeRateBasis;
   /** Why there is no fee, in the words of the core's caution: what the
       confirmation repeats. Null when there is a fee. */
   fee_unknown_reason: string | null;
@@ -791,6 +805,9 @@ export interface TxPreview {
       watched wallet, no backend and no previous transaction proves it.
       The inputs total and the fee rest on that word then. */
   amounts_declared: boolean;
+  /** One of those values is a watched address's listing, the server's
+      figure, rather than the PSBT's word: the mark says it neutrally. */
+  amounts_listed: boolean;
   vsize: number;
   weight: number;
   size: number;
