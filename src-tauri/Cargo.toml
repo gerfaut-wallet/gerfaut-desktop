@@ -2,7 +2,7 @@
 name = "gerfaut-desktop"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.91"
+rust-version = "1.92"
 description = "Gerfaut for Linux, macOS, and Windows, a Bitcoin watch-only wallet"
 repository = "https://github.com/gerfaut-wallet/gerfaut-desktop"
 license = "AGPL-3.0-only"
@@ -65,4 +65,4 @@ serde_json = "1"
 # Cargo only honours [patch] in the root manifest: the same pin as in
 # gerfaut-core, see the note there.
 [patch.crates-io]
-saturating-time = { git = "https://github.com/gerfaut-wallet/saturating-time", rev = "7bef6ba00f3adaa6aff7e68966614c9d55bb60ec" }
+saturating-time = { git = "https://github.com/gerfaut-wallet/saturating-time", rev = "185ef6a4a1647adac291bd43bb9fd2821e73b9bc" }
