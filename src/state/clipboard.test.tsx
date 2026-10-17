@@ -2,7 +2,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, renderHook } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { copiedWords, stayWords, useClipboard } from "./clipboard";
+import { NOT_COPIED, copiedWords, stayWords, useClipboard } from "./clipboard";
 import { useUi } from "./store";
 
 /** The commands the copies sent, with what they carried. */
@@ -44,18 +44,23 @@ describe("copying", () => {
     expect(useUi.getState().toast).toBe("Descriptor copied for 1 minute");
   });
 
-  /** The Rust side could not open the clipboard: a plain copy still
-      beats an empty clipboard under a "Copied", and the toast promises
-      no minute it cannot keep. */
-  it("falls back to the plain clipboard when the Rust side refuses", async () => {
+  /** The Rust side could not open the clipboard: the secret does not
+      go to the webview's clipboard, which would keep it in the history,
+      and the toast says it was not copied. */
+  it("copies no secret when the Rust side refuses, and says so", async () => {
     rust(() => Promise.reject({ kind: "internal", message: "no clipboard" }));
+    const write = vi.spyOn(navigator.clipboard, "writeText");
     const { result } = renderHook(() => useClipboard({ sensitive: true }));
 
+    let copied: unknown;
     await act(async () => {
-      await result.current.copy("wpkh([d34db33f/84h/0h/0h]xpub/1/*)");
+      copied = await result.current.copy("wpkh([d34db33f/84h/0h/0h]xpub/1/*)");
     });
-    expect(await navigator.clipboard.readText()).toBe("wpkh([d34db33f/84h/0h/0h]xpub/1/*)");
-    expect(useUi.getState().toast).toBe("Copied");
+    expect(copied).toBeNull();
+    expect(write).not.toHaveBeenCalled();
+    expect(result.current.failed).toBe(true);
+    expect(result.current.copied).toBe(false);
+    expect(useUi.getState().toast).toBe(NOT_COPIED);
   });
 
   it("keeps what is on the chain on the plain clipboard", async () => {
@@ -70,10 +75,10 @@ describe("copying", () => {
     expect(useUi.getState().toast).toBe("Copied");
   });
 
-  it("says nothing in a toast when every clipboard refuses", async () => {
-    rust(() => Promise.reject({ kind: "internal", message: "no clipboard" }));
+  it("says nothing in a toast when the plain clipboard refuses", async () => {
+    rust(() => 60);
     vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("denied"));
-    const { result } = renderHook(() => useClipboard({ sensitive: true }));
+    const { result } = renderHook(() => useClipboard());
 
     let copied: unknown;
     await act(async () => {

@@ -6,7 +6,9 @@
 // clipboard and takes it off the clipboard a minute later, unless the
 // person copied something else since. The webview can write the
 // clipboard but not read it back without a permission prompt, so it
-// could not tell whose copy is there.
+// could not tell whose copy is there. When the Rust side cannot copy
+// it, nothing is copied, and the toast says so: the webview's
+// clipboard would keep it in the history for good.
 //
 // An address or a transaction is on the chain for anyone to read: it
 // keeps the webview's plain clipboard.
@@ -22,14 +24,18 @@ const COPIED_FOR_MS = 1500;
     seconds run out, or refused. */
 export type Copied = { kept: true } | { kept: false; seconds: number } | null;
 
+/** What the toast says when a secret could not be copied the safe way. */
+export const NOT_COPIED = "Not copied: the clipboard did not answer. Select the text to copy it by hand.";
+
 async function write(text: string, sensitive: boolean): Promise<Copied> {
   if (sensitive) {
     try {
       return { kept: false, seconds: await ipc.copySensitive(text) };
     } catch {
       // The system clipboard would not open on that side. A plain copy
-      // still beats a button that says "Copied" over an empty clipboard;
-      // the confirmation then says nothing of a minute.
+      // would land in the clipboard history, and the cloud clipboard,
+      // without the person knowing: none at all, said out loud.
+      return null;
     }
   }
   try {
@@ -58,7 +64,8 @@ export function copiedWords(words: string, copied: Exclude<Copied, null>): strin
 /** A copy button's state and action. `toast` is what the confirmation
     says, null for none; `sensitive` sends the text through the Rust
     side. `copy` resolves to what happened, null when the clipboard
-    refused: the caller says so where the text can be copied by hand. */
+    refused: the caller says so where the text can be copied by hand,
+    except for a secret, which the toast tells of when there is one. */
 export function useClipboard({
   sensitive = false,
   toast = "Copied",
@@ -74,7 +81,10 @@ export function useClipboard({
     async (text: string): Promise<Copied> => {
       const result = await write(text, sensitive);
       setFailed(result === null);
-      if (result === null) return null;
+      if (result === null) {
+        if (sensitive && toast !== null) showToast(NOT_COPIED);
+        return null;
+      }
       setCopied(true);
       clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), COPIED_FOR_MS);
