@@ -28,11 +28,11 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
 
-use gerfaut_core::WalletManager;
 use gerfaut_core::live::notice::{Context, Held, Notice};
 use gerfaut_core::live::{LiveEvent, LiveEvents};
 use gerfaut_core::wallet::snapshot::SyncReport;
 use gerfaut_core::watch::{WatchLimitsChoice, WatchStatus};
+use gerfaut_core::{ErrorCode, WalletManager};
 use serde::Serialize;
 use tauri::{Emitter, Manager};
 #[cfg(not(any(target_os = "linux", windows)))]
@@ -64,8 +64,14 @@ const CLOCK_JUMP: Duration = Duration::from_secs(90);
 /// What the task owes the window after an event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Signal {
-    WalletSynced { wallet_id: String },
-    SyncFailed { wallet_id: String, message: String },
+    WalletSynced {
+        wallet_id: String,
+    },
+    SyncFailed {
+        wallet_id: String,
+        message: String,
+        kind: ErrorCode,
+    },
     Status,
 }
 
@@ -109,11 +115,19 @@ impl Announcer {
                     }),
                 }
             }
-            LiveEvent::SyncFailed { wallet_id, message } => {
+            LiveEvent::SyncFailed {
+                wallet_id,
+                message,
+                kind,
+            } => {
                 self.held.remove(&wallet_id);
                 Outcome {
                     announce: None,
-                    signal: Some(Signal::SyncFailed { wallet_id, message }),
+                    signal: Some(Signal::SyncFailed {
+                        wallet_id,
+                        message,
+                        kind,
+                    }),
                 }
             }
             LiveEvent::NewBlock { .. } => Outcome::default(),
@@ -357,8 +371,19 @@ async fn run(app: tauri::AppHandle, mut events: LiveEvents) {
             Signal::WalletSynced { wallet_id } if !locked => {
                 let _ = app.emit(EVENT_WALLET_SYNCED, WalletSignal { wallet_id });
             }
-            Signal::SyncFailed { wallet_id, message } if !locked => {
-                let _ = app.emit(EVENT_SYNC_FAILED, FailureSignal { wallet_id, message });
+            Signal::SyncFailed {
+                wallet_id,
+                message,
+                kind,
+            } if !locked => {
+                let _ = app.emit(
+                    EVENT_SYNC_FAILED,
+                    FailureSignal {
+                        wallet_id,
+                        message,
+                        kind: kind.as_str(),
+                    },
+                );
             }
             Signal::WalletSynced { .. } | Signal::SyncFailed { .. } => {}
         }
@@ -370,10 +395,13 @@ struct WalletSignal {
     wallet_id: String,
 }
 
+/// A sync the watch ran that failed: the core's words, and its code, which
+/// the window picks its sentence on, as it does for a command's failure.
 #[derive(Debug, Clone, Serialize)]
 struct FailureSignal {
     wallet_id: String,
     message: String,
+    kind: &'static str,
 }
 
 /// Starts or stops the watch so that it matches the preference. Called
@@ -624,8 +652,17 @@ mod tests {
         let outcome = announcer.on_event(LiveEvent::SyncFailed {
             wallet_id: "w1".to_owned(),
             message: "timed out".to_owned(),
+            kind: ErrorCode::FalseProof,
         });
         assert_eq!(outcome.announce, None);
+        assert_eq!(
+            outcome.signal,
+            Some(Signal::SyncFailed {
+                wallet_id: "w1".to_owned(),
+                message: "timed out".to_owned(),
+                kind: ErrorCode::FalseProof,
+            })
+        );
         let later = announcer.on_event(LiveEvent::WalletSynced {
             report: report("w1", vec![], vec![]),
         });

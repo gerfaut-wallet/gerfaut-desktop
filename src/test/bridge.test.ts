@@ -238,11 +238,6 @@ const syncReport = object<ipc.SyncReport>("SyncReport")({
   took_ms: num,
   backend: str,
 });
-const syncFailure = object<ipc.SyncAllReport["failures"][number]>("SyncFailure")({ wallet_id: str, message: str });
-const syncAllReport = object<ipc.SyncAllReport>("SyncAllReport")({
-  reports: array(syncReport),
-  failures: array(syncFailure),
-});
 
 // --- policy ----------------------------------------------------------------
 
@@ -684,6 +679,18 @@ const errorCode: Schema<ErrorCode> = literal(
 const commandError = object<ipc.CommandError>("CommandError")({
   kind: either(errorCode, literal("CommandError.kind", "locked", "notification")),
   message: str,
+});
+
+/** A wallet a sync of all of them could not sync: by the code of its
+    failure, as a failed command. */
+const syncFailure = object<ipc.SyncFailure>("SyncFailure")({
+  wallet_id: str,
+  message: str,
+  kind: errorCode,
+});
+const syncAllReport = object<ipc.SyncAllReport>("SyncAllReport")({
+  reports: array(syncReport),
+  failures: array(syncFailure),
 });
 
 // --- the contract ------------------------------------------------------------

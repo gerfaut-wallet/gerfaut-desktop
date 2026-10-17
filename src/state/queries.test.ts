@@ -5,10 +5,10 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it } from "vitest";
 import { FALSE_PROOF } from "../lib/ipc";
-import type { PriceQuote } from "../lib/ipc";
+import type { PriceQuote, SyncAllReport } from "../lib/ipc";
 import { coreCase } from "../test/core";
 import { useUi } from "./store";
-import { liveAnswer, useSyncWallet } from "./queries";
+import { liveAnswer, useSyncAll, useSyncWallet } from "./queries";
 
 const QUOTE: PriceQuote = {
   rate: 100_000,
@@ -63,5 +63,26 @@ describe("a sync refused for a false proof", () => {
 
     result.current.mutate("w1");
     await waitFor(() => expect(useUi.getState().syncErrors.w1).toBe(FALSE_PROOF));
+  });
+
+  /** A sync of every wallet hands its failures over as data, each with
+      the code of its failure: the same sentence, by the same code. */
+  it("is said in the app's words when every wallet is synced", async () => {
+    const report = coreCase<SyncAllReport>("SyncAllReport", "one_failed");
+    const proof = coreCase<SyncAllReport["failures"][number]>("SyncFailure", "false_proof");
+    report.failures = [{ ...proof, wallet_id: "w1" }, { ...report.failures[0], wallet_id: "w2" }];
+    mockIPC((cmd) => {
+      if (cmd === "sync_all") return Promise.resolve(report);
+      throw new Error(`unexpected command ${cmd}`);
+    });
+    useUi.setState({ syncErrors: {} });
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client }, children);
+    const { result } = renderHook(() => useSyncAll(), { wrapper });
+
+    result.current.mutate(undefined);
+    await waitFor(() => expect(useUi.getState().syncErrors.w1).toBe(FALSE_PROOF));
+    expect(useUi.getState().syncErrors.w2).toBe(report.failures[1].message);
   });
 });

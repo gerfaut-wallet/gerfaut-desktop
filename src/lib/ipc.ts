@@ -420,9 +420,17 @@ export interface SyncReport {
   backend: string;
 }
 
+/** One wallet a sync of all of them could not sync: the core's words,
+    and the code the app picks its sentence on ({@link failureMessage}). */
+export interface SyncFailure {
+  wallet_id: string;
+  message: string;
+  kind: CoreErrorCode;
+}
+
 export interface SyncAllReport {
   reports: SyncReport[];
-  failures: { wallet_id: string; message: string }[];
+  failures: SyncFailure[];
 }
 
 export type BackendConfig =
@@ -993,6 +1001,10 @@ export interface CommandError {
   message: string;
 }
 
+/** The codes of the core, the kinds of a failed command but the two this
+    app adds itself. */
+export type CoreErrorCode = Exclude<CommandError["kind"], "locked" | "notification">;
+
 /** Type guard for errors thrown by commands. */
 export function isCommandError(error: unknown): error is CommandError {
   return (
@@ -1020,6 +1032,14 @@ export function errorMessage(error: unknown): string {
 /** Whether a call failed on a server's false proof, by the core's code. */
 export function isFalseProof(error: unknown): boolean {
   return isCommandError(error) && error.kind === "false_proof";
+}
+
+/** What a failure the core hands over as data says: a wallet a sync of
+    all of them could not sync, or a sync the live watch ran. Read by its
+    code, as {@link errorMessage} reads a failed call: a false proof in
+    the app's words, anything else in the core's. */
+export function failureMessage(failure: { kind?: unknown; message: string }): string {
+  return failure.kind === "false_proof" ? FALSE_PROOF : failure.message;
 }
 
 // --- commands ----------------------------------------------------------
