@@ -546,6 +546,10 @@ export interface BackupWalletPreview {
   network: Network;
   kind: WalletKind;
   already_watched: boolean;
+  /** Why a restore cannot take this wallet, in the core's words: its
+      material does not read as a wallet to watch, or its two
+      descriptors are not one wallet. Null for one it takes. */
+  refused: string | null;
 }
 
 /** One backend the settings of a backup would put in place. */

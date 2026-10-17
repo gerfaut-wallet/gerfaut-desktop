@@ -464,6 +464,7 @@ const backupWalletPreview = object<ipc.BackupWalletPreview>("BackupWalletPreview
   network,
   kind: walletKind,
   already_watched: bool,
+  refused: nullable(str),
 });
 const backupBackendPreview = object<ipc.BackupBackendPreview>("BackupBackendPreview")({ network, backend: str });
 const backupPreview = object<ipc.BackupPreview>("BackupPreview")({
