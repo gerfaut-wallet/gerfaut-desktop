@@ -204,10 +204,38 @@ describe("ScanQrModal", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       /^This code has more parts than Gerfaut can read\.$/,
     );
-    // The camera stays on, and the next code goes through.
+    // The scan is over: the next code is not read, and the reason stays.
     await tick();
     await tick();
-    await waitFor(() => expect(onScan).toHaveBeenCalledWith("wpkh(tpub.../0/*)", []));
+    expect(onScan).not.toHaveBeenCalled();
+    expect(assembleCalls).toHaveLength(1);
+    expect(screen.getByRole("alert")).toHaveTextContent(/more parts than Gerfaut can read/);
+  });
+
+  /** A fountain code never runs out of new frames: once the core says
+      the scan took more than a code of its size needs, the scan stops,
+      camera off, and the reason stays on screen while new frames keep
+      passing in front of the camera. */
+  it("stops for good once the core says the code is too large", async () => {
+    for (let i = 0; i < 8; i += 1) frames.push(`ur:crypto-output/${i + 3}-2/x${i}`);
+    mockAssembly((received) =>
+      received.length < 3
+        ? { format: "ur", received: 1, total: 2, complete: false, text: null, warnings: [] }
+        : (Promise.reject({
+            kind: "too_many_parts",
+            message: "invalid qr: 3 frames scanned without the code coming together, more than Gerfaut reads",
+          }) as unknown as QrProgress),
+    );
+    const track = fakeCamera();
+    render(<ScanQrModal open onClose={vi.fn()} onScan={vi.fn()} />);
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    for (let i = 0; i < 8; i += 1) await tick();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /^This code has more parts than Gerfaut can read\.$/,
+    );
+    expect(assembleCalls).toHaveLength(3);
+    expect(track.stop).toHaveBeenCalled();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
 
   it("says it once, however long the camera stays on the refused code", async () => {

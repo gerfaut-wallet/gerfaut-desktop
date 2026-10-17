@@ -3722,6 +3722,7 @@ describe("restoring a backup", () => {
             network: "signet",
             kind: WALLET.kind,
             already_watched: false,
+            refused: null,
           },
         ],
         backends: [{ network: "signet", backend: "node.example.org" }],

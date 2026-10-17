@@ -1145,6 +1145,70 @@ fn retry_open(app: tauri::AppHandle, startup: tauri::State<'_, Startup>) -> Comm
     result
 }
 
+/// Keeps the webview on the pages the app ships. Nothing in them goes
+/// anywhere else: an outside link opens in the browser, through the
+/// opener. A navigation to any other page, a link dropped on the
+/// window or one a page of the app was tricked into following, would
+/// show that page in the app's own window, where it could pass for the
+/// app.
+fn navigation_guard<R: tauri::Runtime>(pages: AppPages) -> tauri::plugin::TauriPlugin<R> {
+    tauri::plugin::Builder::new("navigation-guard")
+        .on_navigation(move |_, url| pages.hold(url))
+        .build()
+}
+
+/// Where the app's own pages are, read once from the configuration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AppPages {
+    /// The scheme the Windows webview serves the embedded pages under,
+    /// `http` unless the window sets `useHttpsScheme`. It intercepts
+    /// that one only: the other goes to whatever answers on this
+    /// machine under the name `tauri.localhost`.
+    windows_scheme: &'static str,
+    /// The server of the pages under `tauri dev`.
+    dev: Option<tauri::Url>,
+}
+
+impl AppPages {
+    fn of(config: &tauri::Config) -> Self {
+        let https = config
+            .app
+            .windows
+            .iter()
+            .find(|window| window.label == "main")
+            .is_some_and(|window| window.use_https_scheme);
+        AppPages {
+            windows_scheme: if https { "https" } else { "http" },
+            dev: if cfg!(dev) {
+                config.build.dev_url.clone()
+            } else {
+                None
+            },
+        }
+    }
+
+    /// Whether `url` is one of the app's pages: those of the embedded
+    /// assets, at `tauri://localhost`, or on Windows at
+    /// `tauri.localhost` under the one scheme the webview intercepts;
+    /// or the server of the pages under `tauri dev`. Elsewhere
+    /// `tauri.localhost` is only a name for this machine, where any
+    /// local server may answer.
+    fn hold(&self, url: &tauri::Url) -> bool {
+        let shipped = match (url.scheme(), url.host_str()) {
+            ("tauri", Some("localhost")) => !cfg!(windows),
+            (scheme, Some("tauri.localhost")) => {
+                cfg!(windows) && scheme == self.windows_scheme && url.port().is_none()
+            }
+            _ => false,
+        };
+        shipped
+            || self
+                .dev
+                .as_ref()
+                .is_some_and(|dev| dev.origin() == url.origin())
+    }
+}
+
 /// Brings the window back to the front: unminimised, shown, focused.
 /// This is what a second launch asks for, and all it gets.
 fn show_main_window(app: &tauri::AppHandle) {
@@ -1189,6 +1253,7 @@ pub fn run() {
         let config = context.config_mut();
         config.identifier = isolated_identifier(&config.identifier, &dir);
     }
+    let pages = AppPages::of(context.config());
     // On macOS, before anything else starts: a second launch leaves
     // before the vault is opened, before a window exists. See
     // `single_instance` for why not the plugin there.
@@ -1214,6 +1279,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(navigation_guard(pages))
         .manage(clipboard::SensitiveClipboard::default())
         .setup(move |app| {
             #[cfg(target_os = "macos")]
@@ -1321,8 +1387,72 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{CommandError, assemble_qr, bare_file_name, parse_backend, parse_input};
+    use super::{AppPages, CommandError, assemble_qr, bare_file_name, parse_backend, parse_input};
     use gerfaut_core::error::CoreError;
+
+    /// The webview goes to the app's own pages, under the scheme each
+    /// platform serves them with, and to the page server in `tauri dev`;
+    /// anywhere else is refused, a look-alike host among them.
+    #[test]
+    fn the_webview_stays_on_the_apps_pages() {
+        let url = |text: &str| tauri::Url::parse(text).unwrap();
+        let pages = |windows_scheme, dev: Option<&str>| AppPages {
+            windows_scheme,
+            dev: dev.map(url),
+        };
+        let shipped = pages("http", None);
+        let (held, elsewhere) = if cfg!(windows) {
+            (
+                vec![
+                    "http://tauri.localhost/",
+                    "http://tauri.localhost/assets/index.js",
+                ],
+                vec!["https://tauri.localhost/", "tauri://localhost"],
+            )
+        } else {
+            (
+                vec![
+                    "tauri://localhost",
+                    "tauri://localhost/index.html#/settings",
+                ],
+                vec!["http://tauri.localhost/", "https://tauri.localhost/"],
+            )
+        };
+        for page in held {
+            assert!(shipped.hold(&url(page)), "{page}");
+        }
+        for page in elsewhere {
+            assert!(!shipped.hold(&url(page)), "{page}");
+        }
+        // Under `useHttpsScheme`, the other scheme of Windows.
+        let https = pages("https", None);
+        assert_eq!(https.hold(&url("https://tauri.localhost/")), cfg!(windows));
+        assert!(!https.hold(&url("http://tauri.localhost/")));
+        for page in [
+            "http://localhost:1420/",
+            "https://mempool.space/",
+            "http://tauri.localhost.example.org/",
+            "http://tauri.localhost:8080/",
+            "tauri://example.org",
+            "file:///etc/passwd",
+            "data:text/html,<p>hi</p>",
+            "about:blank",
+        ] {
+            assert!(!shipped.hold(&url(page)), "{page}");
+        }
+        let dev = pages("http", Some("http://localhost:1420"));
+        assert!(dev.hold(&url("http://localhost:1420/")));
+        assert!(!dev.hold(&url("http://localhost:1421/")));
+    }
+
+    /// The configuration of this app: the Windows webview serves its
+    /// pages over `http`.
+    #[test]
+    fn the_shipped_configuration_serves_the_pages_over_http() {
+        let config: tauri::Config =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(AppPages::of(&config).windows_scheme, "http");
+    }
 
     /// On Unix a file written from a save dialog is its owner's alone
     /// when it is created, and one it replaces keeps its mode; the

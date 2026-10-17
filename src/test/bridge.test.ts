@@ -464,6 +464,7 @@ const backupWalletPreview = object<ipc.BackupWalletPreview>("BackupWalletPreview
   network,
   kind: walletKind,
   already_watched: bool,
+  refused: nullable(str),
 });
 const backupBackendPreview = object<ipc.BackupBackendPreview>("BackupBackendPreview")({ network, backend: str });
 const backupPreview = object<ipc.BackupPreview>("BackupPreview")({
@@ -477,10 +478,16 @@ const importChoices = object<ipc.ImportChoices>("ImportChoices")({
   indexes: nullable(array(num)),
   apply_settings: bool,
 });
+const refusedWallet = object<ipc.RefusedWallet>("RefusedWallet")({
+  index: num,
+  name: str,
+  reason: str,
+});
 const importReport = object<ipc.ImportReport>("ImportReport")({
   added: array(walletMeta),
   skipped: num,
   settings_applied: bool,
+  refused: array(refusedWallet),
 });
 
 // --- broadcast -------------------------------------------------------------
@@ -738,6 +745,7 @@ const CONTRACT: Record<string, AnySchema | Away> = {
   QrProgress: qrProgress,
   RecentBroadcast: recentBroadcast,
   RecognizedKind: recognizedKind,
+  RefusedWallet: refusedWallet,
   RelativeLock: relativeLock,
   Remaining: remaining,
   Remedy: remedy,

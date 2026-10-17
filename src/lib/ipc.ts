@@ -546,6 +546,10 @@ export interface BackupWalletPreview {
   network: Network;
   kind: WalletKind;
   already_watched: boolean;
+  /** Why a restore cannot take this wallet, in the core's words: its
+      material does not read as a wallet to watch, or its two
+      descriptors are not one wallet. Null for one it takes. */
+  refused: string | null;
 }
 
 /** One backend the settings of a backup would put in place. */
@@ -578,6 +582,18 @@ export interface ImportReport {
   added: WalletMeta[];
   skipped: number;
   settings_applied: boolean;
+  /** Wallets a restore of every wallet left out because the core cannot
+      watch them, as the preview marked them. */
+  refused: RefusedWallet[];
+}
+
+/** A wallet of a backup a restore left out, mirroring `RefusedWallet`
+    in gerfaut-core. */
+export interface RefusedWallet {
+  index: number;
+  name: string;
+  /** Why, in the core's words. */
+  reason: string;
 }
 
 /** What a server's certificate amounts to, mirroring `CertificateStatus`
