@@ -1044,6 +1044,13 @@ export const ipc = {
       network: network ?? null,
     }),
   assembleQr: (frames: string[]) => invoke<QrProgress>("assemble_qr", { frames }),
+  /** Opens a scan the core holds, for frames sent one at a time. */
+  openQrScan: () => invoke<number>("open_qr_scan"),
+  /** One new frame of an open scan; where the scan stands after it. */
+  pushQrFrame: (scan: number, frame: string) =>
+    invoke<QrProgress>("push_qr_frame", { scan, frame }),
+  /** Lets the core drop a scan. */
+  closeQrScan: (scan: number) => invoke<void>("close_qr_scan", { scan }),
   parseBackend: (input: string) => invoke<ScannedBackend>("parse_backend", { input }),
   addWallet: (name: string, parsed: ParsedInput, network: Network) =>
     invoke<WalletMeta>("add_wallet", { name, parsed, network }),
