@@ -1,4 +1,5 @@
 import { Coins, Monitor, Moon, Sun, SunMoon } from "lucide-react";
+import { useCreditFor } from "../../components/PriceCredit";
 import { Select } from "../../components/Select";
 import type { CurrencyReach } from "../../lib/ipc";
 import { formatCurrency, relativeTime } from "../../lib/format";
@@ -103,11 +104,6 @@ function DisplayCard() {
               {chosen.code}.
             </p>
           )}
-          {/* Required by the CoinGecko API terms whenever their data
-              is on screen. */}
-          {fiatSource === "coingecko" && (
-            <p className="mt-1.5 font-ui text-[11px] text-muted">Powered by CoinGecko</p>
-          )}
         </div>
         {fiatEnabled && <RatePreview />}
       </div>
@@ -155,6 +151,8 @@ function RatePreview() {
   // The line says what the amounts do: the same answer, by the same
   // rule, or the reason they show none.
   const quote = liveAnswer(rate, fiatCurrency);
+  // The rate on screen is the source's: the screen credits it.
+  useCreditFor(quote?.source);
   if (rate.isError) {
     return (
       <p className="font-ui text-xs text-pending">

@@ -7,6 +7,7 @@ import { TxDetailModal } from "./TxDetailModal";
 import type { Network, TxDetail, TxIo } from "../lib/ipc";
 import { formatFiat, formatTimestamp } from "../lib/format";
 import { useUi } from "../state/store";
+import { PRICE_TABLE } from "../test/fixtures";
 
 const opener = vi.hoisted(() => ({ openUrl: vi.fn() }));
 vi.mock("@tauri-apps/plugin-opener", () => opener);
@@ -75,8 +76,14 @@ function open(detail: TxDetail = DETAIL, network: Network = "signet") {
   mockIPC((cmd) => {
     if (cmd === "tx_detail") return detail;
     if (cmd === "get_settings") return { active_network: network, app_prefs: {} };
+    if (cmd === "price_table") return PRICE_TABLE;
     if (cmd === "fetch_price") {
-      return { rate: RATE, currency: "eur", source: "coingecko", at: MINED_AT };
+      return {
+        rate: RATE,
+        currency: "eur",
+        source: "coingecko",
+        at: MINED_AT,
+      };
     }
     return undefined;
   });
@@ -254,6 +261,11 @@ describe("TxDetailModal", () => {
     expect(
       await screen.findByText(formatFiat(-150_210, RATE, "eur", "mainnet")),
     ).toBeInTheDocument();
+    // Credited once, in the modal's own slot.
+    const dialog = screen.getByRole("dialog", { name: "Transaction" });
+    expect(
+      await within(dialog).findAllByRole("button", { name: "Powered by CoinGecko" }),
+    ).toHaveLength(1);
     const outputs = within(screen.getByRole("region", { name: "Outputs" }));
     expect(outputs.getByText("0.00150000 BTC")).toBeInTheDocument();
     expect(
@@ -269,6 +281,8 @@ describe("TxDetailModal", () => {
     expect(
       hero.queryByText(formatFiat(-150_210, RATE, "eur", "mainnet")),
     ).not.toBeInTheDocument();
+    // No source priced that zero.
+    expect(screen.queryByText("Powered by CoinGecko")).not.toBeInTheDocument();
   });
 
   it("reads in the order the questions come in", async () => {

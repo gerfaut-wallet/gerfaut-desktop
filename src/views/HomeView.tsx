@@ -15,6 +15,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Balance, ListAmount } from "../components/Amount";
+import { useCreditFor } from "../components/PriceCredit";
 import { BalanceChart } from "../components/BalanceChart";
 import { CoverageBadge } from "../components/CoverageBadge";
 import { LoadFailure } from "../components/LoadFailure";
@@ -422,6 +423,8 @@ function PriceCard() {
   const points = answer?.points ?? [];
   const first = points[0];
   const last = points[points.length - 1];
+  // The price on screen is the source's: the screen credits it.
+  useCreditFor(fiatEnabled && last ? answer?.source : null);
   const change = first && last ? ((last.rate - first.rate) / first.rate) * 100 : null;
 
   if (!fiatEnabled) {

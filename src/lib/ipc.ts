@@ -615,7 +615,7 @@ export type CertificateReport = { host: string } & (
   | { status: "unreachable"; detail: string }
 );
 
-export type PriceSource = "coingecko" | "kraken" | "mempool_space";
+export type PriceSource = "mempool_space" | "coingecko";
 
 /** A display currency, by the identifier gerfaut-core names it with
     (`eur`, `try`...): the list on offer, its order, the names and which
@@ -644,6 +644,16 @@ export interface SourceEntry {
   label: string;
   /** The chart ranges it serves without a key, shortest first. */
   ranges: PriceRange[];
+  /** What its terms ask to be shown with its data, or null: once on
+      each screen that shows a price or an amount it priced. */
+  credit: Credit | null;
+}
+
+/** The credit a price source asks for, mirroring `Credit`: its words,
+    and the page they link to. */
+export interface Credit {
+  text: string;
+  url: string;
 }
 
 /** What the settings offer for the fiat value, and how often its price

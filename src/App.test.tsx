@@ -3,6 +3,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import App from "./App";
 import type {
   AddressEntry,
@@ -575,6 +576,9 @@ function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => 
   // with every change applied.
   const vault = (overrides.get_settings?.({}) ?? SETTINGS) as Settings;
   const held = preferencesHeld(vault.preferences);
+  // The source the price comes from, as the core answers it: the
+  // preferences' own.
+  let source = vault.preferences.price_source;
   mockIPC((cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
     if (overrides[cmd]) return overrides[cmd](payload);
@@ -620,14 +624,17 @@ function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => 
         return { reports: [], failures: [] };
       case "set_app_pref":
         return undefined;
-      case "set_preferences":
-        return held(payload.change as PreferencesChange);
+      case "set_preferences": {
+        const stored = held(payload.change as PreferencesChange);
+        source = stored.price_source;
+        return stored;
+      }
       case "price_table":
         return PRICE_TABLE;
       case "fetch_price":
-        return { rate: 100_000, currency: "eur", source: "coingecko", at: 1_755_000_000 };
+        return { rate: 100_000, currency: "eur", source, at: 1_755_000_000 };
       case "fetch_price_history":
-        return PRICE_HISTORY;
+        return { ...PRICE_HISTORY, source };
       // The live watch is off unless a test turns it on.
       case "live_status":
         return { enabled: false, status: LIVE_OFF };
@@ -932,10 +939,26 @@ describe("overview", () => {
     // 90k -> 100k over the mocked series.
     expect(await screen.findByText("+11.1%")).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: /bitcoin price/i })).not.toBeInTheDocument();
-    // The compact widget offers no Max range.
+    // The compact widget offers no Max range; mempool.space, the
+    // default, serves the others.
     expect(screen.queryByRole("radio", { name: "Max" })).not.toBeInTheDocument();
+    for (const range of ["1D", "1W", "1M", "1Y"]) {
+      expect(screen.getByRole("radio", { name: range })).toBeInTheDocument();
+    }
+  });
+
+  it("offers the ranges CoinGecko serves", async () => {
+    walletIpc({
+      get_settings: () => ({
+        ...SETTINGS,
+        preferences: { ...PREFERENCES, fiat: true, price_source: "coingecko" },
+      }),
+    });
+    renderApp();
+    expect(await screen.findByText("+11.1%")).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "1D" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "1Y" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "1W" })).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Max" })).not.toBeInTheDocument();
   });
 
   /** With an onion backend the core sends the price through Tor, and
@@ -1946,7 +1969,8 @@ describe("display settings", () => {
 
   it("offers every currency the core lists and keeps the source it answers", async () => {
     // The core keeps a currency with a source that quotes it: picking
-    // one only CoinGecko publishes, with Kraken on, answers CoinGecko.
+    // one only CoinGecko publishes, with mempool.space on, answers
+    // CoinGecko.
     let held = { ...PREFERENCES };
     const changes: PreferencesChange[] = [];
     walletIpc({
@@ -1974,12 +1998,20 @@ describe("display settings", () => {
     expect(within(list).getByRole("option", { name: /JPY Japanese yen/ })).toBeInTheDocument();
     expect(within(list).getByRole("option", { name: /NGN Nigerian naira/ })).toBeInTheDocument();
 
-    // A shared currency leaves every source available.
+    // A shared currency leaves every source available, mempool.space
+    // first, as the core lists them.
     await user.click(within(list).getByRole("option", { name: /^JPY/ }));
     await waitFor(() => expect(useUi.getState().fiatCurrency).toBe("jpy"));
-    expect(screen.getByRole("radio", { name: "Kraken" })).toBeEnabled();
-    await user.click(screen.getByRole("radio", { name: "Kraken" }));
-    await waitFor(() => expect(useUi.getState().fiatSource).toBe("kraken"));
+    const sources = within(screen.getByRole("radiogroup", { name: "Price source" }));
+    expect(sources.getAllByRole("radio").map((radio) => radio.textContent)).toEqual([
+      "mempool.space",
+      "CoinGecko",
+    ]);
+    expect(screen.getByRole("radio", { name: "mempool.space" })).toBeChecked();
+    await user.click(screen.getByRole("radio", { name: "CoinGecko" }));
+    await waitFor(() => expect(useUi.getState().fiatSource).toBe("coingecko"));
+    await user.click(screen.getByRole("radio", { name: "mempool.space" }));
+    await waitFor(() => expect(useUi.getState().fiatSource).toBe("mempool_space"));
 
     await choose(user, "Fiat currency", "INR");
     await waitFor(() => expect(useUi.getState().fiatCurrency).toBe("inr"));
@@ -1988,25 +2020,163 @@ describe("display settings", () => {
     expect(useUi.getState().fiatSource).toBe("coingecko");
     expect(changes).toEqual([
       { fiat_currency: "jpy" },
-      { price_source: "kraken" },
+      { price_source: "coingecko" },
+      { price_source: "mempool_space" },
       { fiat_currency: "inr" },
     ]);
-    expect(screen.getByRole("radio", { name: "Kraken" })).toBeDisabled();
     expect(screen.getByRole("radio", { name: "mempool.space" })).toBeDisabled();
     expect(
       screen.getByText("CoinGecko is the only source that quotes INR."),
     ).toBeInTheDocument();
   });
 
-  it("credits CoinGecko while its data is on screen", async () => {
-    walletIpc();
-    renderApp();
-    const user = userEvent.setup();
-    await screen.findByText("Bitcoin price");
-    await user.click(sidebar().getByRole("button", { name: "Settings" }));
-    expect(await screen.findByText("Powered by CoinGecko")).toBeInTheDocument();
-    await user.click(screen.getByRole("radio", { name: "Kraken" }));
-    expect(screen.queryByText("Powered by CoinGecko")).not.toBeInTheDocument();
+  /** CoinGecko's terms ask for its credit close to its data, as a
+      link to its site. One mechanism for every screen: whatever shows
+      a price or an amount it priced marks it, and one slot per layer,
+      under the page or in a modal, shows the credit once. mempool.space
+      asks for none. */
+  describe("the price credit", () => {
+    const wallet: WalletMeta = { ...WALLET, network: "mainnet" };
+    const onMainnet = (
+      preferences: Partial<Settings["preferences"]> = {},
+      overrides: Record<string, (args: Record<string, unknown>) => unknown> = {},
+    ) =>
+      walletIpc({
+        get_settings: () => ({
+          ...SETTINGS,
+          active_network: "mainnet",
+          preferences: { ...PREFERENCES, fiat: true, ...preferences },
+        }),
+        list_wallets: () => [wallet],
+        wallet_snapshot: () => ({ ...SNAPSHOT, meta: wallet }),
+        ...overrides,
+      });
+    const credits = () => screen.queryAllByRole("button", { name: "Powered by CoinGecko" });
+
+    it("shows once a screen, as a link, only for CoinGecko", async () => {
+      onMainnet();
+      renderApp();
+      const user = userEvent.setup();
+      expect(await screen.findByText("+11.1%")).toBeInTheDocument();
+      expect(credits()).toHaveLength(0);
+
+      await openSettings(user, "General");
+      expect(await screen.findByText(/^1 BTC =/)).toBeInTheDocument();
+      expect(credits()).toHaveLength(0);
+      await user.click(screen.getByRole("radio", { name: "CoinGecko" }));
+      await waitFor(() => expect(credits()).toHaveLength(1));
+      // Under the page, after the rate it credits.
+      expect(screen.getByText(/^1 BTC =/).compareDocumentPosition(credits()[0])).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+
+      for (const page of ["Overview", "Transactions", "UTXOs", "Receive"]) {
+        await user.click(sidebar().getByRole("button", { name: page }));
+        await waitFor(() => expect(credits(), page).toHaveLength(1));
+      }
+
+      // The link opens in the browser, by the opener and nothing else.
+      await user.click(credits()[0]);
+      expect(openUrl).toHaveBeenLastCalledWith("https://www.coingecko.com");
+    });
+
+    it("stays in the modal over the page, never twice", async () => {
+      onMainnet(
+        { price_source: "coingecko" },
+        {
+          tx_detail: () => ({
+            summary: SNAPSHOT.txs[0],
+            inputs: [],
+            outputs: [],
+            vsize: 141,
+            fee_rate_sat_vb: 1.5,
+            extras: null,
+          }),
+        },
+      );
+      renderApp();
+      const user = userEvent.setup();
+      await screen.findByRole("navigation", { name: "Navigation" });
+      await user.click(sidebar().getByRole("button", { name: "Transactions" }));
+      await waitFor(() => expect(credits()).toHaveLength(1));
+      await user.click(screen.getAllByRole("button", { name: /Received|Sent/ })[0]);
+      const dialog = await screen.findByRole("dialog", { name: "Transaction" });
+      await waitFor(() => expect(within(dialog).getAllByRole("button", { name: "Powered by CoinGecko" })).toHaveLength(1));
+      expect(credits()).toHaveLength(1);
+    });
+
+    it("credits no figure that is not on screen", async () => {
+      // The series failed and the amounts are hidden: no price shows.
+      onMainnet(
+        { price_source: "coingecko", masked: true },
+        { fetch_price_history: () => Promise.reject({ kind: "network", message: "timed out" }) },
+      );
+      renderApp();
+      const user = userEvent.setup();
+      expect(
+        await screen.findByText("The price source did not answer.", undefined, { timeout: 5000 }),
+      ).toBeInTheDocument();
+      expect(credits()).toHaveLength(0);
+
+      // Shown again, the amounts are credited.
+      useUi.setState({ masked: false });
+      await user.click(sidebar().getByRole("button", { name: "Overview" }));
+      await waitFor(() => expect(credits()).toHaveLength(1));
+    });
+
+    it("credits nothing under a UTXO list that failed", async () => {
+      onMainnet({ price_source: "coingecko" }, { utxos: () => Promise.reject({ kind: "sync", message: "no backend" }) });
+      renderApp();
+      const user = userEvent.setup();
+      await screen.findByRole("navigation", { name: "Navigation" });
+      await user.click(sidebar().getByRole("button", { name: "UTXOs" }));
+      expect(await screen.findAllByText(/no backend/i)).not.toHaveLength(0);
+      expect(credits()).toHaveLength(0);
+    });
+
+    it("credits a funded address only once it is unfolded", async () => {
+      const row = (index: number, balance: number) => ({
+        index,
+        address: `bc1qaddress${index}`,
+        used: balance > 0,
+        balance_sats: balance,
+      });
+      onMainnet(
+        { price_source: "coingecko" },
+        {
+          address_list: () => ({
+            external: [0, 1, 2, 3, 4, 5].map((i) => row(i, 0)).concat(row(6, 150_000)),
+            internal: [],
+            truncated: false,
+          }),
+        },
+      );
+      renderApp();
+      const user = userEvent.setup();
+      await screen.findByRole("navigation", { name: "Navigation" });
+      await user.click(sidebar().getByRole("button", { name: "Receive" }));
+      await user.click(await screen.findByRole("button", { name: /Show all 7/ }));
+      await waitFor(() => expect(credits()).toHaveLength(1));
+      await user.click(screen.getByRole("button", { name: /Show less/ }));
+      await waitFor(() => expect(credits()).toHaveLength(0));
+    });
+
+    it("credits the real price on a test network, not its zero", async () => {
+      walletIpc({
+        get_settings: () => ({
+          ...SETTINGS,
+          preferences: { ...PREFERENCES, fiat: true, price_source: "coingecko" },
+        }),
+      });
+      renderApp();
+      const user = userEvent.setup();
+      // The price on the overview is the real one, credited.
+      await waitFor(() => expect(credits()).toHaveLength(1));
+      // A signet wallet's amounts are zero in euros: no price behind them.
+      await user.click(sidebar().getByRole("button", { name: "Transactions" }));
+      expect(await screen.findByText("€0.00")).toBeInTheDocument();
+      expect(credits()).toHaveLength(0);
+    });
   });
 
   it("saves the shared gap limit from settings", async () => {

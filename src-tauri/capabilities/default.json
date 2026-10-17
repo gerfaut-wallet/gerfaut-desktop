@@ -13,7 +13,8 @@
       "allow": [
         { "url": "https://mempool.space/*" },
         { "url": "https://github.com/gerfaut-wallet/gerfaut-desktop/releases/latest" },
-        { "url": "https://github.com/gerfaut-wallet/gerfaut-desktop/issues" }
+        { "url": "https://github.com/gerfaut-wallet/gerfaut-desktop/issues" },
+        { "url": "https://www.coingecko.com" }
       ]
     }
   ]

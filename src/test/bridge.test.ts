@@ -383,7 +383,7 @@ const certificateReport = tagged<ipc.CertificateReport>("CertificateReport")("st
 
 // --- prices and preferences ------------------------------------------------
 
-const priceSource: Schema<ipc.PriceSource> = literal("PriceSource", "coingecko", "kraken", "mempool_space");
+const priceSource: Schema<ipc.PriceSource> = literal("PriceSource", "mempool_space", "coingecko");
 /** A plain string here: the list of currencies is the core's alone. */
 const fiatCurrency: Schema<ipc.FiatCurrency> = str;
 const currencyReach: Schema<ipc.CurrencyReach> = literal("CurrencyReach", "every", "coingecko_only");
@@ -395,7 +395,13 @@ const currencyEntry = object<ipc.CurrencyEntry>("CurrencyEntry")({
   sources: array(priceSource),
 });
 const priceRange: Schema<ipc.PriceRange> = literal("PriceRange", "day", "week", "month", "year", "max");
-const sourceEntry = object<ipc.SourceEntry>("SourceEntry")({ source: priceSource, label: str, ranges: array(priceRange) });
+const credit = object<ipc.Credit>("Credit")({ text: str, url: str });
+const sourceEntry = object<ipc.SourceEntry>("SourceEntry")({
+  source: priceSource,
+  label: str,
+  ranges: array(priceRange),
+  credit: nullable(credit),
+});
 const priceTable = object<ipc.PriceTable>("PriceTable")({
   currencies: array(currencyEntry),
   sources: array(sourceEntry),
@@ -420,7 +426,12 @@ const preferencesChange = object<ipc.PreferencesChange>("PreferencesChange")({
   notify_new_tx: optional(bool),
   explorer_ack: optional(bool),
 });
-const priceQuote = object<ipc.PriceQuote>("PriceQuote")({ rate: num, currency: fiatCurrency, source: priceSource, at: num });
+const priceQuote = object<ipc.PriceQuote>("PriceQuote")({
+  rate: num,
+  currency: fiatCurrency,
+  source: priceSource,
+  at: num,
+});
 const pricePoint = object<ipc.PricePoint>("PricePoint")({ t: num, rate: num });
 const priceHistory = object<ipc.PriceHistory>("PriceHistory")({
   points: array(pricePoint),
@@ -696,6 +707,7 @@ const CONTRACT: Record<string, AnySchema | Away> = {
   Context: { away: LIVE_STAYS_IN_RUST },
   CoreError: commandError,
   Coverage: coverage,
+  Credit: credit,
   CurrencyEntry: currencyEntry,
   CurrencyReach: currencyReach,
   DerivationChoice: derivationChoice,

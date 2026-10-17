@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { IconButton } from "./Button";
+import { CreditLayer, CreditSlot } from "./PriceCredit";
 
 /** Open modals, bottom to top: Escape only closes the topmost one. */
 const modalStack: symbol[] = [];
@@ -112,7 +113,12 @@ export function Modal({
             <X size={20} strokeWidth={1.5} aria-hidden />
           </IconButton>
         </header>
-        <div className="max-h-[76vh] overflow-y-auto px-6 py-5">{children}</div>
+        {/* A layer of its own: a price shown here is credited here,
+            and the page's credit waits under the dim. */}
+        <CreditLayer>
+          <div className="max-h-[76vh] overflow-y-auto px-6 py-5">{children}</div>
+          <CreditSlot className="border-t border-border px-6 py-2 text-right" />
+        </CreditLayer>
       </div>
     </div>
   );

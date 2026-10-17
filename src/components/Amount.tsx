@@ -9,6 +9,7 @@ import {
 } from "../lib/format";
 import { liveAnswer, useFiatRate, useSettings } from "../state/queries";
 import { useUi } from "../state/store";
+import { useCreditFor } from "./PriceCredit";
 
 /** An amount as plain text, for a heading or a fact where a component
     would not fit: the chosen unit, masked when the display is, `n/a`
@@ -25,12 +26,18 @@ export function useAmountText(sats: number | null): string {
     on screen comes from here, so the network is read here once: the
     pages show the wallets of the active network and no other, which
     makes it the network of every amount they hold. Not known yet, it
-    shows nothing rather than a price a test coin does not have. */
+    shows nothing rather than a price a test coin does not have.
+
+    A value it gives is on screen, priced by its source: it marks the
+    source for the credit of the screen (`CreditSlot`). Off mainnet the
+    value is zero, which no source priced, and it marks nothing. */
 export function useFiatValue(sats: number): string | null {
   const { fiatEnabled, fiatCurrency, masked } = useUi();
   const quote = liveAnswer(useFiatRate(), fiatCurrency);
   const network = useSettings().data?.active_network;
-  if (!fiatEnabled || masked || !quote || !network) return null;
+  const shown = fiatEnabled && !masked && quote !== null && network !== undefined;
+  useCreditFor(shown && network === "mainnet" ? quote.source : null);
+  if (!shown) return null;
   return formatFiat(sats, quote.rate, fiatCurrency, network);
 }
 
