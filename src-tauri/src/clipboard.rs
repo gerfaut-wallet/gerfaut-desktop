@@ -128,7 +128,12 @@ impl SensitiveClipboard {
             held.board = Some(Box::new(SystemBoard(board)));
         }
         let board = held.board.as_mut().expect("opened just above");
-        board.put_secret(text)?;
+        if let Err(error) = board.put_secret(text) {
+            // A clipboard that refused once may be a connection that
+            // went: the next copy opens a new one.
+            held.board = None;
+            return Err(error);
+        }
         held.generation += 1;
         held.copied = Some(text.to_owned());
         Ok(held.generation)
@@ -220,6 +225,7 @@ mod tests {
         /// Whether what is there was marked secret.
         secret: Arc<Mutex<bool>>,
         busy: Arc<Mutex<bool>>,
+        refuses: Arc<Mutex<bool>>,
     }
 
     impl FakeBoard {
@@ -234,6 +240,9 @@ mod tests {
 
     impl Board for FakeBoard {
         fn put_secret(&mut self, text: &str) -> Result<(), String> {
+            if *self.refuses.lock().unwrap() {
+                return Err("the connection to the clipboard went".to_owned());
+            }
             *self.text.lock().unwrap() = Some(text.to_owned());
             *self.secret.lock().unwrap() = true;
             Ok(())
@@ -253,6 +262,17 @@ mod tests {
     fn fake() -> (SensitiveClipboard, FakeBoard) {
         let board = FakeBoard::default();
         (SensitiveClipboard::on(Box::new(board.clone())), board)
+    }
+
+    /// A clipboard that refused a copy is let go of: the next copy opens
+    /// a new one instead of failing on the same dead connection.
+    #[test]
+    fn a_clipboard_that_refused_is_opened_again() {
+        let (clipboard, board) = fake();
+        *board.refuses.lock().unwrap() = true;
+        assert!(clipboard.copy("wpkh(...)").is_err());
+        assert!(clipboard.held.lock().unwrap().board.is_none());
+        assert_eq!(board.holds(), None);
     }
 
     #[test]
