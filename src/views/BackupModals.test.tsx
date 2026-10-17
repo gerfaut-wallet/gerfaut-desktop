@@ -702,6 +702,20 @@ describe("restoring a backup", () => {
         "A wallet in this backup is not a descriptor Gerfaut can watch, so nothing was restored. The core says: descriptor error: Invalid descriptor",
       ),
     ).toBeInTheDocument();
+
+    // The core names the wallet it refuses, a private key included,
+    // under `invalid_input`: the screen keeps those words.
+    refusal = {
+      kind: "invalid_input",
+      message:
+        'invalid backup: "Hot" cannot be restored: input contains private key material and was rejected',
+    };
+    await user.click(screen.getByRole("button", { name: /restore 1 wallet/i }));
+    expect(
+      await screen.findByText(
+        'Nothing was restored. The core says: invalid backup: "Hot" cannot be restored: input contains private key material and was rejected',
+      ),
+    ).toBeInTheDocument();
   });
 
   it("names the server and the certificate the settings would put in place", async () => {
