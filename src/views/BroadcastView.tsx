@@ -10,6 +10,7 @@ import {
   ExternalLink,
   FileUp,
   Flame,
+  Hourglass,
   Percent,
   PenOff,
   Radio,
@@ -252,7 +253,7 @@ export function BroadcastView({ network }: { network: Network }) {
               </Button>
               <Button
                 variant="primary"
-                disabled={preview.data.readiness !== "ready" || broadcast.isPending}
+                disabled={!sendable(preview.data) || broadcast.isPending}
                 onClick={() => setConfirmOpen(true)}
               >
                 <Radio size={16} strokeWidth={1.5} aria-hidden />
@@ -451,6 +452,7 @@ const WARNING_ICON: Record<TxWarningKind, LucideIcon> = {
   locked: Clock,
   input_unknown: CircleHelp,
   input_spent: Ban,
+  in_mempool: Hourglass,
   input_mismatch: EqualNot,
   fee_unknown: CircleHelp,
   dust_output: Coins,
@@ -468,16 +470,40 @@ const WARNING_ADVICE: Partial<Record<TxWarningKind, string>> = {
     "This signature does not fix where all of the money goes: anyone who sees the transaction before it is mined can send some or all of it somewhere else. Unless you set this up on purpose, do not broadcast it.",
 };
 
+/** Whether the Broadcast button is on: the core's readiness, ready or
+    already waiting in the mempool, which a node takes again harmlessly. */
+function sendable(preview: TxPreview): boolean {
+  return preview.readiness === "ready" || preview.readiness === "in_mempool";
+}
+
 /** The mark on a figure nobody confirmed: amber, and in words, since a
-    colour alone tells nothing to a reader who cannot see it. It keeps
-    its own case and tracking wherever it sits: in a heading set in
-    capitals it would shout otherwise. */
-function Claimed() {
+    colour alone tells nothing to a reader who cannot see it. It names
+    whose word the figure is: the PSBT's, or, when a watched address's
+    listing is among them, nobody's in particular, since that figure is
+    the server's. It keeps its own case and tracking wherever it sits: in
+    a heading set in capitals it would shout otherwise. */
+function Claimed({ listed }: { listed: boolean }) {
   return (
     <span className="font-ui text-[11px] font-medium normal-case tracking-normal text-pending">
-      as the PSBT claims
+      {listed ? "unproven" : "as the PSBT claims"}
     </span>
   );
+}
+
+/** The fee rate as the core measured it: paid, estimated once signed, or
+    the most it can be once signed. The figure, then what qualifies it. */
+function feeRate(preview: TxPreview): { figure: string; signed: string | null } | null {
+  const rate = preview.fee_rate_sat_vb;
+  if (rate === null) return null;
+  const figure = `${rate.toFixed(1)} sat/vB`;
+  switch (preview.fee_rate_basis) {
+    case "exact":
+      return { figure, signed: null };
+    case "estimated":
+      return { figure: `≈ ${figure}`, signed: "once signed" };
+    case "upper_bound":
+      return { figure: `≤ ${figure}`, signed: "once signed" };
+  }
 }
 
 /** What an input is to the watched wallets, in the diagram's words. */
@@ -528,7 +554,10 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
   // `amounts_declared`: a value shown for a coin is one nothing proves,
   // and a total or a fee summed over it rests on the same word.
   const claimed = preview.amounts_declared;
-  const feeNote = claimed && preview.fee_sats !== null ? <Claimed /> : undefined;
+  const listed = preview.amounts_listed;
+  const feeNote =
+    claimed && preview.fee_sats !== null ? <Claimed listed={listed} /> : undefined;
+  const rate = feeRate(preview);
 
   return (
     <div className="flex flex-col gap-5 rounded-lg border border-border bg-surface p-5">
@@ -547,6 +576,14 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
           {preview.readiness === "ready" ? (
             <Pill tone="confirmed" icon={<Check size={12} strokeWidth={2} aria-hidden />}>
               Ready to broadcast
+            </Pill>
+          ) : preview.readiness === "in_mempool" ? (
+            // Signed, and already out: the network holds it, and sending
+            // it again does no harm. Neither green, as if nothing had
+            // happened yet, nor red: amber, the hourglass of a
+            // transaction waiting to be mined.
+            <Pill tone="pending" icon={<Hourglass size={12} strokeWidth={2} aria-hidden />}>
+              Already in the mempool
             </Pill>
           ) : preview.readiness === "refused" ? (
             // The core is sure the network refuses it: a coin spent in
@@ -606,7 +643,7 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <IoList title="Inputs" ios={preview.inputs} claimed={claimed} />
+        <IoList title="Inputs" ios={preview.inputs} claimed={claimed} listed={listed} />
         <IoList title="Outputs" ios={preview.outputs} />
       </div>
 
@@ -630,10 +667,22 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
           <Fact label="Fee" note={feeNote}>
             {amount(preview.fee_sats)}
           </Fact>
-          <Fact label="Fee rate" note={feeNote}>
-            {preview.fee_rate_sat_vb !== null
-              ? `${preview.fee_rate_sat_vb.toFixed(1)} sat/vB`
-              : "n/a"}
+          {/* Before the signatures are in, the rate is the one the
+              transaction will pay once they are: said under the figure. */}
+          <Fact
+            label="Fee rate"
+            note={
+              rate?.signed || feeNote ? (
+                <>
+                  {rate?.signed && (
+                    <span className="block font-ui text-[11px] text-muted">{rate.signed}</span>
+                  )}
+                  {feeNote}
+                </>
+              ) : undefined
+            }
+          >
+            {rate ? rate.figure : "n/a"}
           </Fact>
         </dl>
       </section>
@@ -645,13 +694,16 @@ function IoList({
   title,
   ios,
   claimed = false,
+  listed = false,
 }: {
   title: string;
   ios: (TxInputPreview | TxOutputPreview)[];
-  /** A value on this side is the PSBT's own word, so the total is too.
+  /** A value on this side is one nothing proves, so the total is too.
       Which row it is the core does not say, and a mark on the wrong
       row would be a claim of its own: the total carries it. */
   claimed?: boolean;
+  /** Among those values, a watched address's listing: not the PSBT's. */
+  listed?: boolean;
 }) {
   // What the side carries, on the heading that counts it: the flow
   // summary used to say it, and a count alone answers half the question.
@@ -664,7 +716,7 @@ function IoList({
         {claimed && sum !== null && (
           <>
             {" · "}
-            <Claimed />
+            <Claimed listed={listed} />
           </>
         )}
       </h2>
@@ -770,6 +822,7 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
   // The last figure read before an irreversible send: if it is the
   // PSBT's word, it is marked here as it was on the preview.
   const claimed = preview.amounts_declared && preview.fee_sats !== null;
+  const rate = feeRate(preview);
   const outputsOpen = preview.warnings.some((warning) => warning.kind === "uncommitted_outputs");
   // A fee nobody could establish: the core's own line on why, said again
   // where the send is decided. For outputs over amounts nothing proves,
@@ -778,25 +831,30 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
   const whyNoFee = preview.fee_unknown_reason;
   return (
     <div className="flex flex-col gap-3">
-      <p className="font-ui text-sm text-text">
-        Once broadcast, a transaction cannot be taken back. Nodes will relay it and miners
-        may include it in the next block.
-      </p>
+      {preview.readiness === "in_mempool" ? (
+        <p className="font-ui text-sm text-text">
+          This transaction is already waiting in the mempool. Broadcasting it again does no
+          harm: nodes that already hold it keep it, and others may relay it.
+        </p>
+      ) : (
+        <p className="font-ui text-sm text-text">
+          Once broadcast, a transaction cannot be taken back. Nodes will relay it and miners
+          may include it in the next block.
+        </p>
+      )}
       <dl className="grid grid-cols-2 gap-3 rounded-md bg-sunken/50 p-3">
         <Fact label="Outputs">{groupThousands(String(preview.outputs.length))}</Fact>
         {/* Outputs over proven amounts, or past all the bitcoin there
             will ever be, never get here: the core blocks the send. Over
             amounts only the PSBT declares, the fee is as unknown as they
             are, and the line under the facts says what that means. */}
-        <Fact label="Fee" note={claimed ? <Claimed /> : undefined}>
+        <Fact label="Fee" note={claimed ? <Claimed listed={preview.amounts_listed} /> : undefined}>
           {preview.fee_sats === null
             ? "unknown"
             : masked
               ? MASKED
               : `${formatAmount(preview.fee_sats, unit)}${
-                  preview.fee_rate_sat_vb !== null
-                    ? ` · ${preview.fee_rate_sat_vb.toFixed(1)} sat/vB`
-                    : ""
+                  rate ? ` · ${rate.figure}${rate.signed ? ` ${rate.signed}` : ""}` : ""
                 }`}
         </Fact>
       </dl>

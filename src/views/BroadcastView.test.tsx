@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BroadcastView, MAX_TRANSACTION_FILE_BYTES } from "./BroadcastView";
@@ -68,8 +68,10 @@ const PREVIEW: TxPreview = {
   ],
   fee_sats: 210,
   fee_rate_sat_vb: 1.5,
+  fee_rate_basis: "exact",
   fee_unknown_reason: null,
   amounts_declared: false,
+  amounts_listed: false,
   vsize: 141,
   weight: 561,
   size: 215,
@@ -373,6 +375,76 @@ describe("BroadcastView", () => {
     await preview(user);
     expect(screen.getByText("Ready to broadcast")).toHaveAttribute("data-tone", "confirmed");
     expect(screen.getByRole("button", { name: "Broadcast" })).toBeEnabled();
+  });
+
+  /** This very transaction already waits in the mempool: no green
+      "Ready" beside a caution saying it is out, no red either. The pill
+      says it is waiting, the caution why, and sending it again stays
+      possible, since it does no harm. */
+  it("says a transaction already in the mempool is waiting, without red", async () => {
+    const user = mount({
+      ...PREVIEW,
+      readiness: "in_mempool",
+      warnings: [
+        warning(
+          "in_mempool",
+          "info",
+          "This transaction is already waiting in the mempool: it was broadcast before. Broadcasting it again does no harm.",
+        ),
+      ],
+    });
+    await preview(user);
+    const pill = screen.getByText("Already in the mempool");
+    expect(pill).toHaveAttribute("data-tone", "pending");
+    expect(screen.queryByText("Ready to broadcast")).not.toBeInTheDocument();
+    const caution = screen.getByText(/already waiting in the mempool: it was broadcast before/);
+    expect(caution.parentElement).toHaveClass("bg-pending-surface", "text-pending");
+    expect(document.querySelector(".bg-alert-surface")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Broadcast" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(dialog.getByText(/already waiting in the mempool\. Broadcasting it again does no harm/)).toBeInTheDocument();
+  });
+
+  /** Before the signatures are in, the rate is the one the transaction
+      will pay once they are, the core's estimate: said as one, under
+      the figure. The fee in sats is exact and carries no such word. */
+  it("gives an unsigned transaction its rate once signed", async () => {
+    const unsigned = {
+      ...PREVIEW,
+      readiness: "unsigned" as const,
+      hex: null,
+      fee_rate_sat_vb: 4.96,
+      warnings: [warning("unsigned", "alert", "The input carries no signature.", true)],
+    };
+    const user = mount({ ...unsigned, fee_rate_basis: "estimated" });
+    await preview(user);
+    const technical = within(screen.getByRole("region", { name: "Technical" }));
+    expect(technical.getByText("≈ 5.0 sat/vB")).toBeInTheDocument();
+    expect(technical.getByText("once signed")).toBeInTheDocument();
+    expect(technical.getAllByText("once signed")).toHaveLength(1);
+    cleanup();
+
+    // The weight of the signatures unknown: the most it can be.
+    const ceiling = mount({ ...unsigned, fee_rate_basis: "upper_bound" });
+    await preview(ceiling);
+    const facts = within(screen.getByRole("region", { name: "Technical" }));
+    expect(facts.getByText("≤ 5.0 sat/vB")).toBeInTheDocument();
+    expect(facts.getByText("once signed")).toBeInTheDocument();
+  });
+
+  /** A figure from a watched address's listing nobody backed is the
+      server's, not the PSBT's: the mark says it is unproven. */
+  it("marks a listing nobody backed as unproven, not as the PSBT's word", async () => {
+    const user = mount({ ...PREVIEW, amounts_declared: true, amounts_listed: true });
+    await preview(user);
+    expect(screen.queryByText("as the PSBT claims")).not.toBeInTheDocument();
+    expect(screen.getAllByText("unproven")).toHaveLength(4);
+    for (const mark of screen.getAllByText("unproven")) {
+      expect(mark).toHaveClass("text-pending");
+    }
+    await user.click(screen.getByRole("button", { name: "Broadcast" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(dialog.getByText("unproven")).toBeInTheDocument();
   });
 
   /** Text the core cannot read: what to paste, said as an error the
