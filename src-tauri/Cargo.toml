@@ -65,4 +65,4 @@ serde_json = "1"
 # Cargo only honours [patch] in the root manifest: the same pin as in
 # gerfaut-core, see the note there.
 [patch.crates-io]
-saturating-time = { git = "https://github.com/gerfaut-wallet/saturating-time", rev = "185ef6a4a1647adac291bd43bb9fd2821e73b9bc" }
+saturating-time = { git = "https://github.com/gerfaut-wallet/saturating-time", rev = "784e1a396ac8890fcc2c7bab6d1c07e432ceedac" }
