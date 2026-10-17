@@ -92,7 +92,8 @@ interface UiState {
   setNotifyNewTx: (enabled: boolean) => Promise<void>;
   setOnboardingSeen: (seen: boolean) => void;
   markTourSeen: () => void;
-  showToast: (message: string) => void;
+  /** Shows `message` for three seconds, or `ms`. */
+  showToast: (message: string, ms?: number) => void;
   setSyncError: (walletId: string, message: string | null) => void;
   /** Applies the preferences the vault answered at startup. */
   hydratePrefs: (settings: Settings) => void;
@@ -109,7 +110,7 @@ const UNTIL_THE_VAULT_ANSWERS: Preferences = {
   masked: false,
   fiat: false,
   fiat_currency: "eur",
-  price_source: "coingecko",
+  price_source: "mempool_space",
   notify_new_tx: false,
   explorer_ack: false,
 };
@@ -260,10 +261,10 @@ export const useUi = create<UiState>((set, get) => ({
   // The tour reads the vault's own preference, which the write above
   // does not refresh: remember here that this session has seen it.
   markTourSeen: () => set({ onboardingSeen: true, tourDismissed: true }),
-  showToast: (message) => {
+  showToast: (message, ms = 3000) => {
     clearTimeout(toastTimer);
     set({ toast: message });
-    toastTimer = setTimeout(() => set({ toast: null }), 3000);
+    toastTimer = setTimeout(() => set({ toast: null }), ms);
   },
   setSyncError: (walletId, message) =>
     set((state) => {

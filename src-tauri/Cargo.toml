@@ -29,8 +29,10 @@ keyring = { version = "3", features = ["windows-native", "apple-native", "linux-
 rand = "0.9"
 # The clipboard, for what is copied out of sight of the clipboard
 # history and taken off it a minute later: the webview can write the
-# clipboard, but not read it back to tell whose copy is there.
-arboard = { version = "3.6", default-features = false }
+# clipboard, but not read it back to tell whose copy is there. With the
+# Wayland data-control protocol, for a session without XWayland: pure
+# Rust, MIT and Apache-2.0, and X11 still when the compositor has none.
+arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
 data-encoding = "2"
 
 # A second launch hands over to the window already open, rather than

@@ -9,6 +9,8 @@ import { ScanQrModal } from "../components/ScanQrModal";
 import type {
   BackupBundle,
   BackupPreview,
+  BackupWalletPreview,
+  ImportReport,
   Network,
   WalletMeta,
 } from "../lib/ipc";
@@ -46,6 +48,35 @@ const TOO_LARGE = "This file is far too large to be a Gerfaut backup.";
     and a pinned certificate nobody had read — every address of every
     wallet on that network, to whoever wrote the file. Shown, it is a
     choice; hidden, it was a trap. */
+/** The wallets a restore left out because the core cannot watch them:
+    those the preview marked, which the screen never asks for, and any
+    the core left out of a restore of every wallet. */
+function leftOut(preview: BackupPreview | null, report: ImportReport): string[] {
+  // A wallet without a name, which is one reason to refuse it, goes by
+  // its place in the backup.
+  const called = (wallet: { index: number; name: string }) =>
+    wallet.name.trim() || `wallet ${wallet.index + 1}`;
+  const names = (preview?.wallets ?? [])
+    .filter((wallet) => !wallet.already_watched && wallet.refused)
+    .map(called);
+  for (const wallet of report.refused ?? []) {
+    if (!names.includes(called(wallet))) names.push(called(wallet));
+  }
+  return names;
+}
+
+/** " · 1 left out: Handed over", " · 2 left out", or nothing. */
+export function leftOutWords(names: string[]): string {
+  if (names.length === 0) return "";
+  return names.length === 1 ? ` · 1 left out: ${names[0]}` : ` · ${names.length} left out`;
+}
+
+/** A wallet the restore leaves alone: one this vault watches already,
+    or one the core refuses. An older core sends no `refused`. */
+function outOfReach(wallet: BackupWalletPreview): boolean {
+  return wallet.already_watched || Boolean(wallet.refused);
+}
+
 function SettingsPreview({ preview }: { preview: BackupPreview }) {
   const { backends, electrum_hosts: hosts } = preview;
   if (backends.length === 0 && hosts.length === 0) return null;
@@ -450,14 +481,18 @@ export function BackupRestoreModal({
   };
 
   /** A restore goes whole or not at all, so a wallet the core refuses
-      stops every one of them: the words say so, and say which kind of
-      wallet it was, since the core names none. */
+      stops every one of them: the words say so. The core names the
+      wallet in its own words, and a network that does not match or a
+      private key comes under `invalid_input` with that name. */
   const restoreMessage = (error: unknown) => {
     if (isCommandError(error) && error.kind === "private_material") {
       return "A wallet in this backup holds a private key, and Gerfaut only watches: nothing was restored.";
     }
     if (isCommandError(error) && error.kind === "descriptor") {
       return `A wallet in this backup is not a descriptor Gerfaut can watch, so nothing was restored. The core says: ${error.message}`;
+    }
+    if (isCommandError(error) && error.kind === "invalid_input") {
+      return `Nothing was restored. The core says: ${error.message}`;
     }
     return message(error);
   };
@@ -468,7 +503,7 @@ export function BackupRestoreModal({
       const found = await previewBackup.mutateAsync({ source, password });
       setPreview(found);
       setChosen(
-        new Set(found.wallets.filter((w) => !w.already_watched).map((w) => w.index)),
+        new Set(found.wallets.filter((w) => !outOfReach(w)).map((w) => w.index)),
       );
       setProblem(null);
     } catch (error) {
@@ -490,7 +525,8 @@ export function BackupRestoreModal({
       const count =
         report.added.length === 1 ? "1 wallet restored" : `${report.added.length} wallets restored`;
       const where = elsewhere ? ` on ${NETWORK_LABEL[report.added[0].network]}` : "";
-      showToast(report.settings_applied ? `${count}${where} · settings applied` : `${count}${where}`);
+      const settings = report.settings_applied ? " · settings applied" : "";
+      showToast(`${count}${where}${settings}${leftOutWords(leftOut(preview, report))}`);
       // The restored wallets get their first sync wherever they are.
       syncAll.mutate(elsewhere ? report.added[0].network : network);
       close();
@@ -586,22 +622,23 @@ export function BackupRestoreModal({
           <ul className="flex flex-col gap-2">
             {preview.wallets.map((wallet) => (
               <li key={wallet.index}>
-                {/* A wallet already watched stays on the list, out of
-                    reach: showing what will not be done says more than
-                    dropping it, which would read as a backup missing a
-                    wallet. Its name steps back to the weight of the
-                    line under it — demoted, still readable. */}
+                {/* A wallet already watched, or one the core refuses,
+                    stays on the list, out of reach: showing what will
+                    not be done says more than dropping it, which would
+                    read as a backup missing a wallet. Its name steps
+                    back to the weight of the line under it — demoted,
+                    still readable — and a refused one says why. */}
                 <label
                   className={clsx(
                     "flex items-start gap-2.5",
-                    wallet.already_watched ? "cursor-default" : "cursor-pointer",
+                    outOfReach(wallet) ? "cursor-default" : "cursor-pointer",
                   )}
                 >
                   <input
                     type="checkbox"
                     className="mt-1 accent-primary"
                     checked={chosen.has(wallet.index)}
-                    disabled={wallet.already_watched}
+                    disabled={outOfReach(wallet)}
                     onChange={(event) => {
                       const next = new Set(chosen);
                       if (event.target.checked) next.add(wallet.index);
@@ -613,7 +650,7 @@ export function BackupRestoreModal({
                     <span
                       className={clsx(
                         "font-ui text-sm font-medium",
-                        wallet.already_watched ? "text-muted" : "text-text",
+                        outOfReach(wallet) ? "text-muted" : "text-text",
                       )}
                     >
                       {wallet.name}
@@ -624,7 +661,13 @@ export function BackupRestoreModal({
                         ? "Single address"
                         : "Descriptor wallet"}
                       {wallet.already_watched && " · Already watched"}
+                      {!wallet.already_watched && wallet.refused && " · Cannot be restored"}
                     </span>
+                    {!wallet.already_watched && wallet.refused && (
+                      <span className="selectable break-words font-ui text-xs text-muted">
+                        {wallet.refused}
+                      </span>
+                    )}
                   </span>
                 </label>
               </li>

@@ -546,6 +546,10 @@ export interface BackupWalletPreview {
   network: Network;
   kind: WalletKind;
   already_watched: boolean;
+  /** Why a restore cannot take this wallet, in the core's words: its
+      material does not read as a wallet to watch, or its two
+      descriptors are not one wallet. Null for one it takes. */
+  refused: string | null;
 }
 
 /** One backend the settings of a backup would put in place. */
@@ -578,6 +582,18 @@ export interface ImportReport {
   added: WalletMeta[];
   skipped: number;
   settings_applied: boolean;
+  /** Wallets a restore of every wallet left out because the core cannot
+      watch them, as the preview marked them. */
+  refused: RefusedWallet[];
+}
+
+/** A wallet of a backup a restore left out, mirroring `RefusedWallet`
+    in gerfaut-core. */
+export interface RefusedWallet {
+  index: number;
+  name: string;
+  /** Why, in the core's words. */
+  reason: string;
 }
 
 /** What a server's certificate amounts to, mirroring `CertificateStatus`
@@ -599,7 +615,7 @@ export type CertificateReport = { host: string } & (
   | { status: "unreachable"; detail: string }
 );
 
-export type PriceSource = "coingecko" | "kraken" | "mempool_space";
+export type PriceSource = "mempool_space" | "coingecko";
 
 /** A display currency, by the identifier gerfaut-core names it with
     (`eur`, `try`...): the list on offer, its order, the names and which
@@ -628,6 +644,16 @@ export interface SourceEntry {
   label: string;
   /** The chart ranges it serves without a key, shortest first. */
   ranges: PriceRange[];
+  /** What its terms ask to be shown with its data, or null: once on
+      each screen that shows a price or an amount it priced. */
+  credit: Credit | null;
+}
+
+/** The credit a price source asks for, mirroring `Credit`: its words,
+    and the page they link to. */
+export interface Credit {
+  text: string;
+  url: string;
 }
 
 /** What the settings offer for the fiat value, and how often its price
@@ -715,6 +741,9 @@ export type TxWarningKind =
   | "locked"
   | "input_unknown"
   | "input_spent"
+  /** This very transaction is already waiting in the mempool: sending it
+      again does no harm. */
+  | "in_mempool"
   | "input_mismatch"
   | "fee_unknown"
   | "dust_output"
@@ -746,8 +775,16 @@ export interface TxWarning {
 
 /** Where a transaction stands before it is sent, decided by the core:
     the words of the readiness pill. `refused` comes before `unsigned`
-    when both hold, since a signature does not bring back a spent coin. */
-export type TxReadiness = "ready" | "refused" | "unsigned";
+    when both hold, since a signature does not bring back a spent coin.
+    `in_mempool`: signed, and already waiting to be mined; it can be sent
+    again, which does no harm. */
+export type TxReadiness = "ready" | "refused" | "unsigned" | "in_mempool";
+
+/** What the fee rate is measured on: the transaction as it will be sent
+    (`exact`), an estimate of it once the missing signatures are in
+    (`estimated`), or, their weight unknown, the most it can be
+    (`upper_bound`). */
+export type FeeRateBasis = "exact" | "estimated" | "upper_bound";
 
 /** Everything shown before a transaction is broadcast. */
 export interface TxPreview {
@@ -757,7 +794,10 @@ export interface TxPreview {
   inputs: TxInputPreview[];
   outputs: TxOutputPreview[];
   fee_sats: number | null;
+  /** The fee over the size the transaction has once signed: see
+      `fee_rate_basis`. */
   fee_rate_sat_vb: number | null;
+  fee_rate_basis: FeeRateBasis;
   /** Why there is no fee, in the words of the core's caution: what the
       confirmation repeats. Null when there is a fee. */
   fee_unknown_reason: string | null;
@@ -765,6 +805,9 @@ export interface TxPreview {
       watched wallet, no backend and no previous transaction proves it.
       The inputs total and the fee rest on that word then. */
   amounts_declared: boolean;
+  /** One of those values is a watched address's listing, the server's
+      figure, rather than the PSBT's word: the mark says it neutrally. */
+  amounts_listed: boolean;
   vsize: number;
   weight: number;
   size: number;
@@ -934,6 +977,9 @@ export interface CommandError {
         same data directory. Only ever met at startup. */
     | "vault_in_use"
     | "sync"
+    /** A server answered with a proof of a confirmation that does not
+        hold, and no other server answered in its place. */
+    | "false_proof"
     | "broadcast"
     | "backend_unavailable"
     | "descriptor"
@@ -957,10 +1003,23 @@ export function isCommandError(error: unknown): error is CommandError {
   );
 }
 
+/** What the app says when a server sent a false proof: the core's own
+    words name the server and the check that failed, which tells a
+    person nothing they can act on. */
+export const FALSE_PROOF =
+  "A server sent a false proof of a confirmation, so Gerfaut stopped trusting its answer. No other server answered in its place. Try again later, or use your own node.";
+
 /** What a failed call says: the command's own message, or the error as
-    text when it did not come from a command. */
+    text when it did not come from a command. A false proof is said in
+    the app's words. */
 export function errorMessage(error: unknown): string {
+  if (isFalseProof(error)) return FALSE_PROOF;
   return isCommandError(error) ? error.message : String(error);
+}
+
+/** Whether a call failed on a server's false proof, by the core's code. */
+export function isFalseProof(error: unknown): boolean {
+  return isCommandError(error) && error.kind === "false_proof";
 }
 
 // --- commands ----------------------------------------------------------

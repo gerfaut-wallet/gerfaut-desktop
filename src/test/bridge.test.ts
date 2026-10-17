@@ -383,7 +383,7 @@ const certificateReport = tagged<ipc.CertificateReport>("CertificateReport")("st
 
 // --- prices and preferences ------------------------------------------------
 
-const priceSource: Schema<ipc.PriceSource> = literal("PriceSource", "coingecko", "kraken", "mempool_space");
+const priceSource: Schema<ipc.PriceSource> = literal("PriceSource", "mempool_space", "coingecko");
 /** A plain string here: the list of currencies is the core's alone. */
 const fiatCurrency: Schema<ipc.FiatCurrency> = str;
 const currencyReach: Schema<ipc.CurrencyReach> = literal("CurrencyReach", "every", "coingecko_only");
@@ -395,7 +395,13 @@ const currencyEntry = object<ipc.CurrencyEntry>("CurrencyEntry")({
   sources: array(priceSource),
 });
 const priceRange: Schema<ipc.PriceRange> = literal("PriceRange", "day", "week", "month", "year", "max");
-const sourceEntry = object<ipc.SourceEntry>("SourceEntry")({ source: priceSource, label: str, ranges: array(priceRange) });
+const credit = object<ipc.Credit>("Credit")({ text: str, url: str });
+const sourceEntry = object<ipc.SourceEntry>("SourceEntry")({
+  source: priceSource,
+  label: str,
+  ranges: array(priceRange),
+  credit: nullable(credit),
+});
 const priceTable = object<ipc.PriceTable>("PriceTable")({
   currencies: array(currencyEntry),
   sources: array(sourceEntry),
@@ -420,7 +426,12 @@ const preferencesChange = object<ipc.PreferencesChange>("PreferencesChange")({
   notify_new_tx: optional(bool),
   explorer_ack: optional(bool),
 });
-const priceQuote = object<ipc.PriceQuote>("PriceQuote")({ rate: num, currency: fiatCurrency, source: priceSource, at: num });
+const priceQuote = object<ipc.PriceQuote>("PriceQuote")({
+  rate: num,
+  currency: fiatCurrency,
+  source: priceSource,
+  at: num,
+});
 const pricePoint = object<ipc.PricePoint>("PricePoint")({ t: num, rate: num });
 const priceHistory = object<ipc.PriceHistory>("PriceHistory")({
   points: array(pricePoint),
@@ -464,6 +475,7 @@ const backupWalletPreview = object<ipc.BackupWalletPreview>("BackupWalletPreview
   network,
   kind: walletKind,
   already_watched: bool,
+  refused: nullable(str),
 });
 const backupBackendPreview = object<ipc.BackupBackendPreview>("BackupBackendPreview")({ network, backend: str });
 const backupPreview = object<ipc.BackupPreview>("BackupPreview")({
@@ -477,10 +489,16 @@ const importChoices = object<ipc.ImportChoices>("ImportChoices")({
   indexes: nullable(array(num)),
   apply_settings: bool,
 });
+const refusedWallet = object<ipc.RefusedWallet>("RefusedWallet")({
+  index: num,
+  name: str,
+  reason: str,
+});
 const importReport = object<ipc.ImportReport>("ImportReport")({
   added: array(walletMeta),
   skipped: num,
   settings_applied: bool,
+  refused: array(refusedWallet),
 });
 
 // --- broadcast -------------------------------------------------------------
@@ -511,6 +529,7 @@ const txWarningKind: Schema<ipc.TxWarningKind> = literal(
   "locked",
   "input_unknown",
   "input_spent",
+  "in_mempool",
   "input_mismatch",
   "fee_unknown",
   "dust_output",
@@ -524,7 +543,19 @@ const txWarning = object<ipc.TxWarning>("TxWarning")({
   severity: txSeverity,
   blocking: bool,
 });
-const txReadiness: Schema<ipc.TxReadiness> = literal("TxReadiness", "ready", "refused", "unsigned");
+const txReadiness: Schema<ipc.TxReadiness> = literal(
+  "TxReadiness",
+  "ready",
+  "refused",
+  "unsigned",
+  "in_mempool",
+);
+const feeRateBasis: Schema<ipc.FeeRateBasis> = literal(
+  "FeeRateBasis",
+  "exact",
+  "estimated",
+  "upper_bound",
+);
 const txPreview = object<ipc.TxPreview>("TxPreview")({
   txid: str,
   source: txSource,
@@ -533,8 +564,10 @@ const txPreview = object<ipc.TxPreview>("TxPreview")({
   outputs: array(txOutputPreview),
   fee_sats: nullable(num),
   fee_rate_sat_vb: nullable(num),
+  fee_rate_basis: feeRateBasis,
   fee_unknown_reason: nullable(str),
   amounts_declared: bool,
+  amounts_listed: bool,
   vsize: num,
   weight: num,
   size: num,
@@ -641,6 +674,7 @@ const errorCode: Schema<ErrorCode> = literal(
   "newer_format",
   "vault_in_use",
   "sync",
+  "false_proof",
   "broadcast",
   "backend_unavailable",
   "descriptor",
@@ -689,6 +723,7 @@ const CONTRACT: Record<string, AnySchema | Away> = {
   Context: { away: LIVE_STAYS_IN_RUST },
   CoreError: commandError,
   Coverage: coverage,
+  Credit: credit,
   CurrencyEntry: currencyEntry,
   CurrencyReach: currencyReach,
   DerivationChoice: derivationChoice,
@@ -698,6 +733,7 @@ const CONTRACT: Record<string, AnySchema | Away> = {
   ExportResult: {
     away: "the CSV is written to its file on the Rust side (export_transactions_csv); the window hears the row count",
   },
+  FeeRateBasis: feeRateBasis,
   FiatCurrency: fiatCurrency,
   ImportChoices: importChoices,
   ImportOptions: {
@@ -738,6 +774,7 @@ const CONTRACT: Record<string, AnySchema | Away> = {
   QrProgress: qrProgress,
   RecentBroadcast: recentBroadcast,
   RecognizedKind: recognizedKind,
+  RefusedWallet: refusedWallet,
   RelativeLock: relativeLock,
   Remaining: remaining,
   Remedy: remedy,

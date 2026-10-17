@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "./components/Button";
+import { CreditLayer, CreditSlot } from "./components/PriceCredit";
 import { EmptyState } from "./components/EmptyState";
 import { Toast } from "./components/Toast";
 import { UpdateNotice } from "./components/UpdateNotice";
@@ -233,70 +234,77 @@ export default function App() {
 
   return (
     // The shell: everything floats on the invariant dark base — the
-    // sidebar sits straight on it, the canvas is a rounded sheet.
-    <div className="flex h-full bg-shell">
-      <Sidebar
-        wallets={walletList}
-        activeWalletId={activeWallet?.id ?? null}
-        network={settings.data.active_network}
-        syncing={syncing}
-        onSyncAll={() => syncAll.mutate(settings.data.active_network)}
-        onLock={settings.data.app_lock ? useLock.getState().lockNow : undefined}
-      />
+    // sidebar sits straight on it, the canvas is a rounded sheet. The
+    // page is a credit layer: its slot sits under the canvas, and each
+    // modal over it is a layer of its own.
+    <CreditLayer>
+      <div className="flex h-full bg-shell">
+        <Sidebar
+          wallets={walletList}
+          activeWalletId={activeWallet?.id ?? null}
+          network={settings.data.active_network}
+          syncing={syncing}
+          onSyncAll={() => syncAll.mutate(settings.data.active_network)}
+          onLock={settings.data.app_lock ? useLock.getState().lockNow : undefined}
+        />
 
-      <main className="min-w-0 flex-1 p-2 pl-0">
-        <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-canvas)] bg-background shadow-canvas">
-          {/* In the layout, above the page: it pushes the page down and
-              never covers what the page shows. */}
-          <UpdateNotice />
-          <div ref={canvas} data-canvas-scroll className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto h-full max-w-[1280px] px-6 py-4">
-              {view === "settings" ? (
-                <SettingsView settings={settings.data} wallets={walletList} />
-              ) : walletList.length === 0 ? (
-                <EmptyState
-                  lockup={everyWallet.data?.length === 0}
-                  title="No wallets watched yet"
-                  hint="Add a descriptor, an extended public key, or an address. Gerfaut watches it and never touches a private key."
-                  action={
-                    <Button
-                      variant="primary"
-                      onClick={() => useUi.getState().setAddWalletOpen(true)}
-                    >
-                      Add a wallet
-                    </Button>
-                  }
-                />
-              ) : activeWallet ? (
-                <>
-                  {view === "home" && <HomeView walletId={activeWallet.id} />}
-                  {view === "transactions" && (
-                    <TransactionsView walletId={activeWallet.id} />
-                  )}
-                  {view === "utxos" && <UtxosView walletId={activeWallet.id} />}
-                  {view === "policy" && <PolicyView walletId={activeWallet.id} />}
-                  {view === "receive" && <ReceiveView walletId={activeWallet.id} />}
-                  {view === "broadcast" && (
-                    <BroadcastView network={settings.data.active_network} />
-                  )}
-                  {view === "export" && <ExportView walletId={activeWallet.id} />}
-                </>
-              ) : null}
+        <main className="min-w-0 flex-1 p-2 pl-0">
+          <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-canvas)] bg-background shadow-canvas">
+            {/* In the layout, above the page: it pushes the page down and
+                never covers what the page shows. */}
+            <UpdateNotice />
+            <div ref={canvas} data-canvas-scroll className="min-h-0 flex-1 overflow-y-auto">
+              <div className="mx-auto h-full max-w-[1280px] px-6 py-4">
+                {view === "settings" ? (
+                  <SettingsView settings={settings.data} wallets={walletList} />
+                ) : walletList.length === 0 ? (
+                  <EmptyState
+                    lockup={everyWallet.data?.length === 0}
+                    title="No wallets watched yet"
+                    hint="Add a descriptor, an extended public key, or an address. Gerfaut watches it and never touches a private key."
+                    action={
+                      <Button
+                        variant="primary"
+                        onClick={() => useUi.getState().setAddWalletOpen(true)}
+                      >
+                        Add a wallet
+                      </Button>
+                    }
+                  />
+                ) : activeWallet ? (
+                  <>
+                    {view === "home" && <HomeView walletId={activeWallet.id} />}
+                    {view === "transactions" && (
+                      <TransactionsView walletId={activeWallet.id} />
+                    )}
+                    {view === "utxos" && <UtxosView walletId={activeWallet.id} />}
+                    {view === "policy" && <PolicyView walletId={activeWallet.id} />}
+                    {view === "receive" && <ReceiveView walletId={activeWallet.id} />}
+                    {view === "broadcast" && (
+                      <BroadcastView network={settings.data.active_network} />
+                    )}
+                    {view === "export" && <ExportView walletId={activeWallet.id} />}
+                  </>
+                ) : null}
+              </div>
             </div>
+            {/* Outside the scroll, always in view: the credit the price
+                sources on this page ask for, once, or nothing. */}
+            <CreditSlot className="mx-auto w-full max-w-[1280px] px-7 pb-2 pt-1.5 text-right" />
           </div>
-        </div>
-      </main>
+        </main>
 
-      {view !== "settings" && activeWallet && (
-        <TxDetailModal walletId={activeWallet.id} network={activeWallet.network} />
-      )}
-      <AddWalletModal activeNetwork={settings.data.active_network} />
-      <WelcomeTour
-        open={tourOpen}
-        onClose={() => setTourOpen(false)}
-        beta={BETA}
-      />
-      <Toast />
-    </div>
+        {view !== "settings" && activeWallet && (
+          <TxDetailModal walletId={activeWallet.id} network={activeWallet.network} />
+        )}
+        <AddWalletModal activeNetwork={settings.data.active_network} />
+        <WelcomeTour
+          open={tourOpen}
+          onClose={() => setTourOpen(false)}
+          beta={BETA}
+        />
+        <Toast />
+      </div>
+    </CreditLayer>
   );
 }

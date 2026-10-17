@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { explorerTxUrl } from "../lib/explorer";
 import { RELEASES_URL } from "../state/update";
 import { ISSUES_URL } from "../views/settings/AboutSection";
+import { PRICE_TABLE } from "./fixtures";
 
 const files = import.meta.glob(
   ["../../src-tauri/capabilities/default.json", "../../src-tauri/tauri.conf.json"],
@@ -53,7 +54,8 @@ describe("permissions of the window", () => {
 
 /** What the window can make the system open is a short list written
     here, not any address a page gone wrong could name: the explorer,
-    the releases page and the issues page. */
+    the releases page, the issues page, and the page a price source's
+    credit links to. */
 describe("addresses the window may open", () => {
   it("names no scope wider than its own list", () => {
     expect(permissions).not.toContain("opener:allow-default-urls");
@@ -70,6 +72,7 @@ describe("addresses the window may open", () => {
       explorerTxUrl("testnet4", txid),
       RELEASES_URL,
       ISSUES_URL,
+      ...PRICE_TABLE.sources.flatMap((entry) => (entry.credit ? [entry.credit.url] : [])),
     ]) {
       expect(opens(url), url).toBe(true);
     }
@@ -87,6 +90,9 @@ describe("addresses the window may open", () => {
       "https://github.com/gerfaut-wallet/gerfaut-desktop/issues/new",
       "https://github.com/gerfaut-wallet/gerfaut-desktop/issues?q=evil",
       "https://github.com/someone/else/issues",
+      "https://www.coingecko.com/en/coins/evil",
+      "https://www.coingecko.com.evil.example",
+      "http://www.coingecko.com",
       "file:///C:/Windows/System32/calc.exe",
       "mailto:someone@example.com",
     ]) {

@@ -140,6 +140,7 @@ const PREVIEW: BackupPreview = {
       network: "signet",
       kind: { type: "descriptors", external: "wpkh(...)", internal: null, script: "segwit" },
       already_watched: false,
+      refused: null,
     },
     {
       index: 1,
@@ -147,6 +148,7 @@ const PREVIEW: BackupPreview = {
       network: "signet",
       kind: { type: "single_address", address: "tb1qexample" },
       already_watched: true,
+      refused: null,
     },
   ],
   backends: [{ network: "signet", backend: "mempool.space" }],
@@ -700,6 +702,20 @@ describe("restoring a backup", () => {
         "A wallet in this backup is not a descriptor Gerfaut can watch, so nothing was restored. The core says: descriptor error: Invalid descriptor",
       ),
     ).toBeInTheDocument();
+
+    // The core names the wallet it refuses, a private key included,
+    // under `invalid_input`: the screen keeps those words.
+    refusal = {
+      kind: "invalid_input",
+      message:
+        'invalid backup: "Hot" cannot be restored: input contains private key material and was rejected',
+    };
+    await user.click(screen.getByRole("button", { name: /restore 1 wallet/i }));
+    expect(
+      await screen.findByText(
+        'Nothing was restored. The core says: invalid backup: "Hot" cannot be restored: input contains private key material and was rejected',
+      ),
+    ).toBeInTheDocument();
   });
 
   it("names the server and the certificate the settings would put in place", async () => {
@@ -735,6 +751,56 @@ describe("restoring a backup", () => {
     expect(screen.getByText("Signet")).toBeInTheDocument();
     expect(screen.getByText("Pinned certificate")).toBeInTheDocument();
     expect(screen.getByText("electrum.example.org:51002")).toBeInTheDocument();
+  });
+
+  /** A wallet the core would refuse, two descriptors of two wallets
+      handed over in one backup, is left out of the restore before it is
+      asked for, and the reason is on screen; the others restore. */
+  it("a wallet the core refuses stays on the list, out of reach, saying why", async () => {
+    const reason =
+      "descriptor error: the change descriptor does not spend under the receive descriptor's keys and conditions: change would go to another wallet";
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "pick_backup_file":
+          return PICKED;
+        case "preview_backup":
+          return {
+            ...PREVIEW,
+            wallets: [
+              PREVIEW.wallets[0],
+              { ...PREVIEW.wallets[0], index: 1, name: "Handed over", refused: reason },
+            ],
+          };
+        case "import_backup":
+          return { added: [WALLETS[0]], skipped: 0, settings_applied: false, refused: [] };
+        case "sync_all":
+          return { reports: [], failures: [] };
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderModal(<BackupRestoreModal open onClose={() => {}} activeNetwork="signet" />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /open a file/i }));
+    await screen.findByText(/Backup read from/);
+    await user.type(screen.getByLabelText("Password"), "correct horse");
+    await user.click(screen.getByRole("button", { name: /open backup/i }));
+
+    const refused = await screen.findByRole("checkbox", { name: /Handed over/ });
+    expect(refused).toHaveAccessibleName(/Cannot be restored/);
+    expect(refused).toBeDisabled();
+    expect(refused).not.toBeChecked();
+    expect(screen.getByText(reason)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Cold storage/ })).toBeChecked();
+
+    // The others restore, and the toast names the one left out (the
+    // sync that follows says its own a moment later).
+    const toasts: (string | null)[] = [];
+    const unsubscribe = useUi.subscribe((state) => toasts.push(state.toast));
+    await user.click(screen.getByRole("button", { name: /restore 1 wallet/i }));
+    await waitFor(() => expect(toasts).toContain("1 wallet restored · 1 left out: Handed over"));
+    unsubscribe();
   });
 
   it("a wallet already watched stays on the list, greyed and out of reach", async () => {
