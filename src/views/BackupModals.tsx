@@ -10,6 +10,7 @@ import type {
   BackupBundle,
   BackupPreview,
   BackupWalletPreview,
+  ImportReport,
   Network,
   WalletMeta,
 } from "../lib/ipc";
@@ -47,6 +48,25 @@ const TOO_LARGE = "This file is far too large to be a Gerfaut backup.";
     and a pinned certificate nobody had read — every address of every
     wallet on that network, to whoever wrote the file. Shown, it is a
     choice; hidden, it was a trap. */
+/** The wallets a restore left out because the core cannot watch them:
+    those the preview marked, which the screen never asks for, and any
+    the core left out of a restore of every wallet. */
+function leftOut(preview: BackupPreview | null, report: ImportReport): string[] {
+  const names = (preview?.wallets ?? [])
+    .filter((wallet) => !wallet.already_watched && wallet.refused)
+    .map((wallet) => wallet.name);
+  for (const wallet of report.refused ?? []) {
+    if (!names.includes(wallet.name)) names.push(wallet.name);
+  }
+  return names;
+}
+
+/** " · 1 left out: Handed over", " · 2 left out", or nothing. */
+export function leftOutWords(names: string[]): string {
+  if (names.length === 0) return "";
+  return names.length === 1 ? ` · 1 left out: ${names[0]}` : ` · ${names.length} left out`;
+}
+
 /** A wallet the restore leaves alone: one this vault watches already,
     or one the core refuses. An older core sends no `refused`. */
 function outOfReach(wallet: BackupWalletPreview): boolean {
@@ -497,7 +517,8 @@ export function BackupRestoreModal({
       const count =
         report.added.length === 1 ? "1 wallet restored" : `${report.added.length} wallets restored`;
       const where = elsewhere ? ` on ${NETWORK_LABEL[report.added[0].network]}` : "";
-      showToast(report.settings_applied ? `${count}${where} · settings applied` : `${count}${where}`);
+      const settings = report.settings_applied ? " · settings applied" : "";
+      showToast(`${count}${where}${settings}${leftOutWords(leftOut(preview, report))}`);
       // The restored wallets get their first sync wherever they are.
       syncAll.mutate(elsewhere ? report.added[0].network : network);
       close();

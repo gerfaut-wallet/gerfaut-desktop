@@ -757,6 +757,10 @@ describe("restoring a backup", () => {
               { ...PREVIEW.wallets[0], index: 1, name: "Handed over", refused: reason },
             ],
           };
+        case "import_backup":
+          return { added: [WALLETS[0]], skipped: 0, settings_applied: false, refused: [] };
+        case "sync_all":
+          return { reports: [], failures: [] };
         default:
           throw new Error(`unexpected command ${cmd}`);
       }
@@ -775,7 +779,14 @@ describe("restoring a backup", () => {
     expect(refused).not.toBeChecked();
     expect(screen.getByText(reason)).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: /Cold storage/ })).toBeChecked();
-    expect(screen.getByRole("button", { name: /restore 1 wallet/i })).toBeInTheDocument();
+
+    // The others restore, and the toast names the one left out (the
+    // sync that follows says its own a moment later).
+    const toasts: (string | null)[] = [];
+    const unsubscribe = useUi.subscribe((state) => toasts.push(state.toast));
+    await user.click(screen.getByRole("button", { name: /restore 1 wallet/i }));
+    await waitFor(() => expect(toasts).toContain("1 wallet restored · 1 left out: Handed over"));
+    unsubscribe();
   });
 
   it("a wallet already watched stays on the list, greyed and out of reach", async () => {

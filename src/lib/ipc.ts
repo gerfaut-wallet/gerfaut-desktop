@@ -582,6 +582,18 @@ export interface ImportReport {
   added: WalletMeta[];
   skipped: number;
   settings_applied: boolean;
+  /** Wallets a restore of every wallet left out because the core cannot
+      watch them, as the preview marked them. */
+  refused: RefusedWallet[];
+}
+
+/** A wallet of a backup a restore left out, mirroring `RefusedWallet`
+    in gerfaut-core. */
+export interface RefusedWallet {
+  index: number;
+  name: string;
+  /** Why, in the core's words. */
+  reason: string;
 }
 
 /** What a server's certificate amounts to, mirroring `CertificateStatus`
