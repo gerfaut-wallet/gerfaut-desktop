@@ -1145,6 +1145,39 @@ fn retry_open(app: tauri::AppHandle, startup: tauri::State<'_, Startup>) -> Comm
     result
 }
 
+/// Keeps the webview on the pages the app ships. Nothing in them goes
+/// anywhere else: an outside link opens in the browser, through the
+/// opener. A navigation to any other page, a link dropped on the
+/// window or one a page of the app was tricked into following, would
+/// show that page in the app's own window, where it could pass for the
+/// app.
+fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri::plugin::Builder::new("navigation-guard")
+        .on_navigation(|webview, url| {
+            let dev = if cfg!(dev) {
+                webview.config().build.dev_url.clone()
+            } else {
+                None
+            };
+            stays_in_app(url, dev.as_ref())
+        })
+        .build()
+}
+
+/// Whether `url` is one of the app's pages: those of the embedded
+/// assets, at `tauri://localhost`, or at `http(s)://tauri.localhost` on
+/// Windows, which serves them there; or in `tauri dev` the server of the
+/// pages, `dev`. Elsewhere `tauri.localhost` is only a name for this
+/// machine, where any local server may answer.
+fn stays_in_app(url: &tauri::Url, dev: Option<&tauri::Url>) -> bool {
+    let shipped = match (url.scheme(), url.host_str()) {
+        ("tauri", Some("localhost")) => !cfg!(windows),
+        ("http" | "https", Some("tauri.localhost")) => cfg!(windows) && url.port().is_none(),
+        _ => false,
+    };
+    shipped || dev.is_some_and(|dev| dev.origin() == url.origin())
+}
+
 /// Brings the window back to the front: unminimised, shown, focused.
 /// This is what a second launch asks for, and all it gets.
 fn show_main_window(app: &tauri::AppHandle) {
@@ -1214,6 +1247,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(navigation_guard())
         .manage(clipboard::SensitiveClipboard::default())
         .setup(move |app| {
             #[cfg(target_os = "macos")]
@@ -1321,8 +1355,54 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{CommandError, assemble_qr, bare_file_name, parse_backend, parse_input};
+    use super::{
+        CommandError, assemble_qr, bare_file_name, parse_backend, parse_input, stays_in_app,
+    };
     use gerfaut_core::error::CoreError;
+
+    /// The webview goes to the app's own pages, under the scheme each
+    /// platform serves them with, and to the page server in `tauri dev`;
+    /// anywhere else is refused, a look-alike host among them.
+    #[test]
+    fn the_webview_stays_on_the_apps_pages() {
+        let url = |text: &str| tauri::Url::parse(text).unwrap();
+        let dev = url("http://localhost:1420");
+        let (shipped, elsewhere) = (
+            [
+                "tauri://localhost",
+                "tauri://localhost/index.html#/settings",
+            ],
+            [
+                "http://tauri.localhost/",
+                "https://tauri.localhost/assets/index.js",
+            ],
+        );
+        let (shipped, elsewhere) = if cfg!(windows) {
+            (elsewhere, shipped)
+        } else {
+            (shipped, elsewhere)
+        };
+        for page in shipped {
+            assert!(stays_in_app(&url(page), None), "{page}");
+        }
+        for page in elsewhere {
+            assert!(!stays_in_app(&url(page), None), "{page}");
+        }
+        assert!(stays_in_app(&url("http://localhost:1420/"), Some(&dev)));
+        for page in [
+            "http://localhost:1420/",
+            "https://mempool.space/",
+            "http://tauri.localhost.example.org/",
+            "http://tauri.localhost:8080/",
+            "tauri://example.org",
+            "file:///etc/passwd",
+            "data:text/html,<p>hi</p>",
+            "about:blank",
+        ] {
+            assert!(!stays_in_app(&url(page), None), "{page}");
+        }
+        assert!(!stays_in_app(&url("http://localhost:1421/"), Some(&dev)));
+    }
 
     /// On Unix a file written from a save dialog is its owner's alone
     /// when it is created, and one it replaces keeps its mode; the
