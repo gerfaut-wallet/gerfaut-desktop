@@ -2,7 +2,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { QrProgress } from "../lib/ipc";
-import { MAX_SCAN_FRAMES, MAX_SCAN_FRAMES_CEILING, ScanQrModal, scanFrameLimit } from "./ScanQrModal";
+import { ScanQrModal } from "./ScanQrModal";
 
 // The camera is replaced by a script of frames: each animation tick
 // "sees" the next one, exactly like an animated code on a screen. A
@@ -204,41 +204,38 @@ describe("ScanQrModal", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       /^This code has more parts than Gerfaut can read\.$/,
     );
-    // The camera stays on, and the next code goes through.
+    // The scan is over: the next code is not read, and the reason stays.
     await tick();
     await tick();
-    await waitFor(() => expect(onScan).toHaveBeenCalledWith("wpkh(tpub.../0/*)", []));
+    expect(onScan).not.toHaveBeenCalled();
+    expect(assembleCalls).toHaveLength(1);
+    expect(screen.getByRole("alert")).toHaveTextContent(/more parts than Gerfaut can read/);
   });
 
-  /** A fountain code never runs out of new frames: past what a scan
-      keeps, it starts over and says why, instead of holding every
-      frame and sending them all to the core at each new one. */
-  it("starts over past the frames a scan keeps", async () => {
-    for (let i = 0; i <= MAX_SCAN_FRAMES; i += 1) frames.push(`ur:crypto-output/${i + 3}-2/x${i}`);
-    mockAssembly(() => ({
-      format: "ur",
-      received: 1,
-      total: 2,
-      complete: false,
-      text: null,
-      warnings: [],
-    }));
+  /** A fountain code never runs out of new frames: once the core says
+      the scan took more than a code of its size needs, the scan stops,
+      camera off, and the reason stays on screen while new frames keep
+      passing in front of the camera. */
+  it("stops for good once the core says the code is too large", async () => {
+    for (let i = 0; i < 8; i += 1) frames.push(`ur:crypto-output/${i + 3}-2/x${i}`);
+    mockAssembly((received) =>
+      received.length < 3
+        ? { format: "ur", received: 1, total: 2, complete: false, text: null, warnings: [] }
+        : (Promise.reject({
+            kind: "too_many_parts",
+            message: "invalid qr: 3 frames scanned without the code coming together, more than Gerfaut reads",
+          }) as unknown as QrProgress),
+    );
+    const track = fakeCamera();
     render(<ScanQrModal open onClose={vi.fn()} onScan={vi.fn()} />);
     await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
-    for (let i = 0; i <= MAX_SCAN_FRAMES; i += 1) await tick();
+    for (let i = 0; i < 8; i += 1) await tick();
     expect(await screen.findByRole("alert")).toHaveTextContent(
       /^This code has more parts than Gerfaut can read\.$/,
     );
-    expect(assembleCalls).toHaveLength(MAX_SCAN_FRAMES);
-    expect(assembleCalls.at(-1)).toHaveLength(MAX_SCAN_FRAMES);
+    expect(assembleCalls).toHaveLength(3);
+    expect(track.stop).toHaveBeenCalled();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-  }, 60_000);
-
-  it("keeps three times the parts a code announces, within bounds", () => {
-    expect(scanFrameLimit(null)).toBe(MAX_SCAN_FRAMES);
-    expect(scanFrameLimit(3)).toBe(MAX_SCAN_FRAMES);
-    expect(scanFrameLimit(1000)).toBe(3000);
-    expect(scanFrameLimit(5000)).toBe(MAX_SCAN_FRAMES_CEILING);
   });
 
   it("says it once, however long the camera stays on the refused code", async () => {

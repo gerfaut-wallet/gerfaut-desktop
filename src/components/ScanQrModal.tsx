@@ -10,32 +10,11 @@ type ScanState = "starting" | "scanning" | "denied" | "unavailable";
     Android. */
 const TOO_MANY_PARTS = "This code has more parts than Gerfaut can read.";
 
-/** The most distinct frames one scan collects before the code says how
-    many parts it has. Every new frame sends the whole collection to the
-    core again, so an endless stream of distinct frames, which a
-    fountain code is, would cost more at each one, and hold every frame
-    it ever showed. */
-export const MAX_SCAN_FRAMES = 2000;
-
-/** The most distinct frames any scan collects. A camera that misses
-    half of the frames of a fountain code needs about twice as many as
-    the code has parts, and a large PSBT shown at low density runs to
-    well over a thousand parts. */
-export const MAX_SCAN_FRAMES_CEILING = 10000;
-
-/** The frames a scan may collect once the code has announced `total`
-    parts: three times as many, within the two bounds above. The same
-    rule as on Android. */
-export function scanFrameLimit(total: number | null): number {
-  return Math.min(Math.max((total ?? 0) * 3, MAX_SCAN_FRAMES), MAX_SCAN_FRAMES_CEILING);
-}
-
-/** What the scanner says when the core turns down what it collected:
-    a code with more parts than Gerfaut reads in a sentence of its own,
-    the same as on Android, anything else in the core's words. */
+/** What the scanner says when the core turns down what it collected,
+    in the core's words. A code too large to read has its own sentence,
+    and stops the scan. */
 function refusal(error: unknown): string {
-  if (!isCommandError(error)) return String(error);
-  return error.kind === "too_many_parts" ? TOO_MANY_PARTS : error.message;
+  return isCommandError(error) ? error.message : String(error);
 }
 
 /** Camera QR scanner: frames are decoded locally with jsQR, nothing
@@ -82,8 +61,6 @@ export function ScanQrModal({
     let assembling = false;
     let pending: string | null = null;
     const frames: string[] = [];
-    /** The parts the code announced, once the core has read one. */
-    let total: number | null = null;
     const seen = new Set<string>();
     /** Frames the core has already turned down. */
     const refused = new Set<string>();
@@ -101,8 +78,21 @@ export function ScanQrModal({
       setProgress(null);
       if (frames.length === 1) refused.add(frames[0]);
       frames.length = 0;
-      total = null;
       seen.clear();
+    };
+
+    // A code larger than Gerfaut reads, by what it announces or by the
+    // frames it took without coming together (the core keeps count): the
+    // scan stops there, camera off, and the reason stays on screen. A
+    // fountain code never runs out of new frames, and scanning on would
+    // only start a collection the core refuses again, a moment later,
+    // the reason gone meanwhile.
+    const stop = (reason: string) => {
+      done = true;
+      setError(reason);
+      setProgress(null);
+      cancelAnimationFrame(raf);
+      stream?.getTracks().forEach((track) => track.stop());
     };
 
     // One assembly at a time; a frame seen meanwhile waits its turn
@@ -113,17 +103,12 @@ export function ScanQrModal({
         pending = frame;
         return;
       }
-      if (frames.length >= scanFrameLimit(total)) {
-        giveUp(TOO_MANY_PARTS);
-        return;
-      }
       seen.add(frame);
       frames.push(frame);
       assembling = true;
       try {
         const result = await ipc.assembleQr(frames);
         if (done) return;
-        total = result.total;
         setError(null);
         setProgress(result);
         if (result.complete) {
@@ -144,7 +129,8 @@ export function ScanQrModal({
         // A refusal landing after the modal closed belongs to a scan the
         // user walked away from, and must not surface in the next one.
         if (done) return;
-        giveUp(refusal(err));
+        if (isCommandError(err) && err.kind === "too_many_parts") stop(TOO_MANY_PARTS);
+        else giveUp(refusal(err));
       } finally {
         assembling = false;
       }
