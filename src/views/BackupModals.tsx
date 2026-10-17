@@ -52,11 +52,15 @@ const TOO_LARGE = "This file is far too large to be a Gerfaut backup.";
     those the preview marked, which the screen never asks for, and any
     the core left out of a restore of every wallet. */
 function leftOut(preview: BackupPreview | null, report: ImportReport): string[] {
+  // A wallet without a name, which is one reason to refuse it, goes by
+  // its place in the backup.
+  const called = (wallet: { index: number; name: string }) =>
+    wallet.name.trim() || `wallet ${wallet.index + 1}`;
   const names = (preview?.wallets ?? [])
     .filter((wallet) => !wallet.already_watched && wallet.refused)
-    .map((wallet) => wallet.name);
+    .map(called);
   for (const wallet of report.refused ?? []) {
-    if (!names.includes(wallet.name)) names.push(wallet.name);
+    if (!names.includes(called(wallet))) names.push(called(wallet));
   }
   return names;
 }
