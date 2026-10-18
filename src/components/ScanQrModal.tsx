@@ -61,8 +61,10 @@ export function ScanQrModal({
     let lastDecode = 0;
     let done = false;
     let assembling = false;
-    /** New frames seen while a push was out, in the order seen. */
+    /** New frames seen while a push was out, in the order seen, and the
+        same as a set. */
     const waiting: string[] = [];
+    const queued = new Set<string>();
     // The core holds the frames of the scan; the modal only counts
     // them, and keeps the first in case it is the one at fault.
     const openScan = () => {
@@ -110,6 +112,7 @@ export function ScanQrModal({
       lone = null;
       seen.clear();
       waiting.length = 0;
+      queued.clear();
     };
 
     // A code larger than Gerfaut reads, by what it announces or by the
@@ -127,65 +130,85 @@ export function ScanQrModal({
       release();
     };
 
-    // One assembly at a time; the frames seen meanwhile wait their turn
-    // rather than being lost until the animation loops back to them.
-    // `again` is a lone frame sent a second time, to a fresh scan, after
-    // the first try failed: only a second refusal bars it.
-    const feed = async (frame: string, again = false) => {
-      if (seen.has(frame) || refused.has(frame)) return;
-      if (assembling) {
-        if (!waiting.includes(frame)) waiting.push(frame);
-        return;
-      }
-      seen.add(frame);
-      taken += 1;
-      if (taken === 1) lone = frame;
+    // One push at a time. The frames seen meanwhile wait their turn, in
+    // the order seen, rather than being lost until the animation loops
+    // back to them. They come no faster than the camera decodes them,
+    // and the core ends a scan that runs past what a code needs.
+    const feed = (frame: string) => {
+      if (seen.has(frame) || refused.has(frame) || queued.has(frame)) return;
+      queued.add(frame);
+      waiting.push(frame);
+      if (!assembling) void drain();
+    };
+
+    const nextWaiting = () => {
+      const next = waiting.shift();
+      if (next !== undefined) queued.delete(next);
+      return next;
+    };
+
+    // Sends the waiting frames to the scan, one after the other, until
+    // none is left or the scan ends. A lone frame that fails is sent once
+    // more, to a fresh scan, before it is taken to be at fault.
+    const drain = async () => {
       assembling = true;
       try {
-        const result = await ipc.pushQrFrame(await scan, frame);
-        if (done) return;
-        setError(null);
-        setProgress(result);
-        if (result.complete) {
-          if (result.text) {
-            done = true;
-            release();
-            onScanRef.current(result.text, result.warnings);
-            onCloseRef.current();
-          } else {
-            // Every part arrived and they add up to nothing. Closing on
-            // that would hand the caller an empty string; saying it
-            // keeps the camera on a code that may be readable elsewhere.
-            giveUp("This code came out empty.");
+        let frame = nextWaiting();
+        let again = false;
+        while (frame !== undefined && !done) {
+          if (!again && (seen.has(frame) || refused.has(frame))) {
+            frame = nextWaiting();
+            continue;
           }
-        }
-      } catch (err) {
-        // A frame the core refuses (a PSBT, an unknown envelope) is said
-        // once and dropped: the camera keeps looking for the right code.
-        // A refusal landing after the modal closed belongs to a scan the
-        // user walked away from, and must not surface in the next one.
-        if (done) return;
-        if (isCommandError(err) && err.kind === "too_many_parts") {
-          stop(TOO_MANY_PARTS);
-        } else {
-          reopen();
-          if (taken === 1 && !again) {
-            // Not yet proven at fault: it may have met a scan the core
-            // no longer held. Once more, on the fresh scan.
-            taken = 0;
-            lone = null;
-            seen.delete(frame);
-            assembling = false;
-            void feed(frame, true);
-            return;
+          seen.add(frame);
+          taken += 1;
+          if (taken === 1) lone = frame;
+          try {
+            const result = await ipc.pushQrFrame(await scan, frame);
+            if (done) return;
+            setError(null);
+            setProgress(result);
+            if (result.complete) {
+              if (result.text) {
+                done = true;
+                release();
+                onScanRef.current(result.text, result.warnings);
+                onCloseRef.current();
+                return;
+              }
+              // Every part arrived and they add up to nothing. Closing on
+              // that would hand the caller an empty string; saying it
+              // keeps the camera on a code that may be readable elsewhere.
+              giveUp("This code came out empty.");
+            }
+          } catch (err) {
+            // A frame the core refuses (a PSBT, an unknown envelope) is
+            // said once and dropped: the camera keeps looking for the
+            // right code. A refusal landing after the modal closed belongs
+            // to a scan the user walked away from, and must not surface in
+            // the next one.
+            if (done) return;
+            if (isCommandError(err) && err.kind === "too_many_parts") {
+              stop(TOO_MANY_PARTS);
+              return;
+            }
+            reopen();
+            if (taken === 1 && !again) {
+              // Not yet proven at fault: it may have met a scan the core
+              // no longer held. Once more, on the fresh scan.
+              taken = 0;
+              lone = null;
+              again = true;
+              continue;
+            }
+            giveUp(refusal(err));
           }
-          giveUp(refusal(err));
+          again = false;
+          frame = nextWaiting();
         }
       } finally {
         assembling = false;
       }
-      const next = waiting.shift();
-      if (next !== undefined && !done) void feed(next);
     };
 
     const tick = (now: number) => {
@@ -200,7 +223,7 @@ export function ScanQrModal({
           inversionAttempts: "dontInvert",
         });
         if (code && code.data.trim().length > 0 && !done) {
-          void feed(code.data.trim());
+          feed(code.data.trim());
         }
       }
       if (!done) raf = requestAnimationFrame(tick);

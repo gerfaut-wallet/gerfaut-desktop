@@ -311,6 +311,44 @@ describe("ScanQrModal", () => {
     expect(assembleCalls).toEqual([["B$HP0100ff"], ["B$HP0100ff"], ["wpkh(tpub.../0/*)"]]);
   });
 
+  /** One push at a time, the second try of a lone frame included: a
+      part seen while it is out waits, and goes after it. */
+  it("never pushes two frames at once, a second try included", async () => {
+    frames.push("ur:bytes/1-2/a", "ur:bytes/2-2/b");
+    let inFlight = 0;
+    let most = 0;
+    let lost = true;
+    const answers: (() => void)[] = [];
+    mockIPC((cmd) => {
+      if (cmd === "open_qr_scan") return (opened += 1);
+      if (cmd === "close_qr_scan") return null;
+      inFlight += 1;
+      most = Math.max(most, inFlight);
+      if (lost) {
+        lost = false;
+        inFlight -= 1;
+        return Promise.reject({ kind: "invalid_input", message: "this scan was closed" });
+      }
+      return new Promise((resolve) => {
+        answers.push(() => {
+          inFlight -= 1;
+          resolve({ format: "ur", received: 1, total: 2, complete: false, text: null, warnings: [] });
+        });
+      });
+    });
+    render(<ScanQrModal open onClose={vi.fn()} onScan={vi.fn()} />);
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    await tick();
+    await waitFor(() => expect(answers).toHaveLength(1));
+    // The second part is seen while the second try of the first is out.
+    await tick();
+    expect(answers).toHaveLength(1);
+    answers[0]();
+    await waitFor(() => expect(answers).toHaveLength(2));
+    answers[1]();
+    expect(most).toBe(1);
+  });
+
   /** A scan the core no longer holds (more scans were opened than it
       keeps) refuses the frame sent to it: the modal opens a fresh one
       and sends the frame again, instead of barring a good code. */
