@@ -61,8 +61,8 @@ export function ScanQrModal({
     let lastDecode = 0;
     let done = false;
     let assembling = false;
-    /** New frames seen while a push was out, in the order seen, and the
-        same as a set. */
+    /** New frames waiting for the push before them, in the order seen,
+        and the same as a set. */
     const waiting: string[] = [];
     const queued = new Set<string>();
     // The core holds the frames of the scan; the modal only counts
@@ -156,10 +156,6 @@ export function ScanQrModal({
         let frame = nextWaiting();
         let again = false;
         while (frame !== undefined && !done) {
-          if (!again && (seen.has(frame) || refused.has(frame))) {
-            frame = nextWaiting();
-            continue;
-          }
           seen.add(frame);
           taken += 1;
           if (taken === 1) lone = frame;
