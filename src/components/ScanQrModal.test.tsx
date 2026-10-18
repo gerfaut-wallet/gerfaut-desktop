@@ -79,12 +79,20 @@ function manualAnimationFrames() {
 
 describe("ScanQrModal", () => {
   let tick: () => Promise<void>;
+  /** What the core's scan held after each frame sent to it. */
   let assembleCalls: string[][];
+  /** Every frame sent, one per call. */
+  let pushed: string[];
+  let opened: number;
+  let closed: number[];
 
   beforeEach(() => {
     frames.length = 0;
     cursor = 0;
     assembleCalls = [];
+    pushed = [];
+    opened = 0;
+    closed = [];
     fakeCamera();
     tick = manualAnimationFrames();
   });
@@ -93,12 +101,39 @@ describe("ScanQrModal", () => {
     vi.unstubAllGlobals();
   });
 
+  /** Stands in for the scan the core holds: it keeps the frames sent
+      to it, answers with `script` of all of them, and starts again
+      empty once it has answered with a text or a refusal, as the core
+      does. */
   function mockAssembly(script: (received: string[]) => QrProgress) {
+    let held: string[] = [];
     mockIPC((cmd, args) => {
-      if (cmd !== "assemble_qr") throw new Error(`unexpected command ${cmd}`);
-      const received = (args as { frames: string[] }).frames;
-      assembleCalls.push([...received]);
-      return script(received);
+      if (cmd === "open_qr_scan") {
+        opened += 1;
+        held = [];
+        return opened;
+      }
+      if (cmd === "close_qr_scan") {
+        closed.push((args as { scan: number }).scan);
+        return null;
+      }
+      if (cmd !== "push_qr_frame") throw new Error(`unexpected command ${cmd}`);
+      const { scan, frame } = args as { scan: number; frame: string };
+      expect(scan).toBe(opened);
+      pushed.push(frame);
+      held.push(frame);
+      const received = [...held];
+      assembleCalls.push(received);
+      const answer = Promise.resolve(script(received));
+      answer.then(
+        (progress) => {
+          if (progress.complete) held = [];
+        },
+        () => {
+          held = [];
+        },
+      );
+      return answer;
     });
   }
 
@@ -120,6 +155,8 @@ describe("ScanQrModal", () => {
     await waitFor(() => expect(onScan).toHaveBeenCalledWith("wpkh(tpub.../0/*)", []));
     expect(onClose).toHaveBeenCalled();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    // The scan the core held is let go with the answer.
+    await waitFor(() => expect(closed).toContain(1));
   });
 
   it("assembles an animated code frame after frame and shows the progress", async () => {
@@ -153,7 +190,14 @@ describe("ScanQrModal", () => {
     await waitFor(() =>
       expect(onScan).toHaveBeenCalledWith("wsh(sortedmulti(2,...))", ["assumed_branches"]),
     );
-    // Every call carried the distinct frames seen so far, in order.
+    // Each distinct frame went to the core once, in order, and the scan
+    // it held had every one of them.
+    expect(pushed).toEqual([
+      "ur:crypto-output/1-3/aaaa",
+      "ur:crypto-output/2-3/bbbb",
+      "ur:crypto-output/3-3/cccc",
+    ]);
+    expect(opened).toBe(1);
     expect(assembleCalls).toEqual([
       ["ur:crypto-output/1-3/aaaa"],
       ["ur:crypto-output/1-3/aaaa", "ur:crypto-output/2-3/bbbb"],
@@ -236,6 +280,8 @@ describe("ScanQrModal", () => {
     expect(assembleCalls).toHaveLength(3);
     expect(track.stop).toHaveBeenCalled();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    // The scan is let go with the camera.
+    await waitFor(() => expect(closed).toEqual([1]));
   });
 
   it("says it once, however long the camera stays on the refused code", async () => {
@@ -259,9 +305,73 @@ describe("ScanQrModal", () => {
     await tick();
     await tick();
     await waitFor(() => expect(onScan).toHaveBeenCalledWith("wpkh(tpub.../0/*)", []));
-    // One refusal, one answer: the two further sightings were dropped
+    // The refused frame is sent once more, to a fresh scan, before it is
+    // barred; then one answer: the further sightings were dropped
     // without going back to the core for the same verdict.
-    expect(assembleCalls).toEqual([["B$HP0100ff"], ["wpkh(tpub.../0/*)"]]);
+    expect(assembleCalls).toEqual([["B$HP0100ff"], ["B$HP0100ff"], ["wpkh(tpub.../0/*)"]]);
+  });
+
+  /** One push at a time, the second try of a lone frame included: a
+      part seen while it is out waits, and goes after it. */
+  it("never pushes two frames at once, a second try included", async () => {
+    frames.push("ur:bytes/1-2/a", "ur:bytes/2-2/b");
+    let inFlight = 0;
+    let most = 0;
+    let lost = true;
+    const answers: (() => void)[] = [];
+    mockIPC((cmd) => {
+      if (cmd === "open_qr_scan") return (opened += 1);
+      if (cmd === "close_qr_scan") return null;
+      inFlight += 1;
+      most = Math.max(most, inFlight);
+      if (lost) {
+        lost = false;
+        inFlight -= 1;
+        return Promise.reject({ kind: "invalid_input", message: "this scan was closed" });
+      }
+      return new Promise((resolve) => {
+        answers.push(() => {
+          inFlight -= 1;
+          resolve({ format: "ur", received: 1, total: 2, complete: false, text: null, warnings: [] });
+        });
+      });
+    });
+    render(<ScanQrModal open onClose={vi.fn()} onScan={vi.fn()} />);
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    await tick();
+    await waitFor(() => expect(answers).toHaveLength(1));
+    // The second part is seen while the second try of the first is out.
+    await tick();
+    expect(answers).toHaveLength(1);
+    answers[0]();
+    await waitFor(() => expect(answers).toHaveLength(2));
+    answers[1]();
+    expect(most).toBe(1);
+  });
+
+  /** A scan the core no longer holds (more scans were opened than it
+      keeps) refuses the frame sent to it: the modal opens a fresh one
+      and sends the frame again, instead of barring a good code. */
+  it("opens a fresh scan when the core lost the one it held", async () => {
+    frames.push("wpkh(tpub.../0/*)");
+    let lost = true;
+    mockAssembly((received) => {
+      if (lost) {
+        lost = false;
+        return Promise.reject({
+          kind: "invalid_input",
+          message: "invalid qr: this scan was closed: open the scanner again",
+        }) as unknown as QrProgress;
+      }
+      return { format: "plain", received: 1, total: 1, complete: true, text: received[0], warnings: [] };
+    });
+    const onScan = vi.fn();
+    render(<ScanQrModal open onClose={vi.fn()} onScan={onScan} />);
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    await tick();
+    await waitFor(() => expect(onScan).toHaveBeenCalledWith("wpkh(tpub.../0/*)", []));
+    expect(opened).toBe(2);
+    expect(closed).toContain(1);
   });
 
   it("a refusal takes down the count it had filled in", async () => {
@@ -314,7 +424,9 @@ describe("ScanQrModal", () => {
   it("a refusal that lands after the scanner closed belongs to the scan it came from", async () => {
     let refuse: (reason: unknown) => void = () => {};
     mockIPC((cmd) => {
-      if (cmd !== "assemble_qr") throw new Error(`unexpected command ${cmd}`);
+      if (cmd === "open_qr_scan") return (opened += 1);
+      if (cmd === "close_qr_scan") return null;
+      if (cmd !== "push_qr_frame") throw new Error(`unexpected command ${cmd}`);
       return new Promise<QrProgress>((_, no) => {
         refuse = no;
       });
@@ -334,5 +446,20 @@ describe("ScanQrModal", () => {
     });
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    // Each opening had a scan of its own.
+    expect(opened).toBe(2);
+  });
+
+  it("lets the scan go when the scanner closes before an answer", async () => {
+    frames.push("ur:crypto-output/1-3/aaaa");
+    mockAssembly(() => ({ format: "ur", received: 1, total: 3, complete: false, text: null, warnings: [] }));
+    const { rerender } = render(<ScanQrModal open onClose={vi.fn()} onScan={vi.fn()} />);
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    await tick();
+    expect(await screen.findByText("1 / 3")).toBeInTheDocument();
+    expect(closed).toEqual([]);
+
+    rerender(<ScanQrModal open={false} onClose={vi.fn()} onScan={vi.fn()} />);
+    await waitFor(() => expect(closed).toEqual([1]));
   });
 });

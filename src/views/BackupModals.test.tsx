@@ -744,7 +744,7 @@ describe("restoring a backup", () => {
 
     expect(
       screen.getByText(
-        /Replaces your backend choice, accepted certificates and gap limit with the backup's\./,
+        /Replaces your backend choice and gap limit with the backup's, and adds the certificates it accepted\./,
       ),
     ).toBeInTheDocument();
     expect(screen.getByText("mempool.space")).toBeInTheDocument();
@@ -881,9 +881,13 @@ describe("restoring a backup", () => {
   });
 
   it("a scan lands the same way, with the scanner gone and the camera off", async () => {
+    // The scanner sends each frame once to a scan the core holds.
+    const seen: string[] = [];
     mockIPC((cmd, args) => {
-      if (cmd !== "assemble_qr") throw new Error(`unexpected command ${cmd}`);
-      const seen = (args as { frames: string[] }).frames;
+      if (cmd === "open_qr_scan") return 1;
+      if (cmd === "close_qr_scan") return null;
+      if (cmd !== "push_qr_frame") throw new Error(`unexpected command ${cmd}`);
+      seen.push((args as { frame: string }).frame);
       return {
         format: "ur",
         received: seen.length,

@@ -13,7 +13,7 @@ use gerfaut_core::chain::BackendConfig;
 use gerfaut_core::chain::connect::ScannedBackend;
 use gerfaut_core::chain::tor::{TorRoute, TorSettings, TorStatus};
 use gerfaut_core::error::CoreError;
-use gerfaut_core::input::qr::QrProgress;
+use gerfaut_core::input::qr::{QrProgress, QrScans};
 use gerfaut_core::input::{DerivationChoice, ImportOptions, ParsedInput, ScriptKind};
 use gerfaut_core::lock::{AppLock, LockKind, LockVerdict};
 use gerfaut_core::manager::SyncAllReport;
@@ -27,6 +27,7 @@ use gerfaut_core::wallet::snapshot::{
 };
 use serde::Serialize;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
@@ -289,13 +290,57 @@ async fn parse_backend(input: String) -> CommandResult<ScannedBackend> {
 /// Assembles the QR frames scanned so far (plain, UR, BBQr). The core
 /// decodes every frame again at each call, and a synchronous command
 /// runs on the main thread: a code of a hundred parts made the window
-/// stutter while it was scanned. On a worker thread instead.
+/// stutter while it was scanned. On a worker thread instead. The
+/// scanner itself sends each frame once to a scan the core holds
+/// ([`push_qr_frame`]); this one stays for scripts and tests.
 #[tauri::command]
 async fn assemble_qr(frames: Vec<String>) -> CommandResult<QrProgress> {
     tauri::async_runtime::spawn_blocking(move || gerfaut_core::input::qr::assemble(&frames))
         .await
         .map_err(|e| internal(format!("the QR assembly did not finish: {e}")))?
         .map_err(CommandError::from)
+}
+
+/// Opens a scan the core holds while the scanner is open, and gives the
+/// number its frames go under. The core bounds how many stay open, and
+/// lets the oldest go past them: on a worker thread, like
+/// [`close_qr_scan`].
+#[tauri::command]
+async fn open_qr_scan(scans: tauri::State<'_, Arc<QrScans>>) -> CommandResult<u32> {
+    let scans = Arc::clone(&scans);
+    tauri::async_runtime::spawn_blocking(move || scans.open())
+        .await
+        .map_err(|e| internal(format!("the QR scan did not open: {e}")))
+}
+
+/// One new frame of an open scan; where the scan stands after it, as
+/// [`assemble_qr`] says of every frame so far. On a worker thread, for
+/// the reason given there.
+#[tauri::command]
+async fn push_qr_frame(
+    scans: tauri::State<'_, Arc<QrScans>>,
+    scan: u32,
+    frame: String,
+) -> CommandResult<QrProgress> {
+    push_frame(Arc::clone(&scans), scan, frame).await
+}
+
+async fn push_frame(scans: Arc<QrScans>, scan: u32, frame: String) -> CommandResult<QrProgress> {
+    tauri::async_runtime::spawn_blocking(move || scans.push(scan, &frame))
+        .await
+        .map_err(|e| internal(format!("the QR assembly did not finish: {e}")))?
+        .map_err(CommandError::from)
+}
+
+/// Lets the core drop a scan: the scanner closed, done or not. On a
+/// worker thread: what a long animated scan held, tens of megabytes of
+/// fountain-code state, is freed there, never on the main thread.
+#[tauri::command]
+async fn close_qr_scan(scans: tauri::State<'_, Arc<QrScans>>, scan: u32) -> CommandResult<()> {
+    let scans = Arc::clone(&scans);
+    tauri::async_runtime::spawn_blocking(move || scans.close(scan))
+        .await
+        .map_err(|e| internal(format!("the QR scan did not close: {e}")))
 }
 
 #[tauri::command]
@@ -1281,6 +1326,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(navigation_guard(pages))
         .manage(clipboard::SensitiveClipboard::default())
+        .manage(Arc::new(QrScans::default()))
         .setup(move |app| {
             #[cfg(target_os = "macos")]
             if let Some(listener) = first {
@@ -1303,6 +1349,9 @@ pub fn run() {
             parse_input,
             parse_backend,
             assemble_qr,
+            open_qr_scan,
+            push_qr_frame,
+            close_qr_scan,
             add_wallet,
             list_wallets,
             wallet_snapshot,
@@ -1387,7 +1436,9 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{AppPages, CommandError, assemble_qr, bare_file_name, parse_backend, parse_input};
+    use super::{
+        AppPages, CommandError, assemble_qr, bare_file_name, parse_backend, parse_input, push_frame,
+    };
     use gerfaut_core::error::CoreError;
 
     /// The webview goes to the app's own pages, under the scheme each
@@ -1536,6 +1587,38 @@ mod tests {
         );
         let refused = runtime.block_on(assemble_qr(Vec::new())).unwrap_err();
         assert_eq!(refused.kind, "invalid_input");
+    }
+
+    /// A scan the core holds takes one frame at a time, off the main
+    /// thread, and answers what the assembly of every frame does; a
+    /// scan closed takes none.
+    #[test]
+    fn a_held_scan_takes_one_frame_at_a_time() {
+        use gerfaut_core::input::qr::QrScans;
+        use std::sync::Arc;
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let scans = Arc::new(QrScans::default());
+        let scan = scans.open();
+        let frame = |text: &str| push_frame(Arc::clone(&scans), scan, text.to_owned());
+        // Two parts of a BBQr of hex text, "ab" and "cd".
+        let first = runtime.block_on(frame("B$HU02006162")).unwrap();
+        assert_eq!((first.received, first.total, first.complete), (1, 2, false));
+        let done = runtime.block_on(frame("B$HU02016364")).unwrap();
+        assert_eq!(done.text.as_deref(), Some("abcd"));
+        assert_eq!(
+            runtime
+                .block_on(assemble_qr(vec![
+                    "B$HU02006162".to_owned(),
+                    "B$HU02016364".to_owned()
+                ]))
+                .unwrap(),
+            done
+        );
+        scans.close(scan);
+        let refused = runtime.block_on(frame("B$HU02006162")).unwrap_err();
+        assert_eq!(refused.kind, "invalid_input");
+        assert_eq!(scans.open_count(), 0);
     }
 
     /// A failure crosses in the form the core writes down for both

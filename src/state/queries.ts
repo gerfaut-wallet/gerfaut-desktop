@@ -17,7 +17,7 @@ import type {
   PriceRange,
   WalletIconId,
 } from "../lib/ipc";
-import { errorMessage, ipc, isCommandError, isFalseProof } from "../lib/ipc";
+import { errorMessage, failureMessage, ipc, isCommandError, isFalseProof } from "../lib/ipc";
 import { useUi } from "./store";
 
 // What a sync found is announced by the Rust side, which posts the
@@ -235,7 +235,7 @@ export function useSyncAll() {
         ui.setSyncError(sync.wallet_id, null);
       }
       for (const failure of report.failures) {
-        ui.setSyncError(failure.wallet_id, failure.message);
+        ui.setSyncError(failure.wallet_id, failureMessage(failure));
       }
       if (report.failures.length === 0) {
         ui.showToast(
