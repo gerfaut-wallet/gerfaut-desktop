@@ -302,10 +302,15 @@ async fn assemble_qr(frames: Vec<String>) -> CommandResult<QrProgress> {
 }
 
 /// Opens a scan the core holds while the scanner is open, and gives the
-/// number its frames go under. The core bounds how many stay open.
+/// number its frames go under. The core bounds how many stay open, and
+/// lets the oldest go past them: on a worker thread, like
+/// [`close_qr_scan`].
 #[tauri::command]
-fn open_qr_scan(scans: tauri::State<'_, Arc<QrScans>>) -> u32 {
-    scans.open()
+async fn open_qr_scan(scans: tauri::State<'_, Arc<QrScans>>) -> CommandResult<u32> {
+    let scans = Arc::clone(&scans);
+    tauri::async_runtime::spawn_blocking(move || scans.open())
+        .await
+        .map_err(|e| internal(format!("the QR scan did not open: {e}")))
 }
 
 /// One new frame of an open scan; where the scan stands after it, as
@@ -327,10 +332,15 @@ async fn push_frame(scans: Arc<QrScans>, scan: u32, frame: String) -> CommandRes
         .map_err(CommandError::from)
 }
 
-/// Lets the core drop a scan: the scanner closed, done or not.
+/// Lets the core drop a scan: the scanner closed, done or not. On a
+/// worker thread: what a long animated scan held, tens of megabytes of
+/// fountain-code state, is freed there, never on the main thread.
 #[tauri::command]
-fn close_qr_scan(scans: tauri::State<'_, Arc<QrScans>>, scan: u32) {
-    scans.close(scan);
+async fn close_qr_scan(scans: tauri::State<'_, Arc<QrScans>>, scan: u32) -> CommandResult<()> {
+    let scans = Arc::clone(&scans);
+    tauri::async_runtime::spawn_blocking(move || scans.close(scan))
+        .await
+        .map_err(|e| internal(format!("the QR scan did not close: {e}")))
 }
 
 #[tauri::command]
