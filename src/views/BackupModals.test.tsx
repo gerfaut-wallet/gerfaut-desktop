@@ -744,7 +744,7 @@ describe("restoring a backup", () => {
 
     expect(
       screen.getByText(
-        /Replaces your backend choice, accepted certificates and gap limit with the backup's\./,
+        /Replaces your backend choice and gap limit with the backup's, and adds the certificates it accepted\./,
       ),
     ).toBeInTheDocument();
     expect(screen.getByText("mempool.space")).toBeInTheDocument();

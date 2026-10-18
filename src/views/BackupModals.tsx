@@ -681,8 +681,8 @@ export function BackupRestoreModal({
                     Apply node settings
                   </p>
                   <p className="font-ui text-xs text-muted">
-                    Replaces your backend choice, accepted certificates and gap limit with
-                    the backup's.
+                    Replaces your backend choice and gap limit with the backup's, and adds
+                    the certificates it accepted.
                   </p>
                 </div>
                 <Toggle
