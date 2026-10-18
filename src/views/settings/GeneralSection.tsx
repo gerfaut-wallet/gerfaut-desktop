@@ -71,6 +71,10 @@ function DisplayCard() {
             id="fiat-currency"
             label="Fiat currency"
             size="sm"
+            // The list is wider than the field, which ends its row at the
+            // card's right edge: kept to that edge, it opens leftwards
+            // instead of running past the card and the window.
+            align="end"
             className="w-40"
             value={fiatCurrency}
             onChange={setFiatCurrency}
