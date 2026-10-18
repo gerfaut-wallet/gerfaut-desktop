@@ -11,7 +11,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { groupThousands } from "../lib/format";
-import { ipc } from "../lib/ipc";
+import { failureMessage, ipc } from "../lib/ipc";
 import type {
   BackendConfig,
   Coverage,
@@ -71,9 +71,9 @@ export function useLiveEvents(enabled: boolean): void {
     });
     on(LIVE_SYNC_FAILED, (payload) => {
       const id = walletIdOf(payload);
-      const message = (payload as { message?: unknown } | null)?.message;
+      const { message, kind } = (payload ?? {}) as { message?: unknown; kind?: unknown };
       if (id === null || typeof message !== "string") return;
-      useUi.getState().setSyncError(id, message);
+      useUi.getState().setSyncError(id, failureMessage({ kind, message }));
     });
     on(LIVE_STATUS, () => void client.invalidateQueries({ queryKey: liveStatusKey }));
     return () => {

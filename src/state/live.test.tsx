@@ -3,6 +3,7 @@ import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { FALSE_PROOF } from "../lib/ipc";
 import type { LeftOut, ServerSoftware, WatchStatus } from "../lib/ipc";
 import {
   LIVE_STATUS,
@@ -250,10 +251,21 @@ describe("the events of the watch", () => {
     mount();
     await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
 
-    await act(() => emit(LIVE_SYNC_FAILED, { wallet_id: "w1", message: "timed out" }));
+    await act(() => emit(LIVE_SYNC_FAILED, { wallet_id: "w1", message: "timed out", kind: "sync" }));
     await waitFor(() => expect(useUi.getState().syncErrors.w1).toBe("timed out"));
     await act(() => emit(LIVE_WALLET_SYNCED, { wallet_id: "w1" }));
     await waitFor(() => expect(useUi.getState().syncErrors.w1 ?? null).toBeNull());
+  });
+
+  /** The code of the failure picks the sentence, as for a sync the
+      window asked for: a false proof in the app's words. */
+  it("says a false proof in the app's words", async () => {
+    mount();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    const message = "sync failed via electrum.example.org: the server sent a false proof of a confirmation";
+    await act(() => emit(LIVE_SYNC_FAILED, { wallet_id: "w1", message, kind: "false_proof" }));
+    await waitFor(() => expect(useUi.getState().syncErrors.w1).toBe(FALSE_PROOF));
   });
 
   it("ignores a payload that is not what the Rust side sends", async () => {
