@@ -305,9 +305,35 @@ describe("ScanQrModal", () => {
     await tick();
     await tick();
     await waitFor(() => expect(onScan).toHaveBeenCalledWith("wpkh(tpub.../0/*)", []));
-    // One refusal, one answer: the two further sightings were dropped
+    // The refused frame is sent once more, to a fresh scan, before it is
+    // barred; then one answer: the further sightings were dropped
     // without going back to the core for the same verdict.
-    expect(assembleCalls).toEqual([["B$HP0100ff"], ["wpkh(tpub.../0/*)"]]);
+    expect(assembleCalls).toEqual([["B$HP0100ff"], ["B$HP0100ff"], ["wpkh(tpub.../0/*)"]]);
+  });
+
+  /** A scan the core no longer holds (more scans were opened than it
+      keeps) refuses the frame sent to it: the modal opens a fresh one
+      and sends the frame again, instead of barring a good code. */
+  it("opens a fresh scan when the core lost the one it held", async () => {
+    frames.push("wpkh(tpub.../0/*)");
+    let lost = true;
+    mockAssembly((received) => {
+      if (lost) {
+        lost = false;
+        return Promise.reject({
+          kind: "invalid_input",
+          message: "invalid qr: this scan was closed: open the scanner again",
+        }) as unknown as QrProgress;
+      }
+      return { format: "plain", received: 1, total: 1, complete: true, text: received[0], warnings: [] };
+    });
+    const onScan = vi.fn();
+    render(<ScanQrModal open onClose={vi.fn()} onScan={onScan} />);
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    await tick();
+    await waitFor(() => expect(onScan).toHaveBeenCalledWith("wpkh(tpub.../0/*)", []));
+    expect(opened).toBe(2);
+    expect(closed).toContain(1);
   });
 
   it("a refusal takes down the count it had filled in", async () => {

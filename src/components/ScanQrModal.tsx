@@ -61,12 +61,17 @@ export function ScanQrModal({
     let lastDecode = 0;
     let done = false;
     let assembling = false;
-    let pending: string | null = null;
+    /** New frames seen while a push was out, in the order seen. */
+    const waiting: string[] = [];
     // The core holds the frames of the scan; the modal only counts
     // them, and keeps the first in case it is the one at fault.
-    const scan = ipc.openQrScan();
-    // A scan that would not open is said by the first frame sent to it.
-    scan.catch(() => undefined);
+    const openScan = () => {
+      const opened = ipc.openQrScan();
+      // A scan that would not open is said by the first frame sent to it.
+      opened.catch(() => undefined);
+      return opened;
+    };
+    let scan = openScan();
     let taken = 0;
     let lone: string | null = null;
     const seen = new Set<string>();
@@ -78,6 +83,16 @@ export function ScanQrModal({
     // Lets the core drop the scan; one already closed stays closed.
     const release = () => {
       void scan.then((id) => ipc.closeQrScan(id)).catch(() => undefined);
+    };
+
+    // A fresh scan in the core, the old one let go. After any failure:
+    // the core starts its own scan over when it refuses, but a scan it
+    // dropped (more scans open than it keeps), one that never opened, or
+    // a call that failed on the way holds nothing the modal can count
+    // on, and a fresh one is the same state on both sides.
+    const reopen = () => {
+      release();
+      scan = openScan();
     };
 
     // The scan goes back to nothing and says why; the core has started
@@ -94,6 +109,7 @@ export function ScanQrModal({
       taken = 0;
       lone = null;
       seen.clear();
+      waiting.length = 0;
     };
 
     // A code larger than Gerfaut reads, by what it announces or by the
@@ -111,12 +127,14 @@ export function ScanQrModal({
       release();
     };
 
-    // One assembly at a time; a frame seen meanwhile waits its turn
-    // rather than being lost until the animation loops back to it.
-    const feed = async (frame: string) => {
+    // One assembly at a time; the frames seen meanwhile wait their turn
+    // rather than being lost until the animation loops back to them.
+    // `again` is a lone frame sent a second time, to a fresh scan, after
+    // the first try failed: only a second refusal bars it.
+    const feed = async (frame: string, again = false) => {
       if (seen.has(frame) || refused.has(frame)) return;
       if (assembling) {
-        pending = frame;
+        if (!waiting.includes(frame)) waiting.push(frame);
         return;
       }
       seen.add(frame);
@@ -147,16 +165,27 @@ export function ScanQrModal({
         // A refusal landing after the modal closed belongs to a scan the
         // user walked away from, and must not surface in the next one.
         if (done) return;
-        if (isCommandError(err) && err.kind === "too_many_parts") stop(TOO_MANY_PARTS);
-        else giveUp(refusal(err));
+        if (isCommandError(err) && err.kind === "too_many_parts") {
+          stop(TOO_MANY_PARTS);
+        } else {
+          reopen();
+          if (taken === 1 && !again) {
+            // Not yet proven at fault: it may have met a scan the core
+            // no longer held. Once more, on the fresh scan.
+            taken = 0;
+            lone = null;
+            seen.delete(frame);
+            assembling = false;
+            void feed(frame, true);
+            return;
+          }
+          giveUp(refusal(err));
+        }
       } finally {
         assembling = false;
       }
-      if (pending !== null && !done) {
-        const next = pending;
-        pending = null;
-        void feed(next);
-      }
+      const next = waiting.shift();
+      if (next !== undefined && !done) void feed(next);
     };
 
     const tick = (now: number) => {
