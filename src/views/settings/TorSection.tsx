@@ -160,12 +160,8 @@ export function TorSection({ tor }: { tor: TorSettings }) {
           </p>
         )}
 
-        <div className="-ml-4">
-          <Button
-            variant="ghost"
-            disabled={connect.isPending}
-            onClick={() => connect.mutate()}
-          >
+        <div>
+          <Button variant="primary" busy={connect.isPending} onClick={() => connect.mutate()}>
             {connect.isPending ? "Connecting…" : "Test the connection"}
           </Button>
         </div>

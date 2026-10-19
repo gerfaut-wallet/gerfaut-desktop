@@ -26,19 +26,8 @@ export function LoadFailure({
           {errorMessage(error)}
         </p>
       )}
-      <Button
-        variant="ghost"
-        className="-ml-3 mt-2"
-        disabled={retrying}
-        aria-busy={retrying || undefined}
-        onClick={onRetry}
-      >
-        <RefreshCw
-          size={14}
-          strokeWidth={1.5}
-          aria-hidden
-          className={retrying ? "motion-safe:animate-spin" : undefined}
-        />
+      <Button variant="primary" className="mt-3" busy={retrying} onClick={onRetry}>
+        {!retrying && <RefreshCw size={14} strokeWidth={1.5} aria-hidden />}
         Try again
       </Button>
     </div>

@@ -12,7 +12,7 @@ import {
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
-import { Button, IconButton } from "../../components/Button";
+import { Button, Disclosure, IconButton } from "../../components/Button";
 import { CoverageBadge } from "../../components/CoverageBadge";
 import { DropLine, useDragReorder } from "../../components/DragReorder";
 import { Notice } from "../../components/Notice";
@@ -31,7 +31,7 @@ import {
 } from "../../state/queries";
 import { useUi } from "../../state/store";
 import { useWalletOrder } from "../../state/walletOrder";
-import { GHOST_ON_TINT, SaveFailure, SectionCard, SettingRow, Toggle } from "./primitives";
+import { SaveFailure, SectionCard, SettingRow, Toggle } from "./primitives";
 import { WalletIconPicker } from "./WalletIconPicker";
 
 /** Numeric gap-limit field: commits on blur or Enter, clamped to what
@@ -286,9 +286,10 @@ export function WalletsSection({
                           }}
                         />
                         <Button
-                          variant="ghost"
-                          className="h-9"
-                          disabled={rescanning !== null}
+                          variant="secondary"
+                          size="sm"
+                          disabled={rescanning !== null && rescanning !== wallet.id}
+                          busy={rescanning === wallet.id}
                           onClick={() => {
                             setRescanning(wallet.id);
                             void rescan
@@ -297,12 +298,14 @@ export function WalletsSection({
                               .finally(() => setRescanning(null));
                           }}
                         >
-                          <ScanSearch size={14} strokeWidth={1.5} aria-hidden />
+                          {rescanning !== wallet.id && (
+                            <ScanSearch size={14} strokeWidth={1.5} aria-hidden />
+                          )}
                           {rescanning === wallet.id ? "Rescanning…" : "Rescan"}
                         </Button>
                         <Button
-                          variant="ghost"
-                          className="h-9"
+                          variant="secondary"
+                          size="sm"
                           disabled={rescanning !== null}
                           onClick={() => {
                             setConfirmRemove(null);
@@ -316,8 +319,8 @@ export function WalletsSection({
                             step, on its yes below, never to a lone remove
                             button. */}
                         <Button
-                          variant="ghost"
-                          className="h-9"
+                          variant="secondary"
+                          size="sm"
                           disabled={rescanning !== null}
                           onClick={() => {
                             setRenaming(null);
@@ -345,17 +348,17 @@ export function WalletsSection({
                       // the mobile.
                       action={<span className="flex items-center gap-2">
                         <Button
-                          variant="ghost"
-                          className={GHOST_ON_TINT}
+                          variant="secondary"
+                          size="sm"
+                          onTint
                           onClick={() => setConfirmRemove(null)}
                         >
                           Cancel
                         </Button>
                         <Button
                           variant="danger"
-                          className="h-9"
-                          disabled={removeWallet.isPending}
-                          aria-busy={removeWallet.isPending || undefined}
+                          size="sm"
+                          busy={removeWallet.isPending}
                           onClick={() => {
                             setRemoveFailure(null);
                             removeWallet.mutate(wallet.id, {
@@ -408,18 +411,12 @@ function LivePins({ wallets }: { wallets: WalletMeta[] }) {
 
   return (
     <div className="mt-4 border-t border-border pt-3">
-      <Button
-        variant="ghost"
-        className="-ml-2 h-9 px-2"
-        aria-expanded={open}
+      <Disclosure
+        open={open}
+        className="-ml-2"
         aria-controls="live-pins"
         onClick={() => setOpen(!open)}
       >
-        {open ? (
-          <ChevronUp size={14} strokeWidth={1.5} aria-hidden />
-        ) : (
-          <ChevronDown size={14} strokeWidth={1.5} aria-hidden />
-        )}
         {/* One run of text, so the dot sits between two equal spaces
             and the name read out is the line as written. */}
         <span>
@@ -431,7 +428,7 @@ function LivePins({ wallets }: { wallets: WalletMeta[] }) {
             </span>
           )}
         </span>
-      </Button>
+      </Disclosure>
       {open && (
         <div id="live-pins" className="mt-2">
           <p className="font-ui text-sm font-medium text-text">Always watch live first</p>

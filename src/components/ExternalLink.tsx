@@ -87,7 +87,7 @@ export function useExplorer(url: string, { z }: { z?: number } = {}) {
           Do not show this warning again
         </label>
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => setAsking(false)}>
+          <Button variant="secondary" onClick={() => setAsking(false)}>
             Cancel
           </Button>
           <Button

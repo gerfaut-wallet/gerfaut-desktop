@@ -200,7 +200,7 @@ function Summary({ detail, onExplorer }: { detail: TxDetail; onExplorer: (() => 
             )}
           </div>
           {onExplorer && (
-            <Button variant="ghost" onClick={onExplorer}>
+            <Button variant="primary" size="sm" onClick={onExplorer}>
               View on mempool.space
               <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
             </Button>

@@ -25,12 +25,14 @@ export function BackupSection({ activeNetwork }: { activeNetwork: Network }) {
         the desktop and the phone. A backup holds descriptors and addresses,
         never a private key or seed.
       </p>
-      <div className="-ml-4 mt-4 flex gap-2">
-        <Button variant="ghost" onClick={() => setExporting(true)}>
+      {/* Exporting is the habit, restoring happens once on a new device:
+          one filled action, its counterpart beside it. */}
+      <div className="mt-4 flex gap-2">
+        <Button variant="primary" onClick={() => setExporting(true)}>
           <Upload size={14} strokeWidth={1.5} aria-hidden />
           Export…
         </Button>
-        <Button variant="ghost" onClick={() => setRestoring(true)}>
+        <Button variant="secondary" onClick={() => setRestoring(true)}>
           <Download size={14} strokeWidth={1.5} aria-hidden />
           Restore…
         </Button>

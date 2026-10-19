@@ -95,9 +95,10 @@ export function AboutSection() {
                 Get {available}
               </Button>
             )}
+            {/* Beside "Get" it is the second choice; alone, the card's action. */}
             <Button
-              variant="ghost"
-              disabled={check.isPending}
+              variant={available ? "secondary" : "primary"}
+              busy={check.isPending}
               onClick={() =>
                 check.mutate(undefined, {
                   onSuccess: (status) => {
@@ -115,12 +116,7 @@ export function AboutSection() {
                 })
               }
             >
-              <RefreshCw
-                size={14}
-                strokeWidth={1.5}
-                aria-hidden
-                className={check.isPending ? "motion-safe:animate-spin" : undefined}
-              />
+              {!check.isPending && <RefreshCw size={14} strokeWidth={1.5} aria-hidden />}
               {check.isPending ? "Checking…" : "Check for updates"}
             </Button>
           </span>
@@ -131,7 +127,7 @@ export function AboutSection() {
               This is a public beta. Check addresses and amounts on your signing device, and report
               anything that looks wrong.
             </p>
-            <Button variant="ghost" onClick={() => void link.open(ISSUES_URL)}>
+            <Button variant="primary" onClick={() => void link.open(ISSUES_URL)}>
               <MessageSquareWarning size={14} strokeWidth={1.5} aria-hidden />
               Report a problem
             </Button>
@@ -161,8 +157,8 @@ export function AboutSection() {
             </p>
           )}
         </div>
-        <div className="-ml-4">
-          <Button variant="ghost" onClick={() => setTourOpen(true)}>
+        <div>
+          <Button variant="primary" onClick={() => setTourOpen(true)}>
             <Compass size={14} strokeWidth={1.5} aria-hidden />
             Show the welcome tour
           </Button>

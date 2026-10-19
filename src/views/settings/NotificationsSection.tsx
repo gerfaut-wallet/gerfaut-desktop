@@ -17,7 +17,7 @@ import {
 } from "../../state/live";
 import { useWallets } from "../../state/queries";
 import { useUi } from "../../state/store";
-import { GHOST_ON_TINT, SaveFailure, SectionCard, SettingRow, Toggle } from "./primitives";
+import { SaveFailure, SectionCard, SettingRow, Toggle } from "./primitives";
 
 /** What the live watch leaves to the syncs when it is short of room, and
     the way out: a node of one's own, where it follows ten times more,
@@ -35,11 +35,7 @@ function ShortOfRoomNote({ status, leftOut }: { status: WatchStatus; leftOut: Le
         // The node settings are the way out only off one's own node: on
         // it, what is left to change is in the node's configuration.
         leftOut.remedy?.type === "own_node" ? (
-          <Button
-            variant="ghost"
-            className={GHOST_ON_TINT}
-            onClick={() => openSettings("network")}
-          >
+          <Button variant="primary" size="sm" onClick={() => openSettings("network")}>
             Node settings
           </Button>
         ) : undefined
@@ -166,13 +162,8 @@ export function NotificationsSection({
         </div>
 
         <div>
-          <Button
-            variant="ghost"
-            className="-ml-4"
-            disabled={testing}
-            onClick={() => void sendTest()}
-          >
-            <Bell size={14} strokeWidth={1.5} aria-hidden />
+          <Button variant="primary" busy={testing} onClick={() => void sendTest()}>
+            {!testing && <Bell size={14} strokeWidth={1.5} aria-hidden />}
             Send a test notification
           </Button>
           {test !== null && (

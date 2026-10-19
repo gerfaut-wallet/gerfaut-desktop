@@ -180,7 +180,7 @@ export function ReceiveView({ walletId }: { walletId: string }) {
                     {!singleAddress && (
                       <>
                         <Button
-                          variant="ghost"
+                          variant="secondary"
                           disabled={!hasNext}
                           onClick={() => setOffset(position + 1)}
                         >
@@ -188,7 +188,7 @@ export function ReceiveView({ walletId }: { walletId: string }) {
                           Next address
                         </Button>
                         {offset > 0 && (
-                          <Button variant="ghost" onClick={() => setOffset(0)}>
+                          <Button variant="secondary" onClick={() => setOffset(0)}>
                             <RotateCcw size={14} strokeWidth={1.5} aria-hidden />
                             First unused
                           </Button>

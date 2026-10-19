@@ -453,7 +453,8 @@ export function BackendSection({
         <Button
           variant="primary"
           onClick={() => void save()}
-          disabled={saving || inspect.isPending || !valid}
+          disabled={saving || !valid}
+          busy={inspect.isPending}
         >
           {inspect.isPending ? "Checking the certificate…" : "Save backend"}
         </Button>

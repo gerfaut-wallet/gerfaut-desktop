@@ -71,7 +71,7 @@ export function UpdateNotice() {
         </div>
       </div>
       <div className="flex shrink-0 justify-end gap-2">
-        <Button variant="ghost" onClick={() => useUpdate.getState().dismiss()}>
+        <Button variant="secondary" onClick={() => useUpdate.getState().dismiss()}>
           Later
         </Button>
         <Button variant="primary" onClick={open}>

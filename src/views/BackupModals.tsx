@@ -335,14 +335,10 @@ export function BackupExportModal({
             </p>
           )}
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={close}>
+            <Button variant="secondary" onClick={close}>
               Cancel
             </Button>
-            <Button
-              variant="primary"
-              disabled={exportBackup.isPending}
-              onClick={() => void create()}
-            >
+            <Button variant="primary" busy={exportBackup.isPending} onClick={() => void create()}>
               {exportBackup.isPending ? "Creating…" : "Create backup"}
             </Button>
           </div>
@@ -351,7 +347,7 @@ export function BackupExportModal({
         <div className="flex flex-col items-center gap-4">
           <AnimatedQr frames={bundle.frames} />
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={() => setShowQr(false)}>
+            <Button variant="secondary" onClick={() => setShowQr(false)}>
               Back
             </Button>
             <Button variant="primary" onClick={close}>
@@ -373,8 +369,10 @@ export function BackupExportModal({
               Show QR code
             </Button>
           </div>
+          {/* Secondary like the two ways out of the backup above it:
+              in blue it would ask to close before either is used. */}
           <div className="flex justify-end">
-            <Button variant="ghost" onClick={close}>
+            <Button variant="secondary" onClick={close}>
               Done
             </Button>
           </div>
@@ -592,12 +590,13 @@ export function BackupRestoreModal({
             </p>
           )}
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={close}>
+            <Button variant="secondary" onClick={close}>
               Cancel
             </Button>
             <Button
               variant="primary"
-              disabled={source === null || previewBackup.isPending}
+              disabled={source === null}
+              busy={previewBackup.isPending}
               onClick={() => void openBackup()}
             >
               {previewBackup.isPending ? "Opening…" : "Open backup"}
@@ -700,12 +699,13 @@ export function BackupRestoreModal({
             </p>
           )}
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={close}>
+            <Button variant="secondary" onClick={close}>
               Cancel
             </Button>
             <Button
               variant="primary"
-              disabled={chosen.size === 0 || importBackup.isPending}
+              disabled={chosen.size === 0}
+              busy={importBackup.isPending}
               onClick={() => void restore()}
             >
               {chosen.size === 1 ? "Restore 1 wallet" : `Restore ${chosen.size} wallets`}

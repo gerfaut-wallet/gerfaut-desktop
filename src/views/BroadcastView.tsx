@@ -239,7 +239,7 @@ export function BroadcastView({ network }: { network: Network }) {
               </Notice>
             )}
             <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-              <Button variant="ghost" onClick={startOver}>
+              <Button variant="secondary" onClick={startOver}>
                 <Undo2 size={15} strokeWidth={1.5} aria-hidden />
                 Start over
               </Button>
@@ -321,7 +321,7 @@ export function BroadcastView({ network }: { network: Network }) {
         >
           <ConfirmBody preview={preview.data} />
           <div className="mt-5 flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setConfirmOpen(false)}>
+            <Button variant="secondary" onClick={() => setConfirmOpen(false)}>
               Cancel
             </Button>
             <Button variant="primary" onClick={() => void send()}>
@@ -416,12 +416,12 @@ function InputCard({
         )}
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="-ml-4 flex gap-1">
-          <Button variant="ghost" onClick={onImport}>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={onImport}>
             <FileUp size={16} strokeWidth={1.5} aria-hidden />
             Import a file
           </Button>
-          <Button variant="ghost" onClick={onScan}>
+          <Button variant="secondary" onClick={onScan}>
             <ScanLine size={16} strokeWidth={1.5} aria-hidden />
             Scan a QR code
           </Button>
@@ -941,8 +941,8 @@ function StatusCard({
             </span>
           )}
           <Button
-            variant="ghost"
-            className="h-8 px-2"
+            variant="secondary"
+            size="sm"
             onClick={() => (watching ? void status.refetch() : setWatching(true))}
             aria-label="Check status"
           >
@@ -950,7 +950,7 @@ function StatusCard({
               size={14}
               strokeWidth={1.5}
               aria-hidden
-              className={status.isFetching ? "animate-spin" : undefined}
+              className={status.isFetching ? "motion-safe:animate-spin" : undefined}
             />
             {watching ? "Refresh" : "Check"}
           </Button>
@@ -988,19 +988,15 @@ function StatusCard({
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {url && (
-          <Button
-            variant="ghost"
-            className="h-8"
-            onClick={explorer.ask}
-          >
+          <Button variant="secondary" size="sm" onClick={explorer.ask}>
             <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
             View on mempool.space
           </Button>
         )}
         {!live && (
           <Button
-            variant="ghost"
-            className="h-8"
+            variant="secondary"
+            size="sm"
             onClick={() => setConfirmForget(true)}
             aria-label="Forget this broadcast"
           >
@@ -1041,7 +1037,7 @@ function StatusCard({
           the network and is untouched.
         </p>
         <div className="mt-5 flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => setConfirmForget(false)}>
+          <Button variant="secondary" onClick={() => setConfirmForget(false)}>
             Cancel
           </Button>
           <Button
