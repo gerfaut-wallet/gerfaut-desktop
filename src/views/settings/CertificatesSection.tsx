@@ -138,7 +138,7 @@ export function CertificateDialog({
           {changed ? (
             <>
               <Button
-                variant="secondary"
+                variant={confirming ? "danger" : "secondary"}
                 disabled={busy}
                 onClick={() => (confirming ? onAccept(fingerprint) : setConfirming(true))}
               >
