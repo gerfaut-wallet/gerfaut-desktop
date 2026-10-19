@@ -239,16 +239,16 @@ export function BroadcastView({ network }: { network: Network }) {
               </Notice>
             )}
             <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-              <Button variant="ghost" onClick={startOver}>
-                <Undo2 size={15} strokeWidth={1.5} aria-hidden />
+              <Button variant="secondary" onClick={startOver} icon={Undo2}>
                 Start over
               </Button>
               <Button
                 variant="primary"
-                disabled={!sendable(preview.data) || broadcast.isPending}
+                icon={Radio}
+                disabled={!sendable(preview.data)}
+                busy={broadcast.isPending}
                 onClick={() => setConfirmOpen(true)}
               >
-                <Radio size={16} strokeWidth={1.5} aria-hidden />
                 {broadcast.isPending ? "Broadcasting…" : "Broadcast"}
               </Button>
             </div>
@@ -264,8 +264,7 @@ export function BroadcastView({ network }: { network: Network }) {
                 offer, never in the layout. */}
             {preview.data && <PreviewCard preview={preview.data} network={network} />}
             <div className="px-1">
-              <Button variant="primary" onClick={startOver}>
-                <Radio size={16} strokeWidth={1.5} aria-hidden />
+              <Button variant="primary" onClick={startOver} icon={Radio}>
                 Broadcast another transaction
               </Button>
             </div>
@@ -321,11 +320,10 @@ export function BroadcastView({ network }: { network: Network }) {
         >
           <ConfirmBody preview={preview.data} />
           <div className="mt-5 flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setConfirmOpen(false)}>
+            <Button variant="secondary" onClick={() => setConfirmOpen(false)}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={() => void send()}>
-              <Radio size={16} strokeWidth={1.5} aria-hidden />
+            <Button variant="primary" onClick={() => void send()} icon={Radio}>
               Broadcast
             </Button>
           </div>
@@ -416,17 +414,20 @@ function InputCard({
         )}
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="-ml-4 flex gap-1">
-          <Button variant="ghost" onClick={onImport}>
-            <FileUp size={16} strokeWidth={1.5} aria-hidden />
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={onImport} icon={FileUp}>
             Import a file
           </Button>
-          <Button variant="ghost" onClick={onScan}>
-            <ScanLine size={16} strokeWidth={1.5} aria-hidden />
+          <Button variant="secondary" onClick={onScan} icon={ScanLine}>
             Scan a QR code
           </Button>
         </div>
-        <Button variant="primary" disabled={raw.trim().length === 0 || busy} onClick={onDecode}>
+        <Button
+          variant="primary"
+          disabled={raw.trim().length === 0}
+          busy={busy}
+          onClick={onDecode}
+        >
           {busy ? "Reading…" : "Preview"}
         </Button>
       </div>
@@ -941,8 +942,8 @@ function StatusCard({
             </span>
           )}
           <Button
-            variant="ghost"
-            className="h-8 px-2"
+            variant="secondary"
+            size="sm"
             onClick={() => (watching ? void status.refetch() : setWatching(true))}
             aria-label="Check status"
           >
@@ -950,7 +951,7 @@ function StatusCard({
               size={14}
               strokeWidth={1.5}
               aria-hidden
-              className={status.isFetching ? "animate-spin" : undefined}
+              className={status.isFetching ? "motion-safe:animate-spin" : undefined}
             />
             {watching ? "Refresh" : "Check"}
           </Button>
@@ -988,23 +989,18 @@ function StatusCard({
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {url && (
-          <Button
-            variant="ghost"
-            className="h-8"
-            onClick={explorer.ask}
-          >
-            <ExternalLink size={14} strokeWidth={1.5} aria-hidden />
+          <Button variant="secondary" size="sm" onClick={explorer.ask} icon={ExternalLink}>
             View on mempool.space
           </Button>
         )}
         {!live && (
           <Button
-            variant="ghost"
-            className="h-8"
+            variant="secondary"
+            size="sm"
             onClick={() => setConfirmForget(true)}
             aria-label="Forget this broadcast"
+            icon={Trash2}
           >
-            <Trash2 size={14} strokeWidth={1.5} aria-hidden />
             Forget
           </Button>
         )}
@@ -1041,7 +1037,7 @@ function StatusCard({
           the network and is untouched.
         </p>
         <div className="mt-5 flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => setConfirmForget(false)}>
+          <Button variant="secondary" onClick={() => setConfirmForget(false)}>
             Cancel
           </Button>
           <Button
@@ -1050,8 +1046,8 @@ function StatusCard({
               setConfirmForget(false);
               onForget();
             }}
+            icon={Trash2}
           >
-            <Trash2 size={16} strokeWidth={1.5} aria-hidden />
             Forget
           </Button>
         </div>

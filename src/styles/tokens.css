@@ -50,6 +50,9 @@
   --color-primary-hover: #0a5d75;
   --color-on-primary: #ffffff;
   --color-alert: #b3261e;
+  /* The yes of a destructive confirmation: the primary's form in red. */
+  --color-alert-hover: #8f1e18;
+  --color-on-alert: #ffffff;
   --color-alert-surface: #fde7e7;
   --color-confirmed: #116b41;
   --color-confirmed-surface: #dcf5e6;
@@ -96,6 +99,8 @@
   --color-primary-hover: #a5e1f0;
   --color-on-primary: #06232b;
   --color-alert: #ff706d;
+  --color-alert-hover: #ff8f8c;
+  --color-on-alert: #0b0f14;
   --color-alert-surface: #1f2933;
   --color-confirmed: #50b771;
   --color-confirmed-surface: #1f2933;
@@ -118,6 +123,8 @@
   /* The signals too: the network badge and a failed sync are written
      on the dark island, where the light values fall to about 2:1. */
   --color-alert: #ff706d;
+  --color-alert-hover: #ff8f8c;
+  --color-on-alert: #0b0f14;
   --color-alert-surface: #1f2933;
   --color-confirmed: #50b771;
   --color-confirmed-surface: #1f2933;

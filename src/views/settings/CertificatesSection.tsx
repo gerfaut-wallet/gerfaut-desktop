@@ -150,7 +150,7 @@ export function CertificateDialog({
             </>
           ) : (
             <>
-              <Button variant="ghost" onClick={onCancel}>
+              <Button variant="secondary" onClick={onCancel}>
                 Cancel
               </Button>
               <Button variant="primary" disabled={busy} onClick={() => onAccept(fingerprint)}>
@@ -186,12 +186,13 @@ export function CertificatesSection({ certs }: { certs: Record<string, string> }
               </p>
             </div>
             <Button
-              variant="ghost"
-              className="h-9 shrink-0 px-2"
+              variant="secondary"
+              size="sm"
+              className="shrink-0"
               aria-label={`Forget the certificate accepted for ${host}`}
               onClick={() => setPending(host)}
+              icon={Trash2}
             >
-              <Trash2 size={14} strokeWidth={1.5} aria-hidden />
               Forget
             </Button>
           </li>
@@ -219,7 +220,7 @@ export function CertificatesSection({ certs }: { certs: Record<string, string> }
           <SaveFailure error={failure} className="mt-3" />
           <div className="mt-4 flex items-center justify-end gap-3">
             <Button
-              variant="ghost"
+              variant="secondary"
               onClick={() => {
                 setPending(null);
                 setFailure(null);
@@ -228,8 +229,8 @@ export function CertificatesSection({ certs }: { certs: Record<string, string> }
               Cancel
             </Button>
             <Button
-              variant="primary"
-              disabled={forget.isPending}
+              variant="danger"
+              busy={forget.isPending}
               onClick={() => {
                 setFailure(null);
                 void forget.mutateAsync(pending).then(() => {

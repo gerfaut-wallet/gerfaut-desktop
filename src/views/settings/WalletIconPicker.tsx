@@ -88,14 +88,14 @@ export function WalletIconPicker({
   return (
     <div ref={rootRef} className="relative">
       <Button
-        variant="ghost"
-        className="h-9"
+        variant="secondary"
+        size="sm"
         disabled={disabled}
         aria-expanded={open}
         aria-controls={open ? groupId : undefined}
         onClick={() => setOpen(!open)}
+        icon={Shapes}
       >
-        <Shapes size={14} strokeWidth={1.5} aria-hidden />
         Icon
       </Button>
       {open && (

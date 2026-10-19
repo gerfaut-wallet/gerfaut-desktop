@@ -64,11 +64,10 @@ export function StartupFailure({ failure }: { failure: CommandError }) {
         <Button
           variant="primary"
           className="mt-6"
-          disabled={trying}
-          aria-busy={trying || undefined}
+          icon={RotateCcw}
+          busy={trying}
           onClick={() => void retry()}
         >
-          <RotateCcw size={15} strokeWidth={1.5} aria-hidden />
           {trying ? "Trying…" : "Try again"}
         </Button>
       </div>

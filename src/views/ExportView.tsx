@@ -186,10 +186,11 @@ export function ExportView({ walletId }: { walletId: string }) {
           </div>
           <Button
             variant="primary"
+            icon={FileDown}
             onClick={run}
-            disabled={exportCsv.isPending || selected === 0 || problem !== null}
+            disabled={selected === 0 || problem !== null}
+            busy={exportCsv.isPending}
           >
-            <FileDown size={16} strokeWidth={1.5} aria-hidden />
             {exportCsv.isPending ? "Exporting…" : "Export CSV…"}
           </Button>
         </div>

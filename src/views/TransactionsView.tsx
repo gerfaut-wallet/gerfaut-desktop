@@ -68,15 +68,10 @@ export function TransactionsView({ walletId }: { walletId: string }) {
           <div className="flex flex-col items-center gap-1.5 px-3 py-4">
             <Button
               variant="secondary"
+              icon={ChevronDown}
+              busy={loadMore.isPending}
               onClick={() => loadMore.mutate(walletId)}
-              disabled={loadMore.isPending}
             >
-              <ChevronDown
-                size={16}
-                strokeWidth={1.5}
-                aria-hidden
-                className={loadMore.isPending ? "motion-safe:animate-bounce" : undefined}
-              />
               {loadMore.isPending ? "Fetching…" : "Load older transactions"}
             </Button>
             <p className="font-ui text-xs text-muted">

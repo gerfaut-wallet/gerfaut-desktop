@@ -134,9 +134,11 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
         </SettingRow>
 
         {lock && (
-          <div className="-ml-4 flex gap-2">
+          // Locking is the everyday gesture, changing the secret a rare
+          // one: one filled action, its counterpart beside it.
+          <div className="flex gap-2">
             <Button
-              variant="ghost"
+              variant="secondary"
               onClick={() => {
                 setKind(lock.kind);
                 setProblem(null);
@@ -145,7 +147,7 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
             >
               {lock.kind === "pin" ? "Change PIN" : "Change password"}
             </Button>
-            <Button variant="ghost" onClick={lockNow}>
+            <Button variant="primary" onClick={lockNow}>
               Lock now
             </Button>
           </div>
@@ -222,7 +224,7 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
             </p>
           )}
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" type="button" onClick={close}>
+            <Button variant="secondary" type="button" onClick={close}>
               Cancel
             </Button>
             <Button variant="primary" type="submit">
@@ -263,7 +265,7 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
             </p>
           )}
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" type="button" onClick={close}>
+            <Button variant="secondary" type="button" onClick={close}>
               Cancel
             </Button>
             <Button variant="primary" type="submit">

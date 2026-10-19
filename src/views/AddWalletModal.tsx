@@ -1,6 +1,6 @@
-import { ChevronDown, ChevronUp, FileUp, ScanLine } from "lucide-react";
+import { FileUp, ScanLine } from "lucide-react";
 import { useRef, useState } from "react";
-import { Button } from "../components/Button";
+import { Button, Disclosure } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { Notice } from "../components/Notice";
 import { Select } from "../components/Select";
@@ -313,13 +313,13 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
             </p>
           </div>
           <div className="flex items-center justify-between">
-            <div className="-ml-4 flex gap-1">
-              <Button variant="ghost" onClick={() => fileRef.current?.click()}>
-                <FileUp size={16} strokeWidth={1.5} aria-hidden />
+            {/* Two other ways in, side by side: equal choices, so
+                neither takes the blue Continue holds. */}
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => fileRef.current?.click()} icon={FileUp}>
                 Import a file
               </Button>
-              <Button variant="ghost" onClick={() => setScanOpen(true)}>
-                <ScanLine size={16} strokeWidth={1.5} aria-hidden />
+              <Button variant="secondary" onClick={() => setScanOpen(true)} icon={ScanLine}>
                 Scan a QR code
               </Button>
             </div>
@@ -335,7 +335,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
               }}
             />
             <div className="flex gap-2">
-              <Button variant="ghost" onClick={close}>
+              <Button variant="secondary" onClick={close}>
                 Cancel
               </Button>
               <Button
@@ -421,19 +421,9 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
               choice made here. */}
           {parsed.derivation_editable && parsed.payload.type === "descriptors" && (
             <div>
-              <Button
-                variant="ghost"
-                className="h-9 px-2"
-                aria-expanded={advanced}
-                onClick={() => setAdvanced(!advanced)}
-              >
-                {advanced ? (
-                  <ChevronUp size={14} strokeWidth={1.5} aria-hidden />
-                ) : (
-                  <ChevronDown size={14} strokeWidth={1.5} aria-hidden />
-                )}
+              <Disclosure open={advanced} className="-ml-2" onClick={() => setAdvanced(!advanced)}>
                 Advanced
-              </Button>
+              </Disclosure>
               {advanced && (
                 <div className="mt-2 flex flex-col gap-3">
                   <div className="grid grid-cols-2 gap-3">
@@ -549,12 +539,13 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
           )}
 
           <div className="flex justify-between">
-            <Button variant="ghost" className="-ml-4" onClick={back}>
+            <Button variant="secondary" onClick={back}>
               Back
             </Button>
             <Button
               variant="primary"
-              disabled={name.trim().length === 0 || parsing || addWallet.isPending}
+              disabled={name.trim().length === 0 || parsing}
+              busy={addWallet.isPending}
               onClick={() => void submit()}
             >
               {addWallet.isPending ? "Adding…" : "Add wallet"}
