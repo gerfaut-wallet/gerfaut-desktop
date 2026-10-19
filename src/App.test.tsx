@@ -2690,11 +2690,15 @@ describe("electrum certificates", () => {
     // obvious one.
     expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveClass("bg-primary");
 
-    await user.click(within(dialog).getByRole("button", { name: "Trust the new certificate" }));
+    const trust = within(dialog).getByRole("button", { name: "Trust the new certificate" });
+    expect(trust).toHaveClass("bg-sunken");
+    await user.click(trust);
     expect(trusted).toHaveLength(0);
-    await user.click(
-      within(dialog).getByRole("button", { name: "Yes, trust the new certificate" }),
-    );
+    // The yes to a changed certificate is the risky answer: it wears the
+    // alert colour, like any other destructive confirmation.
+    const yes = within(dialog).getByRole("button", { name: "Yes, trust the new certificate" });
+    expect(yes).toHaveClass("bg-alert");
+    await user.click(yes);
     await waitFor(() => expect(trusted[0]).toMatchObject({ fingerprint: OTHER_FINGERPRINT }));
   });
 
