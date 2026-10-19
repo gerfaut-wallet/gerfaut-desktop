@@ -37,8 +37,7 @@ export class ErrorBoundary extends Component<
           <p className="mt-2 break-words text-pretty font-ui text-xs text-muted">
             {error.message}
           </p>
-          <Button variant="primary" className="mt-6" onClick={reload}>
-            <RotateCcw size={15} strokeWidth={1.5} aria-hidden />
+          <Button variant="primary" className="mt-6" onClick={reload} icon={RotateCcw}>
             Reload
           </Button>
         </div>

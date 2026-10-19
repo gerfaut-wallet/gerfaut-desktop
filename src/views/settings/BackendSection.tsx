@@ -453,8 +453,8 @@ export function BackendSection({
         <Button
           variant="primary"
           onClick={() => void save()}
-          disabled={saving || !valid}
-          busy={inspect.isPending}
+          disabled={!valid}
+          busy={saving || inspect.isPending}
         >
           {inspect.isPending ? "Checking the certificate…" : "Save backend"}
         </Button>
@@ -528,8 +528,8 @@ function ScanButton({ onClick }: { onClick: () => void }) {
       variant="secondary"
       onClick={onClick}
       aria-label="Scan a server address QR code"
+      icon={ScanLine}
     >
-      <ScanLine size={16} strokeWidth={1.5} aria-hidden />
       Scan
     </Button>
   );

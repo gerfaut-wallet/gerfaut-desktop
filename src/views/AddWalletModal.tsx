@@ -316,12 +316,10 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
             {/* Two other ways in, side by side: equal choices, so
                 neither takes the blue Continue holds. */}
             <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => fileRef.current?.click()}>
-                <FileUp size={16} strokeWidth={1.5} aria-hidden />
+              <Button variant="secondary" onClick={() => fileRef.current?.click()} icon={FileUp}>
                 Import a file
               </Button>
-              <Button variant="secondary" onClick={() => setScanOpen(true)}>
-                <ScanLine size={16} strokeWidth={1.5} aria-hidden />
+              <Button variant="secondary" onClick={() => setScanOpen(true)} icon={ScanLine}>
                 Scan a QR code
               </Button>
             </div>
@@ -546,7 +544,8 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
             </Button>
             <Button
               variant="primary"
-              disabled={name.trim().length === 0 || parsing || addWallet.isPending}
+              disabled={name.trim().length === 0 || parsing}
+              busy={addWallet.isPending}
               onClick={() => void submit()}
             >
               {addWallet.isPending ? "Adding…" : "Add wallet"}

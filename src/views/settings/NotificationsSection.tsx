@@ -162,8 +162,7 @@ export function NotificationsSection({
         </div>
 
         <div>
-          <Button variant="primary" busy={testing} onClick={() => void sendTest()}>
-            {!testing && <Bell size={14} strokeWidth={1.5} aria-hidden />}
+          <Button variant="primary" icon={Bell} busy={testing} onClick={() => void sendTest()}>
             Send a test notification
           </Button>
           {test !== null && (

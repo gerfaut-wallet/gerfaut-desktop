@@ -28,12 +28,10 @@ export function BackupSection({ activeNetwork }: { activeNetwork: Network }) {
       {/* Exporting is the habit, restoring happens once on a new device:
           one filled action, its counterpart beside it. */}
       <div className="mt-4 flex gap-2">
-        <Button variant="primary" onClick={() => setExporting(true)}>
-          <Upload size={14} strokeWidth={1.5} aria-hidden />
+        <Button variant="primary" onClick={() => setExporting(true)} icon={Upload}>
           Export…
         </Button>
-        <Button variant="secondary" onClick={() => setRestoring(true)}>
-          <Download size={14} strokeWidth={1.5} aria-hidden />
+        <Button variant="secondary" onClick={() => setRestoring(true)} icon={Download}>
           Restore…
         </Button>
       </div>

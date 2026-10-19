@@ -94,8 +94,8 @@ export function WalletIconPicker({
         aria-expanded={open}
         aria-controls={open ? groupId : undefined}
         onClick={() => setOpen(!open)}
+        icon={Shapes}
       >
-        <Shapes size={14} strokeWidth={1.5} aria-hidden />
         Icon
       </Button>
       {open && (

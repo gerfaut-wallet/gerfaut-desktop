@@ -183,13 +183,12 @@ export function ReceiveView({ walletId }: { walletId: string }) {
                           variant="secondary"
                           disabled={!hasNext}
                           onClick={() => setOffset(position + 1)}
+                          icon={SkipForward}
                         >
-                          <SkipForward size={15} strokeWidth={1.5} aria-hidden />
                           Next address
                         </Button>
                         {offset > 0 && (
-                          <Button variant="secondary" onClick={() => setOffset(0)}>
-                            <RotateCcw size={14} strokeWidth={1.5} aria-hidden />
+                          <Button variant="secondary" onClick={() => setOffset(0)} icon={RotateCcw}>
                             First unused
                           </Button>
                         )}

@@ -288,6 +288,7 @@ export function WalletsSection({
                         <Button
                           variant="secondary"
                           size="sm"
+                          icon={ScanSearch}
                           disabled={rescanning !== null && rescanning !== wallet.id}
                           busy={rescanning === wallet.id}
                           onClick={() => {
@@ -298,9 +299,6 @@ export function WalletsSection({
                               .finally(() => setRescanning(null));
                           }}
                         >
-                          {rescanning !== wallet.id && (
-                            <ScanSearch size={14} strokeWidth={1.5} aria-hidden />
-                          )}
                           {rescanning === wallet.id ? "Rescanning…" : "Rescan"}
                         </Button>
                         <Button
@@ -311,8 +309,8 @@ export function WalletsSection({
                             setConfirmRemove(null);
                             setRenaming({ id: wallet.id, name: wallet.name });
                           }}
+                          icon={Pencil}
                         >
-                          <Pencil size={14} strokeWidth={1.5} aria-hidden />
                           Rename
                         </Button>
                         {/* Neutral here: red belongs to the confirmation
@@ -326,8 +324,8 @@ export function WalletsSection({
                             setRenaming(null);
                             setConfirmRemove(wallet.id);
                           }}
+                          icon={Trash2}
                         >
-                          <Trash2 size={14} strokeWidth={1.5} aria-hidden />
                           Remove
                         </Button>
                       </span>

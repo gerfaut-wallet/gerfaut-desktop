@@ -26,8 +26,7 @@ export function LoadFailure({
           {errorMessage(error)}
         </p>
       )}
-      <Button variant="primary" className="mt-3" busy={retrying} onClick={onRetry}>
-        {!retrying && <RefreshCw size={14} strokeWidth={1.5} aria-hidden />}
+      <Button variant="primary" className="mt-3" icon={RefreshCw} busy={retrying} onClick={onRetry}>
         Try again
       </Button>
     </div>

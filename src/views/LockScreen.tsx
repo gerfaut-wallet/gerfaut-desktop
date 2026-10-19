@@ -144,7 +144,8 @@ export function LockScreen() {
                 type="submit"
                 variant="primary"
                 className="mt-2 w-full"
-                disabled={checking || wait > 0 || secret.length === 0}
+                disabled={wait > 0 || secret.length === 0}
+                busy={checking}
               >
                 {checking ? "Unlocking…" : "Unlock"}
               </Button>

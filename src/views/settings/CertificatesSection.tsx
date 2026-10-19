@@ -191,8 +191,8 @@ export function CertificatesSection({ certs }: { certs: Record<string, string> }
               className="shrink-0"
               aria-label={`Forget the certificate accepted for ${host}`}
               onClick={() => setPending(host)}
+              icon={Trash2}
             >
-              <Trash2 size={14} strokeWidth={1.5} aria-hidden />
               Forget
             </Button>
           </li>
@@ -229,8 +229,8 @@ export function CertificatesSection({ certs }: { certs: Record<string, string> }
               Cancel
             </Button>
             <Button
-              variant="primary"
-              disabled={forget.isPending}
+              variant="danger"
+              busy={forget.isPending}
               onClick={() => {
                 setFailure(null);
                 void forget.mutateAsync(pending).then(() => {

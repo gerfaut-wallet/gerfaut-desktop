@@ -123,6 +123,8 @@
   /* The signals too: the network badge and a failed sync are written
      on the dark island, where the light values fall to about 2:1. */
   --color-alert: #ff706d;
+  --color-alert-hover: #ff8f8c;
+  --color-on-alert: #0b0f14;
   --color-alert-surface: #1f2933;
   --color-confirmed: #50b771;
   --color-confirmed-surface: #1f2933;
