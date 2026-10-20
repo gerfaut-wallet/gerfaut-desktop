@@ -1,5 +1,5 @@
 import { ScanLine, Server } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Button } from "../../components/Button";
 import { Modal } from "../../components/Modal";
@@ -24,7 +24,7 @@ import {
 } from "../../state/queries";
 import { isOwnNode, useLiveLimits } from "../../state/live";
 import { useUi } from "../../state/store";
-import { CertificateDialog } from "./CertificatesSection";
+import { CertificateDialog, SHELL_Z } from "./CertificatesSection";
 import { FieldLabel, SectionCard, Toggle } from "./primitives";
 
 /** The chains a workspace can watch, each with a word on what it is. */
@@ -136,7 +136,9 @@ export function BackendSection({
   const [onion, setOnion] = useState(false);
 
   // On screen: a refusal for this network is said here, not over it.
-  useEffect(() => viewBackendForm(network), [network]);
+  // Before the paint, so a notice mounted in the same render (after an
+  // unlock) never shows for a frame.
+  useLayoutEffect(() => viewBackendForm(network), [network]);
 
   // Re-seed the form when the workspace network changes, or the stored
   // backend does. A refusal stays: it is said for its own network only,
@@ -573,13 +575,21 @@ export function CertificateAsk() {
 export function BackendRefusalNotice({ activeNetwork }: { activeNetwork: Network }) {
   const unseen = useBackendSave((state) => state.unseen);
   const refusal = useBackendSave((state) => (state.unseen ? state.refusals[state.unseen] : undefined));
+  const servers = usePublicServers(unseen ?? activeNetwork);
   if (!unseen || !refusal) return null;
 
   const close = () => useBackendSave.setState({ unseen: null });
   const label = NETWORKS.find((option) => option.value === unseen)?.label ?? unseen;
-  const target = "url" in refusal.config ? refusal.config.url : null;
+  const { config } = refusal;
+  // The address typed, or the public server picked by its name.
+  const target =
+    "url" in config
+      ? config.url
+      : config.server
+        ? (servers.data?.find((server) => server.id === config.server)?.label ?? config.server)
+        : null;
   return (
-    <Modal open onClose={close} centered width={480} title="Backend not saved">
+    <Modal open onClose={close} centered width={480} z={SHELL_Z} title="Backend not saved">
       <div className="flex flex-col gap-4">
         <p className="font-ui text-sm text-text">
           Gerfaut could not store{" "}

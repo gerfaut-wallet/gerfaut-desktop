@@ -2712,8 +2712,9 @@ describe("electrum certificates", () => {
     expect(dialog.textContent).toContain(FINGERPRINT.split(":").slice(0, 16).join(":"));
     expect(dialog.textContent).toContain(OTHER_FINGERPRINT.split(":").slice(0, 16).join(":"));
     // Cancelling is the primary shape here: the safe way out is the
-    // obvious one.
+    // obvious one, and the focus starts on it.
     expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveClass("bg-primary");
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
 
     const trust = within(dialog).getByRole("button", { name: "Trust the new certificate" });
     expect(trust).toHaveClass("bg-sunken");
@@ -2840,6 +2841,10 @@ describe("electrum certificates", () => {
     await act(async () =>
       slow.answer({ host: "node.example.org:50002", status: "trusted" }),
     );
+    // Said where the user is, then dismissed: the reason stays below.
+    const notice = await screen.findByRole("dialog", { name: "Backend not saved" });
+    await user.click(within(notice).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
 
     await openSettings(user, "Network");
     expect(await screen.findByRole("alert")).toHaveTextContent("vault i/o error: disk full");
@@ -2851,9 +2856,6 @@ describe("electrum certificates", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  // Once accepted, the certificate and the backend are on their way and
-  // cannot be called back: a Cancel that closed the dialog then would
-  // say "nothing saved" while both still land.
   // A refusal that landed while the user was elsewhere used to wait under
   // a button nobody looked at: the old server stayed, and nothing said so.
   it("says over the page in view that a save refused meanwhile was not stored", async () => {
@@ -2881,6 +2883,28 @@ describe("electrum certificates", () => {
     expect(screen.getByLabelText("Host")).toHaveValue("node.example.org");
   });
 
+  // The shell asks over whatever is open: under another modal, the
+  // question took the keyboard while staying out of sight, and an
+  // Escape meant for the modal on top cancelled it unseen.
+  it("asks about the certificate above another modal, with the keyboard", async () => {
+    const slow = slowCheck();
+    walletIpc({ inspect_certificate: slow.check, list_backups: () => [] });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    const nav = within(screen.getByRole("navigation", { name: "Settings sections" }));
+    await user.click(nav.getByRole("button", { name: "Backup & sync" }));
+    await user.click(within(screen.getByRole("main")).getByRole("button", { name: "Export…" }));
+    const exporting = await screen.findByRole("dialog", { name: "Export a backup" });
+    await act(async () => slow.answer(UNKNOWN));
+
+    const ask = await screen.findByRole("dialog", { name: "This server signs its own certificate" });
+    const z = (dialog: HTMLElement) => Number(dialog.parentElement!.style.zIndex);
+    expect(z(ask)).toBeGreaterThan(z(exporting));
+    expect(ask.contains(document.activeElement)).toBe(true);
+  });
+
   it("says nothing over the page when the refused form is on screen", async () => {
     walletIpc({
       inspect_certificate: () => ({ host: "node.example.org:50002", status: "trusted" }),
@@ -2899,6 +2923,9 @@ describe("electrum certificates", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  // Once accepted, the certificate and the backend are on their way and
+  // cannot be called back: a Cancel that closed the dialog then would
+  // say "nothing saved" while both still land.
   it("keeps Cancel, Escape and the close button off while an accept is on its way", async () => {
     let answer: () => void = () => {};
     const saved: unknown[] = [];

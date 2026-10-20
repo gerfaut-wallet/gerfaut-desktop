@@ -53,6 +53,11 @@ function CertFact({ label, children }: { label: string; children: ReactNode }) {
  * that changed after being accepted is an alert, and trusting the new
  * one takes a second, deliberate confirmation.
  */
+/** Above every other modal (the scanner and the backup dialogs sit at
+    60): the shell asks these over whatever is open, and a question that
+    takes the keyboard must also be the one in view. */
+export const SHELL_Z = 70;
+
 export function CertificateDialog({
   report,
   busy,
@@ -87,6 +92,7 @@ export function CertificateDialog({
       closable={!busy}
       centered
       width={560}
+      z={SHELL_Z}
       title={changed ? "This server's certificate changed" : "This server signs its own certificate"}
     >
       <div className="flex flex-col gap-4">
@@ -158,7 +164,10 @@ export function CertificateDialog({
                     ? "Yes, trust the new certificate"
                     : "Trust the new certificate"}
               </Button>
-              <Button variant="primary" disabled={busy} onClick={onCancel}>
+              {/* The focus starts on the safe way out: this question can
+                  open over a page where the user is typing, and two
+                  stray Enters must not trust a certificate that changed. */}
+              <Button variant="primary" disabled={busy} onClick={onCancel} data-autofocus>
                 Cancel
               </Button>
             </>

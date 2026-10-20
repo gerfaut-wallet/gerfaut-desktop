@@ -50,8 +50,11 @@ export function Modal({
     modalStack.push(id.current);
     previous.current = document.activeElement;
     const node = ref.current;
-    // Initial focus goes to the content, never the header close button.
+    // Initial focus goes to the content, never the header close button:
+    // to what the modal marks `data-autofocus`, else its first field,
+    // else its first button.
     const target =
+      node?.querySelector<HTMLElement>("[data-autofocus]") ??
       node?.querySelector<HTMLElement>(
         "textarea:not(:disabled), input:not(:disabled), select:not(:disabled)",
       ) ??
