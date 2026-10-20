@@ -1,20 +1,25 @@
 import jsQR from "jsqr";
 import { useEffect, useRef, useState } from "react";
 import type { InputWarning, QrProgress } from "../lib/ipc";
-import { ipc, isCommandError } from "../lib/ipc";
+import { ipc, isCommandError, materialRefusal } from "../lib/ipc";
 import { Modal } from "./Modal";
 
 type ScanState = "starting" | "scanning" | "denied" | "unavailable";
 
 /** A code with more parts than Gerfaut reads, the same words as on
     Android. */
-const TOO_MANY_PARTS = "This code has more parts than Gerfaut can read.";
+const TOO_MANY_PARTS =
+  "This code has more parts than Gerfaut can read. If the wallet offers a denser QR code, show that one instead.";
 
-/** What the scanner says when the core turns down what it collected,
-    in the core's words. A code too large to read has its own sentence,
-    and stops the scan. */
+/** A code whose parts all came and add up to nothing. */
+const EMPTY_CODE = "This code came through empty. Export it again from the wallet.";
+
+/** What the scanner says when the core turns down what it collected:
+    the core's sentence, which says what it saw and what to show
+    instead, or the app's for a private key, as at the import. A code
+    too large to read has its own sentence, and stops the scan. */
 function refusal(error: unknown): string {
-  return isCommandError(error) ? error.message : String(error);
+  return materialRefusal(error);
 }
 
 /** Camera QR scanner: frames are decoded locally with jsQR, nothing
@@ -175,7 +180,7 @@ export function ScanQrModal({
               // Every part arrived and they add up to nothing. Closing on
               // that would hand the caller an empty string; saying it
               // keeps the camera on a code that may be readable elsewhere.
-              giveUp("This code came out empty.");
+              giveUp(EMPTY_CODE);
             }
           } catch (err) {
             // A frame the core refuses (a PSBT, an unknown envelope) is
