@@ -33,6 +33,7 @@ use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
 
 mod clipboard;
+mod links;
 mod live;
 // Compiled on Linux for its tests too, where nothing else calls it.
 #[cfg(any(target_os = "macos", all(unix, test)))]
@@ -736,6 +737,13 @@ fn public_servers(network: Network) -> Vec<gerfaut_core::chain::public::PublicSe
     gerfaut_core::chain::public::public_servers(network)
 }
 
+/// Opens one of the pages Gerfaut links to in the browser, and refuses
+/// any other address: see [`links`].
+#[tauri::command]
+async fn open_link(url: String) -> CommandResult<()> {
+    links::open(url).await
+}
+
 /// The currencies and price sources the settings offer, and how often
 /// the price is asked. A fixed table: it only changes with the core.
 #[tauri::command]
@@ -1384,6 +1392,7 @@ pub fn run() {
             forget_certificate,
             set_app_pref,
             set_preferences,
+            open_link,
             price_table,
             fetch_price,
             fetch_price_history,
