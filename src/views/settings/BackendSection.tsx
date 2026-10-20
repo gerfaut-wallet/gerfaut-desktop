@@ -123,7 +123,7 @@ export function BackendSection({
   const refuse = (config: BackendConfig, message: string) =>
     useBackendSave.setState({ refusal: { network, config, message } });
   /** Takes this network's refusal back: the form no longer holds what
-      it was about. Another network's stays. */
+      it was about. Another network's is left alone. */
   const clearRefusal = () => {
     if (useBackendSave.getState().refusal?.network === network) {
       useBackendSave.setState({ refusal: null });
@@ -293,7 +293,10 @@ export function BackendSection({
           label="Public server"
           className="max-w-md"
           value={chosen}
-          onChange={setPublicServer}
+          onChange={(server) => {
+            setPublicServer(server);
+            clearRefusal();
+          }}
           options={[
             {
               value: "",
@@ -383,7 +386,14 @@ export function BackendSection({
             />
           </div>
           <div className="flex h-11 items-center gap-2 pb-0.5">
-            <Toggle checked={tls} onChange={setTls} label="Use TLS" />
+            <Toggle
+              checked={tls}
+              onChange={(on) => {
+                setTls(on);
+                clearRefusal();
+              }}
+              label="Use TLS"
+            />
             <span className="font-ui text-sm text-text">TLS</span>
           </div>
           <ScanButton onClick={() => setScanOpen(true)} />
@@ -453,7 +463,13 @@ export function BackendSection({
 
       {kind !== "public_esplora" && (
         <>
-          <OwnNodeSwitch checked={ownNode} onChange={setOwnNode} />
+          <OwnNodeSwitch
+            checked={ownNode}
+            onChange={(on) => {
+              setOwnNode(on);
+              clearRefusal();
+            }}
+          />
           <p className="mt-3 font-ui text-xs text-muted">
             An address ending in .onion goes through Tor; the Tor card below says
             which one and lets you test it.
@@ -495,8 +511,9 @@ export function BackendSection({
     server, asked over whatever page is open: the check can outlast the
     visit to Settings › Network, and its question must still reach the
     user. Mounted once, in the shell. Accepted, the backend is stored for
-    the network it was chosen on, whichever is active now; cancelled,
-    nothing is stored, and the user said so. */
+    the network it was chosen on, whichever is active now; cancelled, the
+    backend is not stored, and the user said so (a certificate accepted
+    before the core refused the backend stays accepted). */
 export function CertificateAsk() {
   const ask = useBackendSave((state) => state.ask);
   const trust = useTrustCertificate();

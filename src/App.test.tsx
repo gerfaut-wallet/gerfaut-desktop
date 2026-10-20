@@ -2851,6 +2851,33 @@ describe("electrum certificates", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  it("keeps the certificate dialog open and says why when the certificate is not stored", async () => {
+    const saved: unknown[] = [];
+    walletIpc({
+      inspect_certificate: () => UNKNOWN,
+      trust_certificate: () =>
+        Promise.reject({ kind: "vault", message: "vault i/o error: disk full" }),
+      set_backend: (args) => {
+        saved.push(args.config);
+        return undefined;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Accept and save" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Not saved: vault i/o error: disk full",
+    );
+    // Not trusted, so not stored.
+    expect(saved).toHaveLength(0);
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
   it("keeps the certificate dialog open and says why when the backend is not stored", async () => {
     let attempts = 0;
     const saved: unknown[] = [];
