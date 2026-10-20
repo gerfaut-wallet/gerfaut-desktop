@@ -72,10 +72,6 @@ macos_env() {
     local triple var flags
     flags="-isysroot $SDK -ffile-prefix-map=$WORK=/gerfaut -ffile-prefix-map=$CARGO_HOME=/cargo -ffile-prefix-map=$SDK=/sdk"
     export SDKROOT="$SDK"
-    # aws-lc-sys would otherwise pick CMake, whose Apple branch only runs
-    # on a Mac. Its own cc-based build is the one it uses by default
-    # whenever CMake is not asked for.
-    export AWS_LC_SYS_CMAKE_BUILDER=0
     for triple in "${TRIPLES[@]}"; do
         var="${triple//-/_}"
         export "CC_$var=clang" "CXX_$var=clang++" "AR_$var=llvm-ar"
