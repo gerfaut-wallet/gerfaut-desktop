@@ -2,13 +2,20 @@ import { ScanLine, Server } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Button } from "../../components/Button";
+import { Modal } from "../../components/Modal";
+import { Notice } from "../../components/Notice";
 import { ScanQrModal } from "../../components/ScanQrModal";
 import { Select } from "../../components/Select";
 import { OnionIcon } from "../../components/icons/OnionIcon";
 import { NETWORK_LABEL, groupThousands } from "../../lib/format";
 import { ipc, isCommandError } from "../../lib/ipc";
 import type { BackendConfig, Network, Settings } from "../../lib/ipc";
-import { clearBackendRefusal, refuseBackend, useBackendSave } from "../../state/backendSave";
+import {
+  clearBackendRefusal,
+  refuseBackend,
+  useBackendSave,
+  viewBackendForm,
+} from "../../state/backendSave";
 import {
   useInspectCertificate,
   usePublicServers,
@@ -127,6 +134,9 @@ export function BackendSection({
   // The last code read was a Tor hidden service: a fact about the
   // address the fields now hold, gone the moment one of them is edited.
   const [onion, setOnion] = useState(false);
+
+  // On screen: a refusal for this network is said here, not over it.
+  useEffect(() => viewBackendForm(network), [network]);
 
   // Re-seed the form when the workspace network changes, or the stored
   // backend does. A refusal stays: it is said for its own network only,
@@ -552,6 +562,58 @@ export function CertificateAsk() {
         useBackendSave.setState({ ask: null });
       }}
     />
+  );
+}
+
+/** A Save backend the core refused while its form was not on screen,
+    said over the page in view: the user left Settings › Network before
+    the answer came, and would otherwise take the old server for the new
+    one. The reason also stays under Save backend. Mounted once, in the
+    shell. */
+export function BackendRefusalNotice({ activeNetwork }: { activeNetwork: Network }) {
+  const unseen = useBackendSave((state) => state.unseen);
+  const refusal = useBackendSave((state) => (state.unseen ? state.refusals[state.unseen] : undefined));
+  if (!unseen || !refusal) return null;
+
+  const close = () => useBackendSave.setState({ unseen: null });
+  const label = NETWORKS.find((option) => option.value === unseen)?.label ?? unseen;
+  const target = "url" in refusal.config ? refusal.config.url : null;
+  return (
+    <Modal open onClose={close} centered width={480} title="Backend not saved">
+      <div className="flex flex-col gap-4">
+        <p className="font-ui text-sm text-text">
+          Gerfaut could not store{" "}
+          {target ? (
+            <span className="selectable break-all font-data text-[13px]">{target}</span>
+          ) : (
+            "the public API"
+          )}{" "}
+          as the {label} backend. The one before it stays in use.
+        </p>
+        <Notice tone="info" role="alert">
+          {refusal.message}
+        </Notice>
+        <p className="font-ui text-xs text-muted">
+          {unseen === activeNetwork
+            ? "Settings › Network keeps the reason under Save backend."
+            : `Settings › Network keeps the reason under Save backend, on ${label}.`}
+        </p>
+        <div className="mt-1 flex flex-wrap items-center justify-end gap-3">
+          <Button variant="secondary" onClick={close}>
+            Dismiss
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => {
+              close();
+              useUi.getState().openSettings("network");
+            }}
+          >
+            Open Network settings
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

@@ -2854,6 +2854,51 @@ describe("electrum certificates", () => {
   // Once accepted, the certificate and the backend are on their way and
   // cannot be called back: a Cancel that closed the dialog then would
   // say "nothing saved" while both still land.
+  // A refusal that landed while the user was elsewhere used to wait under
+  // a button nobody looked at: the old server stayed, and nothing said so.
+  it("says over the page in view that a save refused meanwhile was not stored", async () => {
+    const slow = slowCheck();
+    walletIpc({
+      inspect_certificate: slow.check,
+      set_backend: () => Promise.reject({ kind: "vault", message: "vault i/o error: disk full" }),
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    await user.click(sidebar().getByRole("button", { name: "Receive" }));
+    await act(async () => slow.answer({ host: "node.example.org:50002", status: "trusted" }));
+
+    const notice = await screen.findByRole("dialog", { name: "Backend not saved" });
+    expect(notice).toHaveTextContent("ssl://node.example.org:50002");
+    expect(notice).toHaveTextContent("as the Signet backend. The one before it stays in use.");
+    expect(within(notice).getByRole("alert")).toHaveTextContent("vault i/o error: disk full");
+
+    await user.click(within(notice).getByRole("button", { name: "Open Network settings" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    // And it is still said under the button, beside its address.
+    expect(await screen.findByRole("alert")).toHaveTextContent("vault i/o error: disk full");
+    expect(screen.getByLabelText("Host")).toHaveValue("node.example.org");
+  });
+
+  it("says nothing over the page when the refused form is on screen", async () => {
+    walletIpc({
+      inspect_certificate: () => ({ host: "node.example.org:50002", status: "trusted" }),
+      set_backend: () => Promise.reject({ kind: "vault", message: "vault i/o error: disk full" }),
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("vault i/o error: disk full");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // Leaving now is no news: the user saw it.
+    await user.click(sidebar().getByRole("button", { name: "Overview" }));
+    await screen.findByText("Bitcoin price");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("keeps Cancel, Escape and the close button off while an accept is on its way", async () => {
     let answer: () => void = () => {};
     const saved: unknown[] = [];
