@@ -7,10 +7,12 @@ import { Select } from "../../components/Select";
 import { OnionIcon } from "../../components/icons/OnionIcon";
 import { NETWORK_LABEL, groupThousands } from "../../lib/format";
 import { errorMessage, ipc, isCommandError } from "../../lib/ipc";
-import type { BackendConfig, CertificateReport, Network, Settings } from "../../lib/ipc";
+import type { BackendConfig, Network, Settings } from "../../lib/ipc";
+import { useBackendSave } from "../../state/backendSave";
 import {
   useInspectCertificate,
   usePublicServers,
+  useSetBackend,
   useTrustCertificate,
 } from "../../state/queries";
 import { isOwnNode, useLiveLimits } from "../../state/live";
@@ -67,28 +69,35 @@ export function BackendSection({
   network,
   settings,
   onSave,
-  saving,
 }: {
   network: Network;
   settings: Settings;
   /** Settles once the core stored the setting; rejects with its
       refusal otherwise. */
   onSave: (config: BackendConfig) => Promise<void>;
-  saving: boolean;
 }) {
   const current = settings.backends[network] ?? { type: "public_esplora" };
+  /** What the form shows for a network: the backend a save still under
+      way or waiting on its certificate is storing, else the stored one.
+      Leaving the page during a save and coming back finds the choice
+      that is being saved, not the one it replaces. */
+  const shown = (of: Network): BackendConfig => {
+    const { saving, ask } = useBackendSave.getState();
+    if (saving?.network === of) return saving.config;
+    if (ask?.network === of) return ask.config;
+    return settings.backends[of] ?? { type: "public_esplora" };
+  };
+  const [seed] = useState(() => shown(network));
   const servers = usePublicServers(network);
-  const [kind, setKind] = useState<BackendConfig["type"]>(current.type);
+  const [kind, setKind] = useState<BackendConfig["type"]>(seed.type);
   // "" is the automatic rotation over every public instance.
   const [publicServer, setPublicServer] = useState(
-    current.type === "public_esplora" ? (current.server ?? "") : "",
+    seed.type === "public_esplora" ? (seed.server ?? "") : "",
   );
-  const [esploraUrl, setEsploraUrl] = useState(
-    current.type === "custom_esplora" ? current.url : "",
-  );
+  const [esploraUrl, setEsploraUrl] = useState(seed.type === "custom_esplora" ? seed.url : "");
   const initialElectrum =
-    current.type === "custom_electrum"
-      ? parseElectrumUrl(current.url)
+    seed.type === "custom_electrum"
+      ? parseElectrumUrl(seed.url)
       : { host: "", port: "50002", tls: true };
   const [host, setHost] = useState(initialElectrum.host);
   const [port, setPort] = useState(initialElectrum.port);
@@ -96,28 +105,30 @@ export function BackendSection({
   // Read from the stored backend and sent back with every save: the
   // core leaves it out while off, so a form that rebuilt the config
   // without it would turn it off each time the address is saved.
-  const [ownNode, setOwnNode] = useState(isOwnNode(current));
+  const [ownNode, setOwnNode] = useState(isOwnNode(seed));
   const inspect = useInspectCertificate();
-  const trust = useTrustCertificate();
   const { showToast } = useUi();
   const [scanOpen, setScanOpen] = useState(false);
   // Why the core refused the last code read, in its own words.
   const [scanError, setScanError] = useState<string | null>(null);
+  // One save at a time, whichever network it is for.
+  const saving = useBackendSave((state) => state.saving);
   /** Why the core would not store the address, under the button. */
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const saveError = useBackendSave((state) =>
+    state.refusal?.network === network ? state.refusal.message : null,
+  );
+  /** Says why this network's backend was not stored, or takes it back. */
+  const setSaveError = (message: string | null) =>
+    useBackendSave.setState({ refusal: message === null ? null : { network, message } });
   // The last code read was a Tor hidden service: a fact about the
   // address the fields now hold, gone the moment one of them is edited.
   const [onion, setOnion] = useState(false);
-  // The certificate the user has to settle before this backend is saved.
-  const [pending, setPending] = useState<{
-    url: string;
-    config: BackendConfig;
-    report: CertificateReport;
-  } | null>(null);
 
-  // Re-seed the form when the workspace network changes.
+  // Re-seed the form when the workspace network changes, or the stored
+  // backend does. A refusal stays: it is said for its own network only,
+  // and a form found again after a refused save must still say why.
   useEffect(() => {
-    const config = settings.backends[network] ?? { type: "public_esplora" };
+    const config = shown(network);
     setKind(config.type);
     setPublicServer(config.type === "public_esplora" ? (config.server ?? "") : "");
     setEsploraUrl(config.type === "custom_esplora" ? config.url : "");
@@ -130,7 +141,9 @@ export function BackendSection({
     setTls(electrum.tls);
     setOwnNode(isOwnNode(config));
     setOnion(false);
-    setSaveError(null);
+    // `shown` reads the store as it stands, and the settings through
+    // these two: nothing else to follow.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [network, settings.backends]);
 
   const valid =
@@ -208,7 +221,11 @@ export function BackendSection({
     }
   };
 
+  // Every step past the first await may land after the user left the
+  // page: what it has to say goes through the store, never through the
+  // state of this form, which would be gone with it.
   const save = async () => {
+    if (useBackendSave.getState().saving) return;
     setSaveError(null);
     const config = draft();
     // A name with one colon is no IPv6 address: its port went into the
@@ -220,47 +237,37 @@ export function BackendSection({
       );
       return;
     }
-    // A typed address is read first, the way the core will store it:
-    // one it refuses — a host with a port still in it, say — is said
-    // so here, and not taken for a server that did not answer.
-    if (config.type === "custom_electrum" || config.type === "custom_esplora") {
-      try {
-        await ipc.parseBackend(config.url);
-      } catch (error) {
-        setSaveError(isCommandError(error) ? error.message : String(error));
+    const under = (checking: boolean) =>
+      useBackendSave.setState({ saving: { network, config, checking } });
+    under(false);
+    try {
+      // A typed address is read first, the way the core will store it:
+      // one it refuses — a host with a port still in it, say — is said
+      // so here, and not taken for a server that did not answer.
+      if (config.type === "custom_electrum" || config.type === "custom_esplora") {
+        try {
+          await ipc.parseBackend(config.url);
+        } catch (error) {
+          setSaveError(isCommandError(error) ? error.message : String(error));
+          return;
+        }
+      }
+      const url = electrumUrlOf(config);
+      if (!url) return await store(config);
+      under(true);
+      // A bridge that cannot answer must not block a setting: the sync
+      // meets the same certificate and says so.
+      const report = await inspect.mutateAsync(url).catch(() => null);
+      if (report?.status === "unknown" || report?.status === "changed") {
+        // Asked over whatever page is open now (`CertificateAsk`).
+        useBackendSave.setState({ ask: { network, url, config, report } });
         return;
       }
+      under(false);
+      await store(config, report?.status === "unreachable" ? UNCHECKED_NOTE : undefined);
+    } finally {
+      useBackendSave.setState({ saving: null });
     }
-    const url = electrumUrlOf(config);
-    if (!url) return store(config);
-    // A bridge that cannot answer must not block a setting: the sync
-    // meets the same certificate and says so.
-    const report = await inspect.mutateAsync(url).catch(() => null);
-    if (report?.status === "unknown" || report?.status === "changed") {
-      setPending({ url, config, report });
-      return;
-    }
-    await store(
-      config,
-      report?.status === "unreachable"
-        ? UNCHECKED_NOTE
-        : undefined,
-    );
-  };
-
-  const accept = (fingerprint: string) => {
-    if (!pending) return;
-    void trust.mutateAsync({ url: pending.url, fingerprint }).then(
-      () => {
-        void store(pending.config);
-        setPending(null);
-      },
-      // Not trusted, so not stored: said under the button that saves.
-      (error) => {
-        setPending(null);
-        setSaveError(errorMessage(error));
-      },
-    );
   };
 
   const networkLabel = NETWORKS.find((option) => option.value === network)?.label;
@@ -454,9 +461,9 @@ export function BackendSection({
           variant="primary"
           onClick={() => void save()}
           disabled={!valid}
-          busy={saving || inspect.isPending}
+          busy={saving !== null}
         >
-          {inspect.isPending ? "Checking the certificate…" : "Save backend"}
+          {saving?.checking ? "Checking the certificate…" : "Save backend"}
         </Button>
         {saveError && (
           <p role="alert" className="mt-2 font-ui text-sm text-muted">
@@ -464,14 +471,6 @@ export function BackendSection({
           </p>
         )}
       </div>
-      {pending && (
-        <CertificateDialog
-          report={pending.report}
-          busy={trust.isPending || saving}
-          onAccept={accept}
-          onCancel={() => setPending(null)}
-        />
-      )}
       <ScanQrModal
         caption="Point the camera at the QR code your node prints beside its Electrum or Esplora app."
         open={scanOpen}
@@ -479,6 +478,50 @@ export function BackendSection({
         onScan={(text) => void applyScan(text)}
       />
     </SectionCard>
+  );
+}
+
+/** The certificate a Save backend has to settle before it stores the
+    server, asked over whatever page is open: the check can outlast the
+    visit to Settings › Network, and its question must still reach the
+    user. Mounted once, in the shell. Accepted, the backend is stored for
+    the network it was chosen on, whichever is active now; cancelled,
+    nothing is stored, and the user said so. */
+export function CertificateAsk() {
+  const ask = useBackendSave((state) => state.ask);
+  const trust = useTrustCertificate();
+  const setBackend = useSetBackend();
+  const { showToast } = useUi();
+  if (!ask) return null;
+
+  const { network, url, config, report } = ask;
+  // Not stored: said under Save backend, on the network it was for.
+  const refuse = (error: unknown) =>
+    useBackendSave.setState({ refusal: { network, message: errorMessage(error) } });
+  const accept = (fingerprint: string) => {
+    void trust.mutateAsync({ url, fingerprint }).then(
+      () => {
+        useBackendSave.setState({ ask: null, saving: { network, config, checking: false } });
+        void setBackend
+          .mutateAsync({ network, config })
+          .then(() => showToast("Setting saved"), refuse)
+          .finally(() => useBackendSave.setState({ saving: null }));
+      },
+      // Not trusted, so not stored.
+      (error) => {
+        useBackendSave.setState({ ask: null });
+        refuse(error);
+      },
+    );
+  };
+
+  return (
+    <CertificateDialog
+      report={report}
+      busy={trust.isPending}
+      onAccept={accept}
+      onCancel={() => useBackendSave.setState({ ask: null })}
+    />
   );
 }
 

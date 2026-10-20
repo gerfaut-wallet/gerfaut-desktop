@@ -80,7 +80,6 @@ export function NetworkSection({ settings }: { settings: Settings }) {
             showToast("Setting saved");
           })
         }
-        saving={setBackend.isPending}
       />
 
       <TorSection tor={settings.tor} />

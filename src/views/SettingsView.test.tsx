@@ -10,6 +10,7 @@ import type {
   Settings,
   WalletMeta,
 } from "../lib/ipc";
+import { useBackendSave } from "../state/backendSave";
 import { useWallets } from "../state/queries";
 import { useUi } from "../state/store";
 import { PREFERENCES, PRICE_TABLE } from "../test/fixtures";
@@ -68,7 +69,6 @@ function renderBackend(
         network="mainnet"
         settings={settings}
         onSave={async (config) => onSave(config)}
-        saving={false}
       />
     </QueryClientProvider>,
   );
@@ -117,6 +117,7 @@ function toggle(name: string): HTMLElement {
 
 afterEach(() => {
   vi.clearAllMocks();
+  useBackendSave.setState({ saving: null, ask: null, refusal: null });
 });
 
 describe("saving a server address", () => {
@@ -197,7 +198,6 @@ describe("saving a server address", () => {
           network="mainnet"
           settings={SETTINGS}
           onSave={() => Promise.reject({ kind: "vault", message: "vault i/o error: disk full" })}
-          saving={false}
         />
       </QueryClientProvider>,
     );

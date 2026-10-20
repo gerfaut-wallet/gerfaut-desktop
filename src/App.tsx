@@ -30,6 +30,7 @@ import { ReceiveView } from "./views/ReceiveView";
 import { StartupFailure } from "./views/StartupFailure";
 import { SettingsView } from "./views/SettingsView";
 import { BETA } from "./views/settings/AboutSection";
+import { CertificateAsk } from "./views/settings/BackendSection";
 import { TransactionsView } from "./views/TransactionsView";
 import { TxDetailModal } from "./views/TxDetailModal";
 import { UtxosView } from "./views/UtxosView";
@@ -305,6 +306,10 @@ export default function App() {
           <TxDetailModal walletId={activeWallet.id} network={activeWallet.network} />
         )}
         <AddWalletModal activeNetwork={settings.data.active_network} />
+        {/* A Save backend still asks about its certificate once the user
+            left Settings › Network, over whatever page is open. Behind
+            the lock it waits, and asks again once the vault is open. */}
+        <CertificateAsk />
         <WelcomeTour
           open={tourOpen}
           onClose={() => setTourOpen(false)}
