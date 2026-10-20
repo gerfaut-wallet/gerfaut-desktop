@@ -1026,8 +1026,8 @@ export const FALSE_PROOF =
 
 /** What the app says when the core refuses wallet material for a
     private key, wherever it came from: pasted, opened, scanned. The
-    core's words name the check; these say what to bring instead, the
-    same as on Android. */
+    core's words name the check; these say what to bring instead, in
+    the words of the Android app. */
 export const PRIVATE_MATERIAL =
   "This holds a private key, and Gerfaut only watches: nothing was saved. Bring the public descriptor or extended public key instead.";
 

@@ -212,7 +212,7 @@ describe("ScanQrModal", () => {
         return Promise.reject({
           kind: "invalid_input",
           message:
-            "This QR code holds an executable file, which Gerfaut does not read. Show the wallet export or the signed transaction instead.",
+            "This QR code holds an executable file, which Gerfaut does not read. Show the code this screen asks for instead, such as a wallet export or a signed transaction.",
         }) as unknown as QrProgress;
       }
       return { format: "plain", received: 1, total: 1, complete: true, text: received[0], warnings: [] };
@@ -223,7 +223,7 @@ describe("ScanQrModal", () => {
     await tick();
     // The core's sentence, as it is: what it saw, and what to show.
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      /^This QR code holds an executable file, which Gerfaut does not read\. Show the wallet export or the signed transaction instead\.$/,
+      /^This QR code holds an executable file, which Gerfaut does not read\. Show the code this screen asks for instead, such as a wallet export or a signed transaction\.$/,
     );
     await tick();
     await tick();
@@ -259,7 +259,7 @@ describe("ScanQrModal", () => {
       if (received[0].startsWith("ur:")) {
         return Promise.reject({
           kind: "too_many_parts",
-          message: "invalid qr: this QR code announces 6000 parts, more than Gerfaut reads",
+          message: "This QR code announces 6000 parts, more than Gerfaut reads.",
         }) as unknown as QrProgress;
       }
       return { format: "plain", received: 1, total: 1, complete: true, text: received[0], warnings: [] };
@@ -290,7 +290,7 @@ describe("ScanQrModal", () => {
         ? { format: "ur", received: 1, total: 2, complete: false, text: null, warnings: [] }
         : (Promise.reject({
             kind: "too_many_parts",
-            message: "invalid qr: 3 frames scanned without the code coming together, more than Gerfaut reads",
+            message: "3 frames were scanned without the code coming together, more than Gerfaut reads.",
           }) as unknown as QrProgress),
     );
     const track = fakeCamera();
@@ -383,7 +383,7 @@ describe("ScanQrModal", () => {
         lost = false;
         return Promise.reject({
           kind: "invalid_input",
-          message: "invalid qr: this scan was closed: open the scanner again",
+          message: "This scan was closed. Open the scanner again.",
         }) as unknown as QrProgress;
       }
       return { format: "plain", received: 1, total: 1, complete: true, text: received[0], warnings: [] };

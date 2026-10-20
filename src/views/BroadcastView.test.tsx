@@ -483,7 +483,7 @@ describe("BroadcastView", () => {
       if (cmd === "preview_transaction") {
         throw {
           kind: "too_many_parts",
-          message: "invalid qr: this QR code announces 6000 parts, more than Gerfaut reads",
+          message: "This QR code announces 6000 parts, more than Gerfaut reads.",
         };
       }
       return undefined;

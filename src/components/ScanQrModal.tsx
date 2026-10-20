@@ -14,13 +14,6 @@ const TOO_MANY_PARTS =
 /** A code whose parts all came and add up to nothing. */
 const EMPTY_CODE = "This code came through empty. Export it again from the wallet.";
 
-/** What the scanner says when the core turns down what it collected:
-    the core's sentence, which says what it saw and what to show
-    instead, or the app's for a private key, as at the import. A code
-    too large to read has its own sentence, and stops the scan. */
-function refusal(error: unknown): string {
-  return materialRefusal(error);
-}
 
 /** Camera QR scanner: frames are decoded locally with jsQR, nothing
     leaves the machine. Animated codes (UR, BBQr) are assembled by the
@@ -183,7 +176,8 @@ export function ScanQrModal({
               giveUp(EMPTY_CODE);
             }
           } catch (err) {
-            // A frame the core refuses (a PSBT, an unknown envelope) is
+            // A frame the core refuses (a type it does not read, a damaged
+            // code) is
             // said once and dropped: the camera keeps looking for the
             // right code. A refusal landing after the modal closed belongs
             // to a scan the user walked away from, and must not surface in
@@ -202,7 +196,9 @@ export function ScanQrModal({
               again = true;
               continue;
             }
-            giveUp(refusal(err));
+            // The core's sentence, which says what it saw and what to show
+            // instead, or the app's for a private key, as at the import.
+            giveUp(materialRefusal(err));
           }
           again = false;
           frame = nextWaiting();
