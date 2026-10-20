@@ -1,5 +1,5 @@
 # The five tools the AppImage bundler of tauri-bundler 2.9.4 (the one
-# inside @tauri-apps/cli 2.11.4, see package-lock.json) downloads into
+# inside @tauri-apps/cli 2.11.5, see package-lock.json) downloads into
 # ~/.cache/tauri when it builds the AppImage, as they were on 2026-09-05,
 # except linuxdeploy-plugin-appimage, taken from a tagged release on
 # 2026-10-16.
@@ -17,7 +17,7 @@
 #
 # Sources, in the order the bundler names them
 # (crates/tauri-bundler/src/bundle/linux/appimage/linuxdeploy.rs, tag
-# tauri-cli-v2.11.4 of tauri-apps/tauri):
+# tauri-cli-v2.11.5 of tauri-apps/tauri):
 #   AppRun-x86_64                         https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-x86_64
 #   linuxdeploy-x86_64.AppImage           https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-x86_64.AppImage
 #   linuxdeploy-plugin-gtk.sh             https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
