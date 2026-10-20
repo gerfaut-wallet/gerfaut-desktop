@@ -28,6 +28,9 @@ jobs:
 
   macos:
     needs: apple-sdk
+    permissions:
+      contents: read
+      packages: read
     uses: ./.github/workflows/container-build.yml
     with:
       target: macos

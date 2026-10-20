@@ -14,7 +14,7 @@ name: Apt image
 
 on:
   push:
-    branches: [main, ci/ghcr-build-image]
+    branches: [main]
     paths: [reproducible/apt.Dockerfile]
   workflow_dispatch:
 
