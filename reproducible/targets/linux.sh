@@ -128,9 +128,7 @@ canonical_rpm() {
 # white window (tauri-apps/tauri#15976). The system's GTK and Mesa
 # bring their own, so they are left to it, as the AppImage excludelist
 # does for libwayland-client (AppImageCommunity/pkg2appimage#559). The
-# linuxdeploy Tauri pins predates that entry and ignores
-# LINUXDEPLOY_EXCLUDED_LIBRARIES, and the bundler passes it no
-# --exclude-library (tauri-apps/tauri#15662).
+# bundler passes linuxdeploy no --exclude-library (tauri-apps/tauri#15662).
 #
 # The icon linuxdeploy links at the root of the AppDir, named after the
 # Icon= key of the desktop entry. The linuxdeploy Tauri pins takes the
@@ -151,9 +149,12 @@ rewrite_appimage() {
     local appimage="$1" appdir lib left name link best icon size preference
     appdir="$(find "$(dirname "$appimage")" -mindepth 1 -maxdepth 1 -type d -name '*.AppDir')"
     [ -n "$appdir" ] && [ "$(printf '%s\n' "$appdir" | wc -l)" -eq 1 ] || die "not one AppDir next to $appimage"
-    for lib in client.so.0 cursor.so.0 egl.so.1 server.so.0; do
-        rm -f "$appdir/usr/lib/libwayland-$lib"
+    for lib in client cursor egl server; do
+        rm -f "$appdir/usr/lib/libwayland-$lib.so."*
     done
+    # linuxdeploy 07333c6 also copies the copyright file of each package
+    # it took a library from: the files of libraries no longer shipped go.
+    rm -rf "$appdir"/usr/share/doc/libwayland-*
     left="$(find "$appdir" -name 'libwayland-*')"
     [ -z "$left" ] || die "a Wayland library is still in the AppDir: $left"
     log "AppImage: libwayland-client, -cursor, -egl and -server left to the system"
