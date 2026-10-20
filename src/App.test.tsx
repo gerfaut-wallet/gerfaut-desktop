@@ -771,7 +771,7 @@ beforeEach(() => {
     toast: null,
     syncErrors: {},
   });
-  useBackendSave.setState({ saving: null, ask: null, refusal: null });
+  useBackendSave.setState(useBackendSave.getInitialState());
 });
 
 describe("empty workspace", () => {

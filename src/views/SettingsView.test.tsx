@@ -117,7 +117,7 @@ function toggle(name: string): HTMLElement {
 
 afterEach(() => {
   vi.clearAllMocks();
-  useBackendSave.setState({ saving: null, ask: null, refusal: null });
+  useBackendSave.setState(useBackendSave.getInitialState());
 });
 
 describe("saving a server address", () => {
@@ -180,6 +180,45 @@ describe("saving a server address", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(reason);
     expect(saved).toEqual([]);
     expect(calls.map((call) => call.cmd)).not.toContain("inspect_certificate");
+  });
+
+  // One refusal used to stand for every network: a refusal on one
+  // replaced the other's, and back on the first the form showed the
+  // stored server with no reason at all.
+  it("keeps a refusal per network", async () => {
+    mockBackendIpc({ error: "unused" });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const on = (network: "mainnet" | "signet") => (
+      <QueryClientProvider client={client}>
+        <BackendSection network={network} settings={SETTINGS} onSave={async () => {}} />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(on("mainnet"));
+    const user = userEvent.setup();
+    const refuseHere = async (host: string) => {
+      await user.click(screen.getByRole("radio", { name: /my own electrum server/i }));
+      await user.clear(field("Host"));
+      await user.type(field("Host"), host);
+      await user.click(screen.getByRole("button", { name: "Save backend" }));
+    };
+
+    await refuseHere("main.example.org:50002");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Put main.example.org in the host");
+
+    rerender(on("signet"));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    await refuseHere("test.example.org:50002");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Put test.example.org in the host");
+
+    rerender(on("mainnet"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Put main.example.org in the host");
+    expect(field("Host")).toHaveValue("main.example.org:50002");
+
+    // Typing on mainnet takes back mainnet's line, and signet's stays.
+    await user.type(field("Host"), "x");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    rerender(on("signet"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Put test.example.org in the host");
   });
 
   it("says why the core would not store a setting", async () => {

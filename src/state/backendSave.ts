@@ -28,18 +28,39 @@ export interface BackendAsk {
   report: CertificateReport;
 }
 
+/** Why the core would not store `config`, in its own words: said under
+    Save backend, beside the address it refused. */
+export interface BackendRefusal {
+  config: BackendConfig;
+  message: string;
+}
+
 interface BackendSave {
   saving: BackendSaving | null;
   ask: BackendAsk | null;
-  /** Why the core would not store `config` for `network`, in its own
-      words: said under Save backend, beside the address it refused. One
-      that lands while the user is on another page waits there for them:
-      the question of a certificate interrupts, a refusal does not. */
-  refusal: { network: Network; config: BackendConfig; message: string } | null;
+  /** One refusal per network: a refusal on one never hides another's. */
+  refusals: Partial<Record<Network, BackendRefusal>>;
 }
 
 export const useBackendSave = create<BackendSave>(() => ({
   saving: null,
   ask: null,
-  refusal: null,
+  refusals: {},
 }));
+
+/** Says why `config` was not stored for `network`. */
+export function refuseBackend(network: Network, config: BackendConfig, message: string) {
+  useBackendSave.setState((state) => ({
+    refusals: { ...state.refusals, [network]: { config, message } },
+  }));
+}
+
+/** Takes the refusal of `network` back, and that one only. */
+export function clearBackendRefusal(network: Network) {
+  useBackendSave.setState((state) => {
+    if (!(network in state.refusals)) return state;
+    const refusals = { ...state.refusals };
+    delete refusals[network];
+    return { refusals };
+  });
+}

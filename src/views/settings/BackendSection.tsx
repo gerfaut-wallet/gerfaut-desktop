@@ -8,7 +8,7 @@ import { OnionIcon } from "../../components/icons/OnionIcon";
 import { NETWORK_LABEL, groupThousands } from "../../lib/format";
 import { ipc, isCommandError } from "../../lib/ipc";
 import type { BackendConfig, Network, Settings } from "../../lib/ipc";
-import { useBackendSave } from "../../state/backendSave";
+import { clearBackendRefusal, refuseBackend, useBackendSave } from "../../state/backendSave";
 import {
   useInspectCertificate,
   usePublicServers,
@@ -83,10 +83,11 @@ export function BackendSection({
       the choice that is being saved, or the one the core refused beside
       its reason, not the one it would have replaced. */
   const shown = (of: Network): BackendConfig => {
-    const { saving, ask, refusal } = useBackendSave.getState();
+    const { saving, ask, refusals } = useBackendSave.getState();
     if (saving?.network === of) return saving.config;
     if (ask?.network === of) return ask.config;
-    if (refusal?.network === of) return refusal.config;
+    const refused = refusals[of];
+    if (refused) return refused.config;
     return settings.backends[of] ?? { type: "public_esplora" };
   };
   const [seed] = useState(() => shown(network));
@@ -116,19 +117,13 @@ export function BackendSection({
   // One save at a time, whichever network it is for.
   const saving = useBackendSave((state) => state.saving);
   /** Why the core would not store the address, under the button. */
-  const saveError = useBackendSave((state) =>
-    state.refusal?.network === network ? state.refusal.message : null,
-  );
+  const saveError = useBackendSave((state) => state.refusals[network]?.message ?? null);
   /** Says why `config` was not stored for this network. */
   const refuse = (config: BackendConfig, message: string) =>
-    useBackendSave.setState({ refusal: { network, config, message } });
+    refuseBackend(network, config, message);
   /** Takes this network's refusal back: the form no longer holds what
       it was about. Another network's is left alone. */
-  const clearRefusal = () => {
-    if (useBackendSave.getState().refusal?.network === network) {
-      useBackendSave.setState({ refusal: null });
-    }
-  };
+  const clearRefusal = () => clearBackendRefusal(network);
   // The last code read was a Tor hidden service: a fact about the
   // address the fields now hold, gone the moment one of them is edited.
   const [onion, setOnion] = useState(false);
