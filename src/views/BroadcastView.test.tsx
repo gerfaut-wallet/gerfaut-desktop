@@ -8,7 +8,7 @@ import type { BroadcastStatus, RecentBroadcast, TxPreview, TxWarning } from "../
 import { useUi } from "../state/store";
 import { formatFiat } from "../lib/format";
 
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
+vi.mock("../lib/links", () => ({ openLink: vi.fn() }));
 
 // The scanner's own test proves it decodes frames; what matters here is
 // what this page asks it to look for.

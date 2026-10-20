@@ -11,8 +11,8 @@ import { RELEASES_URL, useUpdate } from "../state/update";
 import { PREFERENCES } from "../test/fixtures";
 import { APP_VERSION } from "../views/settings/AboutSection";
 
-const { openUrl } = vi.hoisted(() => ({ openUrl: vi.fn() }));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
+const { openLink } = vi.hoisted(() => ({ openLink: vi.fn() }));
+vi.mock("../lib/links", () => ({ openLink }));
 
 const SETTINGS: Settings = {
   active_network: "signet",
@@ -173,7 +173,7 @@ function reset() {
 
 beforeEach(() => {
   reset();
-  openUrl.mockClear();
+  openLink.mockClear();
 });
 afterEach(reset);
 
@@ -290,8 +290,8 @@ describe("the update notice", () => {
     await waitFor(() => expect(core.dismissed).toBe("0.2.0"));
 
     await user.click(screen.getByRole("button", { name: "Get 0.2.0" }));
-    expect(openUrl).toHaveBeenCalledTimes(1);
-    expect(openUrl).toHaveBeenCalledWith(RELEASES_URL);
+    expect(openLink).toHaveBeenCalledTimes(1);
+    expect(openLink).toHaveBeenCalledWith(RELEASES_URL);
 
     // Back on another page, the notice has been answered for good.
     await user.click(screen.getByRole("button", { name: "General" }));
@@ -436,6 +436,6 @@ describe("the About card", () => {
     expect(
       await screen.findByText("Could not reach the release page. Try again later."),
     ).toBeInTheDocument();
-    expect(openUrl).not.toHaveBeenCalled();
+    expect(openLink).not.toHaveBeenCalled();
   });
 });

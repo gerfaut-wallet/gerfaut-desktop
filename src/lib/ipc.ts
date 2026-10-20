@@ -960,7 +960,7 @@ export interface LiveStatus {
 
 /** A failed command. A failure of the core comes under the core's own
     code (`ErrorCode` in gerfaut-core), the same one the Android app
-    reads; `locked` and `notification` are this app's. */
+    reads; `locked`, `notification` and `link` are this app's. */
 export interface CommandError {
   kind:
     | "unrecognized_input"
@@ -997,13 +997,16 @@ export interface CommandError {
     | "locked"
     /** The system refused to post a notification. */
     | "notification"
+    /** A page the browser was asked to open: an address Gerfaut does
+        not link to, or one nothing on the computer opened. */
+    | "link"
     | "internal";
   message: string;
 }
 
-/** The codes of the core, the kinds of a failed command but the two this
-    app adds itself. */
-export type CoreErrorCode = Exclude<CommandError["kind"], "locked" | "notification">;
+/** The codes of the core, the kinds of a failed command but the three
+    this app adds itself. */
+export type CoreErrorCode = Exclude<CommandError["kind"], "locked" | "notification" | "link">;
 
 /** Type guard for errors thrown by commands. */
 export function isCommandError(error: unknown): error is CommandError {

@@ -4,8 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { APP_VERSION, AboutSection, BETA, ISSUES_URL } from "./AboutSection";
 
-const { openUrl } = vi.hoisted(() => ({ openUrl: vi.fn() }));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
+const { openLink } = vi.hoisted(() => ({ openLink: vi.fn() }));
+vi.mock("../../lib/links", () => ({ openLink }));
 
 function renderAbout() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -34,7 +34,7 @@ describe("the About card", () => {
       ).toBeInTheDocument();
 
       await user.click(screen.getByRole("button", { name: "Report a problem" }));
-      expect(openUrl).toHaveBeenCalledWith(ISSUES_URL);
+      expect(openLink).toHaveBeenCalledWith(ISSUES_URL);
       expect(ISSUES_URL).toBe("https://github.com/gerfaut-wallet/gerfaut-desktop/issues");
     },
   );

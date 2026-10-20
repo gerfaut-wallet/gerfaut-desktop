@@ -3,7 +3,6 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import App from "./App";
 import type {
   AddressEntry,
@@ -18,6 +17,7 @@ import type {
   WalletSnapshot,
   WatchLimitsChoice,
 } from "./lib/ipc";
+import { openLink } from "./lib/links";
 import { useLock } from "./state/lock";
 import { useUi } from "./state/store";
 import { coreCase } from "./test/core";
@@ -2077,9 +2077,9 @@ describe("display settings", () => {
         await waitFor(() => expect(credits(), page).toHaveLength(1));
       }
 
-      // The link opens in the browser, by the opener and nothing else.
+      // The link opens in the browser, by the app's command and nothing else.
       await user.click(credits()[0]);
-      expect(openUrl).toHaveBeenLastCalledWith("https://www.coingecko.com");
+      expect(openLink).toHaveBeenLastCalledWith("https://www.coingecko.com");
     });
 
     it("stays in the modal over the page, never twice", async () => {
@@ -3295,8 +3295,8 @@ describe("private material", () => {
   });
 });
 
-vi.mock("@tauri-apps/plugin-opener", () => ({
-  openUrl: vi.fn(),
+vi.mock("./lib/links", () => ({
+  openLink: vi.fn(),
 }));
 
 describe("the app lock", () => {

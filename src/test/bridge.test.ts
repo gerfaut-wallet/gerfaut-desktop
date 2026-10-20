@@ -651,9 +651,9 @@ const watchStatus = object<ipc.WatchStatus>("WatchStatus")({
 
 // --- errors ----------------------------------------------------------------
 
-/** The codes of the core: the kinds of a failed command, but the two
+/** The codes of the core: the kinds of a failed command, but the three
     this app adds itself. */
-type ErrorCode = Exclude<ipc.CommandError["kind"], "locked" | "notification">;
+type ErrorCode = Exclude<ipc.CommandError["kind"], "locked" | "notification" | "link">;
 const errorCode: Schema<ErrorCode> = literal(
   "ErrorCode",
   "unrecognized_input",
@@ -677,7 +677,7 @@ const errorCode: Schema<ErrorCode> = literal(
   "internal",
 );
 const commandError = object<ipc.CommandError>("CommandError")({
-  kind: either(errorCode, literal("CommandError.kind", "locked", "notification")),
+  kind: either(errorCode, literal("CommandError.kind", "locked", "notification", "link")),
   message: str,
 });
 
@@ -852,6 +852,7 @@ const IGNORED: Record<string, string> = {
 const NOT_SENT: Record<string, string> = {
   "CommandError.kind=locked": "this app's own failure: the vault answers nothing behind the lock screen",
   "CommandError.kind=notification": "this app's own failure: the system refused a notification",
+  "CommandError.kind=link": "this app's own failure: an address it does not link to, or one nothing opened",
 };
 
 function isAway(entry: AnySchema | Away): entry is Away {

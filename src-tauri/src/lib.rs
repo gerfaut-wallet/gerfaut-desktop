@@ -1198,8 +1198,8 @@ fn retry_open(app: tauri::AppHandle, startup: tauri::State<'_, Startup>) -> Comm
 }
 
 /// Keeps the webview on the pages the app ships. Nothing in them goes
-/// anywhere else: an outside link opens in the browser, through the
-/// opener. A navigation to any other page, a link dropped on the
+/// anywhere else: an outside link opens in the browser, through
+/// [`open_link`]. A navigation to any other page, a link dropped on the
 /// window or one a page of the app was tricked into following, would
 /// show that page in the app's own window, where it could pass for the
 /// app.
@@ -1328,7 +1328,6 @@ pub fn run() {
         show_main_window(app);
     }));
     builder
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(navigation_guard(pages))
