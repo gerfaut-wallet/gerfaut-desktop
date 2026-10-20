@@ -76,10 +76,15 @@ export function CertificateDialog({
         ? report.fingerprint
         : "";
 
+  // Once accepted, the certificate and then the backend are on their
+  // way to the vault, and neither can be called back: Cancel, Escape
+  // and the close button wait with the user until both are through or
+  // one is refused, rather than pretend to stop what still lands.
   return (
     <Modal
       open
       onClose={onCancel}
+      closable={!busy}
       centered
       width={560}
       title={changed ? "This server's certificate changed" : "This server signs its own certificate"}
@@ -144,21 +149,25 @@ export function CertificateDialog({
             <>
               <Button
                 variant={confirming ? "danger" : "secondary"}
-                disabled={busy}
+                busy={busy}
                 onClick={() => (confirming ? onAccept(fingerprint) : setConfirming(true))}
               >
-                {confirming ? "Yes, trust the new certificate" : "Trust the new certificate"}
+                {busy
+                  ? "Saving…"
+                  : confirming
+                    ? "Yes, trust the new certificate"
+                    : "Trust the new certificate"}
               </Button>
-              <Button variant="primary" onClick={onCancel}>
+              <Button variant="primary" disabled={busy} onClick={onCancel}>
                 Cancel
               </Button>
             </>
           ) : (
             <>
-              <Button variant="secondary" onClick={onCancel}>
+              <Button variant="secondary" disabled={busy} onClick={onCancel}>
                 Cancel
               </Button>
-              <Button variant="primary" disabled={busy} onClick={() => onAccept(fingerprint)}>
+              <Button variant="primary" busy={busy} onClick={() => onAccept(fingerprint)}>
                 {busy ? "Saving…" : "Accept and save"}
               </Button>
             </>

@@ -2851,6 +2851,78 @@ describe("electrum certificates", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  // Once accepted, the certificate and the backend are on their way and
+  // cannot be called back: a Cancel that closed the dialog then would
+  // say "nothing saved" while both still land.
+  it("keeps Cancel, Escape and the close button off while an accept is on its way", async () => {
+    let answer: () => void = () => {};
+    const saved: unknown[] = [];
+    walletIpc({
+      inspect_certificate: () => UNKNOWN,
+      trust_certificate: () =>
+        new Promise<undefined>((resolve) => {
+          answer = () => resolve(undefined);
+        }),
+      set_backend: (args) => {
+        saved.push(args.config);
+        return undefined;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Accept and save" }));
+
+    expect(within(dialog).getByRole("button", { name: "Saving…" })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Close" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBe(dialog);
+
+    await act(async () => answer());
+    await waitFor(() => expect(saved).toHaveLength(1));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("keeps Cancel off while a changed certificate is being trusted", async () => {
+    let answer: () => void = () => {};
+    walletIpc({
+      inspect_certificate: () => ({
+        host: "node.example.org:50002",
+        status: "changed",
+        stored: FINGERPRINT,
+        presented: OTHER_FINGERPRINT,
+      }),
+      trust_certificate: () =>
+        new Promise<undefined>((resolve) => {
+          answer = () => resolve(undefined);
+        }),
+      set_backend: () => undefined,
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Trust the new certificate" }));
+    await user.click(
+      within(dialog).getByRole("button", { name: "Yes, trust the new certificate" }),
+    );
+
+    expect(within(dialog).getByRole("button", { name: "Saving…" })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await act(async () => answer());
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
   it("keeps the certificate dialog open and says why when the certificate is not stored", async () => {
     const saved: unknown[] = [];
     walletIpc({

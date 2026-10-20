@@ -522,11 +522,15 @@ export function CertificateAsk() {
   /** Why the certificate or the backend was not stored, said in the
       dialog: it stays open until both are, whatever page is under it. */
   const [failure, setFailure] = useState<unknown>(null);
+  /** From Accept to the end of both calls, with no gap between them:
+      what keeps Cancel off while the answer is on its way. */
+  const [sending, setSending] = useState(false);
   if (!ask) return null;
 
   const { network, url, config, report } = ask;
   const accept = (fingerprint: string) => {
     setFailure(null);
+    setSending(true);
     useBackendSave.setState({ saving: { network, config, checking: false } });
     void trust
       .mutateAsync({ url, fingerprint })
@@ -536,13 +540,16 @@ export function CertificateAsk() {
         if (useBackendSave.getState().ask === ask) useBackendSave.setState({ ask: null });
         showToast("Setting saved");
       }, setFailure)
-      .finally(() => useBackendSave.setState({ saving: null }));
+      .finally(() => {
+        setSending(false);
+        useBackendSave.setState({ saving: null });
+      });
   };
 
   return (
     <CertificateDialog
       report={report}
-      busy={trust.isPending || setBackend.isPending}
+      busy={sending}
       failure={failure}
       onAccept={accept}
       onCancel={() => {
