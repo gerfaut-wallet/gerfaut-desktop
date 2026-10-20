@@ -25,7 +25,10 @@ tauri-plugin-dialog = "2.8"
 tauri-plugin-notification = "2.7"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
-keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native-sync-persistent", "crypto-rust"] }
+# The vault key. The v1 API of keyring 4: Keychain on macOS, Credential
+# Manager on Windows, the Secret Service on Linux, the same entries as
+# keyring 3 wrote.
+keyring = "4"
 rand = "0.9"
 # The clipboard, for what is copied out of sight of the clipboard
 # history and taken off it a minute later: the webview can write the
@@ -58,6 +61,9 @@ windows = { version = "0.61", features = ["Data_Xml_Dom", "Foundation_Collection
 [dev-dependencies]
 # A vault of their own for the tests that open one.
 tempfile = "3"
+# The store in memory the keyring tests use: the library keyring wraps,
+# already in the tree.
+keyring-core = "1"
 # Reads the reference JSON of gerfaut-core; the version Tauri already
 # pulls in, so nothing new is compiled.
 serde_json = "1"

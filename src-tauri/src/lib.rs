@@ -1744,7 +1744,12 @@ mod tests {
 
     /// A store in memory, the OS one left alone.
     fn mock_entry() -> keyring::Entry {
-        keyring::Entry::new_with_credential(Box::new(keyring::mock::MockCredential::default()))
+        use keyring_core::api::CredentialStoreApi;
+        let inner = keyring_core::mock::Store::new()
+            .unwrap()
+            .build(super::KEYRING_SERVICE, super::KEYRING_ACCOUNT, None)
+            .unwrap();
+        keyring::Entry { inner }
     }
 
     /// The first launch stores a key, and the next one reads it back.
