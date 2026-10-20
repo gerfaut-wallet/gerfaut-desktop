@@ -32,8 +32,8 @@ ARG APT_SNAPSHOT=20260905T000000Z
 # passes it here, so the compiler is named in one place only. The
 # manifest hash has to follow it:
 #   curl -fsSL https://static.rust-lang.org/dist/channel-rust-<version>.toml | sha256sum
-ARG RUST_VERSION=1.97.0
-ARG RUST_MANIFEST_SHA256=3804d2666f7c12ce64205baa69b6be52f910b45b158091013264beb7aa1de7f5
+ARG RUST_VERSION=1.99.1
+ARG RUST_MANIFEST_SHA256=fb152be80975c194aa5fc684b2aec3a6e14e2b855efe2faa4e5f8ae6e590f463
 # https://static.rust-lang.org/rustup/archive/<version>/x86_64-unknown-linux-gnu/rustup-init.sha256
 ARG RUSTUP_VERSION=1.29.1
 ARG RUSTUP_INIT_SHA256=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71
@@ -251,8 +251,8 @@ FROM base AS macos
 # come from the official LLVM release, the same major version as the
 # LLVM inside rustc, and nothing else of the 1.9 GB archive is kept.
 #   https://github.com/llvm/llvm-project/releases/tag/llvmorg-<version>
-ARG LLVM_VERSION=22.1.8
-ARG LLVM_SHA256=df0e1ecf16caf3489a272a5eea4eec9b0d82878f6477fa309504f918a0006384
+ARG LLVM_VERSION=23.1.3
+ARG LLVM_SHA256=ca9fe385a5d9e2d88132dc0e23a00e9f87f38fa75f67207b5e457d208e71d013
 # rcodesign writes the ad hoc signature of the bundle, without a Mac and
 # without a key: a signature made of hashes only.
 #   https://github.com/indygreg/apple-platform-rs/releases/tag/apple-codesign%2F<version>
@@ -278,7 +278,7 @@ RUN curl --proto '=https' --tlsv1.2 --retry 5 -fsSL -o /tmp/llvm.tar.xz \
 # rust-dist like the compiler. The linker is the rust-lld of the pinned
 # toolchain, as for Windows: clang finds it as ld64.lld next to itself.
 # rustc strips the debug information of an Apple binary with the
-# rust-objcopy of the toolchain, which 1.97.0 ships without a way to
+# rust-objcopy of the toolchain, which 1.99.1 ships without a way to
 # find the LLVM library it is linked against: without the link below,
 # it fails, rustc only warns, and the binary keeps its debug map.
 RUN rust-dist aarch64-apple-darwin rust-std \
