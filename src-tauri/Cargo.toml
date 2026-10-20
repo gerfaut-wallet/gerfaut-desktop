@@ -13,20 +13,23 @@ name = "gerfaut_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
 # The built-in Tor client: a .onion backend must not require the user to
 # install Tor first.
 gerfaut-core = { path = "../../gerfaut-core", features = ["embedded-tor"] }
-tauri = { version = "2", features = [] }
-tauri-plugin-opener = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-notification = "2"
+tauri = { version = "2.12", features = [] }
+tauri-plugin-opener = "2.7"
+tauri-plugin-dialog = "2.8"
+tauri-plugin-notification = "2.7"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
-keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native-sync-persistent", "crypto-rust"] }
-rand = "0.9"
+# The vault key. The v1 API of keyring 4: Keychain on macOS, Credential
+# Manager on Windows, the Secret Service on Linux, the same entries as
+# keyring 3 wrote.
+keyring = "4"
+rand = "0.10"
 # The clipboard, for what is copied out of sight of the clipboard
 # history and taken off it a minute later: the webview can write the
 # clipboard, but not read it back to tell whose copy is there. With the
@@ -41,23 +44,26 @@ data-encoding = "2"
 # macOS, where the plugin's socket would sit in the /tmp every account
 # shares: see src/single_instance.rs.
 [target.'cfg(not(target_os = "macos"))'.dependencies]
-tauri-plugin-single-instance = "2"
+tauri-plugin-single-instance = "2.5"
 
 # The library the notification plugin posts with, called directly on
 # Linux: the plugin drops a notification's id on the desktop, and the id
 # is what lets a confirmation take the place of its pending notice.
 [target.'cfg(target_os = "linux")'.dependencies]
-notify-rust = "4.11"
+notify-rust = "4.18.2"
 
 # The toast API, called directly on Windows for the same reason: a
 # toast replaces another only when both carry a tag and a group, and the
 # plugin sets neither. The version the plugin's toast library uses.
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = ["Data_Xml_Dom", "Foundation_Collections", "UI_Notifications"] }
+windows = { version = "0.62", features = ["Data_Xml_Dom", "Foundation_Collections", "UI_Notifications"] }
 
 [dev-dependencies]
 # A vault of their own for the tests that open one.
 tempfile = "3"
+# The store in memory the keyring tests use: the library keyring wraps,
+# already in the tree.
+keyring-core = "1"
 # Reads the reference JSON of gerfaut-core; the version Tauri already
 # pulls in, so nothing new is compiled.
 serde_json = "1"

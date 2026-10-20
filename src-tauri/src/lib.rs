@@ -1097,8 +1097,7 @@ fn key_from(entry: &keyring::Entry, vault_present: bool) -> Result<VaultKey, Str
         ),
         Err(keyring::Error::NoEntry) => {
             let mut key = [0u8; 32];
-            use rand::RngCore;
-            rand::rng().fill_bytes(&mut key);
+            rand::fill(&mut key);
             entry
                 .set_password(&data_encoding::HEXLOWER.encode(&key))
                 .map_err(|e| format!("cannot store vault key: {e}"))?;
@@ -1744,7 +1743,12 @@ mod tests {
 
     /// A store in memory, the OS one left alone.
     fn mock_entry() -> keyring::Entry {
-        keyring::Entry::new_with_credential(Box::new(keyring::mock::MockCredential::default()))
+        use keyring_core::api::CredentialStoreApi;
+        let inner = keyring_core::mock::Store::new()
+            .unwrap()
+            .build(super::KEYRING_SERVICE, super::KEYRING_ACCOUNT, None)
+            .unwrap();
+        keyring::Entry { inner }
     }
 
     /// The first launch stores a key, and the next one reads it back.

@@ -31,6 +31,8 @@ MICROSOFT="$CACHE/microsoft"
 SDK="$MICROSOFT/sdk"
 LICENSE_URL="https://go.microsoft.com/fwlink/?LinkId=2086102"
 PLUGIN_URL="https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.3/nsis_tauri_utils.dll"
+# Only for the NSIS.exe inside it: see reproducible/windows/nsis-plugin.sha256.
+NSIS_ZIP_URL="https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.13/nsis-3.13.zip"
 # The package manifest manifest_17.json points at, and the name xwin
 # gives it in its download directory.
 VSMAN_URL="https://download.visualstudio.microsoft.com/download/pr/bc92e2cb-33de-4a0c-995d-efa817f16b16/6e470016e4324c84c255ffd0beb3767d17ec89cc8561e9409ee3e1f6d29400f5/VisualStudio.vsman"
@@ -43,6 +45,12 @@ target_fetch() {
     # so the crates of both platforms are needed.
     fetch_cargo x86_64-unknown-linux-gnu "$TRIPLE"
     fetch_pinned "$WINDOWS/nsis-plugin.sha256" nsis_tauri_utils.dll "$PLUGIN_URL"
+    fetch_pinned "$WINDOWS/nsis-plugin.sha256" nsis-3.13.zip "$NSIS_ZIP_URL"
+    python3 -I - "$CACHE/tools/nsis-3.13.zip" "$CACHE/tools/NSIS.exe" <<'PY'
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as z, open(sys.argv[2], "wb") as out:
+    out.write(z.read("nsis-3.13/NSIS.exe"))
+PY
 }
 
 # One hash for the whole tree: see reproducible/windows/microsoft-sdk-tree.sha256.
@@ -138,6 +146,9 @@ target_build() {
     # Where the bundler looks before it downloads.
     use_pinned "$WINDOWS/nsis-plugin.sha256" nsis_tauri_utils.dll \
         "$XDG_CACHE_HOME/tauri/NSIS/Plugins/x86-unicode/additional/nsis_tauri_utils.dll"
+    # Never run: tauri-bundler 2.10 checks it on every host, Linux too,
+    # and downloads the whole NSIS directory again when it is missing.
+    use_pinned "$WINDOWS/nsis-plugin.sha256" NSIS.exe "$XDG_CACHE_HOME/tauri/NSIS/NSIS.exe"
 
     log "compiling"
     tauri_build --target "$TRIPLE" --no-bundle

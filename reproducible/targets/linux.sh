@@ -21,27 +21,23 @@
 TRIPLE=x86_64-unknown-linux-gnu
 LINUXDEPLOY_SUMS="$APP/.github/linuxdeploy.sha256"
 RUNTIME_SUMS="$APP/reproducible/linux/appimage-runtime.sha256"
-LINUXDEPLOY_TOOLS="AppRun-x86_64 linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh linuxdeploy-plugin-gstreamer.sh linuxdeploy-plugin-appimage.AppImage"
+LINUXDEPLOY_TOOLS="AppRun-x86_64 linuxdeploy-07333c6-x86_64.AppImage linuxdeploy-plugin-appimage.AppImage"
 
 target_fetch() {
     fetch_cargo "$TRIPLE"
-    # The five tools the AppImage bundler would otherwise download by
-    # itself, unchecked. URLs and hashes: .github/linuxdeploy.sha256.
+    # The three tools the AppImage bundler would otherwise download by
+    # itself, unchecked. URLs and hashes: .github/linuxdeploy.sha256. The
+    # gtk and gstreamer scripts are no longer among them: the bundler
+    # carries them inside @tauri-apps/cli, which package-lock.json pins.
     fetch_pinned "$LINUXDEPLOY_SUMS" AppRun-x86_64 \
         https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-x86_64
-    fetch_pinned "$LINUXDEPLOY_SUMS" linuxdeploy-x86_64.AppImage \
-        https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-x86_64.AppImage
-    # The two scripts come from the commit that holds the pinned bytes,
-    # not from the `master` branch the bundler names, which moves.
-    fetch_pinned "$LINUXDEPLOY_SUMS" linuxdeploy-plugin-gtk.sh \
-        https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gtk/b5eb8d05b4c0ed40107fe2158c5d8527f94568ef/linuxdeploy-plugin-gtk.sh
-    fetch_pinned "$LINUXDEPLOY_SUMS" linuxdeploy-plugin-gstreamer.sh \
-        https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gstreamer/2a2e67491c32995a3f279ad0ecbe77abd512b42a/linuxdeploy-plugin-gstreamer.sh
+    fetch_pinned "$LINUXDEPLOY_SUMS" linuxdeploy-07333c6-x86_64.AppImage \
+        https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy-07333c6/linuxdeploy-x86_64.AppImage
     # A tagged release, not the `continuous` one the bundler names, which
     # is rebuilt every month.
     fetch_pinned "$LINUXDEPLOY_SUMS" linuxdeploy-plugin-appimage.AppImage \
         https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-appimage-x86_64.AppImage
-    # The sixth one, see linux/appimage-runtime.sha256.
+    # The fourth one, see linux/appimage-runtime.sha256.
     fetch_pinned "$RUNTIME_SUMS" runtime-x86_64 \
         https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
 }
@@ -132,17 +128,16 @@ canonical_rpm() {
 # white window (tauri-apps/tauri#15976). The system's GTK and Mesa
 # bring their own, so they are left to it, as the AppImage excludelist
 # does for libwayland-client (AppImageCommunity/pkg2appimage#559). The
-# linuxdeploy Tauri pins predates that entry and ignores
-# LINUXDEPLOY_EXCLUDED_LIBRARIES, and the bundler passes it no
-# --exclude-library (tauri-apps/tauri#15662).
+# bundler passes linuxdeploy no --exclude-library (tauri-apps/tauri#15662).
 #
 # The icon linuxdeploy links at the root of the AppDir, named after the
-# Icon= key of the desktop entry. The linuxdeploy Tauri pins takes the
-# first matching icon its directory walk finds, and that order depends
-# on the file system: two runners gave 32x32 and 64x64. linuxdeploy has
-# since chosen by size (appdir_root_setup.cpp): the closer to 64x64 the
-# better, the larger on a tie. The recipe applies that rule, with the
-# path as the last tie-breaker.
+# Icon= key of the desktop entry. The linuxdeploy Tauri pinned before
+# 07333c6 took the first matching icon its directory walk found, and
+# that order depends on the file system: two runners gave 32x32 and
+# 64x64. linuxdeploy now chooses by size (appdir_root_setup.cpp): the
+# closer to 64x64 the better, the larger on a tie. The recipe applies
+# that rule too, with the path as the last tie-breaker, so a change of
+# linuxdeploy cannot move the icon unseen: the log names both choices.
 #
 # The dates. The mksquashfs inside appimagetool only brings a date later
 # than SOURCE_DATE_EPOCH down to it, and leaves an earlier one alone.
@@ -155,9 +150,12 @@ rewrite_appimage() {
     local appimage="$1" appdir lib left name link best icon size preference
     appdir="$(find "$(dirname "$appimage")" -mindepth 1 -maxdepth 1 -type d -name '*.AppDir')"
     [ -n "$appdir" ] && [ "$(printf '%s\n' "$appdir" | wc -l)" -eq 1 ] || die "not one AppDir next to $appimage"
-    for lib in client.so.0 cursor.so.0 egl.so.1 server.so.0; do
-        rm -f "$appdir/usr/lib/libwayland-$lib"
+    for lib in client cursor egl server; do
+        rm -f "$appdir/usr/lib/libwayland-$lib.so."*
     done
+    # linuxdeploy 07333c6 also copies the copyright file of each package
+    # it took a library from: the files of libraries no longer shipped go.
+    rm -rf "$appdir"/usr/share/doc/libwayland-*
     left="$(find "$appdir" -name 'libwayland-*')"
     [ -z "$left" ] || die "a Wayland library is still in the AppDir: $left"
     log "AppImage: libwayland-client, -cursor, -egl and -server left to the system"

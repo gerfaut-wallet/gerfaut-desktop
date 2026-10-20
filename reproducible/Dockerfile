@@ -192,6 +192,13 @@ FROM base AS windows
 #   https://github.com/Jake-Shadle/xwin/releases
 ARG XWIN_VERSION=0.10.0
 ARG XWIN_SHA256=d870eb4b2f390878af6da1ccd3cf321d22fcb72720984853b4be732ae597fc88
+# The installer template of Tauri 2.12 includes Win\RestartManager.nsh,
+# a header NSIS added after 3.08, the release this Ubuntu ships. It is
+# taken from the NSIS 3.13 tag (zlib licence, like the rest of NSIS's
+# headers): defines and macros only, which makensis 3.08 compiles.
+#   https://github.com/nsis-dev/nsis/blob/v313/Include/Win/RestartManager.nsh
+ARG NSIS_HEADERS_COMMIT=a4ba28e60bd9e7c271cd2bfc1558889ce3355653
+ARG RESTART_MANAGER_SHA256=67149978412da9b283e2e1abe48a360093df9caf6363373e2cabe463978b7c0e
 
 # clang-cl compiles the C code some crates carry (SQLite, zstd, ring,
 # aws-lc), llvm-lib archives it and llvm-rc compiles the version
@@ -206,6 +213,12 @@ RUN apt-get update --error-on=any \
  && ln -s /usr/lib/llvm-15/bin/llvm-rc /usr/local/bin/llvm-rc \
  && clang-cl --version | grep -qF 'clang version 15.' \
  && dpkg-query -W -f '${Package} ${Version} ${Architecture}\n' | sort > /etc/gerfaut-image-packages
+
+RUN test ! -e /usr/share/nsis/Include/Win/RestartManager.nsh \
+ && curl --proto '=https' --tlsv1.2 --retry 5 -fsSL -o /usr/share/nsis/Include/Win/RestartManager.nsh \
+      "https://raw.githubusercontent.com/nsis-dev/nsis/${NSIS_HEADERS_COMMIT}/Include/Win/RestartManager.nsh" \
+ && echo "${RESTART_MANAGER_SHA256}  /usr/share/nsis/Include/Win/RestartManager.nsh" | sha256sum -c - \
+ && chmod 0644 /usr/share/nsis/Include/Win/RestartManager.nsh
 
 # The standard library for Windows, from the same checked manifest as
 # the compiler and in the same way: fetched and checked by rust-dist,
