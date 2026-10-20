@@ -5,7 +5,7 @@
 
 Tauri's macOS bundler only runs on a Mac, so the recipe writes this file
 itself. The keys, their order and their values follow create_info_plist()
-in tauri-bundler/src/bundle/macos/app.rs (tauri-cli 2.11.5), and the text
+in tauri-bundler/src/bundle/macos/app.rs (tauri-cli 2.12.3), and the text
 follows the XML writer of the plist crate it uses: a tab per level, five
 characters escaped, no newline at the end.
 

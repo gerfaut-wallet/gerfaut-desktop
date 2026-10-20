@@ -1,5 +1,5 @@
-# The one file the NSIS bundler of tauri-bundler 2.9.4 (the one inside
-# @tauri-apps/cli 2.11.5, see package-lock.json) downloads on a Linux
+# The one file the NSIS bundler of tauri-bundler 2.10 (the one inside
+# @tauri-apps/cli 2.12.3, see package-lock.json) downloads on a Linux
 # host: a plugin its installer template calls, packed into every
 # installer and run on the user's machine at install time.
 #

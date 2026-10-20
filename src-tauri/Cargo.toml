@@ -13,16 +13,16 @@ name = "gerfaut_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
 # The built-in Tor client: a .onion backend must not require the user to
 # install Tor first.
 gerfaut-core = { path = "../../gerfaut-core", features = ["embedded-tor"] }
-tauri = { version = "2", features = [] }
-tauri-plugin-opener = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-notification = "2"
+tauri = { version = "2.12", features = [] }
+tauri-plugin-opener = "2.7"
+tauri-plugin-dialog = "2.8"
+tauri-plugin-notification = "2.7"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
 keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native-sync-persistent", "crypto-rust"] }
@@ -41,7 +41,7 @@ data-encoding = "2"
 # macOS, where the plugin's socket would sit in the /tmp every account
 # shares: see src/single_instance.rs.
 [target.'cfg(not(target_os = "macos"))'.dependencies]
-tauri-plugin-single-instance = "2"
+tauri-plugin-single-instance = "2.5"
 
 # The library the notification plugin posts with, called directly on
 # Linux: the plugin drops a notification's id on the desktop, and the id

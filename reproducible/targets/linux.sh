@@ -21,27 +21,23 @@
 TRIPLE=x86_64-unknown-linux-gnu
 LINUXDEPLOY_SUMS="$APP/.github/linuxdeploy.sha256"
 RUNTIME_SUMS="$APP/reproducible/linux/appimage-runtime.sha256"
-LINUXDEPLOY_TOOLS="AppRun-x86_64 linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh linuxdeploy-plugin-gstreamer.sh linuxdeploy-plugin-appimage.AppImage"
+LINUXDEPLOY_TOOLS="AppRun-x86_64 linuxdeploy-07333c6-x86_64.AppImage linuxdeploy-plugin-appimage.AppImage"
 
 target_fetch() {
     fetch_cargo "$TRIPLE"
-    # The five tools the AppImage bundler would otherwise download by
-    # itself, unchecked. URLs and hashes: .github/linuxdeploy.sha256.
+    # The three tools the AppImage bundler would otherwise download by
+    # itself, unchecked. URLs and hashes: .github/linuxdeploy.sha256. The
+    # gtk and gstreamer scripts are no longer among them: the bundler
+    # carries them inside @tauri-apps/cli, which package-lock.json pins.
     fetch_pinned "$LINUXDEPLOY_SUMS" AppRun-x86_64 \
         https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-x86_64
-    fetch_pinned "$LINUXDEPLOY_SUMS" linuxdeploy-x86_64.AppImage \
-        https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-x86_64.AppImage
-    # The two scripts come from the commit that holds the pinned bytes,
-    # not from the `master` branch the bundler names, which moves.
-    fetch_pinned "$LINUXDEPLOY_SUMS" linuxdeploy-plugin-gtk.sh \
-        https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gtk/b5eb8d05b4c0ed40107fe2158c5d8527f94568ef/linuxdeploy-plugin-gtk.sh
-    fetch_pinned "$LINUXDEPLOY_SUMS" linuxdeploy-plugin-gstreamer.sh \
-        https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gstreamer/2a2e67491c32995a3f279ad0ecbe77abd512b42a/linuxdeploy-plugin-gstreamer.sh
+    fetch_pinned "$LINUXDEPLOY_SUMS" linuxdeploy-07333c6-x86_64.AppImage \
+        https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy-07333c6/linuxdeploy-x86_64.AppImage
     # A tagged release, not the `continuous` one the bundler names, which
     # is rebuilt every month.
     fetch_pinned "$LINUXDEPLOY_SUMS" linuxdeploy-plugin-appimage.AppImage \
         https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-appimage-x86_64.AppImage
-    # The sixth one, see linux/appimage-runtime.sha256.
+    # The fourth one, see linux/appimage-runtime.sha256.
     fetch_pinned "$RUNTIME_SUMS" runtime-x86_64 \
         https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
 }
