@@ -9,8 +9,8 @@ import { formatFiat, formatTimestamp } from "../lib/format";
 import { useUi } from "../state/store";
 import { PRICE_TABLE } from "../test/fixtures";
 
-const opener = vi.hoisted(() => ({ openUrl: vi.fn() }));
-vi.mock("@tauri-apps/plugin-opener", () => opener);
+const opener = vi.hoisted(() => ({ openLink: vi.fn() }));
+vi.mock("../lib/links", () => opener);
 
 const TXID = "ab".repeat(32);
 const SPENT = "cd".repeat(32);
@@ -98,7 +98,7 @@ function open(detail: TxDetail = DETAIL, network: Network = "signet") {
 
 describe("TxDetailModal", () => {
   beforeEach(() => {
-    opener.openUrl.mockClear();
+    opener.openLink.mockClear();
     useUi.setState({ selectedTxid: null, explorerAck: false, fiatEnabled: false });
   });
 
@@ -116,10 +116,10 @@ describe("TxDetailModal", () => {
 
     await user.click(hero.getByRole("button", { name: /view on mempool\.space/i }));
     expect(await screen.findByText(/third-party website/i)).toBeInTheDocument();
-    expect(opener.openUrl).not.toHaveBeenCalled();
+    expect(opener.openLink).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Open explorer" }));
-    expect(opener.openUrl).toHaveBeenCalledWith(`https://mempool.space/signet/tx/${TXID}`);
+    expect(opener.openLink).toHaveBeenCalledWith(`https://mempool.space/signet/tx/${TXID}`);
   });
 
   /** Whether a row is the wallet's own is said in words, not only by a

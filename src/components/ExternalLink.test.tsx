@@ -9,8 +9,8 @@ const opener = vi.hoisted(() => ({
   refuses: false,
 }));
 
-vi.mock("@tauri-apps/plugin-opener", () => ({
-  openUrl: (url: string) => {
+vi.mock("../lib/links", () => ({
+  openLink: (url: string) => {
     if (opener.refuses) return Promise.reject(new Error("no browser"));
     opener.opened.push(url);
     return Promise.resolve();

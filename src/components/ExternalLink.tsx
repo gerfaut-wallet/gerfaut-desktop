@@ -1,5 +1,5 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useState } from "react";
+import { openLink } from "../lib/links";
 import { useUi } from "../state/store";
 import { Button } from "./Button";
 import { Modal } from "./Modal";
@@ -13,7 +13,7 @@ export function useOpenExternal() {
   const [failed, setFailed] = useState<string | null>(null);
   const open = useCallback(async (url: string): Promise<boolean> => {
     try {
-      await openUrl(url);
+      await openLink(url);
       setFailed(null);
       return true;
     } catch {
