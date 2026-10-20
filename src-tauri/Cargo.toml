@@ -50,13 +50,13 @@ tauri-plugin-single-instance = "2.5"
 # Linux: the plugin drops a notification's id on the desktop, and the id
 # is what lets a confirmation take the place of its pending notice.
 [target.'cfg(target_os = "linux")'.dependencies]
-notify-rust = "4.11"
+notify-rust = "4.18.2"
 
 # The toast API, called directly on Windows for the same reason: a
 # toast replaces another only when both carry a tag and a group, and the
 # plugin sets neither. The version the plugin's toast library uses.
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = ["Data_Xml_Dom", "Foundation_Collections", "UI_Notifications"] }
+windows = { version = "0.62", features = ["Data_Xml_Dom", "Foundation_Collections", "UI_Notifications"] }
 
 [dev-dependencies]
 # A vault of their own for the tests that open one.
