@@ -1097,8 +1097,7 @@ fn key_from(entry: &keyring::Entry, vault_present: bool) -> Result<VaultKey, Str
         ),
         Err(keyring::Error::NoEntry) => {
             let mut key = [0u8; 32];
-            use rand::RngCore;
-            rand::rng().fill_bytes(&mut key);
+            rand::fill(&mut key);
             entry
                 .set_password(&data_encoding::HEXLOWER.encode(&key))
                 .map_err(|e| format!("cannot store vault key: {e}"))?;

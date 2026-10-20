@@ -2621,7 +2621,7 @@ dependencies = [
  "keyring",
  "keyring-core",
  "notify-rust",
- "rand 0.9.5",
+ "rand 0.10.3",
  "serde",
  "serde_json",
  "tauri",
