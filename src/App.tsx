@@ -253,7 +253,14 @@ export default function App() {
             {/* In the layout, above the page: it pushes the page down and
                 never covers what the page shows. */}
             <UpdateNotice />
-            <div ref={canvas} data-canvas-scroll className="min-h-0 flex-1 overflow-y-auto">
+            {/* Positioned, so what a page places absolutely (a visually
+                hidden label) belongs to this scroll box and moves with
+                the page, rather than to the window. */}
+            <div
+              ref={canvas}
+              data-canvas-scroll
+              className="relative min-h-0 flex-1 overflow-y-auto"
+            >
               <div className="mx-auto h-full max-w-[1280px] px-6 py-4">
                 {view === "settings" ? (
                   <SettingsView settings={settings.data} wallets={walletList} />

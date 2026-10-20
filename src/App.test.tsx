@@ -1452,6 +1452,29 @@ describe("navigation", () => {
     expect(canvas.scrollTop).toBe(0);
   });
 
+  // A page's visually hidden labels are placed absolutely: positioned,
+  // the canvas holds them and scrolls them with the page. Held by the
+  // window instead, one below the fold gave the document room to
+  // scroll, and opening a Settings section lifted the whole window.
+  it("holds what a page places absolutely in the canvas, not the window", async () => {
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    const canvas = document.querySelector<HTMLElement>("[data-canvas-scroll]")!;
+    expect(canvas).toHaveClass("relative");
+
+    await openSettings(user, "Network");
+    const hidden = within(canvas).getByText("Chain data source");
+    expect(hidden).toHaveClass("sr-only");
+    // The box it is placed in, its nearest positioned ancestor, is the
+    // canvas or lies inside it.
+    let box = hidden.parentElement;
+    while (box && !/\b(relative|absolute|fixed|sticky)\b/.test(box.className)) {
+      box = box.parentElement;
+    }
+    expect(box !== null && canvas.contains(box)).toBe(true);
+  });
+
   it("has no search field and no command palette", async () => {
     renderApp();
     const user = userEvent.setup();

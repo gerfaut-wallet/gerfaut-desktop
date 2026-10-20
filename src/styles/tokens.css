@@ -155,6 +155,18 @@ body {
   user-select: none; /* instrument feel; data opts back in */
 }
 
+/* The window itself never scrolls. `overflow: hidden` above only stops
+   the wheel: a scrollIntoView or a focus still moves the document when
+   something reaches past it. A visually hidden label below the fold of
+   a long page did, and the scroll that opens a Settings section at its
+   top lifted the whole window by 8px, a white band under it.
+   Positioned and clipped here, nothing reaches past the window, so the
+   document has nothing to scroll. */
+#root {
+  position: relative;
+  overflow: clip;
+}
+
 .selectable {
   user-select: text;
 }
