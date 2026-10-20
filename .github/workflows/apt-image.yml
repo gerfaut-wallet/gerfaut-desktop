@@ -1,0 +1,74 @@
+# Builds the images that hold everything the release build takes from
+# the Ubuntu archive, one per target, from reproducible/apt.Dockerfile,
+# and pushes them to ghcr.io/gerfaut-wallet/gerfaut-desktop-apt. The
+# summary of the run gives their digests, as the lines to paste into
+# reproducible/Dockerfile.
+#
+# An image pushed here changes no build: reproducible/Dockerfile starts
+# from the digests it names, and only a reviewed commit changes them.
+# Runs by hand (Actions, Apt image, Run workflow) and when the recipe
+# changes on main. The images hold public packages and nothing else; the
+# token that can push exists only in the step that pushes.
+
+name: Apt image
+
+on:
+  push:
+    branches: [main, ci/ghcr-build-image]
+    paths: [reproducible/apt.Dockerfile]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/gerfaut-wallet/gerfaut-desktop-apt
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The three stages share their base layers, built once. The source
+      # label links the package to this repository on its first push.
+      - name: Build
+        run: |
+          set -euo pipefail
+          for target in linux windows macos; do
+            docker build --target "$target" \
+              --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+              --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+              --label "org.opencontainers.image.description=Ubuntu archive packages of the Gerfaut desktop release build ($target)" \
+              -t "$IMAGE:$target-${GITHUB_SHA::12}" - < reproducible/apt.Dockerfile
+          done
+
+      - name: Push
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io' EXIT
+          {
+            echo "### Apt images built from $GITHUB_SHA"
+            echo
+            echo "The lines of reproducible/Dockerfile that pin them:"
+            echo
+            echo '```dockerfile'
+          } > "$RUNNER_TEMP/summary.md"
+          for target in linux windows macos; do
+            tag="$IMAGE:$target-${GITHUB_SHA::12}"
+            # The digest the push reports, not one read back from a tag.
+            docker push "$tag" | tee "$RUNNER_TEMP/push.log"
+            digest="$(sed -n 's/^.*: digest: \(sha256:[0-9a-f]\{64\}\) size: [0-9]*$/\1/p' "$RUNNER_TEMP/push.log")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest for $tag: $digest"; exit 1; }
+            echo "FROM $IMAGE@$digest AS apt-$target" >> "$RUNNER_TEMP/summary.md"
+          done
+          echo '```' >> "$RUNNER_TEMP/summary.md"
+          tee -a "$GITHUB_STEP_SUMMARY" < "$RUNNER_TEMP/summary.md"
