@@ -1,14 +1,28 @@
-# The one file the NSIS bundler of tauri-bundler 2.10 (the one inside
-# @tauri-apps/cli 2.12.3, see package-lock.json) downloads on a Linux
-# host: a plugin its installer template calls, packed into every
-# installer and run on the user's machine at install time.
-#
-# The bundler looks for it in ~/.cache/tauri/NSIS and checks it against
-# a SHA-1 of its own (75197fee3c6a814fe035788d1c34ead39349b860). The
-# recipe puts the file there first, checked against the sha256 below, so
-# the bundler downloads nothing. Check the version again at every bump
-# of the Tauri CLI: NSIS_TAURI_UTILS_URL in
+# The files the NSIS bundler of tauri-bundler 2.10 (the one inside
+# @tauri-apps/cli 2.12.3, see package-lock.json) looks for in
+# ~/.cache/tauri/NSIS on a Linux host, and downloads when they are not
+# there. The recipe puts them there first, checked against the sha256
+# below, so the bundler downloads nothing. Check them again at every bump
+# of the Tauri CLI: NSIS_TAURI_UTILS_URL, NSIS_URL and NSIS_EXE_SHA1 in
 # crates/tauri-bundler/src/bundle/windows/nsis/mod.rs.
 #
+# nsis_tauri_utils.dll: a plugin the installer template calls, packed
+# into every installer and run on the user's machine at install time.
+# The bundler checks it against a SHA-1 of its own
+# (75197fee3c6a814fe035788d1c34ead39349b860).
 #   https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.3/nsis_tauri_utils.dll
+#
+# NSIS.exe: never run and never shipped. makensis comes from the pinned
+# nsis package of the image. Since tauri-cli 2.12.3 (tauri-apps/tauri
+# #16237) the bundler checks NSIS.exe against a SHA-1 on every host,
+# Linux included, where it never was, then deletes the NSIS directory and
+# downloads the plugin again: the offline build fails on it. The recipe
+# takes NSIS.exe out of the NSIS 3.13 archive the bundler names, whose
+# SHA-1 the bundler also pins (db14f8af2ea346b786c6ae19343f61aaf5e09b8e;
+# GitHub digest of asset 623832696, uploaded 2026-10-09, the same sha256
+# as below), and the bundler finds the SHA-1 it wants
+# (6d45d4e8ccf18fe1fdac9164058f356102a2ecf2).
+#   https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.13/nsis-3.13.zip
 5ba143b5db4a87d32d6e7802e033330aae56cbceabe0d1e3ba41948385ad4709  nsis_tauri_utils.dll
+ba63dffc4410ee89193e1cb5a41989991bd77c61068da17e3156d136b7b0b3d8  nsis-3.13.zip
+78e17de55fa013be7620487e85b6676c204c6c51d7ebabb74ee8a9cfce6252a0  NSIS.exe
