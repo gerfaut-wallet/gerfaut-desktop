@@ -31,9 +31,11 @@ export interface BackendAsk {
 interface BackendSave {
   saving: BackendSaving | null;
   ask: BackendAsk | null;
-  /** Why the core would not store the backend of `network`, in its own
-      words: said under Save backend. */
-  refusal: { network: Network; message: string } | null;
+  /** Why the core would not store `config` for `network`, in its own
+      words: said under Save backend, beside the address it refused. One
+      that lands while the user is on another page waits there for them:
+      the question of a certificate interrupts, a refusal does not. */
+  refusal: { network: Network; config: BackendConfig; message: string } | null;
 }
 
 export const useBackendSave = create<BackendSave>(() => ({

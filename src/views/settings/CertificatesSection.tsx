@@ -56,11 +56,14 @@ function CertFact({ label, children }: { label: string; children: ReactNode }) {
 export function CertificateDialog({
   report,
   busy,
+  failure = null,
   onAccept,
   onCancel,
 }: {
   report: CertificateReport;
   busy: boolean;
+  /** Why accepting did not store the certificate or the backend. */
+  failure?: unknown;
   onAccept: (fingerprint: string) => void;
   onCancel: () => void;
 }) {
@@ -133,6 +136,8 @@ export function CertificateDialog({
             </>
           )
         )}
+
+        <SaveFailure error={failure} className="mt-0" />
 
         <div className="mt-1 flex flex-wrap items-center justify-end gap-3">
           {changed ? (

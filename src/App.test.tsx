@@ -2843,6 +2843,43 @@ describe("electrum certificates", () => {
 
     await openSettings(user, "Network");
     expect(await screen.findByRole("alert")).toHaveTextContent("vault i/o error: disk full");
+    // Beside the address it is about, not under the one still stored.
+    expect(screen.getByLabelText("Host")).toHaveValue("node.example.org");
+
+    // Typing in the form takes the line back: it no longer describes it.
+    await user.type(screen.getByLabelText("Host"), "x");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("keeps the certificate dialog open and says why when the backend is not stored", async () => {
+    let attempts = 0;
+    const saved: unknown[] = [];
+    walletIpc({
+      inspect_certificate: () => UNKNOWN,
+      trust_certificate: () => undefined,
+      set_backend: (args) => {
+        attempts += 1;
+        if (attempts === 1)
+          return Promise.reject({ kind: "vault", message: "vault i/o error: disk full" });
+        saved.push(args.config);
+        return undefined;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Accept and save" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Not saved: vault i/o error: disk full",
+    );
+    expect(screen.getByRole("dialog")).toBe(dialog);
+    // Asked again, it goes through, and the dialog closes on the save.
+    await user.click(within(dialog).getByRole("button", { name: "Accept and save" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
   it("says which public servers sign their own certificate", async () => {

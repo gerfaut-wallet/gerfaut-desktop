@@ -6,7 +6,7 @@ import { ScanQrModal } from "../../components/ScanQrModal";
 import { Select } from "../../components/Select";
 import { OnionIcon } from "../../components/icons/OnionIcon";
 import { NETWORK_LABEL, groupThousands } from "../../lib/format";
-import { errorMessage, ipc, isCommandError } from "../../lib/ipc";
+import { ipc, isCommandError } from "../../lib/ipc";
 import type { BackendConfig, Network, Settings } from "../../lib/ipc";
 import { useBackendSave } from "../../state/backendSave";
 import {
@@ -78,13 +78,15 @@ export function BackendSection({
 }) {
   const current = settings.backends[network] ?? { type: "public_esplora" };
   /** What the form shows for a network: the backend a save still under
-      way or waiting on its certificate is storing, else the stored one.
-      Leaving the page during a save and coming back finds the choice
-      that is being saved, not the one it replaces. */
+      way, waiting on its certificate or refused is about, else the
+      stored one. Leaving the page during a save and coming back finds
+      the choice that is being saved, or the one the core refused beside
+      its reason, not the one it would have replaced. */
   const shown = (of: Network): BackendConfig => {
-    const { saving, ask } = useBackendSave.getState();
+    const { saving, ask, refusal } = useBackendSave.getState();
     if (saving?.network === of) return saving.config;
     if (ask?.network === of) return ask.config;
+    if (refusal?.network === of) return refusal.config;
     return settings.backends[of] ?? { type: "public_esplora" };
   };
   const [seed] = useState(() => shown(network));
@@ -117,9 +119,16 @@ export function BackendSection({
   const saveError = useBackendSave((state) =>
     state.refusal?.network === network ? state.refusal.message : null,
   );
-  /** Says why this network's backend was not stored, or takes it back. */
-  const setSaveError = (message: string | null) =>
-    useBackendSave.setState({ refusal: message === null ? null : { network, message } });
+  /** Says why `config` was not stored for this network. */
+  const refuse = (config: BackendConfig, message: string) =>
+    useBackendSave.setState({ refusal: { network, config, message } });
+  /** Takes this network's refusal back: the form no longer holds what
+      it was about. Another network's stays. */
+  const clearRefusal = () => {
+    if (useBackendSave.getState().refusal?.network === network) {
+      useBackendSave.setState({ refusal: null });
+    }
+  };
   // The last code read was a Tor hidden service: a fact about the
   // address the fields now hold, gone the moment one of them is edited.
   const [onion, setOnion] = useState(false);
@@ -184,7 +193,7 @@ export function BackendSection({
     try {
       const backend = await ipc.parseBackend(text);
       setScanError(null);
-      setSaveError(null);
+      clearRefusal();
       setOnion(backend.onion);
       // Another server is not the user's node until they say so: left
       // on, the switch would have the live watch hand it up to 20 000
@@ -217,7 +226,7 @@ export function BackendSection({
       await onSave(config);
       if (note) showToast(note);
     } catch (error) {
-      setSaveError(isCommandError(error) ? error.message : String(error));
+      refuse(config, isCommandError(error) ? error.message : String(error));
     }
   };
 
@@ -226,13 +235,14 @@ export function BackendSection({
   // state of this form, which would be gone with it.
   const save = async () => {
     if (useBackendSave.getState().saving) return;
-    setSaveError(null);
+    clearRefusal();
     const config = draft();
     // A name with one colon is no IPv6 address: its port went into the
     // host field, and the core would only call it a bad IPv6 literal.
     const typed = /^([^:[\]]+):(\d*)$/.exec(host.trim());
     if (config.type === "custom_electrum" && typed) {
-      setSaveError(
+      refuse(
+        config,
         `The host holds a port. Put ${typed[1]} in the host field and the port in its own.`,
       );
       return;
@@ -248,7 +258,7 @@ export function BackendSection({
         try {
           await ipc.parseBackend(config.url);
         } catch (error) {
-          setSaveError(isCommandError(error) ? error.message : String(error));
+          refuse(config, isCommandError(error) ? error.message : String(error));
           return;
         }
       }
@@ -320,7 +330,7 @@ export function BackendSection({
               onChange={(event) => {
                 setEsploraUrl(event.target.value);
                 setScanError(null);
-                setSaveError(null);
+                clearRefusal();
                 setOnion(false);
               }}
               spellCheck={false}
@@ -346,7 +356,7 @@ export function BackendSection({
               onChange={(event) => {
                 setHost(event.target.value);
                 setScanError(null);
-                setSaveError(null);
+                clearRefusal();
                 setOnion(false);
               }}
               spellCheck={false}
@@ -363,7 +373,7 @@ export function BackendSection({
               onChange={(event) => {
                 setPort(event.target.value.replace(/\D/g, ""));
                 setScanError(null);
-                setSaveError(null);
+                clearRefusal();
                 setOnion(false);
               }}
               inputMode="numeric"
@@ -422,7 +432,7 @@ export function BackendSection({
                 onChange={() => {
                   setKind(option.value);
                   setScanError(null);
-                  setSaveError(null);
+                  clearRefusal();
                   setOnion(false);
                 }}
                 className="mt-1 accent-(--color-primary)"
@@ -492,35 +502,36 @@ export function CertificateAsk() {
   const trust = useTrustCertificate();
   const setBackend = useSetBackend();
   const { showToast } = useUi();
+  /** Why the certificate or the backend was not stored, said in the
+      dialog: it stays open until both are, whatever page is under it. */
+  const [failure, setFailure] = useState<unknown>(null);
   if (!ask) return null;
 
   const { network, url, config, report } = ask;
-  // Not stored: said under Save backend, on the network it was for.
-  const refuse = (error: unknown) =>
-    useBackendSave.setState({ refusal: { network, message: errorMessage(error) } });
   const accept = (fingerprint: string) => {
-    void trust.mutateAsync({ url, fingerprint }).then(
-      () => {
-        useBackendSave.setState({ ask: null, saving: { network, config, checking: false } });
-        void setBackend
-          .mutateAsync({ network, config })
-          .then(() => showToast("Setting saved"), refuse)
-          .finally(() => useBackendSave.setState({ saving: null }));
-      },
-      // Not trusted, so not stored.
-      (error) => {
-        useBackendSave.setState({ ask: null });
-        refuse(error);
-      },
-    );
+    setFailure(null);
+    useBackendSave.setState({ saving: { network, config, checking: false } });
+    void trust
+      .mutateAsync({ url, fingerprint })
+      .then(() => setBackend.mutateAsync({ network, config }))
+      .then(() => {
+        // Closes this question only, never one asked since.
+        if (useBackendSave.getState().ask === ask) useBackendSave.setState({ ask: null });
+        showToast("Setting saved");
+      }, setFailure)
+      .finally(() => useBackendSave.setState({ saving: null }));
   };
 
   return (
     <CertificateDialog
       report={report}
-      busy={trust.isPending}
+      busy={trust.isPending || setBackend.isPending}
+      failure={failure}
       onAccept={accept}
-      onCancel={() => useBackendSave.setState({ ask: null })}
+      onCancel={() => {
+        setFailure(null);
+        useBackendSave.setState({ ask: null });
+      }}
     />
   );
 }
