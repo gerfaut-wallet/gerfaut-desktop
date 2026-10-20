@@ -1,10 +1,11 @@
 # check=skip=InvalidDefaultArgInFrom
 # Pinned toolchain the Gerfaut desktop releases are built with.
 #
-# One file, one stage per target. `base` holds what every target shares:
-# the operating system, the compiler and Node. `linux` adds what the
-# Linux packages need, `windows` what the cross-built Windows installer
-# needs, `macos` what the cross-built macOS application needs.
+# One file, one stage per target. `base` starts from the Ubuntu packages
+# of the target and adds what every target shares: the compiler and
+# Node. `linux` adds what the Linux packages need, `windows` what the
+# cross-built Windows installer needs, `macos` what the cross-built
+# macOS application needs.
 #
 # Everything that can reach an artefact is frozen:
 #   - everything that comes from the Ubuntu archive, by the digest of

@@ -36,7 +36,9 @@ jobs:
           persist-credentials: false
 
       # The three stages share their base layers, built once. The source
-      # label links the package to this repository on its first push.
+      # label links the package to this repository on its first push. The
+      # tag names the run, so a re-run never takes it from an image a
+      # commit pins: an image GHCR lists as untagged is one nothing needs.
       - name: Build
         run: |
           set -euo pipefail
@@ -45,7 +47,7 @@ jobs:
               --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
               --label "org.opencontainers.image.revision=$GITHUB_SHA" \
               --label "org.opencontainers.image.description=Ubuntu archive packages of the Gerfaut desktop release build ($target)" \
-              -t "$IMAGE:$target-${GITHUB_SHA::12}" - < reproducible/apt.Dockerfile
+              -t "$IMAGE:$target-${GITHUB_SHA::12}-$GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT" - < reproducible/apt.Dockerfile
           done
 
       - name: Push
@@ -58,12 +60,12 @@ jobs:
           {
             echo "### Apt images built from $GITHUB_SHA"
             echo
-            echo "The lines of reproducible/Dockerfile that pin them:"
+            echo "They change no build until these lines replace those of reproducible/Dockerfile in a reviewed commit:"
             echo
             echo '```dockerfile'
           } > "$RUNNER_TEMP/summary.md"
           for target in linux windows macos; do
-            tag="$IMAGE:$target-${GITHUB_SHA::12}"
+            tag="$IMAGE:$target-${GITHUB_SHA::12}-$GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT"
             # The digest the push reports, not one read back from a tag.
             docker push "$tag" | tee "$RUNNER_TEMP/push.log"
             digest="$(sed -n 's/^.*: digest: \(sha256:[0-9a-f]\{64\}\) size: [0-9]*$/\1/p' "$RUNNER_TEMP/push.log")"

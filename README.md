@@ -94,7 +94,7 @@ npm run tauri dev     # run the app
 npm run tauri build   # build the installers into src-tauri/target/release/bundle
 ```
 
-Release files come out of the pinned Linux container in `reproducible/`, the Windows installer and the macOS app included. To build them the way the release workflow does, run `reproducible/build.sh linux`, `windows` or `macos`. It needs git and Docker or Podman, and `reproducible/build.sh --help` lists what each target asks for.
+Release files come out of the pinned Linux container in `reproducible/`, the Windows installer and the macOS app included. To build them the way the release workflow does, run `reproducible/build.sh linux`, `windows` or `macos`. It needs git, Docker or Podman, and access to ghcr.io, where the Ubuntu packages of the container come from. `reproducible/build.sh --help` lists what each target asks for.
 
 ## Contributing
 
