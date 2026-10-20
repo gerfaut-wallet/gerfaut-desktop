@@ -44,6 +44,11 @@ function CertFact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/** Above every other modal (the scanner and the backup dialogs sit at
+    60): the shell asks these over whatever is open, and a question that
+    takes the keyboard must also be the one in view. */
+export const SHELL_Z = 70;
+
 /**
  * The decision Gerfaut cannot make for the user: whether this
  * certificate is the one their server presents.
@@ -53,11 +58,6 @@ function CertFact({ label, children }: { label: string; children: ReactNode }) {
  * that changed after being accepted is an alert, and trusting the new
  * one takes a second, deliberate confirmation.
  */
-/** Above every other modal (the scanner and the backup dialogs sit at
-    60): the shell asks these over whatever is open, and a question that
-    takes the keyboard must also be the one in view. */
-export const SHELL_Z = 70;
-
 export function CertificateDialog({
   report,
   busy,

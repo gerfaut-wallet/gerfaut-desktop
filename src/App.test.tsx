@@ -2905,6 +2905,34 @@ describe("electrum certificates", () => {
     expect(ask.contains(document.activeElement)).toBe(true);
   });
 
+  it("names a public server picked from the list by its label in that notice", async () => {
+    let refuse: () => void = () => {};
+    walletIpc({
+      public_servers: () => [
+        { ...PUBLIC_SERVERS[0], id: "mempool-signet", label: "mempool.space signet" },
+      ],
+      set_backend: () =>
+        new Promise((_, reject) => {
+          refuse = () => reject({ kind: "vault", message: "vault i/o error: disk full" });
+        }),
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await openSettings(user, "Network");
+    await user.click(await screen.findByRole("radio", { name: /Public API/ }));
+    await choose(user, "Public server", "mempool.space signet");
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    await user.click(sidebar().getByRole("button", { name: "Overview" }));
+    await screen.findByText("Bitcoin price");
+    await act(async () => refuse());
+
+    const notice = await screen.findByRole("dialog", { name: "Backend not saved" });
+    expect(notice).toHaveTextContent(
+      "Gerfaut could not store mempool.space signet as the Signet backend.",
+    );
+  });
+
   it("says nothing over the page when the refused form is on screen", async () => {
     walletIpc({
       inspect_certificate: () => ({ host: "node.example.org:50002", status: "trusted" }),
