@@ -131,12 +131,13 @@ canonical_rpm() {
 # bundler passes linuxdeploy no --exclude-library (tauri-apps/tauri#15662).
 #
 # The icon linuxdeploy links at the root of the AppDir, named after the
-# Icon= key of the desktop entry. The linuxdeploy Tauri pins takes the
-# first matching icon its directory walk finds, and that order depends
-# on the file system: two runners gave 32x32 and 64x64. linuxdeploy has
-# since chosen by size (appdir_root_setup.cpp): the closer to 64x64 the
-# better, the larger on a tie. The recipe applies that rule, with the
-# path as the last tie-breaker.
+# Icon= key of the desktop entry. The linuxdeploy Tauri pinned before
+# 07333c6 took the first matching icon its directory walk found, and
+# that order depends on the file system: two runners gave 32x32 and
+# 64x64. linuxdeploy now chooses by size (appdir_root_setup.cpp): the
+# closer to 64x64 the better, the larger on a tie. The recipe applies
+# that rule too, with the path as the last tie-breaker, so a change of
+# linuxdeploy cannot move the icon unseen: the log names both choices.
 #
 # The dates. The mksquashfs inside appimagetool only brings a date later
 # than SOURCE_DATE_EPOCH down to it, and leaves an earlier one alone.
