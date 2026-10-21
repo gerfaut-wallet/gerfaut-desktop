@@ -6,16 +6,15 @@
 #
 # An image pushed here changes no build: reproducible/Dockerfile starts
 # from the digests it names, and only a reviewed commit changes them.
-# Runs by hand (Actions, Apt image, Run workflow) and when the recipe
-# changes on main. The images hold public packages and nothing else; the
-# token that can push exists only in the step that pushes.
+# Runs by hand only (Actions, Apt image, Run workflow), after a change of
+# the recipe: an image built on every merge would be stored for nothing,
+# since none is used before a commit pins it. The images hold public
+# packages and nothing else; the token that can push exists only in the
+# step that pushes.
 
 name: Apt image
 
 on:
-  push:
-    branches: [main]
-    paths: [reproducible/apt.Dockerfile]
   workflow_dispatch:
 
 permissions:
