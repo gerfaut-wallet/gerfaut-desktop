@@ -169,6 +169,46 @@ describe("saving a server address", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  /** A key or a seed typed as the host, its port after it, is the
+      core's to refuse as private material: the note on the port would
+      quote it back, under the button and on every page. */
+  it.each([
+    ["an extended private key", "xprv9s21ZrQH143Kexample:50002"],
+    ["a seed phrase", `${Array(11).fill("abandon").join(" ")} about:50002`],
+  ])("never quotes %s typed with a port", async (_, typed) => {
+    const calls = mockBackendIpc({
+      kind: "private_material",
+      error: "input contains private key material and was rejected",
+    });
+    const saved: BackendConfig[] = [];
+    renderBackend((config) => saved.push(config));
+    const user = userEvent.setup();
+    await user.clear(field("Host"));
+    await user.type(field("Host"), typed);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(PRIVATE_KEY_NOT_A_SERVER);
+    expect(alert.textContent).not.toContain(typed.split(":")[0]!.split(" ")[0]);
+    expect(useBackendSave.getState().refusals.mainnet?.message).toBe(PRIVATE_KEY_NOT_A_SERVER);
+    expect(saved).toEqual([]);
+    expect(calls.map((call) => call.cmd)).not.toContain("inspect_certificate");
+  });
+
+  /** Words are no host name: the core says the address has a space in
+      it, and the note on the port does not quote them back. */
+  it("never quotes words typed with a port", async () => {
+    const reason = "invalid server address: the address has a space in it";
+    mockBackendIpc({ error: reason });
+    renderBackend(() => undefined);
+    const user = userEvent.setup();
+    await user.clear(field("Host"));
+    await user.type(field("Host"), `${Array(10).fill("abandon").join(" ")} about:50002`);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(reason);
+  });
+
   /** An address the core refuses is refused before its certificate is
       looked at: taken for a server that did not answer, it read
       "Saved" while nothing was. */
