@@ -92,8 +92,8 @@ RUN apt-install \
 # --- Windows installer: NSIS setup .exe, cross-built --------------------
 FROM base AS windows
 
-# clang-cl compiles the C code some crates carry (SQLite, zstd, ring,
-# aws-lc), llvm-lib archives it and llvm-rc compiles the version
+# clang-cl compiles the C code some crates carry (SQLite, zstd and
+# ring), llvm-lib archives it and llvm-rc compiles the version
 # resource. The linker is not in this list: it is the rust-lld of the
 # pinned Rust toolchain. makensis comes with its stubs, the head of
 # every installer it writes, so the nsis package is pinned like the rest.
