@@ -25,5 +25,8 @@ export default defineConfig(({ mode }) => ({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     globals: true,
+    // The stylesheet the window rests on is read by its own test;
+    // every other stylesheet stays out of the tests.
+    css: { include: [/src\/styles\/tokens\.css/] },
   },
 }));

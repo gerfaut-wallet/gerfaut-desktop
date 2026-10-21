@@ -44,6 +44,11 @@ function CertFact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/** Above every other modal (the scanner and the backup dialogs sit at
+    60): the shell asks these over whatever is open, and a question that
+    takes the keyboard must also be the one in view. */
+export const SHELL_Z = 70;
+
 /**
  * The decision Gerfaut cannot make for the user: whether this
  * certificate is the one their server presents.
@@ -56,11 +61,14 @@ function CertFact({ label, children }: { label: string; children: ReactNode }) {
 export function CertificateDialog({
   report,
   busy,
+  failure = null,
   onAccept,
   onCancel,
 }: {
   report: CertificateReport;
   busy: boolean;
+  /** Why accepting did not store the certificate or the backend. */
+  failure?: unknown;
   onAccept: (fingerprint: string) => void;
   onCancel: () => void;
 }) {
@@ -73,12 +81,18 @@ export function CertificateDialog({
         ? report.fingerprint
         : "";
 
+  // Once accepted, the certificate and the backend are on their way to
+  // the vault in one write, which cannot be called back: Cancel, Escape
+  // and the close button wait with the user until it is through or
+  // refused, rather than pretend to stop what still lands.
   return (
     <Modal
       open
       onClose={onCancel}
+      closable={!busy}
       centered
       width={560}
+      z={SHELL_Z}
       title={changed ? "This server's certificate changed" : "This server signs its own certificate"}
     >
       <div className="flex flex-col gap-4">
@@ -134,26 +148,35 @@ export function CertificateDialog({
           )
         )}
 
+        <SaveFailure error={failure} className="mt-0" />
+
         <div className="mt-1 flex flex-wrap items-center justify-end gap-3">
           {changed ? (
             <>
               <Button
                 variant={confirming ? "danger" : "secondary"}
-                disabled={busy}
+                busy={busy}
                 onClick={() => (confirming ? onAccept(fingerprint) : setConfirming(true))}
               >
-                {confirming ? "Yes, trust the new certificate" : "Trust the new certificate"}
+                {busy
+                  ? "Saving…"
+                  : confirming
+                    ? "Yes, trust the new certificate"
+                    : "Trust the new certificate"}
               </Button>
-              <Button variant="primary" onClick={onCancel}>
+              {/* The focus starts on the safe way out: this question can
+                  open over a page where the user is typing, and two
+                  stray Enters must not trust a certificate that changed. */}
+              <Button variant="primary" disabled={busy} onClick={onCancel} data-autofocus>
                 Cancel
               </Button>
             </>
           ) : (
             <>
-              <Button variant="secondary" onClick={onCancel}>
+              <Button variant="secondary" disabled={busy} onClick={onCancel}>
                 Cancel
               </Button>
-              <Button variant="primary" disabled={busy} onClick={() => onAccept(fingerprint)}>
+              <Button variant="primary" busy={busy} onClick={() => onAccept(fingerprint)}>
                 {busy ? "Saving…" : "Accept and save"}
               </Button>
             </>

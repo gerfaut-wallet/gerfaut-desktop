@@ -30,6 +30,7 @@ import { ReceiveView } from "./views/ReceiveView";
 import { StartupFailure } from "./views/StartupFailure";
 import { SettingsView } from "./views/SettingsView";
 import { BETA } from "./views/settings/AboutSection";
+import { BackendRefusalNotice, CertificateAsk } from "./views/settings/BackendSection";
 import { TransactionsView } from "./views/TransactionsView";
 import { TxDetailModal } from "./views/TxDetailModal";
 import { UtxosView } from "./views/UtxosView";
@@ -253,7 +254,14 @@ export default function App() {
             {/* In the layout, above the page: it pushes the page down and
                 never covers what the page shows. */}
             <UpdateNotice />
-            <div ref={canvas} data-canvas-scroll className="min-h-0 flex-1 overflow-y-auto">
+            {/* Positioned, so what a page places absolutely (a visually
+                hidden label) belongs to this scroll box and moves with
+                the page, rather than to the window. */}
+            <div
+              ref={canvas}
+              data-canvas-scroll
+              className="relative min-h-0 flex-1 overflow-y-auto"
+            >
               <div className="mx-auto h-full max-w-[1280px] px-6 py-4">
                 {view === "settings" ? (
                   <SettingsView settings={settings.data} wallets={walletList} />
@@ -298,6 +306,13 @@ export default function App() {
           <TxDetailModal walletId={activeWallet.id} network={activeWallet.network} />
         )}
         <AddWalletModal activeNetwork={settings.data.active_network} />
+        {/* A Save backend still asks about its certificate once the user
+            left Settings › Network, over whatever page is open. Behind
+            the lock it waits, and asks again once the vault is open. */}
+        <CertificateAsk />
+        {/* And says, over the page in view, a save refused once the user
+            had left it. */}
+        <BackendRefusalNotice activeNetwork={settings.data.active_network} />
         <WelcomeTour
           open={tourOpen}
           onClose={() => setTourOpen(false)}

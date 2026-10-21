@@ -18,6 +18,7 @@ export function Modal({
   width = 520,
   z = 50,
   centered = false,
+  closable = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -28,6 +29,10 @@ export function Modal({
   /** Vertically centered instead of anchored near the top: for short
       confirmations that should sit in the middle of the window. */
   centered?: boolean;
+  /** Off while the modal is sending what it was opened for and cannot
+      take it back: Escape, the backdrop and the close button do nothing
+      until it is done, and the close button says so by being off. */
+  closable?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const previous = useRef<Element | null>(null);
@@ -37,14 +42,19 @@ export function Modal({
   // re-renders would steal focus mid-typing.
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const closableRef = useRef(closable);
+  closableRef.current = closable;
 
   useEffect(() => {
     if (!open) return;
     modalStack.push(id.current);
     previous.current = document.activeElement;
     const node = ref.current;
-    // Initial focus goes to the content, never the header close button.
+    // Initial focus goes to the content, never the header close button:
+    // to what the modal marks `data-autofocus`, else its first field,
+    // else its first button.
     const target =
+      node?.querySelector<HTMLElement>("[data-autofocus]") ??
       node?.querySelector<HTMLElement>(
         "textarea:not(:disabled), input:not(:disabled), select:not(:disabled)",
       ) ??
@@ -56,7 +66,7 @@ export function Modal({
       if (modalStack[modalStack.length - 1] !== id.current) return;
       if (event.key === "Escape") {
         event.stopPropagation();
-        onCloseRef.current();
+        if (closableRef.current) onCloseRef.current();
       }
       if (event.key === "Tab" && node) {
         const focusables = [
@@ -96,7 +106,7 @@ export function Modal({
       }
       style={{ zIndex: z }}
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget && closable) onClose();
       }}
     >
       <div
@@ -109,7 +119,7 @@ export function Modal({
       >
         <header className="flex items-center justify-between border-b border-border px-6 py-4">
           <h1 className="font-display text-lg font-semibold text-text">{title}</h1>
-          <IconButton label="Close" onClick={onClose}>
+          <IconButton label="Close" onClick={onClose} disabled={!closable}>
             <X size={20} strokeWidth={1.5} aria-hidden />
           </IconButton>
         </header>

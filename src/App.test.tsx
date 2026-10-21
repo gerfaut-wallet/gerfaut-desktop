@@ -18,6 +18,7 @@ import type {
   WatchLimitsChoice,
 } from "./lib/ipc";
 import { openLink } from "./lib/links";
+import { useBackendSave } from "./state/backendSave";
 import { useLock } from "./state/lock";
 import { useUi } from "./state/store";
 import { coreCase } from "./test/core";
@@ -770,6 +771,7 @@ beforeEach(() => {
     toast: null,
     syncErrors: {},
   });
+  useBackendSave.setState(useBackendSave.getInitialState());
 });
 
 describe("empty workspace", () => {
@@ -1450,6 +1452,29 @@ describe("navigation", () => {
     await user.click(sidebar().getByRole("button", { name: "Settings" }));
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(canvas.scrollTop).toBe(0);
+  });
+
+  // A page's visually hidden labels are placed absolutely: positioned,
+  // the canvas holds them and scrolls them with the page. Held by the
+  // window instead, one below the fold gave the document room to
+  // scroll, and opening a Settings section lifted the whole window.
+  it("holds what a page places absolutely in the canvas, not the window", async () => {
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    const canvas = document.querySelector<HTMLElement>("[data-canvas-scroll]")!;
+    expect(canvas).toHaveClass("relative");
+
+    await openSettings(user, "Network");
+    const hidden = within(canvas).getByText("Chain data source");
+    expect(hidden).toHaveClass("sr-only");
+    // The box it is placed in, its nearest positioned ancestor, is the
+    // canvas or lies inside it.
+    let box = hidden.parentElement;
+    while (box && !/\b(relative|absolute|fixed|sticky)\b/.test(box.className)) {
+      box = box.parentElement;
+    }
+    expect(box !== null && canvas.contains(box)).toBe(true);
   });
 
   it("has no search field and no command palette", async () => {
@@ -2547,7 +2572,6 @@ describe("electrum certificates", () => {
   }
 
   it("asks about a certificate nothing vouches for, and stores it only once accepted", async () => {
-    const trusted: unknown[] = [];
     const saved: unknown[] = [];
     walletIpc({
       inspect_certificate: () => ({
@@ -2559,12 +2583,8 @@ describe("electrum certificates", () => {
         // Noon, local time: the day is the same wherever the test runs.
         expires: new Date(2030, 2, 7, 12, 0).getTime() / 1000,
       }),
-      trust_certificate: (args) => {
-        trusted.push(args);
-        return undefined;
-      },
-      set_backend: (args) => {
-        saved.push(args.config);
+      set_backend_trusting: (args) => {
+        saved.push(args);
         return undefined;
       },
     });
@@ -2584,21 +2604,19 @@ describe("electrum certificates", () => {
     expect(within(dialog).getByText("Mar 07, 2030")).toBeInTheDocument();
     expect(within(dialog).getByText(/openssl x509/)).toBeInTheDocument();
     // Nothing is trusted and nothing is saved until the user says so.
-    expect(trusted).toHaveLength(0);
     expect(saved).toHaveLength(0);
 
     await user.click(within(dialog).getByRole("button", { name: "Accept and save" }));
+    // The certificate and the backend in one write, both or neither.
     await waitFor(() =>
-      expect(trusted[0]).toMatchObject({
-        url: "ssl://node.example.org:50002",
-        fingerprint: FINGERPRINT,
-      }),
-    );
-    await waitFor(() =>
-      expect(saved[0]).toMatchObject({
-        type: "custom_electrum",
-        url: "ssl://node.example.org:50002",
-      }),
+      expect(saved).toEqual([
+        {
+          network: "signet",
+          config: { type: "custom_electrum", url: "ssl://node.example.org:50002" },
+          url: "ssl://node.example.org:50002",
+          fingerprint: FINGERPRINT,
+        },
+      ]),
     );
   });
 
@@ -2630,7 +2648,6 @@ describe("electrum certificates", () => {
   });
 
   it("keeps a refused certificate out of the vault when the dialog is cancelled", async () => {
-    const trusted: unknown[] = [];
     const saved: unknown[] = [];
     walletIpc({
       inspect_certificate: () => ({
@@ -2641,12 +2658,8 @@ describe("electrum certificates", () => {
         subject: null,
         expires: null,
       }),
-      trust_certificate: (args) => {
-        trusted.push(args);
-        return undefined;
-      },
-      set_backend: (args) => {
-        saved.push(args.config);
+      set_backend_trusting: (args) => {
+        saved.push(args);
         return undefined;
       },
     });
@@ -2658,7 +2671,6 @@ describe("electrum certificates", () => {
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(trusted).toHaveLength(0);
     expect(saved).toHaveLength(0);
   });
 
@@ -2671,11 +2683,10 @@ describe("electrum certificates", () => {
         stored: FINGERPRINT,
         presented: OTHER_FINGERPRINT,
       }),
-      trust_certificate: (args) => {
+      set_backend_trusting: (args) => {
         trusted.push(args);
         return undefined;
       },
-      set_backend: () => undefined,
     });
     renderApp();
     const user = userEvent.setup();
@@ -2687,8 +2698,9 @@ describe("electrum certificates", () => {
     expect(dialog.textContent).toContain(FINGERPRINT.split(":").slice(0, 16).join(":"));
     expect(dialog.textContent).toContain(OTHER_FINGERPRINT.split(":").slice(0, 16).join(":"));
     // Cancelling is the primary shape here: the safe way out is the
-    // obvious one.
+    // obvious one, and the focus starts on it.
     expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveClass("bg-primary");
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
 
     const trust = within(dialog).getByRole("button", { name: "Trust the new certificate" });
     expect(trust).toHaveClass("bg-sunken");
@@ -2700,6 +2712,419 @@ describe("electrum certificates", () => {
     expect(yes).toHaveClass("bg-alert");
     await user.click(yes);
     await waitFor(() => expect(trusted[0]).toMatchObject({ fingerprint: OTHER_FINGERPRINT }));
+  });
+
+  /** A certificate check the test answers when it chooses: a server
+      that takes its time, the way a slow one does for up to 20 s. */
+  function slowCheck() {
+    let answer: (report: unknown) => void = () => {};
+    const check = new Promise<unknown>((resolve) => {
+      answer = resolve;
+    });
+    return { check: () => check, answer: (report: unknown) => answer(report) };
+  }
+
+  const UNKNOWN = {
+    host: "node.example.org:50002",
+    status: "unknown",
+    fingerprint: FINGERPRINT,
+    reason: "self-signed",
+    subject: null,
+    expires: null,
+  };
+
+  // Leaving Settings while the certificate is read used to drop its
+  // answer: the dialog was never shown, nothing was saved, and nothing
+  // said so.
+  it("still asks about the certificate once the user left the page, and saves on accept", async () => {
+    const slow = slowCheck();
+    const saved: unknown[] = [];
+    walletIpc({
+      inspect_certificate: slow.check,
+      set_backend_trusting: (args) => {
+        saved.push(args);
+        return undefined;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    expect(
+      await screen.findByRole("button", { name: "Checking the certificate…" }),
+    ).toHaveAttribute("aria-busy", "true");
+
+    await user.click(sidebar().getByRole("button", { name: "Overview" }));
+    await screen.findByText("Bitcoin price");
+    await act(async () => slow.answer(UNKNOWN));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/No public authority vouches/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Accept and save" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    // Stored for the network it was chosen on, with its certificate.
+    expect(saved[0]).toMatchObject({
+      network: "signet",
+      config: { type: "custom_electrum", url: "ssl://node.example.org:50002" },
+      url: "ssl://node.example.org:50002",
+      fingerprint: FINGERPRINT,
+    });
+    expect(await screen.findByText("Setting saved")).toBeInTheDocument();
+  });
+
+  it("finds the save still under way when the user comes back to it", async () => {
+    const slow = slowCheck();
+    const saved: unknown[] = [];
+    walletIpc({
+      inspect_certificate: slow.check,
+      set_backend: (args) => {
+        saved.push(args.config);
+        return undefined;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    const nav = () => within(screen.getByRole("navigation", { name: "Settings sections" }));
+    await user.click(nav().getByRole("button", { name: "General" }));
+    await user.click(nav().getByRole("button", { name: "Network" }));
+
+    // The choice being saved, not the one it replaces, and no second
+    // save to start meanwhile.
+    expect(await screen.findByLabelText("Host")).toHaveValue("node.example.org");
+    expect(screen.getByRole("radio", { name: /My own Electrum server/ })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Checking the certificate…" })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+
+    await act(async () =>
+      slow.answer({ host: "node.example.org:50002", status: "unreachable", detail: "timed out" }),
+    );
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(await screen.findByRole("button", { name: "Save backend" })).not.toHaveAttribute(
+      "aria-busy",
+    );
+  });
+
+  it("says on the way back why a save made while away was not stored", async () => {
+    const slow = slowCheck();
+    walletIpc({
+      inspect_certificate: slow.check,
+      set_backend: () => Promise.reject({ kind: "vault", message: "vault i/o error: disk full" }),
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    await user.click(sidebar().getByRole("button", { name: "Overview" }));
+    await screen.findByText("Bitcoin price");
+    await act(async () =>
+      slow.answer({ host: "node.example.org:50002", status: "trusted" }),
+    );
+    // Said where the user is, then dismissed: the reason stays below.
+    const notice = await screen.findByRole("dialog", { name: "Backend not saved" });
+    await user.click(within(notice).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    await openSettings(user, "Network");
+    expect(await screen.findByRole("alert")).toHaveTextContent("vault i/o error: disk full");
+    // Beside the address it is about, not under the one still stored.
+    expect(screen.getByLabelText("Host")).toHaveValue("node.example.org");
+
+    // Typing in the form takes the line back: it no longer describes it.
+    await user.type(screen.getByLabelText("Host"), "x");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  // A refusal that landed while the user was elsewhere used to wait under
+  // a button nobody looked at: the old server stayed, and nothing said so.
+  it("says over the page in view that a save refused meanwhile was not stored", async () => {
+    const slow = slowCheck();
+    walletIpc({
+      inspect_certificate: slow.check,
+      set_backend: () => Promise.reject({ kind: "vault", message: "vault i/o error: disk full" }),
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    await user.click(sidebar().getByRole("button", { name: "Receive" }));
+    await act(async () => slow.answer({ host: "node.example.org:50002", status: "trusted" }));
+
+    const notice = await screen.findByRole("dialog", { name: "Backend not saved" });
+    expect(notice).toHaveTextContent("ssl://node.example.org:50002");
+    expect(notice).toHaveTextContent("as the Signet backend. The one before it stays in use.");
+    expect(within(notice).getByRole("alert")).toHaveTextContent("vault i/o error: disk full");
+
+    await user.click(within(notice).getByRole("button", { name: "Open Network settings" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    // And it is still said under the button, beside its address.
+    expect(await screen.findByRole("alert")).toHaveTextContent("vault i/o error: disk full");
+    expect(screen.getByLabelText("Host")).toHaveValue("node.example.org");
+  });
+
+  // The shell asks over whatever is open: under another modal, the
+  // question took the keyboard while staying out of sight, and an
+  // Escape meant for the modal on top cancelled it unseen.
+  it("asks about the certificate above another modal, with the keyboard", async () => {
+    const slow = slowCheck();
+    walletIpc({ inspect_certificate: slow.check, list_backups: () => [] });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    const nav = within(screen.getByRole("navigation", { name: "Settings sections" }));
+    await user.click(nav.getByRole("button", { name: "Backup & sync" }));
+    await user.click(within(screen.getByRole("main")).getByRole("button", { name: "Export…" }));
+    const exporting = await screen.findByRole("dialog", { name: "Export a backup" });
+    await act(async () => slow.answer(UNKNOWN));
+
+    const ask = await screen.findByRole("dialog", { name: "This server signs its own certificate" });
+    const z = (dialog: HTMLElement) => Number(dialog.parentElement!.style.zIndex);
+    expect(z(ask)).toBeGreaterThan(z(exporting));
+    expect(ask.contains(document.activeElement)).toBe(true);
+  });
+
+  it("names a public server picked from the list by its label in that notice", async () => {
+    let refuse: () => void = () => {};
+    walletIpc({
+      public_servers: () => [
+        { ...PUBLIC_SERVERS[0], id: "mempool-signet", label: "mempool.space signet" },
+      ],
+      set_backend: () =>
+        new Promise((_, reject) => {
+          refuse = () => reject({ kind: "vault", message: "vault i/o error: disk full" });
+        }),
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await openSettings(user, "Network");
+    await user.click(await screen.findByRole("radio", { name: /Public API/ }));
+    await choose(user, "Public server", "mempool.space signet");
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    await user.click(sidebar().getByRole("button", { name: "Overview" }));
+    await screen.findByText("Bitcoin price");
+    await act(async () => refuse());
+
+    const notice = await screen.findByRole("dialog", { name: "Backend not saved" });
+    expect(notice).toHaveTextContent(
+      "Gerfaut could not store mempool.space signet as the Signet backend.",
+    );
+  });
+
+  it("says nothing over the page when the refused form is on screen", async () => {
+    walletIpc({
+      inspect_certificate: () => ({ host: "node.example.org:50002", status: "trusted" }),
+      set_backend: () => Promise.reject({ kind: "vault", message: "vault i/o error: disk full" }),
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("vault i/o error: disk full");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // Leaving now is no news: the user saw it.
+    await user.click(sidebar().getByRole("button", { name: "Overview" }));
+    await screen.findByText("Bitcoin price");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  // Once accepted, the certificate and the backend are on their way and
+  // cannot be called back: a Cancel that closed the dialog then would
+  // say "nothing saved" while both still land.
+  it("keeps Cancel, Escape and the close button off while an accept is on its way", async () => {
+    let answer: () => void = () => {};
+    const saved: unknown[] = [];
+    walletIpc({
+      inspect_certificate: () => UNKNOWN,
+      set_backend_trusting: (args) =>
+        new Promise<undefined>((resolve) => {
+          answer = () => {
+            saved.push(args.config);
+            resolve(undefined);
+          };
+        }),
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Accept and save" }));
+
+    expect(within(dialog).getByRole("button", { name: "Saving…" })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Close" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBe(dialog);
+
+    await act(async () => answer());
+    await waitFor(() => expect(saved).toHaveLength(1));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("keeps Cancel off while a changed certificate is being trusted", async () => {
+    let answer: () => void = () => {};
+    walletIpc({
+      inspect_certificate: () => ({
+        host: "node.example.org:50002",
+        status: "changed",
+        stored: FINGERPRINT,
+        presented: OTHER_FINGERPRINT,
+      }),
+      set_backend_trusting: () =>
+        new Promise<undefined>((resolve) => {
+          answer = () => resolve(undefined);
+        }),
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Trust the new certificate" }));
+    await user.click(
+      within(dialog).getByRole("button", { name: "Yes, trust the new certificate" }),
+    );
+
+    expect(within(dialog).getByRole("button", { name: "Saving…" })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await act(async () => answer());
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  /** The vault as the core keeps it: a backend and the certificates
+      accepted, by host. `set_backend_trusting` writes both or, refused,
+      neither; nothing else may touch them on the way. */
+  function atomicVault(initial: Record<string, string>, refuse: boolean) {
+    const certs = { ...initial };
+    let backend: unknown = null;
+    const calls: string[] = [];
+    return {
+      certs,
+      backend: () => backend,
+      calls,
+      ipc: {
+        get_settings: () => ({ ...SETTINGS, electrum_certs: { ...certs } }),
+        set_backend_trusting: (args: Record<string, unknown>) => {
+          calls.push("set_backend_trusting");
+          if (refuse) return Promise.reject({ kind: "vault", message: "vault i/o error: disk full" });
+          certs[String(args.url).replace(/^ssl:\/\//, "")] = String(args.fingerprint).toUpperCase();
+          backend = args.config;
+          return undefined;
+        },
+        trust_certificate: () => void calls.push("trust_certificate"),
+        forget_certificate: () => void calls.push("forget_certificate"),
+        set_backend: () => void calls.push("set_backend"),
+      },
+    };
+  }
+
+  async function accept(user: ReturnType<typeof userEvent.setup>) {
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    const dialog = await screen.findByRole("dialog");
+    const changed = within(dialog).queryByRole("button", { name: "Trust the new certificate" });
+    if (changed) {
+      await user.click(changed);
+      await user.click(within(dialog).getByRole("button", { name: "Yes, trust the new certificate" }));
+    } else {
+      await user.click(within(dialog).getByRole("button", { name: "Accept and save" }));
+    }
+    return dialog;
+  }
+
+  // Cancel stores nothing, neither the certificate nor the backend: a
+  // certificate trusted for a backend the core then refused used to stay.
+  // The core makes the one write whole (its own tests); here, the app
+  // asks for that write alone, and nothing beside it.
+  it("asks one write and nothing else when the backend is refused, then cancelled", async () => {
+    const vault = atomicVault({}, true);
+    walletIpc({ inspect_certificate: () => UNKNOWN, ...vault.ipc });
+    renderApp();
+    const user = userEvent.setup();
+    const dialog = await accept(user);
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Not saved: vault i/o error: disk full",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(vault.certs).toEqual({});
+    expect(vault.backend()).toBeNull();
+    // One write asked, and nothing written beside it.
+    expect(vault.calls).toEqual(["set_backend_trusting"]);
+  });
+
+  it("asks one write and nothing else for a changed certificate refused, then cancelled", async () => {
+    const vault = atomicVault({ "node.example.org:50002": FINGERPRINT }, true);
+    walletIpc({
+      inspect_certificate: () => ({
+        host: "node.example.org:50002",
+        status: "changed",
+        stored: FINGERPRINT,
+        presented: OTHER_FINGERPRINT,
+      }),
+      ...vault.ipc,
+    });
+    renderApp();
+    const user = userEvent.setup();
+    const dialog = await accept(user);
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("vault i/o error: disk full");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(vault.certs).toEqual({ "node.example.org:50002": FINGERPRINT });
+    expect(vault.calls).toEqual(["set_backend_trusting"]);
+  });
+
+  it("stores the backend and its certificate together once accepted", async () => {
+    const vault = atomicVault({}, false);
+    walletIpc({ inspect_certificate: () => UNKNOWN, ...vault.ipc });
+    renderApp();
+    await accept(userEvent.setup());
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(vault.certs).toEqual({ "node.example.org:50002": FINGERPRINT.toUpperCase() });
+    expect(vault.backend()).toMatchObject({ type: "custom_electrum", url: "ssl://node.example.org:50002" });
+    expect(vault.calls).toEqual(["set_backend_trusting"]);
+  });
+
+  it("keeps the certificate dialog open and says why when the backend is not stored", async () => {
+    let attempts = 0;
+    const saved: unknown[] = [];
+    walletIpc({
+      inspect_certificate: () => UNKNOWN,
+      set_backend_trusting: (args) => {
+        attempts += 1;
+        if (attempts === 1)
+          return Promise.reject({ kind: "vault", message: "vault i/o error: disk full" });
+        saved.push(args.config);
+        return undefined;
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Accept and save" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Not saved: vault i/o error: disk full",
+    );
+    expect(screen.getByRole("dialog")).toBe(dialog);
+    // Asked again, it goes through, and the dialog closes on the save.
+    await user.click(within(dialog).getByRole("button", { name: "Accept and save" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
   it("says which public servers sign their own certificate", async () => {
@@ -3363,6 +3788,40 @@ describe("the app lock", () => {
     expect(await screen.findByText("Locked")).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Navigation" })).not.toBeInTheDocument();
     expect(screen.queryByText(WALLET.name)).not.toBeInTheDocument();
+  });
+
+  // A Save backend whose certificate question was still open when the
+  // vault locked: nothing of it shows on the lock screen, and the
+  // question comes back once the vault is open, rather than the choice
+  // being dropped without a word.
+  it("keeps a certificate question behind the lock, and asks it after the unlock", async () => {
+    mockLocked([{ unlocked: true, failures: 0, retry_after_secs: 0 }]);
+    useBackendSave.setState({
+      ask: {
+        network: "signet",
+        url: "ssl://node.example.org:50002",
+        config: { type: "custom_electrum", url: "ssl://node.example.org:50002" },
+        report: {
+          host: "node.example.org:50002",
+          status: "unknown",
+          fingerprint: FINGERPRINT,
+          reason: "self-signed",
+          subject: null,
+          expires: null,
+        },
+      },
+    });
+    renderApp();
+    const user = userEvent.setup();
+
+    await screen.findByText("Locked");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByText(/node\.example\.org/)).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("PIN"), "1234");
+    await user.click(screen.getByRole("button", { name: /unlock/i }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/No public authority vouches/)).toBeInTheDocument();
   });
 
   it("syncs nothing while the curtain is drawn", async () => {
