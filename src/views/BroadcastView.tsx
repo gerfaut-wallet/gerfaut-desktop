@@ -43,7 +43,13 @@ import type {
   TxPreview,
   TxWarningKind,
 } from "../lib/ipc";
-import { FALSE_PROOF, errorMessage, isCommandError, isFalseProof } from "../lib/ipc";
+import {
+  FALSE_PROOF,
+  PRIVATE_KEY_NOT_A_TRANSACTION,
+  errorMessage,
+  isCommandError,
+  isFalseProof,
+} from "../lib/ipc";
 import { explorerTxUrl } from "../lib/explorer";
 import {
   MASKED,
@@ -195,7 +201,9 @@ export function BroadcastView({ network }: { network: Network }) {
       ? isCommandError(preview.error) &&
         (preview.error.kind === "invalid_input" || preview.error.kind === "too_many_parts")
         ? { headline: UNREADABLE_TRANSACTION, detail: preview.error.message }
-        : { headline: errorMessage(preview.error) }
+        : isCommandError(preview.error) && preview.error.kind === "private_material"
+          ? { headline: PRIVATE_KEY_NOT_A_TRANSACTION }
+          : { headline: errorMessage(preview.error) }
       : null;
   const broadcastError = broadcast.error ? errorMessage(broadcast.error) : null;
 
@@ -305,6 +313,7 @@ export function BroadcastView({ network }: { network: Network }) {
         open={scanOpen}
         onClose={() => setScanOpen(false)}
         caption="Point the camera at a signed transaction or PSBT QR code: crypto-psbt UR or BBQr, animated or not."
+        privateKey={PRIVATE_KEY_NOT_A_TRANSACTION}
         onScan={(text) => {
           setScanOpen(false);
           setRaw(text);

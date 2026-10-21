@@ -251,6 +251,24 @@ describe("ScanQrModal", () => {
     );
   });
 
+  /** Another screen says what it waits for instead of a key. */
+  it("says a private key in the words of the screen that opened it", async () => {
+    frames.push("ur:crypto-output/1-1/lpadad");
+    mockAssembly(
+      () =>
+        Promise.reject({
+          kind: "private_material",
+          message: "input contains private key material and was rejected",
+        }) as unknown as QrProgress,
+    );
+    render(
+      <ScanQrModal open onClose={vi.fn()} onScan={vi.fn()} privateKey="Not a key, a transaction." />,
+    );
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    await tick();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/^Not a key, a transaction\.$/);
+  });
+
   it("says in plain words that a code has more parts than Gerfaut reads", async () => {
     // The core turns the count away before decoding a part; the words
     // it gives are for logs.

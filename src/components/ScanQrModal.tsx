@@ -26,6 +26,7 @@ export function ScanQrModal({
   onClose,
   onScan,
   caption,
+  privateKey,
 }: {
   open: boolean;
   onClose: () => void;
@@ -37,6 +38,9 @@ export function ScanQrModal({
       descriptor when they are holding their node's server QR is worse
       than saying nothing. */
   caption?: string;
+  /** What a code holding a private key is told on this screen; the
+      wallet import's words by default, as for the caption. */
+  privateKey?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [state, setState] = useState<ScanState>("starting");
@@ -48,6 +52,8 @@ export function ScanQrModal({
   onScanRef.current = onScan;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const privateKeyRef = useRef(privateKey);
+  privateKeyRef.current = privateKey;
 
   useEffect(() => {
     if (!open) return;
@@ -197,8 +203,8 @@ export function ScanQrModal({
               continue;
             }
             // The core's sentence, which says what it saw and what to show
-            // instead, or the app's for a private key, as at the import.
-            giveUp(materialRefusal(err));
+            // instead, or the screen's for a private key.
+            giveUp(materialRefusal(err, privateKeyRef.current));
           }
           again = false;
           frame = nextWaiting();

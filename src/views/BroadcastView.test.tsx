@@ -496,6 +496,29 @@ describe("BroadcastView", () => {
     expect(alert).toHaveTextContent("announces 6000 parts");
   });
 
+  /** A code holding a private key, pasted here, is told what this page
+      waits for: a signed transaction, not a key, nor a wallet import. */
+  it("tells a private key apart from the signed transaction it waits for", async () => {
+    const user = mount();
+    mockIPC((cmd) => {
+      if (cmd === "preview_transaction") {
+        throw {
+          kind: "private_material",
+          message: "input contains private key material and was rejected",
+        };
+      }
+      return undefined;
+    });
+    await user.type(screen.getByLabelText("Signed transaction"), "ur:crypto-output/x");
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "This holds a private key, not a signed transaction. Gerfaut never takes a key: show the transaction your signing device signed instead.",
+    );
+    expect(alert).not.toHaveTextContent(/descriptor|saved/);
+  });
+
   /** The error answered what was typed; typing again answers it. It
       goes at the first keystroke, and the hint comes back in the slot
       it held, so Preview stays where it was. */

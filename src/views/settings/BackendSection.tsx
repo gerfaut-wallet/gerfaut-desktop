@@ -8,7 +8,7 @@ import { ScanQrModal } from "../../components/ScanQrModal";
 import { Select } from "../../components/Select";
 import { OnionIcon } from "../../components/icons/OnionIcon";
 import { NETWORK_LABEL, groupThousands } from "../../lib/format";
-import { ipc, isCommandError } from "../../lib/ipc";
+import { PRIVATE_KEY_NOT_A_SERVER, ipc, isCommandError } from "../../lib/ipc";
 import type { BackendConfig, Network, Settings } from "../../lib/ipc";
 import {
   clearBackendRefusal,
@@ -505,6 +505,7 @@ export function BackendSection({
       </div>
       <ScanQrModal
         caption="Point the camera at the QR code your node prints beside its Electrum or Esplora app."
+        privateKey={PRIVATE_KEY_NOT_A_SERVER}
         open={scanOpen}
         onClose={() => setScanOpen(false)}
         onScan={(text) => void applyScan(text)}
