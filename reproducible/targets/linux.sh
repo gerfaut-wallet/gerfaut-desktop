@@ -83,7 +83,8 @@ target_build() {
 # aasink and cacasink (text-mode video), ncurses and S-Lang; cdparanoia
 # (audio CDs), 1394 and dv (FireWire camcorders), their device
 # libraries. The bundler's gstreamer plugin copies every file of the
-# directory GSTREAMER_PLUGINS_DIR names.
+# directory GSTREAMER_PLUGINS_DIR names; a plain `npm run tauri build`
+# leaves it unset, and that AppImage takes every plugin of the machine.
 GSTREAMER_LEFT_OUT="1394 aasink cacasink cdparanoia dv jack shout2"
 
 gstreamer_plugins() {
@@ -153,13 +154,14 @@ canonical_rpm() {
 # no element at all, and the web process aborts as soon as the scanner
 # opens the camera, on every distribution. bundleMediaFramework in
 # tauri.conf.json runs the bundler's gstreamer plugin, which copies the
-# plugins of the image there, the gstreamer1.0-plugins-base and -good
-# that WebKit's package depends on, less those gstreamer_plugins leaves
-# out, with the plugin scanner of the same release, and adds an AppRun
-# hook that points GStreamer at them alone, never at the system's. A
-# build that lost them stops here rather than ship an AppImage whose
-# camera kills the window, and so does one that let in a plugin left
-# out or the OpenSSL or Berkeley DB they would have brought.
+# plugins of the image there, the core elements of libgstreamer1.0-0
+# and the gstreamer1.0-plugins-base and -good that WebKit's package
+# depends on, less those gstreamer_plugins leaves out, with the plugin
+# scanner of the same release, and adds an AppRun hook that points
+# GStreamer at them alone, never at the system's. A build that lost
+# them stops here rather than ship an AppImage whose camera kills the
+# window, and so does one that let in a plugin left out or the OpenSSL
+# or Berkeley DB they would have brought.
 #
 # The Wayland libraries, libwayland-client, -cursor, -egl and -server.
 # linuxdeploy copies those of the image (Ubuntu 22.04, Wayland 1.20)
