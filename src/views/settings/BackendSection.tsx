@@ -8,7 +8,7 @@ import { ScanQrModal } from "../../components/ScanQrModal";
 import { Select } from "../../components/Select";
 import { OnionIcon } from "../../components/icons/OnionIcon";
 import { NETWORK_LABEL, groupThousands } from "../../lib/format";
-import { PRIVATE_KEY_NOT_A_SERVER, ipc, materialRefusal } from "../../lib/ipc";
+import { PRIVATE_KEY_NOT_A_SERVER, ipc, isCommandError, materialRefusal } from "../../lib/ipc";
 import type { BackendConfig, Network, Settings } from "../../lib/ipc";
 import {
   clearBackendRefusal,
@@ -245,28 +245,38 @@ export function BackendSection({
     const config = draft();
     // A name with one colon is no IPv6 address: its port went into the
     // host field, and the core would only call it a bad IPv6 literal.
-    const typed = /^([^:[\]]+):(\d*)$/.exec(host.trim());
-    if (config.type === "custom_electrum" && typed) {
-      refuse(
-        config,
-        `The host holds a port. Put ${typed[1]} in the host field and the port in its own.`,
-      );
-      return;
-    }
+    // Words with spaces are no name, and are never quoted back.
+    const typed = /^([^:[\]\s]+):(\d*)$/.exec(host.trim());
+    const portInHost =
+      config.type === "custom_electrum" && typed
+        ? `The host holds a port. Put ${typed[1]} in the host field and the port in its own.`
+        : null;
     const under = (checking: boolean) =>
       useBackendSave.setState({ saving: { network, config, checking } });
     under(false);
     try {
       // A typed address is read first, the way the core will store it:
       // one it refuses — a host with a port still in it, say — is said
-      // so here, and not taken for a server that did not answer.
+      // so here, and not taken for a server that did not answer. A key
+      // or a seed typed as the host is refused as one before the host
+      // is quoted back in a sentence of this screen.
       if (config.type === "custom_electrum" || config.type === "custom_esplora") {
         try {
           await ipc.parseBackend(config.url);
         } catch (error) {
-          refuse(config, materialRefusal(error, PRIVATE_KEY_NOT_A_SERVER));
+          const secret = isCommandError(error) && error.kind === "private_material";
+          refuse(
+            config,
+            portInHost && !secret
+              ? portInHost
+              : materialRefusal(error, PRIVATE_KEY_NOT_A_SERVER),
+          );
           return;
         }
+      }
+      if (portInHost) {
+        refuse(config, portInHost);
+        return;
       }
       const url = electrumUrlOf(config);
       if (!url) return await store(config);
