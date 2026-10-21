@@ -9,12 +9,12 @@
 //! In an AppImage, the opener is `xdg-open`, started outside the
 //! AppImage's environment. Its launcher puts the bundled libraries
 //! first in `LD_LIBRARY_PATH`, and its hooks point `XDG_DATA_DIRS`,
-//! `GTK_PATH`, `GIO_EXTRA_MODULES` and others into the bundle. The
-//! system's `xdg-open` and the tools it starts inherited all of it: on
-//! Ubuntu 26.04 the coreutils loaded the bundled `libsystemd.so.0`,
-//! older than they need, stopped on the missing symbol version, and no
-//! browser opened, without a word. Only the child is cleaned: the app
-//! keeps the libraries it was bundled with.
+//! `GTK_PATH`, `GIO_EXTRA_MODULES`, GStreamer's plugin paths and others
+//! into the bundle. The system's `xdg-open` and the tools it starts
+//! inherited all of it: on Ubuntu 26.04 the coreutils loaded the bundled
+//! `libsystemd.so.0`, older than they need, stopped on the missing
+//! symbol version, and no browser opened, without a word. Only the child
+//! is cleaned: the app keeps the libraries it was bundled with.
 
 use crate::{CommandError, CommandResult};
 
@@ -316,6 +316,23 @@ mod tests {
                         "GSETTINGS_SCHEMA_DIR",
                         &format!("{ROOT}/usr/share/glib-2.0/schemas"),
                     ),
+                    ("GST_REGISTRY_REUSE_PLUGIN_SCANNER", "no"),
+                    (
+                        "GST_PLUGIN_SYSTEM_PATH_1_0",
+                        &format!("{ROOT}/usr/lib/gstreamer-1.0"),
+                    ),
+                    (
+                        "GST_PLUGIN_PATH_1_0",
+                        &format!("{ROOT}/usr/lib/gstreamer-1.0"),
+                    ),
+                    (
+                        "GST_PLUGIN_SCANNER_1_0",
+                        &format!("{ROOT}/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner"),
+                    ),
+                    (
+                        "GST_PTP_HELPER_1_0",
+                        &format!("{ROOT}/usr/lib/gstreamer1.0/gstreamer-1.0/gst-ptp-helper"),
+                    ),
                     ("APPDIR", ROOT),
                     ("APPIMAGE", "/home/someone/Gerfaut_0.1.0_amd64.AppImage"),
                     ("GDK_BACKEND", "x11"),
@@ -331,6 +348,7 @@ mod tests {
                 vars(&[
                     ("PATH", "/usr/local/bin:/usr/bin:/bin"),
                     ("XDG_DATA_DIRS", "/usr/share:/usr/local/share"),
+                    ("GST_REGISTRY_REUSE_PLUGIN_SCANNER", "no"),
                     ("APPIMAGE", "/home/someone/Gerfaut_0.1.0_amd64.AppImage"),
                     ("GDK_BACKEND", "x11"),
                     ("DISPLAY", ":0"),

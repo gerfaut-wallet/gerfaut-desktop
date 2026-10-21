@@ -162,10 +162,14 @@ FROM base AS linux
 # The list README.md gives, plus the packaging tools, all from apt-linux:
 # dpkg-deb comes with the base system, rpm brings rpmbuild,
 # squashfs-tools writes the AppImage payload, and desktop-file-utils
-# checks the desktop entry. A wrong image stops here.
+# checks the desktop entry. The GStreamer plugins the AppImage carries
+# come with WebKit, whose package depends on gstreamer1.0-plugins-base
+# and -good; they are named here so that an image without them stops
+# too (rewrite_appimage in targets/linux.sh). A wrong image stops here.
 RUN dpkg-query -W libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
       libdbus-1-dev patchelf wget xdg-utils \
-      cpio desktop-file-utils rpm squashfs-tools zstd > /dev/null
+      cpio desktop-file-utils rpm squashfs-tools zstd \
+      gstreamer1.0-plugins-base gstreamer1.0-plugins-good > /dev/null
 
 
 # --- Windows installer: NSIS setup .exe, cross-built --------------------
