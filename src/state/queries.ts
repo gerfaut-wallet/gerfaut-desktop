@@ -509,16 +509,18 @@ export function useSetBackend() {
 }
 
 /** Asks what an Electrum server's certificate amounts to. Reads only:
-    accepting one is [useTrustCertificate]. */
+    accepting one is [useSetBackendTrusting]. */
 export function useInspectCertificate() {
   return useMutation({ mutationFn: (url: string) => ipc.inspectCertificate(url) });
 }
 
-export function useTrustCertificate() {
+/** Stores a backend with the certificate accepted for its server, in
+    one write: both or neither. */
+export function useSetBackendTrusting() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (args: { url: string; fingerprint: string }) =>
-      ipc.trustCertificate(args.url, args.fingerprint),
+    mutationFn: (args: { network: Network; config: BackendConfig; url: string; fingerprint: string }) =>
+      ipc.setBackendTrusting(args.network, args.config, args.url, args.fingerprint),
     onSuccess: () => void client.invalidateQueries({ queryKey: keys.settings }),
   });
 }

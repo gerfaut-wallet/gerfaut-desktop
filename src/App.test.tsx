@@ -2572,7 +2572,6 @@ describe("electrum certificates", () => {
   }
 
   it("asks about a certificate nothing vouches for, and stores it only once accepted", async () => {
-    const trusted: unknown[] = [];
     const saved: unknown[] = [];
     walletIpc({
       inspect_certificate: () => ({
@@ -2584,12 +2583,8 @@ describe("electrum certificates", () => {
         // Noon, local time: the day is the same wherever the test runs.
         expires: new Date(2030, 2, 7, 12, 0).getTime() / 1000,
       }),
-      trust_certificate: (args) => {
-        trusted.push(args);
-        return undefined;
-      },
-      set_backend: (args) => {
-        saved.push(args.config);
+      set_backend_trusting: (args) => {
+        saved.push(args);
         return undefined;
       },
     });
@@ -2609,21 +2604,19 @@ describe("electrum certificates", () => {
     expect(within(dialog).getByText("Mar 07, 2030")).toBeInTheDocument();
     expect(within(dialog).getByText(/openssl x509/)).toBeInTheDocument();
     // Nothing is trusted and nothing is saved until the user says so.
-    expect(trusted).toHaveLength(0);
     expect(saved).toHaveLength(0);
 
     await user.click(within(dialog).getByRole("button", { name: "Accept and save" }));
+    // The certificate and the backend in one write, both or neither.
     await waitFor(() =>
-      expect(trusted[0]).toMatchObject({
-        url: "ssl://node.example.org:50002",
-        fingerprint: FINGERPRINT,
-      }),
-    );
-    await waitFor(() =>
-      expect(saved[0]).toMatchObject({
-        type: "custom_electrum",
-        url: "ssl://node.example.org:50002",
-      }),
+      expect(saved).toEqual([
+        {
+          network: "signet",
+          config: { type: "custom_electrum", url: "ssl://node.example.org:50002" },
+          url: "ssl://node.example.org:50002",
+          fingerprint: FINGERPRINT,
+        },
+      ]),
     );
   });
 
@@ -2655,7 +2648,6 @@ describe("electrum certificates", () => {
   });
 
   it("keeps a refused certificate out of the vault when the dialog is cancelled", async () => {
-    const trusted: unknown[] = [];
     const saved: unknown[] = [];
     walletIpc({
       inspect_certificate: () => ({
@@ -2666,12 +2658,8 @@ describe("electrum certificates", () => {
         subject: null,
         expires: null,
       }),
-      trust_certificate: (args) => {
-        trusted.push(args);
-        return undefined;
-      },
-      set_backend: (args) => {
-        saved.push(args.config);
+      set_backend_trusting: (args) => {
+        saved.push(args);
         return undefined;
       },
     });
@@ -2683,7 +2671,6 @@ describe("electrum certificates", () => {
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(trusted).toHaveLength(0);
     expect(saved).toHaveLength(0);
   });
 
@@ -2696,11 +2683,10 @@ describe("electrum certificates", () => {
         stored: FINGERPRINT,
         presented: OTHER_FINGERPRINT,
       }),
-      trust_certificate: (args) => {
+      set_backend_trusting: (args) => {
         trusted.push(args);
         return undefined;
       },
-      set_backend: () => undefined,
     });
     renderApp();
     const user = userEvent.setup();
@@ -2752,15 +2738,10 @@ describe("electrum certificates", () => {
   // said so.
   it("still asks about the certificate once the user left the page, and saves on accept", async () => {
     const slow = slowCheck();
-    const trusted: unknown[] = [];
     const saved: unknown[] = [];
     walletIpc({
       inspect_certificate: slow.check,
-      trust_certificate: (args) => {
-        trusted.push(args);
-        return undefined;
-      },
-      set_backend: (args) => {
+      set_backend_trusting: (args) => {
         saved.push(args);
         return undefined;
       },
@@ -2781,11 +2762,12 @@ describe("electrum certificates", () => {
     expect(within(dialog).getByText(/No public authority vouches/)).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Accept and save" }));
     await waitFor(() => expect(saved).toHaveLength(1));
-    expect(trusted[0]).toMatchObject({ url: "ssl://node.example.org:50002" });
-    // Stored for the network it was chosen on.
+    // Stored for the network it was chosen on, with its certificate.
     expect(saved[0]).toMatchObject({
       network: "signet",
       config: { type: "custom_electrum", url: "ssl://node.example.org:50002" },
+      url: "ssl://node.example.org:50002",
+      fingerprint: FINGERPRINT,
     });
     expect(await screen.findByText("Setting saved")).toBeInTheDocument();
   });
@@ -2959,14 +2941,13 @@ describe("electrum certificates", () => {
     const saved: unknown[] = [];
     walletIpc({
       inspect_certificate: () => UNKNOWN,
-      trust_certificate: () =>
+      set_backend_trusting: (args) =>
         new Promise<undefined>((resolve) => {
-          answer = () => resolve(undefined);
+          answer = () => {
+            saved.push(args.config);
+            resolve(undefined);
+          };
         }),
-      set_backend: (args) => {
-        saved.push(args.config);
-        return undefined;
-      },
     });
     renderApp();
     const user = userEvent.setup();
@@ -2998,11 +2979,10 @@ describe("electrum certificates", () => {
         stored: FINGERPRINT,
         presented: OTHER_FINGERPRINT,
       }),
-      trust_certificate: () =>
+      set_backend_trusting: () =>
         new Promise<undefined>((resolve) => {
           answer = () => resolve(undefined);
         }),
-      set_backend: () => undefined,
     });
     renderApp();
     const user = userEvent.setup();
@@ -3027,7 +3007,7 @@ describe("electrum certificates", () => {
     const saved: unknown[] = [];
     walletIpc({
       inspect_certificate: () => UNKNOWN,
-      trust_certificate: () =>
+      set_backend_trusting: () =>
         Promise.reject({ kind: "vault", message: "vault i/o error: disk full" }),
       set_backend: (args) => {
         saved.push(args.config);
@@ -3050,38 +3030,34 @@ describe("electrum certificates", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
-  /** The certificates the vault holds, by host, as the core keeps them:
-      trusting writes one, forgetting drops it. `refuseForget` makes the
-      vault refuse that too. */
-  function certVault(
-    initial: Record<string, string>,
-    { refuseForget = false, refuseRestore = false } = {},
-  ) {
+  /** The vault as the core keeps it: a backend and the certificates
+      accepted, by host. `set_backend_trusting` writes both or, refused,
+      neither; nothing else may touch them on the way. */
+  function atomicVault(initial: Record<string, string>, refuse: boolean) {
     const certs = { ...initial };
-    const trusted: string[] = [];
+    let backend: unknown = null;
+    const calls: string[] = [];
     return {
       certs,
-      trusted,
+      backend: () => backend,
+      calls,
       ipc: {
         get_settings: () => ({ ...SETTINGS, electrum_certs: { ...certs } }),
-        trust_certificate: (args: Record<string, unknown>) => {
-          trusted.push(String(args.fingerprint));
-          if (refuseRestore && trusted.length > 1)
-            return Promise.reject({ kind: "vault", message: "vault i/o error: disk full" });
+        set_backend_trusting: (args: Record<string, unknown>) => {
+          calls.push("set_backend_trusting");
+          if (refuse) return Promise.reject({ kind: "vault", message: "vault i/o error: disk full" });
           certs[String(args.url).replace(/^ssl:\/\//, "")] = String(args.fingerprint).toUpperCase();
+          backend = args.config;
           return undefined;
         },
-        forget_certificate: (args: Record<string, unknown>) => {
-          if (refuseForget) return Promise.reject({ kind: "vault", message: "vault i/o error: disk full" });
-          delete certs[String(args.host)];
-          return undefined;
-        },
-        set_backend: () => Promise.reject({ kind: "vault", message: "vault i/o error: disk full" }),
+        trust_certificate: () => void calls.push("trust_certificate"),
+        forget_certificate: () => void calls.push("forget_certificate"),
+        set_backend: () => void calls.push("set_backend"),
       },
     };
   }
 
-  async function acceptAgainstARefusal(user: ReturnType<typeof userEvent.setup>) {
+  async function accept(user: ReturnType<typeof userEvent.setup>) {
     await fillElectrumForm(user);
     await user.click(screen.getByRole("button", { name: "Save backend" }));
     const dialog = await screen.findByRole("dialog");
@@ -3092,23 +3068,30 @@ describe("electrum certificates", () => {
     } else {
       await user.click(within(dialog).getByRole("button", { name: "Accept and save" }));
     }
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent("vault i/o error: disk full");
-    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    return dialog;
   }
 
   // Cancel stores nothing, neither the certificate nor the backend: a
   // certificate trusted for a backend the core then refused used to stay.
-  it("takes back a certificate trusted for a refused backend", async () => {
-    const vault = certVault({});
+  it("leaves the vault as it was when the backend is refused, then cancelled", async () => {
+    const vault = atomicVault({}, true);
     walletIpc({ inspect_certificate: () => UNKNOWN, ...vault.ipc });
     renderApp();
-    await acceptAgainstARefusal(userEvent.setup());
+    const user = userEvent.setup();
+    const dialog = await accept(user);
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Not saved: vault i/o error: disk full",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(vault.certs).toEqual({});
+    expect(vault.backend()).toBeNull();
+    // One write asked, and nothing written beside it.
+    expect(vault.calls).toEqual(["set_backend_trusting"]);
   });
 
-  it("puts back the certificate accepted before when the new one's backend is refused", async () => {
-    const vault = certVault({ "node.example.org:50002": FINGERPRINT });
+  it("keeps the certificate accepted before when a changed one's backend is refused", async () => {
+    const vault = atomicVault({ "node.example.org:50002": FINGERPRINT }, true);
     walletIpc({
       inspect_certificate: () => ({
         host: "node.example.org:50002",
@@ -3119,59 +3102,24 @@ describe("electrum certificates", () => {
       ...vault.ipc,
     });
     renderApp();
-    await acceptAgainstARefusal(userEvent.setup());
-    expect(vault.certs).toEqual({ "node.example.org:50002": FINGERPRINT.toUpperCase() });
-  });
-
-  it("never forgets a certificate the user had already accepted", async () => {
-    const vault = certVault({ "node.example.org:50002": FINGERPRINT.toUpperCase() });
-    walletIpc({ inspect_certificate: () => UNKNOWN, ...vault.ipc });
-    renderApp();
-    await acceptAgainstARefusal(userEvent.setup());
-    expect(vault.certs).toEqual({ "node.example.org:50002": FINGERPRINT.toUpperCase() });
-    // Not even written again: the one accepted before is left alone.
-    expect(vault.trusted).toEqual([FINGERPRINT]);
-  });
-
-  it("says the certificate stays when the vault will not take it back either", async () => {
-    const vault = certVault({}, { refuseForget: true });
-    walletIpc({ inspect_certificate: () => UNKNOWN, ...vault.ipc });
-    renderApp();
     const user = userEvent.setup();
-    await fillElectrumForm(user);
-    await user.click(screen.getByRole("button", { name: "Save backend" }));
-    const dialog = await screen.findByRole("dialog");
-    await user.click(within(dialog).getByRole("button", { name: "Accept and save" }));
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-      "Not saved: vault i/o error: disk full. The certificate stays accepted: Settings › Network › Trusted certificates can forget it.",
-    );
+    const dialog = await accept(user);
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("vault i/o error: disk full");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(vault.certs).toEqual({ "node.example.org:50002": FINGERPRINT });
-    expect(screen.getByRole("dialog")).toBe(dialog);
-    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeEnabled();
+    expect(vault.calls).toEqual(["set_backend_trusting"]);
   });
 
-  it("says the new certificate stays when the one before cannot be put back", async () => {
-    const vault = certVault({ "node.example.org:50002": FINGERPRINT }, { refuseRestore: true });
-    walletIpc({
-      inspect_certificate: () => ({
-        host: "node.example.org:50002",
-        status: "changed",
-        stored: FINGERPRINT,
-        presented: OTHER_FINGERPRINT,
-      }),
-      ...vault.ipc,
-    });
+  it("stores the backend and its certificate together once accepted", async () => {
+    const vault = atomicVault({}, false);
+    walletIpc({ inspect_certificate: () => UNKNOWN, ...vault.ipc });
     renderApp();
-    const user = userEvent.setup();
-    await fillElectrumForm(user);
-    await user.click(screen.getByRole("button", { name: "Save backend" }));
-    const dialog = await screen.findByRole("dialog");
-    await user.click(within(dialog).getByRole("button", { name: "Trust the new certificate" }));
-    await user.click(within(dialog).getByRole("button", { name: "Yes, trust the new certificate" }));
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-      "The new certificate stays accepted in place of the one before",
-    );
-    expect(vault.certs).toEqual({ "node.example.org:50002": OTHER_FINGERPRINT.toUpperCase() });
+    await accept(userEvent.setup());
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(vault.certs).toEqual({ "node.example.org:50002": FINGERPRINT.toUpperCase() });
+    expect(vault.backend()).toMatchObject({ type: "custom_electrum", url: "ssl://node.example.org:50002" });
+    expect(vault.calls).toEqual(["set_backend_trusting"]);
   });
 
   it("keeps the certificate dialog open and says why when the backend is not stored", async () => {
@@ -3179,9 +3127,7 @@ describe("electrum certificates", () => {
     const saved: unknown[] = [];
     walletIpc({
       inspect_certificate: () => UNKNOWN,
-      trust_certificate: () => undefined,
-      forget_certificate: () => undefined,
-      set_backend: (args) => {
+      set_backend_trusting: (args) => {
         attempts += 1;
         if (attempts === 1)
           return Promise.reject({ kind: "vault", message: "vault i/o error: disk full" });

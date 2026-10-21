@@ -603,14 +603,22 @@ async fn inspect_certificate(
     Ok(state.manager.inspect_certificate(&url).await?)
 }
 
+/// Stores the backend of a network with the certificate the user just
+/// accepted for its Electrum server, in one write: both or neither, so a
+/// refused backend never leaves its certificate trusted.
 #[tauri::command]
-async fn trust_certificate(
+async fn set_backend_trusting(
     state: tauri::State<'_, AppState>,
+    network: Network,
+    config: BackendConfig,
     url: String,
     fingerprint: String,
 ) -> CommandResult<()> {
     state.unlocked()?;
-    Ok(state.manager.trust_certificate(&url, &fingerprint).await?)
+    Ok(state
+        .manager
+        .set_backend_trusting(network, config, &url, &fingerprint)
+        .await?)
 }
 
 #[tauri::command]
@@ -1387,7 +1395,7 @@ pub fn run() {
             set_backend,
             set_gap_limit,
             inspect_certificate,
-            trust_certificate,
+            set_backend_trusting,
             forget_certificate,
             set_app_pref,
             set_preferences,

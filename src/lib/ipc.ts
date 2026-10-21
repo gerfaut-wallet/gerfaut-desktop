@@ -1123,8 +1123,10 @@ export const ipc = {
     invoke<void>("set_backend", { network, config }),
   setGapLimit: (gapLimit: number) => invoke<void>("set_gap_limit", { gapLimit }),
   inspectCertificate: (url: string) => invoke<CertificateReport>("inspect_certificate", { url }),
-  trustCertificate: (url: string, fingerprint: string) =>
-    invoke<void>("trust_certificate", { url, fingerprint }),
+  /** The backend and the certificate accepted for its Electrum server,
+      stored in one write: both or neither. */
+  setBackendTrusting: (network: Network, config: BackendConfig, url: string, fingerprint: string) =>
+    invoke<void>("set_backend_trusting", { network, config, url, fingerprint }),
   forgetCertificate: (host: string) => invoke<void>("forget_certificate", { host }),
   setAppPref: (key: string, value: string) => invoke<void>("set_app_pref", { key, value }),
   /** Answers every preference as stored, the change applied. */
