@@ -10,6 +10,7 @@ import type {
   Settings,
   WalletMeta,
 } from "../lib/ipc";
+import { PRIVATE_KEY_NOT_A_SERVER } from "../lib/ipc";
 import { useBackendSave } from "../state/backendSave";
 import { useWallets } from "../state/queries";
 import { useUi } from "../state/store";
@@ -20,19 +21,23 @@ import { SettingsView } from "./SettingsView";
 // The camera is a button that hands one code over, the way the scanner
 // does once its frames assemble. What it takes to decode them is the
 // scanner's own test; what the form does with the result is this one.
-const scan = vi.hoisted(() => ({ code: "" }));
+const scan = vi.hoisted(() => ({ code: "", privateKey: undefined as string | undefined }));
 
 vi.mock("../components/ScanQrModal", () => ({
   ScanQrModal: ({
     open,
     onScan,
     onClose,
+    privateKey,
   }: {
     open: boolean;
     onScan: (text: string) => void;
     onClose: () => void;
-  }) =>
-    open ? (
+    privateKey?: string;
+  }) => {
+    // What the screen asks the scanner to say of a private key.
+    scan.privateKey = privateKey;
+    return open ? (
       <button
         type="button"
         onClick={() => {
@@ -42,7 +47,8 @@ vi.mock("../components/ScanQrModal", () => ({
       >
         code in view
       </button>
-    ) : null,
+    ) : null;
+  },
 }));
 
 /** A workspace already pointed at an Electrum server over TLS: the form
@@ -344,6 +350,15 @@ describe("scanning a server address", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "This holds a private key, not the address of a server. Gerfaut never takes a key: show the QR code your node prints instead.",
     );
+  });
+
+  /** The scanner it opens says a private key in this screen's words. */
+  it("hands the scanner the server settings' words for a private key", async () => {
+    mockBackendIpc({ error: "unused" });
+    renderBackend(() => undefined);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /scan a server address/i }));
+    expect(scan.privateKey).toBe(PRIVATE_KEY_NOT_A_SERVER);
   });
 
   it("says when the address scanned is a Tor hidden service", async () => {
