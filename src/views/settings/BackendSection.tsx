@@ -519,9 +519,10 @@ export function BackendSection({
     server, asked over whatever page is open: the check can outlast the
     visit to Settings › Network, and its question must still reach the
     user. Mounted once, in the shell. Accepted, the backend is stored for
-    the network it was chosen on, whichever is active now; cancelled, the
-    backend is not stored, and the user said so (a certificate accepted
-    before the core refused the backend stays accepted). */
+    the network it was chosen on, whichever is active now; cancelled,
+    nothing is stored: a certificate accepted for a backend the core
+    refused is taken back, and the dialog says so when the vault refuses
+    that too. */
 export function CertificateAsk() {
   const ask = useBackendSave((state) => state.ask);
   const trust = useTrustCertificate();
@@ -531,8 +532,8 @@ export function CertificateAsk() {
   /** Why the certificate or the backend was not stored, said in the
       dialog: it stays open until both are, whatever page is under it. */
   const [failure, setFailure] = useState<unknown>(null);
-  /** From Accept to the end of both calls, with no gap between them:
-      what keeps Cancel off while the answer is on its way. */
+  /** From Accept until every call is through, with no gap between
+      them: what keeps Cancel off while the answer is on its way. */
   const [sending, setSending] = useState(false);
   if (!ask) return null;
 
@@ -556,12 +557,15 @@ export function CertificateAsk() {
         : before === null
           ? forget.mutateAsync(report.host)
           : trust.mutateAsync({ url, fingerprint: before });
-      // Said whole when the vault refuses this too: the certificate then
-      // stays accepted, and the user is told where to forget it.
+      // Said whole when the vault refuses this too: which certificate
+      // then stays, and where to forget it.
+      const reason = errorMessage(refused).replace(/\.$/, "");
       throw await putBack.then(
         () => refused,
         () =>
-          `${errorMessage(refused)}. The certificate stays accepted: Settings › Network › Trusted certificates can forget it.`,
+          before === null
+            ? `${reason}. The certificate stays accepted: Settings › Network › Trusted certificates can forget it.`
+            : `${reason}. The new certificate stays accepted in place of the one before: Settings › Network › Trusted certificates can forget it.`,
       );
     }
   };
