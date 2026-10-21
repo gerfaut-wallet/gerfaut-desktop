@@ -2008,11 +2008,15 @@ mod tests {
             .block_on(state.manager.set_active_network(Network::Signet))
             .unwrap();
         runtime
-            .block_on(
-                state
-                    .manager
-                    .trust_certificate("ssl://node.example:50002", &["AB"; 32].join(":")),
-            )
+            .block_on(state.manager.set_backend_trusting(
+                Network::Signet,
+                gerfaut_core::chain::BackendConfig::CustomElectrum {
+                    url: "ssl://node.example:50002".to_owned(),
+                    own_node: false,
+                },
+                "ssl://node.example:50002",
+                &["AB"; 32].join(":"),
+            ))
             .unwrap();
 
         let shut = runtime.block_on(super::settings_of(&state));
@@ -2042,6 +2046,7 @@ mod tests {
             .unwrap();
         let open = runtime.block_on(super::settings_of(&state));
         assert_eq!(open.electrum_certs.len(), 1);
+        assert_eq!(open.backends.len(), 1);
         assert!(open.app_prefs.contains_key("desktop.sidebar"));
         assert_eq!(open.preferences, shared);
     }

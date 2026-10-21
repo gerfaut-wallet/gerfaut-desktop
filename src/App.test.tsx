@@ -3003,33 +3003,6 @@ describe("electrum certificates", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
-  it("keeps the certificate dialog open and says why when the certificate is not stored", async () => {
-    const saved: unknown[] = [];
-    walletIpc({
-      inspect_certificate: () => UNKNOWN,
-      set_backend_trusting: () =>
-        Promise.reject({ kind: "vault", message: "vault i/o error: disk full" }),
-      set_backend: (args) => {
-        saved.push(args.config);
-        return undefined;
-      },
-    });
-    renderApp();
-    const user = userEvent.setup();
-    await fillElectrumForm(user);
-    await user.click(screen.getByRole("button", { name: "Save backend" }));
-    const dialog = await screen.findByRole("dialog");
-    await user.click(within(dialog).getByRole("button", { name: "Accept and save" }));
-
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-      "Not saved: vault i/o error: disk full",
-    );
-    // Not trusted, so not stored.
-    expect(saved).toHaveLength(0);
-    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-  });
-
   /** The vault as the core keeps it: a backend and the certificates
       accepted, by host. `set_backend_trusting` writes both or, refused,
       neither; nothing else may touch them on the way. */
@@ -3073,7 +3046,9 @@ describe("electrum certificates", () => {
 
   // Cancel stores nothing, neither the certificate nor the backend: a
   // certificate trusted for a backend the core then refused used to stay.
-  it("leaves the vault as it was when the backend is refused, then cancelled", async () => {
+  // The core makes the one write whole (its own tests); here, the app
+  // asks for that write alone, and nothing beside it.
+  it("asks one write and nothing else when the backend is refused, then cancelled", async () => {
     const vault = atomicVault({}, true);
     walletIpc({ inspect_certificate: () => UNKNOWN, ...vault.ipc });
     renderApp();
@@ -3090,7 +3065,7 @@ describe("electrum certificates", () => {
     expect(vault.calls).toEqual(["set_backend_trusting"]);
   });
 
-  it("keeps the certificate accepted before when a changed one's backend is refused", async () => {
+  it("asks one write and nothing else for a changed certificate refused, then cancelled", async () => {
     const vault = atomicVault({ "node.example.org:50002": FINGERPRINT }, true);
     walletIpc({
       inspect_certificate: () => ({

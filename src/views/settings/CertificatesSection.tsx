@@ -81,10 +81,10 @@ export function CertificateDialog({
         ? report.fingerprint
         : "";
 
-  // Once accepted, the certificate and then the backend are on their
-  // way to the vault, and neither can be called back: Cancel, Escape
-  // and the close button wait with the user until both are through or
-  // one is refused, rather than pretend to stop what still lands.
+  // Once accepted, the certificate and the backend are on their way to
+  // the vault in one write, which cannot be called back: Cancel, Escape
+  // and the close button wait with the user until it is through or
+  // refused, rather than pretend to stop what still lands.
   return (
     <Modal
       open
