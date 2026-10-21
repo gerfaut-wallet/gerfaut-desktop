@@ -8,7 +8,7 @@ import { ScanQrModal } from "../../components/ScanQrModal";
 import { Select } from "../../components/Select";
 import { OnionIcon } from "../../components/icons/OnionIcon";
 import { NETWORK_LABEL, groupThousands } from "../../lib/format";
-import { PRIVATE_KEY_NOT_A_SERVER, ipc, isCommandError } from "../../lib/ipc";
+import { PRIVATE_KEY_NOT_A_SERVER, ipc, materialRefusal } from "../../lib/ipc";
 import type { BackendConfig, Network, Settings } from "../../lib/ipc";
 import {
   clearBackendRefusal,
@@ -219,8 +219,8 @@ export function BackendSection({
       setTls(backend.tls);
     } catch (error) {
       // Pointing the wrong QR at it is the likely slip, so the refusal
-      // names what was read instead.
-      setScanError(isCommandError(error) ? error.message : String(error));
+      // names what was read instead; a private key in this screen's words.
+      setScanError(materialRefusal(error, PRIVATE_KEY_NOT_A_SERVER));
     }
   };
 
@@ -232,7 +232,7 @@ export function BackendSection({
       await onSave(config);
       if (note) showToast(note);
     } catch (error) {
-      refuse(config, isCommandError(error) ? error.message : String(error));
+      refuse(config, materialRefusal(error, PRIVATE_KEY_NOT_A_SERVER));
     }
   };
 
@@ -264,7 +264,7 @@ export function BackendSection({
         try {
           await ipc.parseBackend(config.url);
         } catch (error) {
-          refuse(config, isCommandError(error) ? error.message : String(error));
+          refuse(config, materialRefusal(error, PRIVATE_KEY_NOT_A_SERVER));
           return;
         }
       }

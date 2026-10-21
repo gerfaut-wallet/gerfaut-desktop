@@ -82,7 +82,7 @@ const LIVE_LIMITS = {
   own_node: { per_wallet: 20_000, total: 20_000 },
 };
 
-function mockBackendIpc(reply: ScannedBackend | { error: string }) {
+function mockBackendIpc(reply: ScannedBackend | { error: string; kind?: string }) {
   const calls: { cmd: string; args: unknown }[] = [];
   mockIPC((cmd, args) => {
     calls.push({ cmd, args });
@@ -91,7 +91,7 @@ function mockBackendIpc(reply: ScannedBackend | { error: string }) {
       return { host: "node.local:50002", status: { type: "trusted" } };
     if (cmd === "parse_backend") {
       if ("error" in reply)
-        return Promise.reject({ kind: "server", message: reply.error }) as never;
+        return Promise.reject({ kind: reply.kind ?? "server", message: reply.error }) as never;
       return reply;
     }
     if (cmd === "live_limits") return LIVE_LIMITS;
@@ -327,6 +327,23 @@ describe("scanning a server address", () => {
     // Typing drops the refusal: it no longer describes the field.
     await user.type(field("Host"), "x");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  /** A private key scanned as plain text is told what this screen
+      waits for, not what the wallet import does. */
+  it("refuses a private key in the words of the server settings", async () => {
+    mockBackendIpc({
+      kind: "private_material",
+      error: "input contains private key material and was rejected",
+    });
+    renderBackend(() => undefined);
+    const user = userEvent.setup();
+
+    await scanCode(user, "xprv9s21ZrQH143Kexample");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This holds a private key, not the address of a server. Gerfaut never takes a key: show the QR code your node prints instead.",
+    );
   });
 
   it("says when the address scanned is a Tor hidden service", async () => {
