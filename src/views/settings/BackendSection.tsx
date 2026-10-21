@@ -8,7 +8,7 @@ import { ScanQrModal } from "../../components/ScanQrModal";
 import { Select } from "../../components/Select";
 import { OnionIcon } from "../../components/icons/OnionIcon";
 import { NETWORK_LABEL, groupThousands } from "../../lib/format";
-import { ipc, isCommandError } from "../../lib/ipc";
+import { errorMessage, ipc, isCommandError } from "../../lib/ipc";
 import type { BackendConfig, Network, Settings } from "../../lib/ipc";
 import {
   clearBackendRefusal,
@@ -19,6 +19,7 @@ import {
 import {
   useInspectCertificate,
   usePublicServers,
+  useForgetCertificate,
   useSetBackend,
   useTrustCertificate,
 } from "../../state/queries";
@@ -524,6 +525,7 @@ export function BackendSection({
 export function CertificateAsk() {
   const ask = useBackendSave((state) => state.ask);
   const trust = useTrustCertificate();
+  const forget = useForgetCertificate();
   const setBackend = useSetBackend();
   const { showToast } = useUi();
   /** Why the certificate or the backend was not stored, said in the
@@ -535,13 +537,40 @@ export function CertificateAsk() {
   if (!ask) return null;
 
   const { network, url, config, report } = ask;
+
+  /** The certificate and the backend are stored together or not at all:
+      Cancel stores nothing, neither of them. The core keeps them apart
+      (`trust_certificate`, then `set_backend`), so a backend it refuses
+      puts the certificate of its host back to what the vault held
+      before: none, or the one accepted earlier. One accepted before with
+      this very fingerprint is left where it is. */
+  const trustWithBackend = async (fingerprint: string) => {
+    const before = (await ipc.getSettings()).electrum_certs?.[report.host] ?? null;
+    await trust.mutateAsync({ url, fingerprint });
+    try {
+      await setBackend.mutateAsync({ network, config });
+    } catch (refused) {
+      const unchanged = before !== null && before.toUpperCase() === fingerprint.toUpperCase();
+      const putBack = unchanged
+        ? Promise.resolve()
+        : before === null
+          ? forget.mutateAsync(report.host)
+          : trust.mutateAsync({ url, fingerprint: before });
+      // Said whole when the vault refuses this too: the certificate then
+      // stays accepted, and the user is told where to forget it.
+      throw await putBack.then(
+        () => refused,
+        () =>
+          `${errorMessage(refused)}. The certificate stays accepted: Settings › Network › Trusted certificates can forget it.`,
+      );
+    }
+  };
+
   const accept = (fingerprint: string) => {
     setFailure(null);
     setSending(true);
     useBackendSave.setState({ saving: { network, config, checking: false } });
-    void trust
-      .mutateAsync({ url, fingerprint })
-      .then(() => setBackend.mutateAsync({ network, config }))
+    void trustWithBackend(fingerprint)
       .then(() => {
         // Closes this question only, never one asked since.
         if (useBackendSave.getState().ask === ask) useBackendSave.setState({ ask: null });

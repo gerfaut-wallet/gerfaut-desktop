@@ -3050,12 +3050,100 @@ describe("electrum certificates", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
+  /** The certificates the vault holds, by host, as the core keeps them:
+      trusting writes one, forgetting drops it. `refuseForget` makes the
+      vault refuse that too. */
+  function certVault(initial: Record<string, string>, { refuseForget = false } = {}) {
+    const certs = { ...initial };
+    return {
+      certs,
+      ipc: {
+        get_settings: () => ({ ...SETTINGS, electrum_certs: { ...certs } }),
+        trust_certificate: (args: Record<string, unknown>) => {
+          certs[String(args.url).replace(/^ssl:\/\//, "")] = String(args.fingerprint).toUpperCase();
+          return undefined;
+        },
+        forget_certificate: (args: Record<string, unknown>) => {
+          if (refuseForget) return Promise.reject({ kind: "vault", message: "vault i/o error: disk full" });
+          delete certs[String(args.host)];
+          return undefined;
+        },
+        set_backend: () => Promise.reject({ kind: "vault", message: "vault i/o error: disk full" }),
+      },
+    };
+  }
+
+  async function acceptAgainstARefusal(user: ReturnType<typeof userEvent.setup>) {
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    const dialog = await screen.findByRole("dialog");
+    const changed = within(dialog).queryByRole("button", { name: "Trust the new certificate" });
+    if (changed) {
+      await user.click(changed);
+      await user.click(within(dialog).getByRole("button", { name: "Yes, trust the new certificate" }));
+    } else {
+      await user.click(within(dialog).getByRole("button", { name: "Accept and save" }));
+    }
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("vault i/o error: disk full");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  }
+
+  // Cancel stores nothing, neither the certificate nor the backend: a
+  // certificate trusted for a backend the core then refused used to stay.
+  it("takes back a certificate trusted for a refused backend", async () => {
+    const vault = certVault({});
+    walletIpc({ inspect_certificate: () => UNKNOWN, ...vault.ipc });
+    renderApp();
+    await acceptAgainstARefusal(userEvent.setup());
+    expect(vault.certs).toEqual({});
+  });
+
+  it("puts back the certificate accepted before when the new one's backend is refused", async () => {
+    const vault = certVault({ "node.example.org:50002": FINGERPRINT });
+    walletIpc({
+      inspect_certificate: () => ({
+        host: "node.example.org:50002",
+        status: "changed",
+        stored: FINGERPRINT,
+        presented: OTHER_FINGERPRINT,
+      }),
+      ...vault.ipc,
+    });
+    renderApp();
+    await acceptAgainstARefusal(userEvent.setup());
+    expect(vault.certs).toEqual({ "node.example.org:50002": FINGERPRINT.toUpperCase() });
+  });
+
+  it("never forgets a certificate the user had already accepted", async () => {
+    const vault = certVault({ "node.example.org:50002": FINGERPRINT.toUpperCase() });
+    walletIpc({ inspect_certificate: () => UNKNOWN, ...vault.ipc });
+    renderApp();
+    await acceptAgainstARefusal(userEvent.setup());
+    expect(vault.certs).toEqual({ "node.example.org:50002": FINGERPRINT.toUpperCase() });
+  });
+
+  it("says the certificate stays when the vault will not take it back either", async () => {
+    const vault = certVault({}, { refuseForget: true });
+    walletIpc({ inspect_certificate: () => UNKNOWN, ...vault.ipc });
+    renderApp();
+    const user = userEvent.setup();
+    await fillElectrumForm(user);
+    await user.click(screen.getByRole("button", { name: "Save backend" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Accept and save" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "The certificate stays accepted: Settings › Network › Trusted certificates can forget it.",
+    );
+  });
+
   it("keeps the certificate dialog open and says why when the backend is not stored", async () => {
     let attempts = 0;
     const saved: unknown[] = [];
     walletIpc({
       inspect_certificate: () => UNKNOWN,
       trust_certificate: () => undefined,
+      forget_certificate: () => undefined,
       set_backend: (args) => {
         attempts += 1;
         if (attempts === 1)
