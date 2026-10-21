@@ -12,11 +12,12 @@
 #   .deb       unpacked and written again by dpkg-deb, which honours
 #              SOURCE_DATE_EPOCH and sorts the archive members
 #   .rpm       the two time tags overwritten in place (rpm-normalise.py)
-#   .AppImage  the AppDir the bundler leaves behind fixed in three ways,
-#              the Wayland libraries left to the system, the icon
-#              linuxdeploy links at its root and the date of every file,
-#              then the AppImage written again from it with the same
-#              pinned plugin and runtime
+#   .AppImage  the AppDir the bundler leaves behind checked for the
+#              GStreamer plugins and fixed in three ways, the Wayland
+#              libraries left to the system, the icon linuxdeploy links
+#              at its root and the date of every file, then the
+#              AppImage written again from it with the same pinned
+#              plugin and runtime
 
 TRIPLE=x86_64-unknown-linux-gnu
 LINUXDEPLOY_SUMS="$APP/.github/linuxdeploy.sha256"
@@ -115,9 +116,24 @@ canonical_rpm() {
 
 # The recipe writes the AppImage again from the AppDir the bundler
 # leaves behind, with the plugin, the runtime and the environment the
-# bundler used: the bundler's last step, repeated. Before that it takes
-# four libraries out and fixes two things that depend on the machine.
-# The contents of the files it keeps are left as they are.
+# bundler used: the bundler's last step, repeated. Before that it checks
+# the GStreamer plugins are in, takes four libraries out and fixes two
+# things that depend on the machine. The contents of the files it keeps
+# are left as they are.
+#
+# The GStreamer plugins. WebKit plays every <video> through GStreamer,
+# the camera of the QR scanner included, and linuxdeploy bundles the
+# GStreamer library WebKit links, 1.20 from the image, but none of its
+# plugins. That library looks for them next to itself, in usr/lib/
+# gstreamer-1.0 of the AppDir, and nowhere else: without them it finds
+# no element at all, and the web process aborts as soon as the scanner
+# opens the camera, on every distribution. bundleMediaFramework in
+# tauri.conf.json runs the bundler's gstreamer plugin, which copies the
+# plugins of the image there, the gstreamer1.0-plugins-base and -good
+# that WebKit's package depends on, with the plugin scanner of the same
+# release, and adds an AppRun hook that points GStreamer at them alone,
+# never at the system's. A build that lost them stops here rather than
+# ship an AppImage whose camera kills the window.
 #
 # The Wayland libraries, libwayland-client, -cursor, -egl and -server.
 # linuxdeploy copies those of the image (Ubuntu 22.04, Wayland 1.20)
@@ -150,6 +166,22 @@ rewrite_appimage() {
     local appimage="$1" appdir lib left name link best icon size preference
     appdir="$(find "$(dirname "$appimage")" -mindepth 1 -maxdepth 1 -type d -name '*.AppDir')"
     [ -n "$appdir" ] && [ "$(printf '%s\n' "$appdir" | wc -l)" -eq 1 ] || die "not one AppDir next to $appimage"
+    # What the scanner's <video> and a webcam need, among the plugins:
+    # the core elements, appsrc and appsink, autoaudiosink, playback and
+    # type finding, the video and audio converters, v4l2src and the JPEG
+    # decoder most webcams send through.
+    for plugin in coreelements app autodetect playback typefindfunctions videoconvert videoscale \
+            audioconvert audioresample volume video4linux2 jpeg; do
+        [ -f "$appdir/usr/lib/gstreamer-1.0/libgst$plugin.so" ] || die "no GStreamer plugin $plugin in the AppDir"
+    done
+    [ -x "$appdir/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner" ] || die "no gst-plugin-scanner in the AppDir"
+    # shellcheck disable=SC2016  # the hook's own line, which AppRun expands
+    grep -qx 'export GST_PLUGIN_SYSTEM_PATH_1_0="${APPDIR}/usr/lib/gstreamer-1.0"' \
+        "$appdir/apprun-hooks/linuxdeploy-plugin-gstreamer.sh" 2> /dev/null \
+        || die "the AppRun hook does not point GStreamer at the AppDir's plugins"
+    grep -qF 'apprun-hooks/"linuxdeploy-plugin-gstreamer.sh"' "$appdir/AppRun" \
+        || die "AppRun does not source the GStreamer hook"
+    log "AppImage: $(find "$appdir/usr/lib/gstreamer-1.0" -maxdepth 1 -name 'libgst*.so' | wc -l) GStreamer plugins and their scanner"
     for lib in client cursor egl server; do
         rm -f "$appdir/usr/lib/libwayland-$lib.so."*
     done

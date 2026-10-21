@@ -31,6 +31,11 @@
     "homepage": "https://github.com/gerfaut-wallet/gerfaut-desktop",
     "shortDescription": "Bitcoin watch-only wallet",
     "longDescription": "Gerfaut watches Bitcoin descriptors and shows their balances, transactions and UTXOs. It holds no private keys, handles no seed, and signs nothing.",
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    },
     "macOS": {
       "entitlements": "./Entitlements.plist"
     },
