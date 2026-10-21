@@ -221,8 +221,8 @@ ARG XWIN_SHA256=d870eb4b2f390878af6da1ccd3cf321d22fcb72720984853b4be732ae597fc88
 ARG NSIS_HEADERS_COMMIT=a4ba28e60bd9e7c271cd2bfc1558889ce3355653
 ARG RESTART_MANAGER_SHA256=67149978412da9b283e2e1abe48a360093df9caf6363373e2cabe463978b7c0e
 
-# clang-cl compiles the C code some crates carry (SQLite, zstd, ring,
-# aws-lc), llvm-lib archives it and llvm-rc compiles the version
+# clang-cl compiles the C code some crates carry (SQLite, zstd and
+# ring), llvm-lib archives it and llvm-rc compiles the version
 # resource. The linker is not in this list: it is the rust-lld of the
 # pinned Rust toolchain. makensis comes with its stubs, the head of
 # every installer it writes, so the nsis package is pinned like the rest.
