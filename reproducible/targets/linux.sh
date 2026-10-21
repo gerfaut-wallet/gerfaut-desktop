@@ -59,6 +59,7 @@ target_build() {
     export LDAI_RUNTIME_FILE="$WORK/tools/runtime-x86_64"
     # A container has no FUSE: the linuxdeploy AppImages unpack themselves.
     export APPIMAGE_EXTRACT_AND_RUN=1
+    gstreamer_plugins
 
     log "compiling"
     tauri_build --no-bundle
@@ -72,6 +73,29 @@ target_build() {
     canonical_rpm "$bundle/rpm/Gerfaut-${version}-1.x86_64.rpm" "$OUT/Gerfaut-${version}-1.x86_64.rpm"
     rewrite_appimage "$bundle/appimage/Gerfaut_${version}_amd64.AppImage"
     canonical_appimage "$bundle/appimage/Gerfaut_${version}_amd64.AppImage" "$OUT/Gerfaut_${version}_amd64.AppImage"
+}
+
+# The GStreamer plugins the AppImage carries (see rewrite_appimage): those
+# of the image, less seven that no webview uses and that would bring
+# libraries of their own onto the app's LD_LIBRARY_PATH, ahead of the
+# system's. shout2 (Icecast streaming) brings OpenSSL 3.0; jack, the
+# Berkeley DB that the system's libjack then loads in place of its own;
+# aasink and cacasink (text-mode video), ncurses and S-Lang; cdparanoia
+# (audio CDs), 1394 and dv (FireWire camcorders), their device
+# libraries. The bundler's gstreamer plugin copies every file of the
+# directory GSTREAMER_PLUGINS_DIR names.
+GSTREAMER_LEFT_OUT="1394 aasink cacasink cdparanoia dv jack shout2"
+
+gstreamer_plugins() {
+    local from=/usr/lib/x86_64-linux-gnu/gstreamer-1.0 plugin
+    export GSTREAMER_PLUGINS_DIR="$WORK/gstreamer-plugins"
+    rm -rf "$GSTREAMER_PLUGINS_DIR"
+    mkdir -p "$GSTREAMER_PLUGINS_DIR"
+    cp "$from"/libgst*.so "$GSTREAMER_PLUGINS_DIR/"
+    for plugin in $GSTREAMER_LEFT_OUT; do
+        [ -f "$GSTREAMER_PLUGINS_DIR/libgst$plugin.so" ] || die "no GStreamer plugin $plugin in $from to leave out"
+        rm "$GSTREAMER_PLUGINS_DIR/libgst$plugin.so"
+    done
 }
 
 # No path of the build machine in the binary: the remap flags turn every
@@ -130,10 +154,12 @@ canonical_rpm() {
 # opens the camera, on every distribution. bundleMediaFramework in
 # tauri.conf.json runs the bundler's gstreamer plugin, which copies the
 # plugins of the image there, the gstreamer1.0-plugins-base and -good
-# that WebKit's package depends on, with the plugin scanner of the same
-# release, and adds an AppRun hook that points GStreamer at them alone,
-# never at the system's. A build that lost them stops here rather than
-# ship an AppImage whose camera kills the window.
+# that WebKit's package depends on, less those gstreamer_plugins leaves
+# out, with the plugin scanner of the same release, and adds an AppRun
+# hook that points GStreamer at them alone, never at the system's. A
+# build that lost them stops here rather than ship an AppImage whose
+# camera kills the window, and so does one that let in a plugin left
+# out or the OpenSSL or Berkeley DB they would have brought.
 #
 # The Wayland libraries, libwayland-client, -cursor, -egl and -server.
 # linuxdeploy copies those of the image (Ubuntu 22.04, Wayland 1.20)
@@ -163,7 +189,7 @@ canonical_rpm() {
 # newer image did not. Every file and directory is dated
 # SOURCE_DATE_EPOCH first.
 rewrite_appimage() {
-    local appimage="$1" appdir lib left name link best icon size preference
+    local appimage="$1" appdir lib plugin left name link best icon size preference
     appdir="$(find "$(dirname "$appimage")" -mindepth 1 -maxdepth 1 -type d -name '*.AppDir')"
     [ -n "$appdir" ] && [ "$(printf '%s\n' "$appdir" | wc -l)" -eq 1 ] || die "not one AppDir next to $appimage"
     # What the scanner's <video> and a webcam need, among the plugins:
@@ -173,6 +199,12 @@ rewrite_appimage() {
     for plugin in coreelements app autodetect playback typefindfunctions videoconvert videoscale \
             audioconvert audioresample volume video4linux2 jpeg; do
         [ -f "$appdir/usr/lib/gstreamer-1.0/libgst$plugin.so" ] || die "no GStreamer plugin $plugin in the AppDir"
+    done
+    for plugin in $GSTREAMER_LEFT_OUT; do
+        [ ! -e "$appdir/usr/lib/gstreamer-1.0/libgst$plugin.so" ] || die "the GStreamer plugin $plugin is in the AppDir"
+    done
+    for lib in libssl.so.3 libcrypto.so.3 libdb-5.3.so; do
+        [ ! -e "$appdir/usr/lib/$lib" ] || die "$lib is in the AppDir"
     done
     [ -x "$appdir/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner" ] || die "no gst-plugin-scanner in the AppDir"
     # shellcheck disable=SC2016  # the hook's own line, which AppRun expands
