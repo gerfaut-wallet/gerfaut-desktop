@@ -1,21 +1,19 @@
 import jsQR from "jsqr";
 import { useEffect, useRef, useState } from "react";
 import type { InputWarning, QrProgress } from "../lib/ipc";
-import { ipc, isCommandError } from "../lib/ipc";
+import { ipc, isCommandError, materialRefusal } from "../lib/ipc";
 import { Modal } from "./Modal";
 
 type ScanState = "starting" | "scanning" | "denied" | "unavailable";
 
 /** A code with more parts than Gerfaut reads, the same words as on
     Android. */
-const TOO_MANY_PARTS = "This code has more parts than Gerfaut can read.";
+const TOO_MANY_PARTS =
+  "This code has more parts than Gerfaut can read. If the wallet offers a denser QR code, show that one instead.";
 
-/** What the scanner says when the core turns down what it collected,
-    in the core's words. A code too large to read has its own sentence,
-    and stops the scan. */
-function refusal(error: unknown): string {
-  return isCommandError(error) ? error.message : String(error);
-}
+/** A code whose parts all came and add up to nothing. */
+const EMPTY_CODE = "This code came through empty. Export it again from the wallet.";
+
 
 /** Camera QR scanner: frames are decoded locally with jsQR, nothing
     leaves the machine. Animated codes (UR, BBQr) are assembled by the
@@ -28,6 +26,7 @@ export function ScanQrModal({
   onClose,
   onScan,
   caption,
+  privateKey,
 }: {
   open: boolean;
   onClose: () => void;
@@ -39,6 +38,9 @@ export function ScanQrModal({
       descriptor when they are holding their node's server QR is worse
       than saying nothing. */
   caption?: string;
+  /** What a code holding a private key is told on this screen; the
+      wallet import's words by default, as for the caption. */
+  privateKey?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [state, setState] = useState<ScanState>("starting");
@@ -50,6 +52,8 @@ export function ScanQrModal({
   onScanRef.current = onScan;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const privateKeyRef = useRef(privateKey);
+  privateKeyRef.current = privateKey;
 
   useEffect(() => {
     if (!open) return;
@@ -175,10 +179,11 @@ export function ScanQrModal({
               // Every part arrived and they add up to nothing. Closing on
               // that would hand the caller an empty string; saying it
               // keeps the camera on a code that may be readable elsewhere.
-              giveUp("This code came out empty.");
+              giveUp(EMPTY_CODE);
             }
           } catch (err) {
-            // A frame the core refuses (a PSBT, an unknown envelope) is
+            // A frame the core refuses (a type it does not read, a damaged
+            // code) is
             // said once and dropped: the camera keeps looking for the
             // right code. A refusal landing after the modal closed belongs
             // to a scan the user walked away from, and must not surface in
@@ -197,7 +202,9 @@ export function ScanQrModal({
               again = true;
               continue;
             }
-            giveUp(refusal(err));
+            // The core's sentence, which says what it saw and what to show
+            // instead, or the screen's for a private key.
+            giveUp(materialRefusal(err, privateKeyRef.current));
           }
           again = false;
           frame = nextWaiting();

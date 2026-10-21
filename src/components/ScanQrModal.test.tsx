@@ -211,7 +211,8 @@ describe("ScanQrModal", () => {
       if (received[0].startsWith("B$")) {
         return Promise.reject({
           kind: "invalid_input",
-          message: "this QR code holds a PSBT, not a wallet to watch",
+          message:
+            "This QR code holds an executable file, which Gerfaut does not read. Show the code this screen asks for instead, such as a wallet export or a signed transaction.",
         }) as unknown as QrProgress;
       }
       return { format: "plain", received: 1, total: 1, complete: true, text: received[0], warnings: [] };
@@ -220,12 +221,52 @@ describe("ScanQrModal", () => {
     render(<ScanQrModal open onClose={vi.fn()} onScan={onScan} />);
     await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
     await tick();
-    expect(await screen.findByRole("alert")).toHaveTextContent(/holds a PSBT/);
+    // The core's sentence, as it is: what it saw, and what to show.
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /^This QR code holds an executable file, which Gerfaut does not read\. Show the code this screen asks for instead, such as a wallet export or a signed transaction\.$/,
+    );
     await tick();
     await tick();
     await waitFor(() => expect(onScan).toHaveBeenCalledWith("wpkh(tpub.../0/*)", []));
     // The refused frame did not linger in the next assembly.
     expect(assembleCalls.at(-1)).toEqual(["wpkh(tpub.../0/*)"]);
+  });
+
+  /** The core names a private key by the check that caught it; the
+      scanner says it in the words of the import, as on Android. */
+  it("says what to bring instead of a code holding a private key", async () => {
+    frames.push("ur:crypto-output/1-1/lpadad");
+    mockAssembly(
+      () =>
+        Promise.reject({
+          kind: "private_material",
+          message: "input contains private key material and was rejected",
+        }) as unknown as QrProgress,
+    );
+    render(<ScanQrModal open onClose={vi.fn()} onScan={vi.fn()} />);
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    await tick();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This holds a private key, and Gerfaut only watches: nothing was saved. Bring the public descriptor or extended public key instead.",
+    );
+  });
+
+  /** Another screen says what it waits for instead of a key. */
+  it("says a private key in the words of the screen that opened it", async () => {
+    frames.push("ur:crypto-output/1-1/lpadad");
+    mockAssembly(
+      () =>
+        Promise.reject({
+          kind: "private_material",
+          message: "input contains private key material and was rejected",
+        }) as unknown as QrProgress,
+    );
+    render(
+      <ScanQrModal open onClose={vi.fn()} onScan={vi.fn()} privateKey="Not a key, a transaction." />,
+    );
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    await tick();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/^Not a key, a transaction\.$/);
   });
 
   it("says in plain words that a code has more parts than Gerfaut reads", async () => {
@@ -236,7 +277,7 @@ describe("ScanQrModal", () => {
       if (received[0].startsWith("ur:")) {
         return Promise.reject({
           kind: "too_many_parts",
-          message: "invalid qr: this QR code announces 6000 parts, more than Gerfaut reads",
+          message: "This QR code announces 6000 parts, more than Gerfaut reads.",
         }) as unknown as QrProgress;
       }
       return { format: "plain", received: 1, total: 1, complete: true, text: received[0], warnings: [] };
@@ -246,7 +287,7 @@ describe("ScanQrModal", () => {
     await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
     await tick();
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      /^This code has more parts than Gerfaut can read\.$/,
+      /^This code has more parts than Gerfaut can read\. If the wallet offers a denser QR code, show that one instead\.$/,
     );
     // The scan is over: the next code is not read, and the reason stays.
     await tick();
@@ -267,7 +308,7 @@ describe("ScanQrModal", () => {
         ? { format: "ur", received: 1, total: 2, complete: false, text: null, warnings: [] }
         : (Promise.reject({
             kind: "too_many_parts",
-            message: "invalid qr: 3 frames scanned without the code coming together, more than Gerfaut reads",
+            message: "3 frames were scanned without the code coming together, more than Gerfaut reads.",
           }) as unknown as QrProgress),
     );
     const track = fakeCamera();
@@ -275,7 +316,7 @@ describe("ScanQrModal", () => {
     await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
     for (let i = 0; i < 8; i += 1) await tick();
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      /^This code has more parts than Gerfaut can read\.$/,
+      /^This code has more parts than Gerfaut can read\. If the wallet offers a denser QR code, show that one instead\.$/,
     );
     expect(assembleCalls).toHaveLength(3);
     expect(track.stop).toHaveBeenCalled();
@@ -360,7 +401,7 @@ describe("ScanQrModal", () => {
         lost = false;
         return Promise.reject({
           kind: "invalid_input",
-          message: "invalid qr: this scan was closed: open the scanner again",
+          message: "This scan was closed. Open the scanner again.",
         }) as unknown as QrProgress;
       }
       return { format: "plain", received: 1, total: 1, complete: true, text: received[0], warnings: [] };
@@ -414,7 +455,9 @@ describe("ScanQrModal", () => {
     await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
     await tick();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("This code came out empty.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This code came through empty. Export it again from the wallet.",
+    );
     // Closing on it would drop the caller back on a page holding an
     // empty string, which is the silent stall this scanner had.
     expect(onScan).not.toHaveBeenCalled();

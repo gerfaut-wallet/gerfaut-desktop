@@ -10,6 +10,7 @@ import type {
   Settings,
   WalletMeta,
 } from "../lib/ipc";
+import { PRIVATE_KEY_NOT_A_SERVER } from "../lib/ipc";
 import { useBackendSave } from "../state/backendSave";
 import { useWallets } from "../state/queries";
 import { useUi } from "../state/store";
@@ -20,19 +21,23 @@ import { SettingsView } from "./SettingsView";
 // The camera is a button that hands one code over, the way the scanner
 // does once its frames assemble. What it takes to decode them is the
 // scanner's own test; what the form does with the result is this one.
-const scan = vi.hoisted(() => ({ code: "" }));
+const scan = vi.hoisted(() => ({ code: "", privateKey: undefined as string | undefined }));
 
 vi.mock("../components/ScanQrModal", () => ({
   ScanQrModal: ({
     open,
     onScan,
     onClose,
+    privateKey,
   }: {
     open: boolean;
     onScan: (text: string) => void;
     onClose: () => void;
-  }) =>
-    open ? (
+    privateKey?: string;
+  }) => {
+    // What the screen asks the scanner to say of a private key.
+    scan.privateKey = privateKey;
+    return open ? (
       <button
         type="button"
         onClick={() => {
@@ -42,7 +47,8 @@ vi.mock("../components/ScanQrModal", () => ({
       >
         code in view
       </button>
-    ) : null,
+    ) : null;
+  },
 }));
 
 /** A workspace already pointed at an Electrum server over TLS: the form
@@ -82,7 +88,7 @@ const LIVE_LIMITS = {
   own_node: { per_wallet: 20_000, total: 20_000 },
 };
 
-function mockBackendIpc(reply: ScannedBackend | { error: string }) {
+function mockBackendIpc(reply: ScannedBackend | { error: string; kind?: string }) {
   const calls: { cmd: string; args: unknown }[] = [];
   mockIPC((cmd, args) => {
     calls.push({ cmd, args });
@@ -91,7 +97,7 @@ function mockBackendIpc(reply: ScannedBackend | { error: string }) {
       return { host: "node.local:50002", status: { type: "trusted" } };
     if (cmd === "parse_backend") {
       if ("error" in reply)
-        return Promise.reject({ kind: "server", message: reply.error }) as never;
+        return Promise.reject({ kind: reply.kind ?? "server", message: reply.error }) as never;
       return reply;
     }
     if (cmd === "live_limits") return LIVE_LIMITS;
@@ -327,6 +333,32 @@ describe("scanning a server address", () => {
     // Typing drops the refusal: it no longer describes the field.
     await user.type(field("Host"), "x");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  /** A private key scanned as plain text is told what this screen
+      waits for, not what the wallet import does. */
+  it("refuses a private key in the words of the server settings", async () => {
+    mockBackendIpc({
+      kind: "private_material",
+      error: "input contains private key material and was rejected",
+    });
+    renderBackend(() => undefined);
+    const user = userEvent.setup();
+
+    await scanCode(user, "xprv9s21ZrQH143Kexample");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This holds a private key, not the address of a server. Gerfaut never takes a key: show the QR code your node prints instead.",
+    );
+  });
+
+  /** The scanner it opens says a private key in this screen's words. */
+  it("hands the scanner the server settings' words for a private key", async () => {
+    mockBackendIpc({ error: "unused" });
+    renderBackend(() => undefined);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /scan a server address/i }));
+    expect(scan.privateKey).toBe(PRIVATE_KEY_NOT_A_SERVER);
   });
 
   it("says when the address scanned is a Tor hidden service", async () => {

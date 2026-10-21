@@ -14,7 +14,7 @@ import type {
   ScriptKind,
 } from "../lib/ipc";
 import { NETWORK_LABEL } from "../lib/format";
-import { ipc, isCommandError } from "../lib/ipc";
+import { ipc, materialRefusal } from "../lib/ipc";
 import { useAddWallet, useSetActiveNetwork, useSyncWallet } from "../state/queries";
 import { useUi } from "../state/store";
 
@@ -212,7 +212,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
       setParsing(false);
       // The address on screen is still the one of the network before.
       setNetwork(shownOn.current);
-      const message = isCommandError(err) ? err.message : String(err);
+      const message = materialRefusal(err);
       // A refused path belongs under the fields that caused it; the
       // card above keeps the parse that did work.
       if (paths) setDerivationError(message);
@@ -254,7 +254,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
     try {
       meta = await addWallet.mutateAsync({ name, parsed, network });
     } catch (err) {
-      setError(isCommandError(err) ? err.message : String(err));
+      setError(materialRefusal(err));
       return;
     }
     // The wallet is in from here on: whatever follows, the dialog

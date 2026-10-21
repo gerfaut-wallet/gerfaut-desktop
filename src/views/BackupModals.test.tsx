@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PRIVATE_KEY_NOT_A_BACKUP } from "../lib/ipc";
 import type { BackupPreview, WalletMeta } from "../lib/ipc";
 import { useUi } from "../state/store";
 import { BackupExportModal, BackupRestoreModal } from "./BackupModals";
@@ -927,5 +928,30 @@ describe("restoring a backup", () => {
     expect(screen.getByRole("button", { name: /open backup/i })).toBeEnabled();
     // Nothing keeps the webcam once the scan is over.
     expect(track.stop).toHaveBeenCalled();
+  });
+
+  /** The restore scanner tells a code holding a private key what this
+      screen waits for: a backup, not a key, nor a wallet to import. */
+  it("says a private key in the words of the restore", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "open_qr_scan") return 1;
+      if (cmd === "close_qr_scan") return null;
+      if (cmd !== "push_qr_frame") throw new Error(`unexpected command ${cmd}`);
+      return Promise.reject({
+        kind: "private_material",
+        message: "input contains private key material and was rejected",
+      });
+    });
+    cameraFrames.push("ur:crypto-output/1-1/private");
+    const { tick } = fakeCamera();
+
+    renderModal(<BackupRestoreModal open onClose={() => {}} activeNetwork="signet" />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /scan a qr code/i }));
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    await tick();
+
+    const scanner = await screen.findByRole("dialog", { name: "Scan a QR code" });
+    expect(await within(scanner).findByRole("alert")).toHaveTextContent(PRIVATE_KEY_NOT_A_BACKUP);
   });
 });

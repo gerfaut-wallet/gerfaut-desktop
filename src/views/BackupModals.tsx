@@ -14,7 +14,7 @@ import type {
   Network,
   WalletMeta,
 } from "../lib/ipc";
-import { ipc, isCommandError } from "../lib/ipc";
+import { PRIVATE_KEY_NOT_A_BACKUP, ipc, isCommandError } from "../lib/ipc";
 import { NETWORK_LABEL, formatTimestamp } from "../lib/format";
 import {
   backupFilename,
@@ -603,6 +603,7 @@ export function BackupRestoreModal({
             </Button>
           </div>
           <ScanQrModal
+            privateKey={PRIVATE_KEY_NOT_A_BACKUP}
             open={scanOpen}
             onClose={() => setScanOpen(false)}
             onScan={(text) => {

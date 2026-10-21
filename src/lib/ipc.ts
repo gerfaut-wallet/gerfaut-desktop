@@ -1024,6 +1024,30 @@ export function isCommandError(error: unknown): error is CommandError {
 export const FALSE_PROOF =
   "A server sent a false proof of a confirmation, so Gerfaut stopped trusting its answer. No other server answered in its place. Try again later, or use your own node.";
 
+/** What the app says when the core refuses wallet material for a
+    private key, wherever it came from: pasted, opened, scanned. The
+    core's words name the check; these say what to bring instead, in
+    the words of the Android app. */
+export const PRIVATE_MATERIAL =
+  "This holds a private key, and Gerfaut only watches: nothing was saved. Bring the public descriptor or extended public key instead.";
+
+/** The same refusal on the screens that do not import a wallet: each
+    says what it waited for instead. The same words as on Android. */
+export const PRIVATE_KEY_NOT_A_TRANSACTION =
+  "This holds a private key, not a signed transaction. Gerfaut never takes a key: show the transaction your signing device signed instead.";
+export const PRIVATE_KEY_NOT_A_BACKUP =
+  "This holds a private key, not a Gerfaut backup. Gerfaut never takes a key: show the backup code from the other device instead.";
+export const PRIVATE_KEY_NOT_A_SERVER =
+  "This holds a private key, not the address of a server. Gerfaut never takes a key: show the QR code your node prints instead.";
+
+/** What a refusal of wallet material says: the core's own words, which
+    are written for the person, except for a private key, said in the
+    app's: `privateKey`, the words of the screen that asked. */
+export function materialRefusal(error: unknown, privateKey: string = PRIVATE_MATERIAL): string {
+  if (isCommandError(error) && error.kind === "private_material") return privateKey;
+  return isCommandError(error) ? error.message : String(error);
+}
+
 /** What a failed call says: the command's own message, or the error as
     text when it did not come from a command. A false proof is said in
     the app's words. */

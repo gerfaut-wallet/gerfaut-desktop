@@ -3715,7 +3715,9 @@ describe("private material", () => {
     );
     await user.click(screen.getByRole("button", { name: /continue/i }));
     expect(
-      await screen.findByText(/private key material and was rejected/i),
+      await screen.findByText(
+        "This holds a private key, and Gerfaut only watches: nothing was saved. Bring the public descriptor or extended public key instead.",
+      ),
     ).toBeInTheDocument();
   });
 });
