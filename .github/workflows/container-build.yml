@@ -4,9 +4,11 @@
 # build-info directory leave as the artifact build-<target>.
 #
 # Called once per target by release.yml, and for macOS by
-# macos-reference.yml. The job holds no token and no secret but, for
-# macOS, the key that opens the Apple SDK in the cache, in the one step
-# that needs it. The build itself runs in a container with no network.
+# macos-reference.yml. The job holds no secret but, for macOS, the key
+# that opens the Apple SDK in the cache, in the one step that needs it,
+# and no token but one that can only read, in the one step that pulls the
+# image of Ubuntu packages. The build itself runs in a container with no
+# network.
 
 name: Container build
 
@@ -41,6 +43,9 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 240
+    permissions:
+      contents: read
+      packages: read
     steps:
       # macOS: the Apple SDK, before the code is checked out, so that
       # nothing a cache holds can land on top of it. The two sealed
@@ -88,6 +93,21 @@ jobs:
           ref: ${{ steps.core.outputs.rev }}
           path: gerfaut-core
           persist-credentials: false
+
+      # The Ubuntu packages, from the image reproducible/Dockerfile pins by
+      # digest: from GitHub's registry, never from the Ubuntu archive. The
+      # token is logged out before the build starts, and build.sh finds
+      # the image already there.
+      - name: Pull the Ubuntu packages
+        env:
+          TARGET: ${{ inputs.target }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io' EXIT
+          . gerfaut-desktop/reproducible/engine.sh
+          pull_apt_image "$TARGET" gerfaut-desktop HEAD
 
       # build.sh builds the pinned image, fetches with the network, then
       # builds in a container that has none. For Windows it downloads the

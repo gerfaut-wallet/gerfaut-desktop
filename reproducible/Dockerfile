@@ -1,14 +1,18 @@
+# check=skip=InvalidDefaultArgInFrom
 # Pinned toolchain the Gerfaut desktop releases are built with.
 #
-# One file, one stage per target. `base` holds what every target shares:
-# the operating system, the compiler and Node. `linux` adds what the
-# Linux packages need, `windows` what the cross-built Windows installer
-# needs, `macos` what the cross-built macOS application needs.
+# One file, one stage per target. `base` starts from the Ubuntu packages
+# of the target and adds what every target shares: the compiler and
+# Node. `linux` adds what the Linux packages need, `windows` what the
+# cross-built Windows installer needs, `macos` what the cross-built
+# macOS application needs.
 #
 # Everything that can reach an artefact is frozen:
-#   - the base image by digest;
-#   - every apt package by a dated snapshot of the Ubuntu archive, so the
-#     same recipe installs the same versions next year;
+#   - everything that comes from the Ubuntu archive, by the digest of
+#     an image of its own per target, below: reproducible/apt.Dockerfile
+#     installs a dated snapshot of the archive on a base image pinned by
+#     digest, and the Apt image workflow publishes the result on GHCR. A
+#     build pulls that image and never talks to the archive;
 #   - rustup by the hash of its installer, the Rust toolchain by the hash
 #     of its release manifest, which in turn gives the hash of every
 #     package it is made of; rustup installs those packages from a local
@@ -20,13 +24,22 @@
 # handed over read-only under /src. Build and run it through
 # reproducible/build.sh.
 
-# Ubuntu 22.04, on purpose the oldest release still maintained: packages
-# linked against its glibc 2.35 run on every distribution released since.
-FROM ubuntu:22.04@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02 AS base
+# reproducible/build.sh passes the target here, so that `base` starts
+# from the packages of that target and pulls no other image. It has no
+# default, on purpose: a build that does not name its target fails here.
+ARG GERFAUT_TARGET
 
-# The day the Ubuntu archive is frozen at. It must not be older than the
-# base image, or apt would have to downgrade what the image already has.
-ARG APT_SNAPSHOT=20260905T000000Z
+# The packages of each target, from the Apt image workflow. These digests
+# are the pin, and the only place that names them: an image pushed to
+# GHCR changes no build until a reviewed commit writes its digest here.
+# To change a package or the snapshot, change reproducible/apt.Dockerfile,
+# run the workflow, and paste the lines its summary gives. build.sh reads
+# these lines and pulls the image before it builds.
+FROM ghcr.io/gerfaut-wallet/gerfaut-desktop-apt@sha256:b2240e949a4d2fd9d665ad5fad77e5ef932d2f100d7044fccaeb33a07a5f1cf1 AS apt-linux
+FROM ghcr.io/gerfaut-wallet/gerfaut-desktop-apt@sha256:4f28dfdb721dbd52f6a48618301c8ce0a53cafd6d71353ede9fc121e80cd2603 AS apt-windows
+FROM ghcr.io/gerfaut-wallet/gerfaut-desktop-apt@sha256:b3f3fc49827dc641e99f223acd83209c7eac895e146e904304adb86d021fcbb4 AS apt-macos
+
+FROM apt-${GERFAUT_TARGET} AS base
 
 # reproducible/build.sh reads the channel from rust-toolchain.toml and
 # passes it here, so the compiler is named in one place only. The
@@ -50,52 +63,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PATH=/opt/cargo/bin:/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
-
-# Point apt at the snapshot and nowhere else. The snapshot service only
-# speaks https and the base image has no certificate store yet, so the
-# first install runs without checking the server's certificate. Nothing
-# is lost: apt still checks the archive's signature against the keyring
-# of the pinned base image, and every package against the signed index.
-# The exception is removed as soon as ca-certificates is in.
-#
-# The snapshot service has bad minutes, sometimes bad quarters of an
-# hour. apt retries each download, but its pauses stop at 30 seconds in
-# all. `update --error-on=any` stops on an index it could not fetch: left
-# to itself, apt only warns, carries on with no index, and fails later
-# with a message that points elsewhere. Every stage installs through
-# `apt-install <package>...`, which keeps both rules and, when a step
-# still fails, waits 90 seconds and tries again, three times at most. The
-# packages are downloaded first: a new try fetches only those missing,
-# since the image's docker-clean empties the cache on `apt-get update`
-# and after dpkg, never in between. The install itself then runs once,
-# with downloads forbidden.
-RUN printf '%s\n' \
-      '#!/bin/bash' \
-      'set -euo pipefail' \
-      'retry() {' \
-      '    for try in 1 2 3; do' \
-      '        "$@" && return 0' \
-      '        [ "$try" -lt 3 ] || break' \
-      '        echo "apt-install: try $try of 3 failed: $*; next in 90 s" >&2' \
-      '        sleep 90' \
-      '    done' \
-      '    echo "apt-install: try 3 of 3 failed: $*" >&2' \
-      '    return 1' \
-      '}' \
-      'retry apt-get update --error-on=any' \
-      'retry apt-get install -y --no-install-recommends --download-only "$@"' \
-      'apt-get install -y --no-install-recommends --no-download "$@"' \
-      > /usr/local/bin/apt-install \
- && chmod 0755 /usr/local/bin/apt-install \
- && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80retries \
- && for pocket in jammy jammy-updates jammy-security; do \
-      echo "deb https://snapshot.ubuntu.com/ubuntu/${APT_SNAPSHOT} ${pocket} main universe"; \
-    done > /etc/apt/sources.list \
- && echo 'Acquire::https::snapshot.ubuntu.com::Verify-Peer "false";' > /etc/apt/apt.conf.d/99bootstrap \
- && apt-install ca-certificates \
- && rm /etc/apt/apt.conf.d/99bootstrap \
- && apt-install build-essential curl file git pkg-config python3 xz-utils \
- && rm -rf /var/lib/apt/lists/*
 
 # The Rust toolchain, without letting rustup download it. Left alone,
 # rustup fetches the release manifest again after any check made here,
@@ -192,15 +159,13 @@ ENTRYPOINT ["/usr/local/bin/gerfaut-build"]
 # --- Linux packages: .deb, .rpm, .AppImage -------------------------------
 FROM base AS linux
 
-# The list README.md gives, plus the packaging tools: dpkg-deb comes with
-# the base system, rpm brings rpmbuild, squashfs-tools writes the
-# AppImage payload, and desktop-file-utils checks the desktop entry.
-RUN apt-install \
-      libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+# The list README.md gives, plus the packaging tools, all from apt-linux:
+# dpkg-deb comes with the base system, rpm brings rpmbuild,
+# squashfs-tools writes the AppImage payload, and desktop-file-utils
+# checks the desktop entry. A wrong image stops here.
+RUN dpkg-query -W libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
       libdbus-1-dev patchelf wget xdg-utils \
-      cpio desktop-file-utils rpm squashfs-tools zstd \
- && rm -rf /var/lib/apt/lists/* \
- && dpkg-query -W -f '${Package} ${Version} ${Architecture}\n' | sort > /etc/gerfaut-image-packages
+      cpio desktop-file-utils rpm squashfs-tools zstd > /dev/null
 
 
 # --- Windows installer: NSIS setup .exe, cross-built --------------------
@@ -225,14 +190,13 @@ ARG RESTART_MANAGER_SHA256=67149978412da9b283e2e1abe48a360093df9caf6363373e2cabe
 # ring), llvm-lib archives it and llvm-rc compiles the version
 # resource. The linker is not in this list: it is the rust-lld of the
 # pinned Rust toolchain. makensis comes with its stubs, the head of
-# every installer it writes, so the nsis package is pinned like the rest.
-RUN apt-install clang-15 llvm-15 nsis \
- && rm -rf /var/lib/apt/lists/* \
+# every installer it writes, so the nsis package is pinned like the rest:
+# clang-15, llvm-15 and nsis all come from apt-windows.
+RUN dpkg-query -W clang-15 llvm-15 nsis > /dev/null \
  && ln -s /usr/lib/llvm-15/bin/clang /usr/local/bin/clang-cl \
  && ln -s /usr/lib/llvm-15/bin/llvm-lib /usr/local/bin/llvm-lib \
  && ln -s /usr/lib/llvm-15/bin/llvm-rc /usr/local/bin/llvm-rc \
- && clang-cl --version | grep -qF 'clang version 15.' \
- && dpkg-query -W -f '${Package} ${Version} ${Architecture}\n' | sort > /etc/gerfaut-image-packages
+ && clang-cl --version | grep -qF 'clang version 15.'
 
 RUN test ! -e /usr/share/nsis/Include/Win/RestartManager.nsh \
  && curl --proto '=https' --tlsv1.2 --retry 5 -fsSL -o /usr/share/nsis/Include/Win/RestartManager.nsh \
@@ -328,6 +292,5 @@ RUN curl --proto '=https' --tlsv1.2 --retry 5 -fsSL -o /tmp/rcodesign.tar.gz \
 
 # zip writes the archive users download. cpio unpacks Xcode when the
 # SDK is made from the .xip on Linux (reproducible/make-apple-sdk.sh).
-RUN apt-install cpio zip \
- && rm -rf /var/lib/apt/lists/* \
- && dpkg-query -W -f '${Package} ${Version} ${Architecture}\n' | sort > /etc/gerfaut-image-packages
+# Both come from apt-macos.
+RUN dpkg-query -W cpio zip > /dev/null

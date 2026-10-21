@@ -8,8 +8,9 @@
 #
 # The script exports both source trees from git, so the working tree, the
 # checkout location and the host toolchain have no say in the result. It
-# needs git and docker or podman, nothing else. The macOS build needs the
-# Apple SDK, made from Xcode: see reproducible/make-apple-sdk.sh.
+# needs git, docker or podman, and ghcr.io, which serves the Ubuntu
+# packages the image starts from. The macOS build needs the Apple SDK,
+# made from Xcode: see reproducible/make-apple-sdk.sh.
 # shellcheck source-path=SCRIPTDIR
 set -euo pipefail
 
@@ -17,7 +18,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
 
 usage() {
-    sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     cat <<'USAGE'
 
 Options:
