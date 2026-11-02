@@ -49,7 +49,7 @@ Get the file for your system from the [latest release](https://github.com/gerfau
 
 | System | File |
 |---|---|
-| Linux, x86_64 | `Gerfaut_<version>_amd64.AppImage` for any distribution with glibc 2.35 or newer, `Gerfaut_<version>_amd64.deb` for Debian 12, Ubuntu 22.04 and newer, `Gerfaut-<version>-1.x86_64.rpm` for Fedora |
+| Linux, x86_64 | `Gerfaut_<version>_amd64.AppImage` for any distribution with glibc 2.35 or newer and FUSE 3 (the `fuse3` package), `Gerfaut_<version>_amd64.deb` for Debian 12, Ubuntu 22.04 and newer, `Gerfaut-<version>-1.x86_64.rpm` for Fedora |
 | macOS, Apple silicon and Intel | `Gerfaut_<version>_universal.zip` |
 | Windows, 64-bit | `Gerfaut_<version>_x64-setup.exe` |
 
