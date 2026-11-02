@@ -183,7 +183,7 @@ jobs:
           NOTES: |
             ### Downloads
 
-            - **Linux**: `Gerfaut_@VERSION@_amd64.AppImage` (any distribution: `chmod +x`, then run it), `Gerfaut_@VERSION@_amd64.deb` (Debian, Ubuntu) or `Gerfaut-@VERSION@-1.x86_64.rpm` (Fedora)
+            - **Linux**: `Gerfaut_@VERSION@_amd64.AppImage` (any distribution with the `fuse3` package: `chmod +x`, then run it), `Gerfaut_@VERSION@_amd64.deb` (Debian, Ubuntu) or `Gerfaut-@VERSION@-1.x86_64.rpm` (Fedora)
             - **Windows**: `Gerfaut_@VERSION@_x64-setup.exe`
             - **macOS**: `Gerfaut_@VERSION@_universal.zip`, for Apple silicon and Intel: unzip it, then move Gerfaut to Applications
 
