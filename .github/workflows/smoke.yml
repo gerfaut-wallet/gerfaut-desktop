@@ -60,11 +60,12 @@ jobs:
           chmod +x "$appimage"
           echo "APPIMAGE=$PWD/$appimage" >> "$GITHUB_ENV"
 
-      # The AppImage runtime must be the static one of AppImage/type2-runtime:
-      # it needs only a setuid fusermount3 (fuse3) and /dev/fuse. The older
-      # dynamic runtime also needs libfuse.so.2, which Ubuntu 22.04 and
-      # newer no longer install by default, and fails with "Cannot mount
-      # AppImage, please check your FUSE setup." without it.
+      # The AppImage runtime must be the static one of
+      # AppImage/type2-runtime: it needs only a setuid fusermount
+      # (fusermount3 of fuse3) and /dev/fuse. The older dynamic runtime
+      # also needs libfuse.so.2, which Ubuntu 22.04 and newer no longer
+      # install by default, and fails without it with "Cannot mount
+      # AppImage, please check your FUSE setup.".
       - name: Check that the AppImage runtime is static
         run: |
           set -euo pipefail
@@ -93,7 +94,7 @@ jobs:
             libwayland-client0 libwayland-cursor0 libwayland-egl1 libwayland-server0 \
             libx11-6 libx11-xcb1 libxcb1 libfontconfig1 libfreetype6 libfribidi0 libharfbuzz0b
           dpkg-query -W -f '${Package} ${Version}\n' libegl-mesa0 libwayland-client0
-          if ldconfig -p | grep 'libfuse\.so\.2'; then echo "::error::libfuse2 is still installed"; exit 1; fi
+          if dpkg -l 'libfuse2*' 2> /dev/null | grep '^ii'; then echo "::error::libfuse2 is still installed"; exit 1; fi
 
       # On a session bus of its own, as from a desktop session. No
       # Secret Service answers on it, so the application opens on the
