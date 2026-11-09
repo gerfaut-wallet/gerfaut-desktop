@@ -5,8 +5,8 @@ import { OpenFailure, useOpenExternal } from "../../components/ExternalLink";
 import { Pill } from "../../components/StatusPill";
 import { isCommandError } from "../../lib/ipc";
 import { useCheckUpdate } from "../../state/queries";
+import { useUi } from "../../state/store";
 import { RELEASES_URL, useUpdate } from "../../state/update";
-import { WelcomeTour } from "../WelcomeTour";
 import { SectionCard, SettingRow, Toggle } from "./primitives";
 
 export const APP_VERSION = "0.1.0";
@@ -37,7 +37,7 @@ export const ISSUES_URL = "https://github.com/gerfaut-wallet/gerfaut-desktop/iss
 export function AboutSection() {
   const check = useCheckUpdate();
   const [result, setResult] = useState<"current" | "failed" | null>(null);
-  const [tourOpen, setTourOpen] = useState(false);
+  const openTour = useUi((state) => state.openTour);
   const available = useUpdate((state) => state.status?.available ?? null);
   // Null until the core has said: no switch is drawn on a guess.
   const auto = useUpdate((state) => state.status?.automatic ?? null);
@@ -157,12 +157,11 @@ export function AboutSection() {
           )}
         </div>
         <div>
-          <Button variant="primary" onClick={() => setTourOpen(true)} icon={Compass}>
+          <Button variant="primary" onClick={openTour} icon={Compass}>
             Show the welcome tour
           </Button>
         </div>
       </div>
-      <WelcomeTour open={tourOpen} onClose={() => setTourOpen(false)} beta={BETA} />
     </SectionCard>
   );
 }

@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
-import { useUi } from "../state/store";
 import { Lockup } from "../components/Lockup";
 
 interface Step {
@@ -52,23 +51,16 @@ export function WelcomeTour({
   beta: boolean;
 }) {
   const [step, setStep] = useState(0);
-  const setOnboardingSeen = useUi((state) => state.setOnboardingSeen);
-  const markTourSeen = useUi((state) => state.markTourSeen);
 
   useEffect(() => {
     if (open) setStep(0);
   }, [open]);
 
-  const done = () => {
-    setOnboardingSeen(true);
-    markTourSeen();
-    onClose();
-  };
   const last = step === STEPS.length - 1;
   const current = STEPS[step];
 
   return (
-    <Modal open={open} onClose={done} title="Welcome" width={520} centered>
+    <Modal open={open} onClose={onClose} title="Welcome" width={520} centered>
       <div
         className="flex flex-col items-center gap-5 px-6 pb-2 text-center"
         onKeyDown={(event) => {
@@ -119,12 +111,12 @@ export function WelcomeTour({
             </Button>
           )}
           <div className="ml-auto flex items-center gap-3">
-            <Button variant="secondary" onClick={done}>
+            <Button variant="secondary" onClick={onClose}>
               Skip
             </Button>
             <Button
               variant="primary"
-              onClick={() => (last ? done() : setStep(step + 1))}
+              onClick={() => (last ? onClose() : setStep(step + 1))}
             >
               {last ? "Get started" : "Next"}
             </Button>

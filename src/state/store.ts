@@ -62,9 +62,11 @@ interface UiState {
       it confirms. The Rust side starts and stops the watch on this
       preference as it is written. */
   notifyNewTx: boolean;
-  /** The welcome tour has been seen. */
-  onboardingSeen: boolean;
-  /** It was dismissed in this session, whatever the vault says yet. */
+  /** The welcome tour, open in front of the app or closed. One for the
+      whole window: the first launch opens it, and so does About. */
+  tour: "closed" | "open";
+  /** It was dismissed in this session, whatever the vault says yet:
+      the write that remembers it does not refresh the settings. */
   tourDismissed: boolean;
   toast: string | null;
   /** Last sync failure per wallet id, cleared on the next success. */
@@ -90,8 +92,12 @@ interface UiState {
       Rust side starts the watch on what the vault holds, so a switch
       left on over a refused write would promise alerts nobody sends. */
   setNotifyNewTx: (enabled: boolean) => Promise<void>;
-  setOnboardingSeen: (seen: boolean) => void;
-  markTourSeen: () => void;
+  openTour: () => void;
+  /** Closes the tour, however it was left, and remembers it as seen. */
+  closeTour: () => void;
+  /** Takes the tour down without a word to the vault: the curtain
+      falling. Never seen, it opens again behind the next unlock. */
+  hideTour: () => void;
   /** Shows `message` for three seconds, or `ms`. */
   showToast: (message: string, ms?: number) => void;
   setSyncError: (walletId: string, message: string | null) => void;
@@ -192,7 +198,7 @@ export const useUi = create<UiState>((set, get) => ({
   ...fromPreferences(UNTIL_THE_VAULT_ANSWERS),
   theme: "light",
   priceRange: "month",
-  onboardingSeen: false,
+  tour: "closed",
   tourDismissed: false,
   toast: null,
   syncErrors: {},
@@ -254,13 +260,12 @@ export const useUi = create<UiState>((set, get) => ({
       throw error;
     }
   },
-  setOnboardingSeen: (onboardingSeen) => {
-    set({ onboardingSeen });
-    persist("onboarding.seen", onboardingSeen ? "1" : "0");
+  openTour: () => set({ tour: "open" }),
+  hideTour: () => set({ tour: "closed" }),
+  closeTour: () => {
+    set({ tour: "closed", tourDismissed: true });
+    persist("onboarding.seen", "1");
   },
-  // The tour reads the vault's own preference, which the write above
-  // does not refresh: remember here that this session has seen it.
-  markTourSeen: () => set({ onboardingSeen: true, tourDismissed: true }),
   showToast: (message, ms = 3000) => {
     clearTimeout(toastTimer);
     set({ toast: message });
@@ -282,7 +287,6 @@ export const useUi = create<UiState>((set, get) => ({
     set({
       ...fromPreferences(settings.preferences),
       theme: ["light", "dark", "system"].includes(theme) ? theme : "light",
-      onboardingSeen: prefs["onboarding.seen"] === "1",
       sidebarCollapsed: prefs["desktop.sidebar"] === "collapsed",
       priceRange: (["day", "week", "month", "year"] as PriceRange[]).includes(
         prefs["home.price_range"] as PriceRange,

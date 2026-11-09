@@ -56,6 +56,18 @@ export function useSettings() {
   return useQuery({ queryKey: keys.settings, queryFn: ipc.getSettings });
 }
 
+/** The welcome tour has been seen: the vault says so, or it was closed
+    in this session. The vault's own preference decides, not a copy
+    hydrated from it, which would land a frame later; the session's
+    word covers a write the vault refused, and the settings read again
+    at each unlock. Only an explicit "1" counts: an unreadable
+    preference shows the tour again rather than swallowing it. */
+export function useTourSeen(): boolean {
+  const settings = useSettings();
+  const dismissed = useUi((state) => state.tourDismissed);
+  return settings.data?.app_prefs["onboarding.seen"] === "1" || dismissed;
+}
+
 /** The public servers offered for a network. A static catalogue: it
     only changes when the app is updated. */
 export function usePublicServers(network: Network) {
