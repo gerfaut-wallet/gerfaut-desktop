@@ -20,7 +20,7 @@ import {
   useSyncing,
   useWallets,
 } from "./state/queries";
-import { useFollowSystemTheme, useUi } from "./state/store";
+import { useFollowSystemTheme, useTourSeen, useUi } from "./state/store";
 import { AddWalletModal } from "./views/AddWalletModal";
 import { BroadcastView } from "./views/BroadcastView";
 import { ExportView } from "./views/ExportView";
@@ -65,7 +65,9 @@ export default function App() {
     view,
     activeWalletId,
     hydratePrefs,
-    tourDismissed,
+    tour,
+    openTour,
+    closeTour,
   } = useUi();
   const hydrated = useRef(false);
   // The shell waits for the whole set of preferences: behind the lock
@@ -77,7 +79,6 @@ export default function App() {
   const wasLocked = useRef(false);
   const client = useQueryClient();
   const syncLock = useLock((state) => state.syncFromSettings);
-  const [tourOpen, setTourOpen] = useState(false);
   const canvas = useRef<HTMLDivElement>(null);
   useLockShortcut();
   useFollowSystemTheme();
@@ -170,19 +171,17 @@ export default function App() {
   useUpdateCheck(lockSeen && !locked);
 
   // The tour only ever stands in front of an empty vault: someone with
-  // wallets already knows what this is. The vault's own preference is
-  // what decides, not the hydrated copy, which lands a frame later.
+  // wallets already knows what this is.
   //
   // Empty means answered and empty. A list not read yet is not one:
   // the curtain going up throws the cache away, so every unlock passes
   // through that moment, and a vault that holds wallets but never
   // wrote the flag would greet its owner again each time.
   const emptyVault = wallets.data !== undefined && wallets.data.length === 0;
-  const tourSeen =
-    settings.data?.app_prefs["onboarding.seen"] === "1" || tourDismissed;
+  const tourSeen = useTourSeen(settings.data);
   useEffect(() => {
-    if (settings.data && emptyVault && !tourSeen && !locked) setTourOpen(true);
-  }, [settings.data, emptyVault, tourSeen, locked]);
+    if (settings.data && emptyVault && !tourSeen && !locked) openTour();
+  }, [settings.data, emptyVault, tourSeen, locked, openTour]);
 
   // A command refused because the curtain came down is the lock doing
   // its work, not a vault that failed to open: the screen behind it is
@@ -313,11 +312,7 @@ export default function App() {
         {/* And says, over the page in view, a save refused once the user
             had left it. */}
         <BackendRefusalNotice activeNetwork={settings.data.active_network} />
-        <WelcomeTour
-          open={tourOpen}
-          onClose={() => setTourOpen(false)}
-          beta={BETA}
-        />
+        <WelcomeTour open={tour === "open"} onClose={closeTour} beta={BETA} />
         <Toast />
       </div>
     </CreditLayer>

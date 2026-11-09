@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
-import { useUi } from "../state/store";
 import { Lockup } from "../components/Lockup";
 
 interface Step {
@@ -52,18 +51,12 @@ export function WelcomeTour({
   beta: boolean;
 }) {
   const [step, setStep] = useState(0);
-  const setOnboardingSeen = useUi((state) => state.setOnboardingSeen);
-  const markTourSeen = useUi((state) => state.markTourSeen);
 
   useEffect(() => {
     if (open) setStep(0);
   }, [open]);
 
-  const done = () => {
-    setOnboardingSeen(true);
-    markTourSeen();
-    onClose();
-  };
+  const done = onClose;
   const last = step === STEPS.length - 1;
   const current = STEPS[step];
 

@@ -4199,7 +4199,7 @@ describe("the welcome tour", () => {
   // Both stores live at module scope: a test that turned the tour off
   // would otherwise decide for the next one.
   beforeEach(() => {
-    useUi.setState({ onboardingSeen: false });
+    useUi.setState({ tour: "closed", tourDismissed: false });
     useLock.setState({ lock: null, locked: false, seen: false });
   });
 
@@ -4333,6 +4333,45 @@ describe("the welcome tour", () => {
       expect(prefs["onboarding.seen"]).toBe("1");
     });
     expect(screen.queryByText("Keep it yours")).not.toBeInTheDocument();
+  });
+
+  it("is one tour, replayed from About and retired for good on Skip", async () => {
+    const prefs: Record<string, string> = { "onboarding.seen": "1" };
+    const written: string[] = [];
+    mockIPC((cmd, args) => {
+      switch (cmd) {
+        case "get_settings":
+          return { ...SETTINGS, app_prefs: prefs };
+        case "list_wallets":
+          return [];
+        case "app_lock":
+          return null;
+        case "set_app_pref": {
+          const { key, value } = args as { key: string; value: string };
+          written.push(`${key}=${value}`);
+          prefs[key] = value;
+          return undefined;
+        }
+        case "sync_all":
+          return { reports: [], failures: [] };
+        default:
+          return null;
+      }
+    });
+    renderApp();
+    const user = userEvent.setup();
+    expect(await screen.findByText(/no wallets watched yet/i)).toBeInTheDocument();
+    expect(screen.queryByText("Watch, never spend")).not.toBeInTheDocument();
+
+    await openSettings(user, "About");
+    await user.click(screen.getByRole("button", { name: "Show the welcome tour" }));
+    expect(await screen.findAllByText("Watch, never spend")).toHaveLength(1);
+
+    await user.click(screen.getByRole("button", { name: "Skip" }));
+    await waitFor(() => {
+      expect(screen.queryByText("Watch, never spend")).not.toBeInTheDocument();
+    });
+    expect(written).toEqual(["onboarding.seen=1"]);
   });
 });
 
