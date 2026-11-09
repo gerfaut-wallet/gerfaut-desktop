@@ -37,7 +37,10 @@ mod links;
 mod live;
 // Compiled on Linux for its tests too, where nothing else calls it.
 #[cfg(any(target_os = "macos", all(unix, test)))]
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg_attr(
+    not(target_os = "macos"),
+    allow(dead_code, reason = "Linux compiles it for its tests only")
+)]
 mod single_instance;
 #[cfg(any(windows, test))]
 mod toast;
@@ -1306,7 +1309,7 @@ fn dev_suffix(dir: &std::ffi::OsStr) -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[allow(unused_mut)]
+    #[allow(unused_mut, reason = "only a debug build changes the context")]
     let mut context = tauri::generate_context!();
     #[cfg(debug_assertions)]
     if let Some(dir) = std::env::var_os("GERFAUT_DATA_DIR") {

@@ -72,3 +72,8 @@ serde_json = "1"
 # gerfaut-core, see the note there.
 [patch.crates-io]
 saturating-time = { git = "https://github.com/gerfaut-wallet/saturating-time", rev = "784e1a396ac8890fcc2c7bab6d1c07e432ceedac" }
+
+# A lint silenced without a reason hides why, and the next reader keeps
+# it out of habit: every #[allow] says why in its `reason`.
+[lints.clippy]
+allow_attributes_without_reason = "warn"
