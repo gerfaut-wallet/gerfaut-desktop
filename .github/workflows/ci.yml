@@ -2,11 +2,12 @@ name: CI
 
 # Every job runs on every push to main, every pull request, and on
 # demand (Actions, CI, Run workflow), except the Rust job on a pull
-# request of documentation alone (the `changes` job). The frontend and
-# Rust jobs need the sibling gerfaut-core checkout, at the revision
-# .github/gerfaut-core.rev pins, the one a release compiles: the Rust job
-# builds against it, and the frontend tests read its reference JSON
-# (src/test/core.ts). gerfaut-core is public, no key reads it.
+# request of documentation and frontend files alone (the `changes` job).
+# The frontend and Rust jobs need the sibling gerfaut-core checkout, at
+# the revision .github/gerfaut-core.rev pins, the one a release compiles:
+# the Rust job builds against it, and the frontend tests read its
+# reference JSON (src/test/core.ts). gerfaut-core is public, no key reads
+# it.
 on:
   push:
     branches: [main]
@@ -17,11 +18,12 @@ permissions:
   contents: read
 
 jobs:
-  # Whether the jobs that compile have anything to check. On a pull
-  # request whose files are all documentation, listed below, they are
-  # skipped, and a skipped job counts as passed. Any other path, a push to
-  # main and a manual run, run them all. Only an explicit `false` skips
-  # them: if this job fails or is cancelled, they still run.
+  # Whether the Rust job has anything to check. On a pull request whose
+  # files are all documentation or frontend, listed below, it is skipped,
+  # and a skipped job counts as passed: nothing under src-tauri reads
+  # these files, and the frontend job still runs. Any other path, a push to
+  # main and a manual run, run it. Only an explicit `false` skips it: if
+  # this job fails or is cancelled, it still runs.
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -49,6 +51,8 @@ jobs:
                 .github/ISSUE_TEMPLATE/*.yml | .github/ISSUE_TEMPLATE/*.md) ;;
                 .github/images/*.svg | .github/images/*.webp) ;;
                 .github/images/*.png | CHANGELOG.md) ;;
+                src/* | index.html | package.json | tsconfig.json) ;;
+                vite.config.ts | package-lock.json) ;;
                 *) code=true ;;
               esac
             done <<<"$paths"
