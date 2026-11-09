@@ -20,7 +20,8 @@ jobs:
   # Whether the jobs that compile have anything to check. On a pull
   # request whose files are all documentation, listed below, they are
   # skipped, and a skipped job counts as passed. Any other path, a push to
-  # main and a manual run, run them all.
+  # main and a manual run, run them all. Only an explicit `false` skips
+  # them: if this job fails or is cancelled, they still run.
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -96,7 +97,7 @@ jobs:
     # release would have hit too.
     runs-on: ubuntu-22.04
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
