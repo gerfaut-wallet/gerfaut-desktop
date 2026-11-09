@@ -1010,6 +1010,26 @@ describe("BroadcastView, an answer that comes late", () => {
     expect(screen.queryByRole("region", { name: "Technical" })).not.toBeInTheDocument();
     expect(screen.getByText("This file is too large to hold a transaction.")).toBeInTheDocument();
   });
+  it("leaves a file unread when the network changes while it is read", async () => {
+    let asked = false;
+    const { switchTo } = mountCore((cmd) => {
+      asked ||= cmd === "preview_transaction";
+      if (cmd === "recent_broadcasts") return [];
+      return undefined;
+    });
+    const file = new File(["0200"], "tx.txt");
+    const bytes = held<ArrayBuffer>();
+    vi.spyOn(file, "arrayBuffer").mockReturnValue(bytes.promise);
+    fireEvent.change(document.querySelector<HTMLInputElement>('input[type="file"]')!, {
+      target: { files: [file] },
+    });
+
+    switchTo("testnet4");
+    bytes.settle(new TextEncoder().encode(HEX).buffer as ArrayBuffer);
+    await settle();
+    expect(screen.getByLabelText("Signed transaction")).toHaveValue("");
+    expect(asked).toBe(false);
+  });
 });
 
 describe("BroadcastView, a check that fails after an answer", () => {

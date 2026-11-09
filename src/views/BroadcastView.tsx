@@ -140,6 +140,7 @@ export function BroadcastView({ network }: { network: Network }) {
   useEffect(() => {
     setRaw("");
     dispatch({ type: "reset", ticket: take() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `take` only bumps a ref: a new network, and nothing else, starts over
   }, [network]);
 
   // Said once, when the network's yes lands on this page: a send that
@@ -167,13 +168,19 @@ export function BroadcastView({ network }: { network: Network }) {
       });
       return;
     }
+    // Start over or another network while the file is read leaves it
+    // unread: the page it was opened for is gone.
+    const opened = tickets.current;
     const input = await fileToInput(file);
+    if (tickets.current !== opened) return;
     setRaw(input);
     decode(input);
   };
 
   const send = () => {
-    if (flow.phase !== "ready" || !flow.preview.hex) return;
+    // A ticket taken since this render (a second click on the same
+    // render, among others) means the page has moved on: nothing goes.
+    if (flow.phase !== "ready" || flow.ticket !== tickets.current || !flow.preview.hex) return;
     const hex = flow.preview.hex;
     setConfirmOpen(false);
     const ticket = take();
