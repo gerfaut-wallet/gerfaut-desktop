@@ -10,8 +10,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Closing the QR scanner while the system still asks for camera access no longer leaves the camera on once access is granted.
 - A scan that stops on a code with too many parts no longer leaves the aiming frame over a frozen picture.
-- On the Broadcast page, when a status check fails after an earlier answer, the card now reads "Could not check" and shows the error, then the last answer with its time. It used to keep the earlier badge, such as "Confirmed", next to the error.
+- On the Broadcast page, when a status check fails after an earlier answer, the card now reads "Could not check" and shows the error, then the last answer with its time. It used to keep the earlier badge, such as "Confirmed", next to the error. A check that fails before any answer now shows "Could not check" too, and the card keeps it while the backend is asked again.
 - A transaction sent just before "Start over" or a network change no longer brings its status card back on top of the next transaction. The transaction still goes out and is listed under "Past broadcasts".
+- A file opened on the Broadcast page is no longer previewed when the network changes while it is still being read.
 
 ## [0.1.0] - 2026-10-21
 
