@@ -695,6 +695,12 @@ const syncFailure = object<ipc.SyncFailure>("SyncFailure")({
   message: str,
   kind: errorCode,
 });
+/** Where a wallet's sync stands, flat beside its id. */
+const walletSync = tagged<ipc.WalletSync>("WalletSync")("state", {
+  idle: { wallet_id: str },
+  syncing: { wallet_id: str },
+  failed: { wallet_id: str, message: str, kind: errorCode, at: num },
+});
 const syncAllReport = object<ipc.SyncAllReport>("SyncAllReport")({
   reports: array(syncReport),
   failures: array(syncFailure),
@@ -833,6 +839,7 @@ const CONTRACT: Record<string, AnySchema | Away> = {
   WalletIcon: walletIcon,
   WalletKind: walletKind,
   WalletMeta: walletMeta,
+  WalletSync: walletSync,
   WalletRef: walletRef,
   WalletSnapshot: walletSnapshot,
   WatchLimits: watchLimits,
@@ -848,6 +855,8 @@ const IGNORED: Record<string, string> = {
   "SyncStamp.server":
     "where the core starts the next sync of the wallet; the screens name the backend, which the stamp carries too",
   "WalletMeta.complete_at": "when a sync last read every script: the core's own schedule of full reads",
+  "WalletMeta.last_failure":
+    "what the core reads a wallet's failed state from; the window reads that state itself, from `wallet_sync_states`",
   "SyncReport.confirmed_txs":
     "a sync started from the window says what it found; payments confirming are announced by the live watch, on the Rust side",
   "TorStatus.system_socks_trusted":

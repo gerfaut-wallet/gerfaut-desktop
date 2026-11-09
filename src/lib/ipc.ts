@@ -433,6 +433,18 @@ export interface SyncAllReport {
   failures: SyncFailure[];
 }
 
+/** Where the sync of a wallet stands, as the core keeps it, whoever
+    started the sync: this window, a rescan, a sync of every wallet, the
+    live watch. A failure is kept until a sync succeeds, across restarts. */
+export type WalletSyncState =
+  | { state: "idle" }
+  | { state: "syncing" }
+  | { state: "failed"; message: string; kind: CoreErrorCode; at: number };
+
+/** One wallet's sync state, flat beside its id: what
+    `wallet_sync_states` lists and the `sync://state` event carries. */
+export type WalletSync = { wallet_id: string } & WalletSyncState;
+
 export type BackendConfig =
   /** `server` names one public operator; absent, every public Esplora
       instance is tried in order. */
@@ -1125,6 +1137,10 @@ export const ipc = {
   loadMoreHistory: (id: string) => invoke<number>("load_more_history", { id }),
   syncAll: (network?: Network) =>
     invoke<SyncAllReport>("sync_all", { network: network ?? null }),
+  /** Where the sync of each wallet stands; read once when the window
+      starts listening to the changes. */
+  walletSyncStates: (network?: Network) =>
+    invoke<WalletSync[]>("wallet_sync_states", { network: network ?? null }),
   renameWallet: (id: string, name: string) => invoke<void>("rename_wallet", { id, name }),
   removeWallet: (id: string) => invoke<void>("remove_wallet", { id }),
   setWalletIcon: (id: string, icon: WalletIconId) =>
