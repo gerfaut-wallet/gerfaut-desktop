@@ -1,17 +1,18 @@
 import { SyncIndicator } from "../components/SyncIndicator";
 import { LoadFailure } from "../components/LoadFailure";
 import { MASKED, formatAmount } from "../lib/format";
-import { useSnapshot, useSyncing, useUtxos } from "../state/queries";
+import { useSnapshot, useUtxos } from "../state/queries";
 import { useUi } from "../state/store";
+import { useWalletSync } from "../state/walletSync";
 import { UtxoTable } from "./UtxoTable";
 
 /** Unspent outputs of one wallet, as a table with a pinned header and
     the compact balance beside the title. */
 export function UtxosView({ walletId }: { walletId: string }) {
-  const { syncErrors, masked, unit } = useUi();
+  const { masked, unit } = useUi();
   const snapshot = useSnapshot(walletId);
   const utxos = useUtxos(walletId, true);
-  const syncing = useSyncing();
+  const sync = useWalletSync(walletId);
 
   if (snapshot.isPending) {
     return <p className="px-1 py-4 font-ui text-sm text-muted">Loading wallet…</p>;
@@ -40,11 +41,7 @@ export function UtxosView({ walletId }: { walletId: string }) {
             )}
           </h1>
           <div className="mt-1">
-            <SyncIndicator
-              stamp={snapshot.data.meta.last_sync}
-              syncing={syncing}
-              error={syncErrors[walletId] ?? null}
-            />
+            <SyncIndicator stamp={snapshot.data.meta.last_sync} sync={sync} />
           </div>
         </div>
         <div className="pb-0.5 text-right">

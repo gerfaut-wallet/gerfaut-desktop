@@ -3,16 +3,17 @@ import { Button } from "../components/Button";
 import { LoadFailure } from "../components/LoadFailure";
 import { SyncIndicator } from "../components/SyncIndicator";
 import { MASKED, formatAmount } from "../lib/format";
-import { useLoadMoreHistory, useSnapshot, useSyncing } from "../state/queries";
+import { useLoadMoreHistory, useSnapshot } from "../state/queries";
 import { useUi } from "../state/store";
+import { useWalletSync } from "../state/walletSync";
 import { TxList } from "./TxList";
 
 /** Full transaction history of one wallet, with the compact balance in
     the header — the big figure lives on the overview. */
 export function TransactionsView({ walletId }: { walletId: string }) {
-  const { masked, unit, syncErrors } = useUi();
+  const { masked, unit } = useUi();
   const snapshot = useSnapshot(walletId);
-  const syncing = useSyncing();
+  const sync = useWalletSync(walletId);
   const loadMore = useLoadMoreHistory();
 
   if (snapshot.isPending) {
@@ -43,11 +44,7 @@ export function TransactionsView({ walletId }: { walletId: string }) {
             )}
           </h1>
           <div className="mt-1">
-            <SyncIndicator
-              stamp={meta.last_sync}
-              syncing={syncing}
-              error={syncErrors[walletId] ?? null}
-            />
+            <SyncIndicator stamp={meta.last_sync} sync={sync} />
           </div>
         </div>
         <div className="pb-0.5 text-right">

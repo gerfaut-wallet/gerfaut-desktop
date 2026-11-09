@@ -2,7 +2,6 @@
 
 import type { FetchStatus } from "@tanstack/react-query";
 import {
-  useIsMutating,
   useMutation,
   useQuery,
   useQueryClient,
@@ -15,9 +14,12 @@ import type {
   Network,
   ParsedInput,
   PriceRange,
+  SyncReport,
   WalletIconId,
 } from "../lib/ipc";
 import { errorMessage, failureMessage, ipc, isCommandError, isFalseProof } from "../lib/ipc";
+import { syncTicket } from "../lib/syncState";
+import type { SyncOutcomes } from "../lib/syncState";
 import { useUi } from "./store";
 
 // What a sync found is announced by the Rust side, which posts the
@@ -160,24 +162,38 @@ export function useInvalidateWallet() {
   };
 }
 
-/** True while any sync (one wallet or all) is in flight, from any
-    component: mutation state itself is local to its hook instance. */
-export function useSyncing(): boolean {
-  return useIsMutating({ mutationKey: ["sync"] }) > 0;
-}
+/** What a sync of one wallet this window starts says of where the
+    wallet stands: syncing from the start, then the answer, unless the
+    core said more of the wallet in between (`syncStep`). */
+const walletSyncSteps = {
+  onMutate: (id: string) => {
+    const ticket = syncTicket();
+    useUi.getState().stepSync({ type: "started", walletId: id, ticket });
+    return { ticket };
+  },
+  onSuccess: (_report: SyncReport, id: string, context: { ticket: number } | undefined) => {
+    if (context) {
+      useUi.getState().stepSync({ type: "finished", walletId: id, ticket: context.ticket, failure: null });
+    }
+  },
+  onError: (error: unknown, id: string, context: { ticket: number } | undefined) => {
+    if (context) {
+      useUi.getState().stepSync({
+        type: "finished",
+        walletId: id,
+        ticket: context.ticket,
+        failure: errorMessage(error),
+      });
+    }
+  },
+};
 
 export function useSyncWallet() {
   const invalidate = useInvalidateWallet();
   return useMutation({
     mutationKey: ["sync"],
     mutationFn: (id: string) => ipc.syncWallet(id),
-    onSuccess: (_report, id) => {
-      useUi.getState().setSyncError(id, null);
-    },
-    onError: (error, id) =>
-      useUi
-        .getState()
-        .setSyncError(id, errorMessage(error)),
+    ...walletSyncSteps,
     onSettled: (_data, _error, id) => invalidate(id),
   });
 }
@@ -192,8 +208,9 @@ export function useRescanWallet() {
     // The same key as a sync, so the sidebar icon turns for it too.
     mutationKey: ["sync"],
     mutationFn: (id: string) => ipc.rescanWallet(id),
-    onSuccess: (report, id) => {
-      useUi.getState().setSyncError(id, null);
+    onMutate: walletSyncSteps.onMutate,
+    onSuccess: (report, id, context) => {
+      walletSyncSteps.onSuccess(report, id, context);
       const found =
         report.new_tx_count === 0
           ? "no new transactions"
@@ -202,10 +219,7 @@ export function useRescanWallet() {
             : `${report.new_tx_count} new transactions`;
       useUi.getState().showToast(`Rescanned · ${found}`);
     },
-    onError: (error, id) =>
-      useUi
-        .getState()
-        .setSyncError(id, errorMessage(error)),
+    onError: walletSyncSteps.onError,
     onSettled: (_data, _error, id) => invalidate(id),
   });
 }
@@ -241,13 +255,20 @@ export function useSyncAll() {
   return useMutation({
     mutationKey: ["sync"],
     mutationFn: (network?: Network) => ipc.syncAll(network),
-    onSuccess: (report) => {
+    onMutate: () => {
+      const ticket = syncTicket();
+      useUi.getState().stepSync({ type: "allStarted", ticket });
+      return { ticket };
+    },
+    onSuccess: (report, _network, context) => {
       const ui = useUi.getState();
-      for (const sync of report.reports) {
-        ui.setSyncError(sync.wallet_id, null);
-      }
-      for (const failure of report.failures) {
-        ui.setSyncError(failure.wallet_id, failureMessage(failure));
+      if (context) {
+        const outcomes: SyncOutcomes = {};
+        for (const sync of report.reports) outcomes[sync.wallet_id] = null;
+        for (const failure of report.failures) {
+          outcomes[failure.wallet_id] = failureMessage(failure);
+        }
+        ui.stepSync({ type: "allFinished", ticket: context.ticket, outcomes });
       }
       if (report.failures.length === 0) {
         ui.showToast(
@@ -259,6 +280,13 @@ export function useSyncAll() {
         ui.showToast(
           `${report.reports.length} synced, ${report.failures.length} failed`,
         );
+      }
+    },
+    // A sync of every wallet that did not answer at all leaves each
+    // wallet as the core said it stands.
+    onError: (_error, _network, context) => {
+      if (context) {
+        useUi.getState().stepSync({ type: "allFinished", ticket: context.ticket, outcomes: {} });
       }
     },
     onSettled: () => invalidate(),

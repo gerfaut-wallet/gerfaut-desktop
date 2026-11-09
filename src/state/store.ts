@@ -13,6 +13,8 @@ import type {
 } from "../lib/ipc";
 import { ipc } from "../lib/ipc";
 import type { Unit } from "../lib/format";
+import { syncStep } from "../lib/syncState";
+import type { SyncSlice, SyncStep } from "../lib/syncState";
 
 export type ThemePref = "light" | "dark" | "system";
 
@@ -69,8 +71,11 @@ interface UiState {
       the write that remembers it does not refresh the settings. */
   tourDismissed: boolean;
   toast: string | null;
-  /** Last sync failure per wallet id, cleared on the next success. */
-  syncErrors: Record<string, string>;
+  /** Where each wallet's sync stands: written by `stepSync` alone,
+      read through `state/walletSync`. */
+  syncErrors: SyncSlice["syncErrors"];
+  syncTurns: SyncSlice["syncTurns"];
+  syncingAll: SyncSlice["syncingAll"];
 
   setView: (view: CanvasView) => void;
   setSettingsSection: (section: SettingsSection) => void;
@@ -100,7 +105,8 @@ interface UiState {
   hideTour: () => void;
   /** Shows `message` for three seconds, or `ms`. */
   showToast: (message: string, ms?: number) => void;
-  setSyncError: (walletId: string, message: string | null) => void;
+  /** The one transition of the sync states: see `syncStep`. */
+  stepSync: (step: SyncStep) => void;
   /** Applies the preferences the vault answered at startup. */
   hydratePrefs: (settings: Settings) => void;
 }
@@ -202,6 +208,8 @@ export const useUi = create<UiState>((set, get) => ({
   tourDismissed: false,
   toast: null,
   syncErrors: {},
+  syncTurns: {},
+  syncingAll: null,
 
   setView: (view) => set({ view, selectedTxid: null }),
   setSettingsSection: (settingsSection) => set({ settingsSection }),
@@ -271,16 +279,7 @@ export const useUi = create<UiState>((set, get) => ({
     set({ toast: message });
     toastTimer = setTimeout(() => set({ toast: null }), ms);
   },
-  setSyncError: (walletId, message) =>
-    set((state) => {
-      const syncErrors = { ...state.syncErrors };
-      if (message === null) {
-        delete syncErrors[walletId];
-      } else {
-        syncErrors[walletId] = message;
-      }
-      return { syncErrors };
-    }),
+  stepSync: (step) => set((state) => syncStep(state, step)),
   hydratePrefs: (settings) => {
     const prefs = settings.app_prefs;
     const theme = (prefs["desktop.theme"] as ThemePref) ?? "light";

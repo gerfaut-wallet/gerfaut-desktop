@@ -19,6 +19,7 @@ import { Notice } from "../../components/Notice";
 import { errorMessage, isCommandError } from "../../lib/ipc";
 import type { WalletMeta } from "../../lib/ipc";
 import { moveItem } from "../../lib/reorder";
+import { failureOf as syncFailureOf } from "../../lib/syncState";
 import { walletGlyph } from "../../lib/walletIcons";
 import { coverageOf, useLiveStatus } from "../../state/live";
 import {
@@ -31,6 +32,7 @@ import {
 } from "../../state/queries";
 import { useUi } from "../../state/store";
 import { useWalletOrder } from "../../state/walletOrder";
+import { useWalletSyncOf } from "../../state/walletSync";
 import { SaveFailure, SectionCard, SettingRow, Toggle } from "./primitives";
 import { WalletIconPicker } from "./WalletIconPicker";
 
@@ -97,7 +99,8 @@ export function WalletsSection({
   wallets: WalletMeta[];
   gapLimit: number;
 }) {
-  const { showToast, syncErrors } = useUi();
+  const { showToast } = useUi();
+  const syncOf = useWalletSyncOf();
   const removeWallet = useRemoveWallet();
   const renameWallet = useRenameWallet();
   const setIcon = useSetWalletIcon();
@@ -331,9 +334,9 @@ export function WalletsSection({
                       </span>
                     )}
                   </div>
-                  {syncErrors[wallet.id] && (
+                  {syncFailureOf(syncOf(wallet.id)) && (
                     <p className="mt-2 font-ui text-xs text-muted">
-                      {syncErrors[wallet.id]}
+                      {syncFailureOf(syncOf(wallet.id))}
                     </p>
                   )}
                   <SaveFailure error={failureOf(wallet.id)} />
