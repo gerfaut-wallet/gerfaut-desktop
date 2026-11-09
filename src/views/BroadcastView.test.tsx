@@ -1,10 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BroadcastView, MAX_TRANSACTION_FILE_BYTES } from "./BroadcastView";
-import type { BroadcastStatus, RecentBroadcast, TxPreview, TxWarning } from "../lib/ipc";
+import type { BroadcastStatus, Network, RecentBroadcast, TxPreview, TxWarning } from "../lib/ipc";
 import { useUi } from "../state/store";
 import { formatFiat } from "../lib/format";
 
@@ -878,5 +878,136 @@ describe("BroadcastView", () => {
     );
     expect(read).not.toHaveBeenCalled();
     expect(asked).toBe(false);
+  });
+});
+
+/** A promise the test settles by hand: an answer still on its way. */
+function held<T>() {
+  let settle!: (value: T) => void;
+  let refuse!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolve, reject) => {
+    settle = resolve;
+    refuse = reject;
+  });
+  return { promise, settle, refuse };
+}
+
+/** The page over a core whose every answer the test writes, on a
+    network the test can change while something is in flight. */
+function mountCore(
+  answer: (cmd: string, payload: Record<string, string>) => unknown,
+  network: Network = "signet",
+) {
+  mockIPC((cmd, args) => answer(cmd, (args ?? {}) as Record<string, string>));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = (on: Network) => (
+    <QueryClientProvider client={client}>
+      <BroadcastView network={on} />
+    </QueryClientProvider>
+  );
+  const { rerender } = render(view(network));
+  return { user: userEvent.setup(), switchTo: (on: Network) => rerender(view(on)) };
+}
+
+/** Lets every answer already given reach the page. */
+const settle = () => act(() => new Promise<void>((done) => setTimeout(done, 50)));
+
+/** Preview, confirm, and leave the send in flight. */
+async function sendHeld(user: ReturnType<typeof userEvent.setup>) {
+  await preview(user);
+  await user.click(screen.getByRole("button", { name: "Broadcast" }));
+  const dialog = within(await screen.findByRole("dialog"));
+  await user.click(dialog.getByRole("button", { name: "Broadcast" }));
+  await screen.findByRole("button", { name: "Broadcasting…" });
+}
+
+describe("BroadcastView, an answer that comes late", () => {
+  beforeEach(() => {
+    useUi.setState({ masked: false });
+    kept = [];
+  });
+
+  const OTHER: TxPreview = { ...PREVIEW, txid: "ef".repeat(32), hex: "02000000ef" };
+
+  /** Start over leaves the send to the network: what it answers is
+      kept by the vault, and listed with the past, but it no longer
+      takes the screen from the transaction read since. */
+  it("keeps the next transaction on screen when a send started before Start over lands", async () => {
+    const send = held<typeof REPORT>();
+    const { user } = mountCore((cmd, payload) => {
+      if (cmd === "preview_transaction") return payload.input === "B" ? OTHER : PREVIEW;
+      if (cmd === "broadcast_transaction")
+        return send.promise.then((report) => {
+          kept = [{ ...report, network: "signet", hex: payload.hex }];
+          return report;
+        });
+      if (cmd === "recent_broadcasts") return kept;
+      if (cmd === "transaction_status") return status();
+      return undefined;
+    });
+    await sendHeld(user);
+
+    await user.click(screen.getByRole("button", { name: "Start over" }));
+    await user.type(screen.getByLabelText("Signed transaction"), "B");
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    await screen.findByRole("region", { name: "Technical" });
+
+    send.settle(REPORT);
+    await settle();
+
+    expect(screen.queryByText(/Sent · mempool\.space/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Broadcast another transaction" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Broadcast" })).toBeEnabled();
+    const past = within(await screen.findByRole("region", { name: "Past broadcasts" }));
+    expect(past.getByText(/Sent .* · mempool\.space/)).toBeInTheDocument();
+  });
+
+  it("keeps the page blank when a send started on another network lands", async () => {
+    const send = held<typeof REPORT>();
+    const { user, switchTo } = mountCore((cmd) => {
+      if (cmd === "preview_transaction") return PREVIEW;
+      if (cmd === "broadcast_transaction") return send.promise;
+      if (cmd === "recent_broadcasts") return [];
+      if (cmd === "transaction_status") return status();
+      return undefined;
+    });
+    await sendHeld(user);
+
+    switchTo("testnet4");
+    await screen.findByLabelText("Signed transaction");
+    send.settle(REPORT);
+    await settle();
+
+    expect(screen.queryByText(/Sent · mempool\.space/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Signed transaction")).toHaveValue("");
+    expect(screen.queryByRole("region", { name: "Technical" })).not.toBeInTheDocument();
+  });
+
+  it("drops a preview answered after the field took the page back", async () => {
+    const first = held<TxPreview>();
+    const { user } = mountCore((cmd) => {
+      if (cmd === "preview_transaction") return first.promise;
+      if (cmd === "recent_broadcasts") return [];
+      return undefined;
+    });
+    await user.type(screen.getByLabelText("Signed transaction"), HEX);
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    await screen.findByRole("button", { name: "Reading…" });
+
+    // A file too large is the one way back to the field while a
+    // preview reads: it says why, and the reading is dropped.
+    const file = new File(["0200"], "disc.img");
+    Object.defineProperty(file, "size", { value: MAX_TRANSACTION_FILE_BYTES + 1 });
+    fireEvent.change(document.querySelector<HTMLInputElement>('input[type="file"]')!, {
+      target: { files: [file] },
+    });
+    await screen.findByText("This file is too large to hold a transaction.");
+
+    first.settle(PREVIEW);
+    await settle();
+    expect(screen.queryByRole("region", { name: "Technical" })).not.toBeInTheDocument();
+    expect(screen.getByText("This file is too large to hold a transaction.")).toBeInTheDocument();
   });
 });

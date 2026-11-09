@@ -22,7 +22,7 @@ import {
   Wallet as WalletIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { AddressChip } from "../components/AddressChip";
@@ -69,6 +69,7 @@ import {
   useTransactionStatus,
 } from "../state/queries";
 import { useUi } from "../state/store";
+import { FIRST_FLOW, stepBroadcast } from "../state/broadcast";
 
 /** PSBT file magic, BIP-174: a binary file that starts with it is
     passed to the core as hex, like any other bytes. */
@@ -122,36 +123,46 @@ export function BroadcastView({ network }: { network: Network }) {
   const broadcast = useBroadcastTransaction();
   const recent = useRecentBroadcasts(network);
   const forget = useForgetBroadcast(network);
+  const [flow, dispatch] = useReducer(stepBroadcast, FIRST_FLOW);
+  /** The last ticket handed out: every step that starts a request or
+      drops one takes the next, so an answer can tell it is stale. */
+  const tickets = useRef(0);
+  const take = () => (tickets.current += 1);
   const [raw, setRaw] = useState("");
   const [scanOpen, setScanOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [sent, setSent] = useState<RecentBroadcast | null>(null);
-  /** A file refused before it was read: said where the core's refusal
-      would be. */
-  const [fileError, setFileError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Another workspace network means another chain: start over.
+  // Another workspace network means another chain: start over. A send
+  // still in flight goes on, but its answer no longer lands here.
   useEffect(() => {
     setRaw("");
-    setSent(null);
-    setFileError(null);
-    preview.reset();
-    broadcast.reset();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    dispatch({ type: "reset", ticket: take() });
   }, [network]);
 
+  // Said once, when the network's yes lands on this page: a send that
+  // went out after Start over is only listed with the past ones.
+  const sentTicket = flow.phase === "sent" ? flow.ticket : null;
+  useEffect(() => {
+    if (sentTicket !== null) showToast("Transaction broadcast");
+  }, [sentTicket, showToast]);
+
   const decode = (input: string) => {
-    setFileError(null);
-    setSent(null);
-    broadcast.reset();
-    preview.mutate({ input, network });
+    const ticket = take();
+    dispatch({ type: "preview", ticket });
+    preview.mutateAsync({ input, network }).then(
+      (answer) => dispatch({ type: "previewed", ticket, preview: answer }),
+      (error: unknown) => dispatch({ type: "previewFailed", ticket, error }),
+    );
   };
 
   const importFile = async (file: File) => {
     if (file.size > MAX_TRANSACTION_FILE_BYTES) {
-      preview.reset();
-      setFileError("This file is too large to hold a transaction.");
+      dispatch({
+        type: "fileRefused",
+        ticket: take(),
+        message: "This file is too large to hold a transaction.",
+      });
       return;
     }
     const input = await fileToInput(file);
@@ -159,53 +170,54 @@ export function BroadcastView({ network }: { network: Network }) {
     decode(input);
   };
 
-  const send = async () => {
-    const hex = preview.data?.hex;
-    if (!hex) return;
+  const send = () => {
+    if (flow.phase !== "ready" || !flow.preview.hex) return;
+    const hex = flow.preview.hex;
     setConfirmOpen(false);
-    try {
-      const report = await broadcast.mutateAsync({ network, hex });
-      const entry: RecentBroadcast = {
-        txid: report.txid,
-        network,
-        hex,
-        backend: report.backend,
-        at: report.at,
-      };
-      setSent(entry);
-      showToast("Transaction broadcast");
-    } catch {
-      // The refusal is rendered below the preview, in the node's words.
-    }
+    const ticket = take();
+    dispatch({ type: "send", ticket });
+    // The refusal is rendered below the preview, in the node's words.
+    broadcast.mutateAsync({ network, hex }).then(
+      (report) =>
+        dispatch({
+          type: "sent",
+          ticket,
+          entry: { txid: report.txid, network, hex, backend: report.backend, at: report.at },
+        }),
+      (error: unknown) => dispatch({ type: "sendFailed", ticket, error }),
+    );
   };
 
   const startOver = () => {
     setRaw("");
-    setSent(null);
-    setFileError(null);
-    preview.reset();
-    broadcast.reset();
+    dispatch({ type: "reset", ticket: take() });
   };
 
   /** Typing again answers a refusal: it goes as soon as the text
       changes, and the hint it stood in for comes back in its place. */
   const edit = (value: string) => {
     setRaw(value);
-    setFileError(null);
-    if (preview.isError) preview.reset();
+    dispatch({ type: "edit" });
   };
 
-  const inputError: InputError | null = fileError
-    ? { headline: fileError }
-    : preview.error
-      ? isCommandError(preview.error) &&
-        (preview.error.kind === "invalid_input" || preview.error.kind === "too_many_parts")
-        ? { headline: UNREADABLE_TRANSACTION, detail: preview.error.message }
-        : isCommandError(preview.error) && preview.error.kind === "private_material"
+  const refusal = flow.phase === "compose" ? flow.refusal : null;
+  const inputError: InputError | null = !refusal
+    ? null
+    : refusal.kind === "file"
+      ? { headline: refusal.message }
+      : isCommandError(refusal.error) &&
+          (refusal.error.kind === "invalid_input" || refusal.error.kind === "too_many_parts")
+        ? { headline: UNREADABLE_TRANSACTION, detail: refusal.error.message }
+        : isCommandError(refusal.error) && refusal.error.kind === "private_material"
           ? { headline: PRIVATE_KEY_NOT_A_TRANSACTION }
-          : { headline: errorMessage(preview.error) }
-      : null;
-  const broadcastError = broadcast.error ? errorMessage(broadcast.error) : null;
+          : { headline: errorMessage(refusal.error) };
+  const broadcastError =
+    flow.phase === "ready" && flow.refusal ? errorMessage(flow.refusal) : null;
+  /** What the transaction does, once the core has read it. */
+  const read = flow.phase === "ready" || flow.phase === "sending" || flow.phase === "sent"
+    ? flow.preview
+    : null;
+  const sent = flow.phase === "sent" ? flow.entry : null;
 
   const history = (recent.data ?? []).filter((entry) => entry.txid !== sent?.txid);
 
@@ -221,21 +233,21 @@ export function BroadcastView({ network }: { network: Network }) {
       </header>
 
       <div className="flex flex-col gap-4">
-        {!preview.data && !sent && (
+        {!read && (
           <InputCard
             raw={raw}
             onChange={edit}
             onDecode={() => decode(raw)}
             onImport={() => fileRef.current?.click()}
             onScan={() => setScanOpen(true)}
-            busy={preview.isPending}
+            busy={flow.phase === "previewing"}
             error={inputError}
           />
         )}
 
-        {preview.data && !sent && (
+        {read && !sent && (
           <>
-            <PreviewCard preview={preview.data} network={network} />
+            <PreviewCard preview={read} network={network} />
             {/* A node that says no risks neither funds nor privacy —
                 but nothing else on the page says the send failed. */}
             {broadcastError && (
@@ -253,11 +265,11 @@ export function BroadcastView({ network }: { network: Network }) {
               <Button
                 variant="primary"
                 icon={Radio}
-                disabled={!sendable(preview.data)}
-                busy={broadcast.isPending}
+                disabled={!sendable(read)}
+                busy={flow.phase === "sending"}
                 onClick={() => setConfirmOpen(true)}
               >
-                {broadcast.isPending ? "Broadcasting…" : "Broadcast"}
+                {flow.phase === "sending" ? "Broadcasting…" : "Broadcast"}
               </Button>
             </div>
           </>
@@ -270,7 +282,7 @@ export function BroadcastView({ network }: { network: Network }) {
                 just sent is exactly when one wants to re-read what it
                 does. The two platforms differ in the facts they can
                 offer, never in the layout. */}
-            {preview.data && <PreviewCard preview={preview.data} network={network} />}
+            {read && <PreviewCard preview={read} network={network} />}
             <div className="px-1">
               <Button variant="primary" onClick={startOver} icon={Radio}>
                 Broadcast another transaction
@@ -320,19 +332,19 @@ export function BroadcastView({ network }: { network: Network }) {
           decode(text);
         }}
       />
-      {preview.data && (
+      {read && (
         <Modal
           open={confirmOpen}
           onClose={() => setConfirmOpen(false)}
           title="Broadcast this transaction?"
           centered
         >
-          <ConfirmBody preview={preview.data} />
+          <ConfirmBody preview={read} />
           <div className="mt-5 flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setConfirmOpen(false)}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={() => void send()} icon={Radio}>
+            <Button variant="primary" onClick={send} icon={Radio}>
               Broadcast
             </Button>
           </div>
