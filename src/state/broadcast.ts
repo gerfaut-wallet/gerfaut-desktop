@@ -99,18 +99,34 @@ export type SettledCheck =
   | { kind: "known"; status: BroadcastStatus }
   | { kind: "failed"; error: unknown; last: BroadcastStatus | null };
 
-/** The check, from the status query as TanStack Query keeps it: `data`
-    is the last answer that came, and stays after a failure. */
-export function statusCheck(
-  watching: boolean,
-  query: { data: BroadcastStatus | undefined; error: unknown; isError: boolean; isFetching: boolean },
-): StatusCheck {
-  if (!watching) return { kind: "unchecked" };
-  const settled: SettledCheck | null = query.isError
+/** The status query, as TanStack Query keeps it: `data` is the last
+    answer that came, and stays after a failure. */
+interface StatusQuery {
+  data: BroadcastStatus | undefined;
+  error: unknown;
+  isError: boolean;
+  isFetching: boolean;
+}
+
+/** What the query settled on, if it says: a query with no answer yet
+    goes back to pending, its failure cleared, each time it asks again. */
+export function settledCheck(query: StatusQuery): SettledCheck | null {
+  return query.isError
     ? { kind: "failed", error: query.error, last: query.data ?? null }
     : query.data
       ? { kind: "known", status: query.data }
       : null;
+}
+
+/** The check, from the query and the last check the card saw settle:
+    `settled` stays through a new ask, so a failure is not forgotten
+    while the backend is asked again. */
+export function statusCheck(
+  watching: boolean,
+  query: StatusQuery,
+  settled: SettledCheck | null,
+): StatusCheck {
+  if (!watching) return { kind: "unchecked" };
   if (query.isFetching || !settled) return { kind: "checking", previous: settled };
   return settled;
 }

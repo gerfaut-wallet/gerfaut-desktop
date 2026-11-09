@@ -70,8 +70,14 @@ import {
   useTransactionStatus,
 } from "../state/queries";
 import { useUi } from "../state/store";
-import { FIRST_FLOW, shownCheck, statusCheck, stepBroadcast } from "../state/broadcast";
-import type { StatusCheck } from "../state/broadcast";
+import {
+  FIRST_FLOW,
+  settledCheck,
+  shownCheck,
+  statusCheck,
+  stepBroadcast,
+} from "../state/broadcast";
+import type { SettledCheck, StatusCheck } from "../state/broadcast";
 
 /** PSBT file magic, BIP-174: a binary file that starts with it is
     passed to the core as hex, like any other bytes. */
@@ -1021,7 +1027,14 @@ function StatusCard({
 
   // One value for where the check stands, so a failed check can never
   // sit beside the pill of the answer before it.
-  const check = shownCheck(statusCheck(watching, status));
+  // The last check the backend settled, kept by the time of the answer
+  // or the failure: a query with no answer goes back to pending, its
+  // failure cleared, each time it asks again.
+  const settled = settledCheck(status);
+  const settledAt = Math.max(status.dataUpdatedAt, status.errorUpdatedAt);
+  const [kept, setKept] = useState<{ at: number; check: SettledCheck } | null>(null);
+  if (settled && kept?.at !== settledAt) setKept({ at: settledAt, check: settled });
+  const check = shownCheck(statusCheck(watching, status, settled ?? kept?.check ?? null));
   const pill = checkPill(check);
 
   return (

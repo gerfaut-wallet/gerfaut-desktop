@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BroadcastStatus, RecentBroadcast, TxPreview } from "../lib/ipc";
-import { FIRST_FLOW, statusCheck, stepBroadcast } from "./broadcast";
+import { FIRST_FLOW, settledCheck, statusCheck, stepBroadcast } from "./broadcast";
 import type { BroadcastEvent, BroadcastFlow } from "./broadcast";
 
 const PREVIEW = { txid: "ab".repeat(32), hex: "0200" } as TxPreview;
@@ -85,32 +85,41 @@ describe("statusCheck", () => {
     isFetching: false,
     ...over,
   });
+  const check = (watching: boolean, over: Partial<Parameters<typeof statusCheck>[1]>) =>
+    statusCheck(watching, query(over), settledCheck(query(over)));
 
   it("is unchecked until the card is asked to watch", () => {
-    expect(statusCheck(false, query({ data: STATUS }))).toEqual({ kind: "unchecked" });
+    expect(check(false, { data: STATUS })).toEqual({ kind: "unchecked" });
   });
 
   it("keeps what it knew while it asks again", () => {
-    expect(statusCheck(true, query({ isFetching: true }))).toEqual({
-      kind: "checking",
-      previous: null,
-    });
-    expect(statusCheck(true, query({ data: STATUS, isFetching: true }))).toEqual({
+    expect(check(true, { isFetching: true })).toEqual({ kind: "checking", previous: null });
+    expect(check(true, { data: STATUS, isFetching: true })).toEqual({
       kind: "checking",
       previous: { kind: "known", status: STATUS },
     });
   });
 
   it("keeps the last answer beside a failure, never in its place", () => {
-    expect(statusCheck(true, query({ data: STATUS, error: "down", isError: true }))).toEqual({
+    expect(check(true, { data: STATUS, error: "down", isError: true })).toEqual({
       kind: "failed",
       error: "down",
       last: STATUS,
     });
-    expect(statusCheck(true, query({ error: "down", isError: true }))).toEqual({
+    expect(check(true, { error: "down", isError: true })).toEqual({
       kind: "failed",
       error: "down",
       last: null,
+    });
+  });
+
+  /** TanStack Query clears the failure of a query with no answer when
+      it asks again: the card hands back the one it saw. */
+  it("keeps a failure the query forgot while it asks again", () => {
+    const failed = { kind: "failed", error: "down", last: null } as const;
+    expect(statusCheck(true, query({ isFetching: true }), failed)).toEqual({
+      kind: "checking",
+      previous: failed,
     });
   });
 });

@@ -1132,4 +1132,35 @@ describe("BroadcastView, a check that fails after an answer", () => {
     expect(screen.getByText("The backend did not answer. Try again in a moment.")).toBeInTheDocument();
     expect(screen.queryByText(/Last answer/)).not.toBeInTheDocument();
   });
+
+  /** A query with no answer yet goes back to pending when it asks
+      again: the failure it had stays on the card meanwhile. */
+  it("keeps saying it could not check while it asks again", async () => {
+    let answer: () => Promise<BroadcastStatus> = () => Promise.reject(DOWN);
+    const { user } = mountCore((cmd, payload) => {
+      if (cmd === "preview_transaction") return PREVIEW;
+      if (cmd === "broadcast_transaction") {
+        kept = [{ ...REPORT, network: "signet", hex: payload.hex }];
+        return REPORT;
+      }
+      if (cmd === "recent_broadcasts") return kept;
+      if (cmd === "transaction_status") return answer();
+      return undefined;
+    });
+    await send(user);
+    await screen.findByText("Could not check", undefined, LATE);
+
+    const asked = held<BroadcastStatus>();
+    answer = () => asked.promise;
+    await user.click(screen.getByRole("button", { name: "Check status" }));
+    await settle();
+
+    expect(screen.queryByText("Asking the backend…")).not.toBeInTheDocument();
+    expect(screen.getByText("Could not check")).toBeInTheDocument();
+    expect(screen.getByText("The backend did not answer. Try again in a moment.")).toBeInTheDocument();
+
+    asked.settle(status({ at: Math.floor(Date.now() / 1000) }));
+    expect(await screen.findByText("In the mempool")).toBeInTheDocument();
+    expect(screen.queryByText("Could not check")).not.toBeInTheDocument();
+  });
 });
