@@ -1011,3 +1011,83 @@ describe("BroadcastView, an answer that comes late", () => {
     expect(screen.getByText("This file is too large to hold a transaction.")).toBeInTheDocument();
   });
 });
+
+describe("BroadcastView, a check that fails after an answer", () => {
+  beforeEach(() => {
+    useUi.setState({ masked: false });
+    kept = [];
+  });
+
+  /** The page over a core that answers the first check and fails the
+      next ones, until the test says otherwise. */
+  async function checkThenFail(first: BroadcastStatus | null, failure: unknown) {
+    let failing = first === null;
+    const { user } = mountCore((cmd, payload) => {
+      if (cmd === "preview_transaction") return PREVIEW;
+      if (cmd === "broadcast_transaction") {
+        kept = [{ ...REPORT, network: "signet", hex: payload.hex }];
+        return REPORT;
+      }
+      if (cmd === "recent_broadcasts") return kept;
+      if (cmd === "transaction_status") return failing ? Promise.reject(failure) : first;
+      return undefined;
+    });
+    await send(user);
+    return {
+      user,
+      fail: async () => {
+        failing = true;
+        await user.click(screen.getByRole("button", { name: "Check status" }));
+      },
+    };
+  }
+
+  const NOW = () => Math.floor(Date.now() / 1000);
+  const DOWN = { kind: "backend", message: "connection refused" };
+  // The status query tries once more before it gives up, a second on.
+  const LATE = { timeout: 4000 };
+
+  it.each([
+    [
+      "confirmed",
+      () => status({ confirmed: true, block_height: 4_611_010, confirmations: 3, at: NOW() }),
+      "Confirmed · 3 conf",
+      "Last answer just now: confirmed, 3 confirmations.",
+    ],
+    [
+      "in_mempool",
+      () => status({ at: NOW() }),
+      "In the mempool",
+      "Last answer just now: waiting to be mined.",
+    ],
+    [
+      "not_seen",
+      () => status({ found: false, at: NOW() }),
+      "Not seen",
+      "Last answer just now: mempool.space did not have this transaction.",
+    ],
+  ])(
+    "says it could not check, then the last answer, for a %s transaction",
+    async (_standing, answer, pill, last) => {
+      const { fail } = await checkThenFail(answer(), DOWN);
+      await screen.findByText(pill);
+      await fail();
+
+      const badge = await screen.findByText("Could not check", undefined, LATE);
+      expect(badge).toHaveClass("bg-pending-surface", "text-pending");
+      expect(badge.querySelector(".lucide-triangle-alert")).toBeInTheDocument();
+      expect(screen.queryByText(pill)).not.toBeInTheDocument();
+      const error = screen.getByText("The backend did not answer. Try again in a moment.");
+      const said = screen.getByText(last);
+      expect(error.compareDocumentPosition(said) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    },
+  );
+
+  it("says it could not check a transaction it never had an answer for", async () => {
+    await checkThenFail(null, DOWN);
+    const badge = await screen.findByText("Could not check", undefined, LATE);
+    expect(badge).toHaveClass("bg-pending-surface", "text-pending");
+    expect(screen.getByText("The backend did not answer. Try again in a moment.")).toBeInTheDocument();
+    expect(screen.queryByText(/Last answer/)).not.toBeInTheDocument();
+  });
+});

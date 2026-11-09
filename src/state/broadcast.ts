@@ -1,4 +1,4 @@
-import type { RecentBroadcast, TxPreview } from "../lib/ipc";
+import type { BroadcastStatus, RecentBroadcast, TxPreview } from "../lib/ipc";
 
 /* The broadcast page as one value. It used to be read off a preview
    mutation, a send mutation and a `sent` record side by side, and a
@@ -82,4 +82,41 @@ export function stepBroadcast(flow: BroadcastFlow, event: BroadcastEvent): Broad
         ? { phase: "ready", ticket: flow.ticket, preview: flow.preview, refusal: event.error }
         : flow;
   }
+}
+
+/** Where the status card's check stands. `checking` keeps what was
+    known before it, shown while the backend is asked again; `failed`
+    keeps the last answer the backend gave, so a failed check never
+    passes for that answer, nor hides it. */
+export type StatusCheck =
+  /** Not asked since the session opened. */
+  | { kind: "unchecked" }
+  | { kind: "checking"; previous: SettledCheck | null }
+  | SettledCheck;
+
+/** A check the backend answered, or failed to. */
+export type SettledCheck =
+  | { kind: "known"; status: BroadcastStatus }
+  | { kind: "failed"; error: unknown; last: BroadcastStatus | null };
+
+/** The check, from the status query as TanStack Query keeps it: `data`
+    is the last answer that came, and stays after a failure. */
+export function statusCheck(
+  watching: boolean,
+  query: { data: BroadcastStatus | undefined; error: unknown; isError: boolean; isFetching: boolean },
+): StatusCheck {
+  if (!watching) return { kind: "unchecked" };
+  const settled: SettledCheck | null = query.isError
+    ? { kind: "failed", error: query.error, last: query.data ?? null }
+    : query.data
+      ? { kind: "known", status: query.data }
+      : null;
+  if (query.isFetching || !settled) return { kind: "checking", previous: settled };
+  return settled;
+}
+
+/** What the card shows of a check: a check under way shows what it
+    knew before it. */
+export function shownCheck(check: StatusCheck): StatusCheck {
+  return check.kind === "checking" && check.previous ? check.previous : check;
 }

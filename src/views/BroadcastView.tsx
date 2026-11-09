@@ -36,6 +36,7 @@ import { ScanQrModal } from "../components/ScanQrModal";
 import { BRANCH_ROLES, TxDiagram } from "../components/TxDiagram";
 import type { BranchRole, TxBranch } from "../components/TxDiagram";
 import type {
+  BroadcastStatus,
   Network,
   RecentBroadcast,
   TxInputPreview,
@@ -69,7 +70,8 @@ import {
   useTransactionStatus,
 } from "../state/queries";
 import { useUi } from "../state/store";
-import { FIRST_FLOW, stepBroadcast } from "../state/broadcast";
+import { FIRST_FLOW, shownCheck, statusCheck, stepBroadcast } from "../state/broadcast";
+import type { StatusCheck } from "../state/broadcast";
 
 /** PSBT file magic, BIP-174: a binary file that starts with it is
     passed to the core as hex, like any other bytes. */
@@ -893,6 +895,104 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
 
 // --- status ------------------------------------------------------------------
 
+/** The pill of a check: where the transaction stands as the core says
+    it, or that the last check failed. A failed check says so even over
+    an earlier answer, which the line under it dates instead. Nothing
+    while there is nothing to say yet. */
+function checkPill(
+  check: StatusCheck,
+): { tone: "confirmed" | "pending"; icon: LucideIcon; label: string } | null {
+  switch (check.kind) {
+    case "unchecked":
+    case "checking":
+      return null;
+    // Amber, as a transaction not seen: nothing on chain is lost, the
+    // backend only did not say. The triangle and the words carry it.
+    case "failed":
+      return { tone: "pending", icon: AlertTriangle, label: "Could not check" };
+    case "known":
+      switch (check.status.standing) {
+        case "confirmed":
+          return {
+            tone: "confirmed",
+            icon: Check,
+            label: `Confirmed · ${check.status.confirmations} conf`,
+          };
+        case "in_mempool":
+          return { tone: "pending", icon: Clock, label: "In the mempool" };
+        // A transaction the backend has not seen is most often one it
+        // has not indexed yet, and the line below says broadcasting it
+        // again does no harm: nothing is lost, so nothing is red.
+        // Amber, with its own glyph and its own words — the colour is
+        // never the only carrier.
+        case "not_seen":
+          return { tone: "pending", icon: AlertTriangle, label: "Not seen" };
+      }
+  }
+}
+
+function confirmationCount(count: number): string {
+  return `${groupThousands(String(count))} confirmation${count === 1 ? "" : "s"}`;
+}
+
+/** The lines under the pill. */
+function CheckLines({ check }: { check: StatusCheck }) {
+  switch (check.kind) {
+    case "unchecked":
+      return <p>Not checked since this session opened.</p>;
+    case "checking":
+      return <p>Asking the backend…</p>;
+    case "failed":
+      return (
+        <>
+          <p>
+            {isFalseProof(check.error)
+              ? FALSE_PROOF
+              : "The backend did not answer. Try again in a moment."}
+          </p>
+          {check.last && <p>{lastAnswer(check.last)}</p>}
+        </>
+      );
+    case "known": {
+      const status = check.status;
+      switch (status.standing) {
+        case "confirmed":
+          return (
+            <>
+              {/* The height keeps a line to itself. Run into the count
+                  after a comma, the grouped number swallows it: "block
+                  4 611 010, 3 confirmations" reads as one figure whose
+                  last group happens to be a 3. */}
+              {status.block_height !== null && (
+                <p>{`Mined in block ${groupThousands(String(status.block_height))}`}</p>
+              )}
+              <p>{`${confirmationCount(status.confirmations)} as of ${relativeTime(status.at)}`}</p>
+            </>
+          );
+        case "in_mempool":
+          return <p>Waiting to be mined.</p>;
+        case "not_seen":
+          return (
+            <p>{`${status.backend} does not have this transaction. It may not have been relayed, or it was dropped or replaced. Broadcasting it again does no harm.`}</p>
+          );
+      }
+    }
+  }
+}
+
+/** The answer a failed check leaves standing, dated: it may be old. */
+function lastAnswer(last: BroadcastStatus): string {
+  const when = `Last answer ${relativeTime(last.at)}`;
+  switch (last.standing) {
+    case "confirmed":
+      return `${when}: confirmed, ${confirmationCount(last.confirmations)}.`;
+    case "in_mempool":
+      return `${when}: waiting to be mined.`;
+    case "not_seen":
+      return `${when}: ${last.backend} did not have this transaction.`;
+  }
+}
+
 /** Where a broadcast transaction stands, polled while it is pending. */
 function StatusCard({
   entry,
@@ -915,12 +1015,10 @@ function StatusCard({
   const url = explorerTxUrl(entry.network, entry.txid);
   const explorer = useExplorer(url);
 
-  const standing = status.data;
-  // A transaction the backend has not seen is most often one it has not
-  // indexed yet, and the line below says broadcasting it again does no
-  // harm: nothing is lost, so nothing is red. Amber, with its own glyph
-  // and its own words — the colour is never the only carrier.
-  const tone = !standing ? "neutral" : standing.confirmed ? "confirmed" : "pending";
+  // One value for where the check stands, so a failed check can never
+  // sit beside the pill of the answer before it.
+  const check = shownCheck(statusCheck(watching, status));
+  const pill = checkPill(check);
 
   return (
     <div
@@ -939,27 +1037,17 @@ function StatusCard({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {standing && (
+          {pill && (
             <span
               className={clsx(
                 "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 font-ui text-xs font-medium",
-                tone === "confirmed" && "border-confirmed/25 bg-confirmed-surface text-confirmed",
-                tone === "pending" && "border-pending/25 bg-pending-surface text-pending",
+                pill.tone === "confirmed" && "border-confirmed/25 bg-confirmed-surface text-confirmed",
+                pill.tone === "pending" && "border-pending/25 bg-pending-surface text-pending",
               )}
               aria-live="polite"
             >
-              {standing.confirmed ? (
-                <Check size={12} strokeWidth={2} aria-hidden />
-              ) : standing.found ? (
-                <Clock size={12} strokeWidth={2} aria-hidden />
-              ) : (
-                <AlertTriangle size={12} strokeWidth={2} aria-hidden />
-              )}
-              {standing.confirmed
-                ? `Confirmed · ${standing.confirmations} conf`
-                : standing.found
-                  ? "In the mempool"
-                  : "Not seen"}
+              <pill.icon size={12} strokeWidth={2} aria-hidden />
+              {pill.label}
             </span>
           )}
           <Button
@@ -980,32 +1068,7 @@ function StatusCard({
       </div>
 
       <div className="mt-3 font-ui text-sm text-muted" aria-live="polite">
-        {!watching && <p>Not checked since this session opened.</p>}
-        {watching && status.isPending && <p>Asking the backend…</p>}
-        {watching && status.isError && (
-          <p>
-            {isFalseProof(status.error)
-              ? FALSE_PROOF
-              : "The backend did not answer. Try again in a moment."}
-          </p>
-        )}
-        {standing &&
-          (standing.confirmed ? (
-            <>
-              {/* The height keeps a line to itself. Run into the count
-                  after a comma, the grouped number swallows it: "block
-                  4 611 010, 3 confirmations" reads as one figure whose
-                  last group happens to be a 3. */}
-              {standing.block_height !== null && (
-                <p>{`Mined in block ${groupThousands(String(standing.block_height))}`}</p>
-              )}
-              <p>{`${groupThousands(String(standing.confirmations))} confirmation${standing.confirmations === 1 ? "" : "s"} as of ${relativeTime(standing.at)}`}</p>
-            </>
-          ) : standing.found ? (
-            <p>Waiting to be mined.</p>
-          ) : (
-            <p>{`${standing.backend} does not have this transaction. It may not have been relayed, or it was dropped or replaced. Broadcasting it again does no harm.`}</p>
-          ))}
+        <CheckLines check={check} />
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
