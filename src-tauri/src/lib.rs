@@ -16,7 +16,7 @@ use gerfaut_core::error::CoreError;
 use gerfaut_core::input::qr::{QrProgress, QrScans};
 use gerfaut_core::input::{DerivationChoice, ImportOptions, ParsedInput, ScriptKind};
 use gerfaut_core::lock::{AppLock, LockKind, LockVerdict};
-use gerfaut_core::manager::SyncAllReport;
+use gerfaut_core::manager::{SyncAllReport, WalletSync};
 use gerfaut_core::network::Network;
 use gerfaut_core::prefs::{Preferences, PreferencesChange};
 use gerfaut_core::store::{Settings, VaultKey};
@@ -42,6 +42,7 @@ mod live;
     allow(dead_code, reason = "Linux compiles it for its tests only")
 )]
 mod single_instance;
+mod sync_state;
 #[cfg(any(windows, test))]
 mod toast;
 
@@ -449,6 +450,18 @@ async fn rescan_wallet(
     let report = state.manager.rescan_wallet(&id).await?;
     live::announce_report(&app, &report).await;
     Ok(report)
+}
+
+/// Where the sync of each wallet of a network (or of all of them)
+/// stands; the window reads it when it starts listening to the changes
+/// (`sync://state`), and again at the unlock.
+#[tauri::command]
+async fn wallet_sync_states(
+    state: tauri::State<'_, AppState>,
+    network: Option<Network>,
+) -> CommandResult<Vec<WalletSync>> {
+    state.unlocked()?;
+    Ok(state.manager.sync_states(network).await)
 }
 
 /// Fetches an older round of history for a watched address. Returns how
@@ -1166,6 +1179,8 @@ fn open_vault(app: &tauri::AppHandle) -> CommandResult<()> {
     // webview draws is the lock screen, and until a secret goes
     // through, the commands below answer nothing about it.
     let locked = tauri::async_runtime::block_on(manager.app_lock()).is_some();
+    // Before any sync can start: the window hears of every one.
+    sync_state::forward(app.clone(), &manager);
     app.manage(AppState {
         manager,
         locked: AtomicBool::new(locked),
@@ -1388,6 +1403,7 @@ pub fn run() {
             rescan_wallet,
             load_more_history,
             sync_all,
+            wallet_sync_states,
             rename_wallet,
             remove_wallet,
             set_wallet_icon,

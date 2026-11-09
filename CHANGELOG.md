@@ -13,6 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - On the Broadcast page, when a status check fails after an earlier answer, the card now reads "Could not check" and shows the error, then the last answer with its time. It used to keep the earlier badge, such as "Confirmed", next to the error. A check that fails before any answer now shows "Could not check" too, and the card keeps it while the backend is asked again.
 - A transaction sent just before "Start over" or a network change no longer brings its status card back on top of the next transaction. The transaction still goes out and is listed under "Past broadcasts".
 - A file opened on the Broadcast page is no longer previewed when the network changes while it is still being read.
+- A wallet's pages no longer say "Syncing…" while another wallet syncs. A sync the live watch starts now shows as syncing on its wallet's pages too.
+- A wallet whose last sync failed still says so after a restart, instead of showing its last good sync until the next attempt.
 
 ## [0.1.0] - 2026-10-21
 

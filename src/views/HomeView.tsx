@@ -45,6 +45,8 @@ import {
 } from "../state/queries";
 import { coverageOf, useLiveStatus, waitingWords } from "../state/live";
 import { useUi } from "../state/store";
+import { useWalletSync } from "../state/walletSync";
+import { failureOf } from "../lib/syncState";
 
 const RANGE_LABEL: Record<PriceRange, string> = {
   day: "1D",
@@ -59,7 +61,9 @@ const RANGE_LABEL: Record<PriceRange, string> = {
     and its latest activity. Sized to the window, nothing to arrange. */
 export function HomeView({ walletId }: { walletId: string }) {
   const snapshot = useSnapshot(walletId);
-  const { syncErrors } = useUi();
+  // The failure of this wallet's last sync, still said while it syncs
+  // again.
+  const failure = failureOf(useWalletSync(walletId));
 
   if (snapshot.isPending) {
     return <p className="px-1 py-4 font-ui text-sm text-muted">Loading wallet…</p>;
@@ -88,11 +92,11 @@ export function HomeView({ walletId }: { walletId: string }) {
           <BalanceCard
             snapshot={snapshot.data}
             walletId={walletId}
-            error={syncErrors[walletId] ?? null}
+            error={failure}
           />
           <PriceCard />
           <ShortcutsCard />
-          <StatusCard snapshot={snapshot.data} error={syncErrors[walletId] ?? null} />
+          <StatusCard snapshot={snapshot.data} error={failure} />
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <HistoryCard snapshot={snapshot.data} />

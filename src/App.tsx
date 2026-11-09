@@ -7,6 +7,7 @@ import { Toast } from "./components/Toast";
 import { UpdateNotice } from "./components/UpdateNotice";
 import { Sidebar } from "./shell/Sidebar";
 import { useLiveEvents } from "./state/live";
+import { useSyncEvents, useSyncingAny } from "./state/walletSync";
 import { isLockedError, lockedSettings, useLock, useLockShortcut } from "./state/lock";
 import { useUpdateCheck } from "./state/update";
 import { LockScreen } from "./views/LockScreen";
@@ -18,7 +19,6 @@ import {
   useTourSeen,
   useStartupFailure,
   useSyncAll,
-  useSyncing,
   useWallets,
 } from "./state/queries";
 import { useFollowSystemTheme, useUi } from "./state/store";
@@ -60,8 +60,9 @@ export default function App() {
   const everyWallet = useWallets(undefined, lockSeen && !locked && wallets.data?.length === 0);
   const syncAll = useSyncAll();
   // Any sync in flight, not only this hook's: the one a fresh wallet
-  // starts, or a single wallet's refresh, must turn the sidebar icon.
-  const syncing = useSyncing();
+  // starts, a single wallet's refresh, or one the live watch runs, must
+  // turn the sidebar icon.
+  const syncing = useSyncingAny(wallets.data?.map((wallet) => wallet.id) ?? []);
   const {
     view,
     activeWalletId,
@@ -167,6 +168,7 @@ export default function App() {
   // and posts the notification, window minimised or locked included;
   // this side reads again what it is told has changed.
   useLiveEvents(lockSeen && !locked);
+  useSyncEvents(lockSeen && !locked);
 
   // A look at the latest release, at most once a day and never behind
   // the lock: see `state/update`.

@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider, onlineManager } from "@tanstack/react-query";
+import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -572,7 +573,10 @@ function withFiat(overrides: Record<string, (args: Record<string, unknown>) => u
   });
 }
 
-function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => unknown> = {}) {
+function walletIpc(
+  overrides: Record<string, (args: Record<string, unknown>) => unknown> = {},
+  { events = false }: { events?: boolean } = {},
+) {
   // What the core holds of the preferences: the ones the vault answers,
   // with every change applied.
   const vault = (overrides.get_settings?.({}) ?? SETTINGS) as Settings;
@@ -653,7 +657,7 @@ function walletIpc(overrides: Record<string, (args: Record<string, unknown>) => 
       default:
         throw new Error(`unexpected command ${cmd} ${JSON.stringify(args)}`);
     }
-  });
+  }, { shouldMockEvents: events });
 }
 
 function renderApp(
@@ -772,6 +776,8 @@ beforeEach(() => {
     syncErrors: {},
     tour: "closed",
     tourDismissed: false,
+    syncTurns: {},
+    syncingAll: null,
   });
   useBackendSave.setState(useBackendSave.getInitialState());
 });
@@ -1487,6 +1493,102 @@ describe("navigation", () => {
     expect(screen.queryByText(/ctrl k/i)).not.toBeInTheDocument();
     await user.keyboard("{Control>}k{/Control}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("the sync of each wallet", () => {
+  const second: WalletMeta = { ...WALLET, id: "w-2", name: "Lightning float" };
+  const snapshots: Record<string, WalletSnapshot> = {
+    "w-1": SNAPSHOT,
+    "w-2": { ...SNAPSHOT, meta: second, txs: [] },
+  };
+
+  /** A rescan of the second wallet that never ends, started from
+      Settings › Wallets; then the first wallet's Transactions page. */
+  async function rescanSecondThenOpenFirst() {
+    walletIpc({
+      list_wallets: () => [WALLET, second],
+      wallet_snapshot: (args) => snapshots[String(args.id)],
+      rescan_wallet: () => new Promise(() => {}),
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await openSettings(user, "Wallets");
+    const row = (await screen.findByText("Lightning float")).closest<HTMLElement>(
+      "[data-reorder-row]",
+    )!;
+    await user.click(within(row).getByRole("button", { name: "Rescan" }));
+    expect(await within(row).findByRole("button", { name: "Rescanning…" })).toBeInTheDocument();
+    await user.click(sidebar().getByRole("button", { name: "Transactions" }));
+    await screen.findByRole("heading", { name: /transactions/i });
+    return user;
+  }
+
+  it("does not say another wallet's sync is this wallet's", async () => {
+    await rescanSecondThenOpenFirst();
+    expect(useUi.getState().activeWalletId ?? WALLET.id).toBe(WALLET.id);
+    // The page's own line, not the sidebar's, which owns every sync.
+    const page = within(screen.getByRole("main"));
+    expect(page.queryByText(/^Syncing…/)).not.toBeInTheDocument();
+    expect(page.getByText(/^Synced .* · mempool\.space$/)).toBeInTheDocument();
+  });
+
+  /** The core says when any sync starts and ends, the live watch's
+      among them: the page of that wallet says so, no other. */
+  it("says a sync the core runs on the page of its wallet only", async () => {
+    walletIpc(
+      {
+        list_wallets: () => [WALLET, second],
+        wallet_snapshot: (args) => snapshots[String(args.id)],
+        wallet_sync_states: () => [],
+      },
+      { events: true },
+    );
+    renderApp();
+    const user = userEvent.setup();
+    await screen.findByText("Bitcoin price");
+    await user.click(sidebar().getByRole("button", { name: "Transactions" }));
+    await screen.findByRole("heading", { name: /transactions/i });
+    // Listening is asynchronous: give the listeners a turn.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    const page = within(screen.getByRole("main"));
+
+    await act(() => emit("sync://state", { wallet_id: second.id, state: "syncing" }));
+    expect(page.getByText(/^Synced .* · mempool\.space$/)).toBeInTheDocument();
+
+    await act(() => emit("sync://state", { wallet_id: WALLET.id, state: "syncing" }));
+    expect(await page.findByText(/^Syncing…/)).toBeInTheDocument();
+
+    await act(() =>
+      emit("sync://state", {
+        wallet_id: WALLET.id,
+        state: "failed",
+        message: "sync failed via mempool.space: timed out",
+        kind: "sync",
+        at: 1_755_000_200,
+      }),
+    );
+    expect(await page.findByText(/^Sync failed · showing data from/)).toBeInTheDocument();
+  });
+
+  /** A failure the core kept from an earlier run is said at the start,
+      not hidden behind the last good sync. */
+  it("still says a failed sync after a restart", async () => {
+    walletIpc({
+      wallet_sync_states: () => [
+        {
+          wallet_id: WALLET.id,
+          state: "failed",
+          message: "sync failed via mempool.space: timed out",
+          kind: "sync",
+          at: 1_755_000_200,
+        },
+      ],
+    }, { events: true });
+    renderApp();
+    expect(await screen.findByText("Sync failed")).toBeInTheDocument();
+    expect(screen.getByText("Sync failed: showing the last known balance.")).toBeInTheDocument();
   });
 });
 
