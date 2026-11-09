@@ -1,11 +1,12 @@
 name: CI
 
 # Every job runs on every push to main, every pull request, and on
-# demand (Actions, CI, Run workflow). The frontend and Rust jobs need the
-# sibling gerfaut-core checkout, at the revision .github/gerfaut-core.rev
-# pins, the one a release compiles: the Rust job builds against it, and
-# the frontend tests read its reference JSON (src/test/core.ts).
-# gerfaut-core is public, no key reads it.
+# demand (Actions, CI, Run workflow), except the Rust job on a pull
+# request of documentation alone (the `changes` job). The frontend and
+# Rust jobs need the sibling gerfaut-core checkout, at the revision
+# .github/gerfaut-core.rev pins, the one a release compiles: the Rust job
+# builds against it, and the frontend tests read its reference JSON
+# (src/test/core.ts). gerfaut-core is public, no key reads it.
 on:
   push:
     branches: [main]
@@ -16,6 +17,43 @@ permissions:
   contents: read
 
 jobs:
+  # Whether the jobs that compile have anything to check. On a pull
+  # request whose files are all documentation, listed below, they are
+  # skipped, and a skipped job counts as passed. Any other path, a push to
+  # main and a manual run, run them all.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.paths.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The merge commit of the pull request and its first parent, the
+          # base branch: the diff between them is what the merge changes.
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Read the changed paths
+        id: paths
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          code=true
+          if [ "$EVENT" = pull_request ]; then
+            paths=$(git -c core.quotePath=false diff --name-only --no-renames HEAD^1 HEAD)
+            [ -z "$paths" ] || code=false
+            while IFS= read -r path; do
+              case "$path" in
+                README.md | CONTRIBUTING.md | SECURITY.md | TRADEMARK.md) ;;
+                LICENSE | .github/PULL_REQUEST_TEMPLATE.md) ;;
+                .github/ISSUE_TEMPLATE/*.yml | .github/ISSUE_TEMPLATE/*.md) ;;
+                .github/images/*.svg | .github/images/*.webp) ;;
+                .github/images/*.png | CHANGELOG.md) ;;
+                *) code=true ;;
+              esac
+            done <<<"$paths"
+          fi
+          echo "code=$code" | tee -a "$GITHUB_OUTPUT"
+
   frontend:
     runs-on: ubuntu-latest
     steps:
@@ -57,6 +95,8 @@ jobs:
     # The image the release builds on, so a failure here is a failure the
     # release would have hit too.
     runs-on: ubuntu-22.04
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
