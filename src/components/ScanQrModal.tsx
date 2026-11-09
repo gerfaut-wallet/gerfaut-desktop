@@ -4,7 +4,13 @@ import type { InputWarning, QrProgress } from "../lib/ipc";
 import { ipc, isCommandError, materialRefusal } from "../lib/ipc";
 import { Modal } from "./Modal";
 
-type ScanState = "starting" | "scanning" | "denied" | "unavailable";
+type ScanState =
+  | { phase: "starting" }
+  | { phase: "scanning" }
+  | { phase: "denied" }
+  | { phase: "unavailable" }
+  /** The camera is off for good on this opening, and why. */
+  | { phase: "stopped"; reason: string };
 
 /** A code with more parts than Gerfaut reads, the same words as on
     Android. */
@@ -43,7 +49,7 @@ export function ScanQrModal({
   privateKey?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [state, setState] = useState<ScanState>("starting");
+  const [state, setState] = useState<ScanState>({ phase: "starting" });
   const [progress, setProgress] = useState<QrProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,10 +63,13 @@ export function ScanQrModal({
 
   useEffect(() => {
     if (!open) return;
-    setState("starting");
+    setState({ phase: "starting" });
     setProgress(null);
     setError(null);
     let stream: MediaStream | null = null;
+    /** Set when this opening is over. The camera may answer after it,
+        the first time the system asks the user for it. */
+    let cancelled = false;
     let raf = 0;
     let lastDecode = 0;
     let done = false;
@@ -127,7 +136,7 @@ export function ScanQrModal({
     // the reason gone meanwhile.
     const stop = (reason: string) => {
       done = true;
-      setError(reason);
+      setState({ phase: "stopped", reason });
       setProgress(null);
       cancelAnimationFrame(raf);
       stream?.getTracks().forEach((track) => track.stop());
@@ -235,20 +244,27 @@ export function ScanQrModal({
     navigator.mediaDevices
       ?.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 } } })
       .then((media) => {
-        stream = media;
         const video = videoRef.current;
-        if (!video) return;
+        // A stream for an opening already over is turned off at once,
+        // or the camera and its light stay on with no scanner to show.
+        if (cancelled || !video) {
+          media.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        stream = media;
         video.srcObject = media;
         void video.play();
-        setState("scanning");
+        setState({ phase: "scanning" });
         raf = requestAnimationFrame(tick);
       })
       .catch((error: unknown) => {
+        if (cancelled) return;
         const name = error instanceof DOMException ? error.name : "";
-        setState(name === "NotAllowedError" ? "denied" : "unavailable");
+        setState({ phase: name === "NotAllowedError" ? "denied" : "unavailable" });
       });
 
     return () => {
+      cancelled = true;
       done = true;
       cancelAnimationFrame(raf);
       stream?.getTracks().forEach((track) => track.stop());
@@ -257,6 +273,7 @@ export function ScanQrModal({
   }, [open]);
 
   const multiPart = progress !== null && progress.total > 1 && !progress.complete;
+  const alert = state.phase === "stopped" ? state.reason : error;
 
   return (
     <Modal open={open} onClose={onClose} title="Scan a QR code" width={480} z={60} centered>
@@ -270,18 +287,19 @@ export function ScanQrModal({
             playsInline
             className="h-full w-full -scale-x-100 object-cover"
           />
-          {state === "scanning" && (
+          {state.phase === "scanning" && (
             <div
               aria-hidden
+              data-testid="viewfinder"
               className="pointer-events-none absolute inset-0 m-auto aspect-square w-3/5 rounded-lg border-2 border-white/70"
             />
           )}
-          {state !== "scanning" && (
+          {state.phase !== "scanning" && state.phase !== "stopped" && (
             <p className="absolute inset-0 flex items-center justify-center px-8 text-center font-ui text-sm text-white/80">
-              {state === "starting" && "Starting the camera…"}
-              {state === "denied" &&
+              {state.phase === "starting" && "Starting the camera…"}
+              {state.phase === "denied" &&
                 "Camera access was refused. Allow it for Gerfaut in the system settings, then try again."}
-              {state === "unavailable" && "No usable camera was found on this machine."}
+              {state.phase === "unavailable" && "No usable camera was found on this machine."}
             </p>
           )}
           {multiPart && (
@@ -311,9 +329,9 @@ export function ScanQrModal({
             </div>
           )}
         </div>
-        {error ? (
+        {alert ? (
           <p role="alert" className="font-ui text-xs text-muted">
-            {error}
+            {alert}
           </p>
         ) : (
           <p className="font-ui text-xs text-muted">
