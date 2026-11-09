@@ -581,11 +581,34 @@ describe("ScanQrModal", () => {
 
     expect(late.stop).toHaveBeenCalled();
     expect(fresh.stop).not.toHaveBeenCalled();
-    expect((document.querySelector("video") as HTMLVideoElement).srcObject).toEqual({
-      getTracks: expect.any(Function),
-    });
     expect(
       ((document.querySelector("video") as HTMLVideoElement).srcObject as MediaStream).getTracks()[0],
     ).toBe(fresh);
+  });
+
+  it("keeps a late refusal out of the scanner opened after it", async () => {
+    let deny: (reason: unknown) => void = () => {};
+    vi.mocked(navigator.mediaDevices.getUserMedia)
+      .mockReturnValueOnce(
+        new Promise<MediaStream>((_, no) => {
+          deny = no;
+        }),
+      )
+      .mockResolvedValueOnce({ getTracks: () => [{ stop: vi.fn() }] } as unknown as MediaStream);
+    mockAssembly(() => ({ format: "plain", received: 1, total: 1, complete: false, text: null, warnings: [] }));
+    const { rerender } = render(<ScanQrModal open onClose={vi.fn()} onScan={vi.fn()} />);
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1));
+    rerender(<ScanQrModal open={false} onClose={vi.fn()} onScan={vi.fn()} />);
+    rerender(<ScanQrModal open onClose={vi.fn()} onScan={vi.fn()} />);
+    expect(await screen.findByTestId("viewfinder")).toBeInTheDocument();
+
+    await act(async () => {
+      deny(new DOMException("Permission denied", "NotAllowedError"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId("viewfinder")).toBeInTheDocument();
+    expect(screen.queryByText(/Camera access was refused/)).not.toBeInTheDocument();
   });
 });
