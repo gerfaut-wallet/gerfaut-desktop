@@ -191,7 +191,6 @@ const walletSyncSteps = {
 export function useSyncWallet() {
   const invalidate = useInvalidateWallet();
   return useMutation({
-    mutationKey: ["sync"],
     mutationFn: (id: string) => ipc.syncWallet(id),
     ...walletSyncSteps,
     onSettled: (_data, _error, id) => invalidate(id),
@@ -205,8 +204,6 @@ export function useSyncWallet() {
 export function useRescanWallet() {
   const invalidate = useInvalidateWallet();
   return useMutation({
-    // The same key as a sync, so the sidebar icon turns for it too.
-    mutationKey: ["sync"],
     mutationFn: (id: string) => ipc.rescanWallet(id),
     onMutate: walletSyncSteps.onMutate,
     onSuccess: (report, id, context) => {
@@ -253,7 +250,6 @@ export function useLoadMoreHistory() {
 export function useSyncAll() {
   const invalidate = useInvalidateWallet();
   return useMutation({
-    mutationKey: ["sync"],
     mutationFn: (network?: Network) => ipc.syncAll(network),
     onMutate: () => {
       const ticket = syncTicket();

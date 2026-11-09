@@ -62,7 +62,7 @@ export default function App() {
   // Any sync in flight, not only this hook's: the one a fresh wallet
   // starts, a single wallet's refresh, or one the live watch runs, must
   // turn the sidebar icon.
-  const syncing = useSyncingAny();
+  const syncing = useSyncingAny(wallets.data?.map((wallet) => wallet.id) ?? []);
   const {
     view,
     activeWalletId,

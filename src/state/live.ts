@@ -11,10 +11,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { groupThousands } from "../lib/format";
-import { ipc } from "../lib/ipc";
+import { failureMessage, ipc } from "../lib/ipc";
 import type {
   BackendConfig,
-  CoreErrorCode,
   Coverage,
   LeftOut,
   Network,
@@ -23,7 +22,7 @@ import type {
   WatchStatus,
 } from "../lib/ipc";
 import { keys, useInvalidateWallet } from "./queries";
-import { tellSync } from "./walletSync";
+import { hearSync } from "./walletSync";
 
 export const LIVE_WALLET_SYNCED = "live://wallet-synced";
 export const LIVE_SYNC_FAILED = "live://sync-failed";
@@ -67,14 +66,14 @@ export function useLiveEvents(enabled: boolean): void {
     on(LIVE_WALLET_SYNCED, (payload) => {
       const id = walletIdOf(payload);
       if (id === null) return;
-      tellSync(id, { state: "idle" });
+      hearSync(id, null);
       invalidate(id);
     });
     on(LIVE_SYNC_FAILED, (payload) => {
       const id = walletIdOf(payload);
       const { message, kind } = (payload ?? {}) as { message?: unknown; kind?: unknown };
       if (id === null || typeof message !== "string") return;
-      tellSync(id, { state: "failed", message, kind: kind as CoreErrorCode, at: 0 });
+      hearSync(id, failureMessage({ kind, message }));
     });
     on(LIVE_STATUS, () => void client.invalidateQueries({ queryKey: liveStatusKey }));
     return () => {

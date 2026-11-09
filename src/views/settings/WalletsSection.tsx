@@ -334,11 +334,7 @@ export function WalletsSection({
                       </span>
                     )}
                   </div>
-                  {syncFailureOf(syncOf(wallet.id)) && (
-                    <p className="mt-2 font-ui text-xs text-muted">
-                      {syncFailureOf(syncOf(wallet.id))}
-                    </p>
-                  )}
+                  <SyncFailureLine failure={syncFailureOf(syncOf(wallet.id))} />
                   <SaveFailure error={failureOf(wallet.id)} />
                   {confirmRemove === wallet.id && (
                     <Notice
@@ -516,4 +512,10 @@ function MoveButton({
       {children}
     </button>
   );
+}
+
+/** Why the last sync of a wallet failed, under its row. */
+function SyncFailureLine({ failure }: { failure: string | null }) {
+  if (failure === null) return null;
+  return <p className="mt-2 font-ui text-xs text-muted">{failure}</p>;
 }

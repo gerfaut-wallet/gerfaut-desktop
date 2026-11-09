@@ -20,7 +20,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo } from "react";
 import { ipc } from "../lib/ipc";
 import type { WalletSyncState as CoreSyncState } from "../lib/ipc";
-import { statusOf, syncTicket } from "../lib/syncState";
+import { statusOf, syncTicket, walletSyncOf } from "../lib/syncState";
 import type { WalletSyncStatus } from "../lib/syncState";
 import { useUi } from "./store";
 
@@ -38,18 +38,18 @@ export function useWalletSyncOf(): (walletId: string) => WalletSyncStatus {
   const syncTurns = useUi((state) => state.syncTurns);
   const syncErrors = useUi((state) => state.syncErrors);
   return useCallback(
-    (walletId: string) =>
-      statusOf(syncTurns[walletId]?.running ?? false, syncErrors[walletId] ?? null),
+    (walletId: string) => walletSyncOf({ syncTurns, syncErrors }, walletId),
     [syncTurns, syncErrors],
   );
 }
 
-/** Whether any sync runs: one wallet's, from anywhere, or this
-    window's sync of every wallet. For the sidebar's sync button. */
-export function useSyncingAny(): boolean {
+/** Whether a sync runs among `walletIds`, the wallets of the network
+    in use, from anywhere, or this window's sync of every wallet. For
+    the sidebar's sync button, which syncs that network. */
+export function useSyncingAny(walletIds: readonly string[]): boolean {
   return useUi(
     (state) =>
-      state.syncingAll !== null || Object.values(state.syncTurns).some((turn) => turn.running),
+      state.syncingAll !== null || walletIds.some((id) => state.syncTurns[id]?.running === true),
   );
 }
 
@@ -62,14 +62,14 @@ function readWalletSync(payload: unknown): { walletId: string; state: CoreSyncSt
     case "syncing":
       return { walletId: wallet_id, state: { state } };
     case "failed":
-      if (typeof message !== "string") return null;
+      if (typeof message !== "string" || typeof at !== "number") return null;
       return {
         walletId: wallet_id,
         state: {
           state,
           message,
           kind: kind as Extract<CoreSyncState, { state: "failed" }>["kind"],
-          at: typeof at === "number" ? at : 0,
+          at,
         },
       };
     default:
@@ -78,8 +78,14 @@ function readWalletSync(payload: unknown): { walletId: string; state: CoreSyncSt
 }
 
 /** Takes what the core says of a wallet's sync, now. */
-export function tellSync(walletId: string, state: CoreSyncState): void {
+function tellSync(walletId: string, state: CoreSyncState): void {
   useUi.getState().stepSync({ type: "told", walletId, ticket: syncTicket(), state });
+}
+
+/** Takes what the live watch said of a sync it ran: see the `heard`
+    step. */
+export function hearSync(walletId: string, failure: string | null): void {
+  useUi.getState().stepSync({ type: "heard", walletId, failure });
 }
 
 /** Listens to where the syncs stand, and reads the whole list once the

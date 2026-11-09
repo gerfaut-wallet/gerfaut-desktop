@@ -50,6 +50,21 @@ describe("the sync state of a wallet", () => {
     expect(walletSyncOf(again, "a")).toEqual({ state: "syncing", failure: null });
   });
 
+  it("takes what the live watch said only while no sync of the wallet runs", () => {
+    const heard = run(
+      { type: "heard", walletId: "a", failure: "timed out" },
+      { type: "told", walletId: "a", ticket: 1, state: { state: "syncing" } },
+      // Late, from another channel: the sync that runs is not over.
+      { type: "heard", walletId: "a", failure: null },
+    );
+    expect(walletSyncOf(heard, "a")).toEqual({ state: "syncing", failure: "timed out" });
+    const after = syncStep(
+      syncStep(heard, { type: "told", walletId: "a", ticket: 2, state: { state: "idle" } }),
+      { type: "heard", walletId: "a", failure: "refused" },
+    );
+    expect(walletSyncOf(after, "a")).toEqual({ state: "failed", message: "refused" });
+  });
+
   it("says a false proof in the app's words, as for a failed call", () => {
     const told = run({
       type: "told",

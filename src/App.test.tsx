@@ -776,6 +776,8 @@ beforeEach(() => {
     syncErrors: {},
     tour: "closed",
     tourDismissed: false,
+    syncTurns: {},
+    syncingAll: null,
   });
   useBackendSave.setState(useBackendSave.getInitialState());
 });
@@ -1522,8 +1524,6 @@ describe("the sync of each wallet", () => {
     await screen.findByRole("heading", { name: /transactions/i });
     return user;
   }
-
-  afterEach(() => useUi.setState({ syncTurns: {}, syncingAll: null }));
 
   it("does not say another wallet's sync is this wallet's", async () => {
     await rescanSecondThenOpenFirst();

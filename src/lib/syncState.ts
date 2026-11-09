@@ -34,6 +34,11 @@ export type SyncStep =
   | { type: "finished"; walletId: string; ticket: number; failure: string | null }
   /** The core said where a wallet stands. */
   | { type: "told"; walletId: string; ticket: number; state: CoreSyncState }
+  /** What the live watch said of a sync it ran: a failure, or null for
+      a good one. It comes apart from the core's states, in no set order
+      with them: taken only while no sync of the wallet runs, and it
+      never says whether one does. */
+  | { type: "heard"; walletId: string; failure: string | null }
   /** The core's list, asked for with this ticket. */
   | { type: "listed"; ticket: number; states: Record<string, CoreSyncState> }
   /** This window starts a sync of every wallet. */
@@ -103,6 +108,9 @@ export function syncStep(slice: SyncSlice, step: SyncStep): SyncSlice {
     }
     case "told":
       return tell(slice, step.walletId, step.ticket, step.state);
+    case "heard":
+      if (slice.syncTurns[step.walletId]?.running) return slice;
+      return { ...slice, syncErrors: withFailure(slice.syncErrors, step.walletId, step.failure) };
     case "listed":
       return Object.entries(step.states).reduce(
         (next, [walletId, state]) => tell(next, walletId, step.ticket, state),
@@ -134,7 +142,10 @@ export function statusOf(running: boolean, failure: string | null): WalletSyncSt
 }
 
 /** Where the sync of a wallet stands, from the fields of the store. */
-export function walletSyncOf(slice: SyncSlice, walletId: string): WalletSyncStatus {
+export function walletSyncOf(
+  slice: Pick<SyncSlice, "syncTurns" | "syncErrors">,
+  walletId: string,
+): WalletSyncStatus {
   return statusOf(slice.syncTurns[walletId]?.running ?? false, slice.syncErrors[walletId] ?? null);
 }
 
