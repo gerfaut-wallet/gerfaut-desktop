@@ -325,6 +325,25 @@ describe("ScanQrModal", () => {
     await waitFor(() => expect(closed).toEqual([1]));
   });
 
+  it("takes the viewfinder down once the scan has stopped", async () => {
+    for (let i = 0; i < 4; i += 1) frames.push(`ur:crypto-output/${i + 3}-2/x${i}`);
+    mockAssembly(
+      () =>
+        Promise.reject({
+          kind: "too_many_parts",
+          message: "3 frames were scanned without the code coming together, more than Gerfaut reads.",
+        }) as unknown as QrProgress,
+    );
+    render(<ScanQrModal open onClose={vi.fn()} onScan={vi.fn()} />);
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    expect(await screen.findByTestId("viewfinder")).toBeInTheDocument();
+    await tick();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/more parts than Gerfaut can read/);
+    // The camera is off: a frame drawn over the last picture it sent
+    // would ask the user to keep aiming at a scan that has ended.
+    expect(screen.queryByTestId("viewfinder")).not.toBeInTheDocument();
+  });
+
   it("says it once, however long the camera stays on the refused code", async () => {
     // A camera pointed at a PSBT sees it every tick, not once.
     frames.push("B$HP0100ff", "B$HP0100ff", "B$HP0100ff", "wpkh(tpub.../0/*)");
@@ -504,5 +523,69 @@ describe("ScanQrModal", () => {
 
     rerender(<ScanQrModal open={false} onClose={vi.fn()} onScan={vi.fn()} />);
     await waitFor(() => expect(closed).toEqual([1]));
+  });
+
+  /** The first scan asks the system for the camera, and the user may
+      close the scanner while that question is still open. Allowing it
+      afterwards must not leave a camera on, its light lit, for a
+      scanner that is gone. */
+  it("turns the camera off when access comes after the scanner closed", async () => {
+    const track = { stop: vi.fn() };
+    let grant: (media: MediaStream) => void = () => {};
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockReturnValue(
+      new Promise<MediaStream>((yes) => {
+        grant = yes;
+      }),
+    );
+    mockAssembly(() => ({ format: "plain", received: 1, total: 1, complete: false, text: null, warnings: [] }));
+    const { rerender } = render(<ScanQrModal open onClose={vi.fn()} onScan={vi.fn()} />);
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+
+    rerender(<ScanQrModal open={false} onClose={vi.fn()} onScan={vi.fn()} />);
+    await act(async () => {
+      grant({ getTracks: () => [track] } as unknown as MediaStream);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(track.stop).toHaveBeenCalled();
+  });
+
+  /** The same answer, landing in a scanner opened again meanwhile: the
+      stream belongs to the closed one and goes off, the new scanner
+      runs on the stream it asked for itself. */
+  it("keeps a late camera out of the scanner opened after it", async () => {
+    const late = { stop: vi.fn() };
+    const fresh = { stop: vi.fn() };
+    let grantLate: (media: MediaStream) => void = () => {};
+    vi.mocked(navigator.mediaDevices.getUserMedia)
+      .mockReturnValueOnce(
+        new Promise<MediaStream>((yes) => {
+          grantLate = yes;
+        }),
+      )
+      .mockResolvedValueOnce({ getTracks: () => [fresh] } as unknown as MediaStream);
+    mockAssembly(() => ({ format: "plain", received: 1, total: 1, complete: false, text: null, warnings: [] }));
+    const { rerender } = render(<ScanQrModal open onClose={vi.fn()} onScan={vi.fn()} />);
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1));
+    rerender(<ScanQrModal open={false} onClose={vi.fn()} onScan={vi.fn()} />);
+    rerender(<ScanQrModal open onClose={vi.fn()} onScan={vi.fn()} />);
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2));
+    expect(await screen.findByTestId("viewfinder")).toBeInTheDocument();
+
+    await act(async () => {
+      grantLate({ getTracks: () => [late] } as unknown as MediaStream);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(late.stop).toHaveBeenCalled();
+    expect(fresh.stop).not.toHaveBeenCalled();
+    expect((document.querySelector("video") as HTMLVideoElement).srcObject).toEqual({
+      getTracks: expect.any(Function),
+    });
+    expect(
+      ((document.querySelector("video") as HTMLVideoElement).srcObject as MediaStream).getTracks()[0],
+    ).toBe(fresh);
   });
 });

@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Closing the QR scanner while the system still asks for camera access no longer leaves the camera on once access is granted.
+- A scan that stops on a code with too many parts no longer leaves the aiming frame over a frozen picture.
+
 ## [0.1.0] - 2026-10-21
 
 The first release: Gerfaut for Linux, macOS and Windows, as a public beta.
