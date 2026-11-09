@@ -95,6 +95,9 @@ interface UiState {
   openTour: () => void;
   /** Closes the tour, however it was left, and remembers it as seen. */
   closeTour: () => void;
+  /** Takes the tour down without a word to the vault: the curtain
+      falling. Never seen, it opens again behind the next unlock. */
+  hideTour: () => void;
   /** Shows `message` for three seconds, or `ms`. */
   showToast: (message: string, ms?: number) => void;
   setSyncError: (walletId: string, message: string | null) => void;
@@ -258,6 +261,7 @@ export const useUi = create<UiState>((set, get) => ({
     }
   },
   openTour: () => set({ tour: "open" }),
+  hideTour: () => set({ tour: "closed" }),
   closeTour: () => {
     set({ tour: "closed", tourDismissed: true });
     persist("onboarding.seen", "1");
@@ -315,14 +319,4 @@ export function applyTheme(theme: ThemePref) {
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-color-scheme: dark)").matches);
   document.documentElement.dataset.theme = dark ? "dark" : "light";
-}
-
-/** The welcome tour has been seen: the vault says so, or it was closed
-    in this session. The vault's own preference decides, not a copy
-    hydrated from it, which would land a frame later. Only an explicit
-    "1" counts: an unreadable preference shows the tour again rather
-    than swallowing it. */
-export function useTourSeen(settings: Settings | undefined): boolean {
-  const dismissed = useUi((state) => state.tourDismissed);
-  return settings?.app_prefs["onboarding.seen"] === "1" || dismissed;
 }

@@ -56,12 +56,11 @@ export function WelcomeTour({
     if (open) setStep(0);
   }, [open]);
 
-  const done = onClose;
   const last = step === STEPS.length - 1;
   const current = STEPS[step];
 
   return (
-    <Modal open={open} onClose={done} title="Welcome" width={520} centered>
+    <Modal open={open} onClose={onClose} title="Welcome" width={520} centered>
       <div
         className="flex flex-col items-center gap-5 px-6 pb-2 text-center"
         onKeyDown={(event) => {
@@ -112,12 +111,12 @@ export function WelcomeTour({
             </Button>
           )}
           <div className="ml-auto flex items-center gap-3">
-            <Button variant="secondary" onClick={done}>
+            <Button variant="secondary" onClick={onClose}>
               Skip
             </Button>
             <Button
               variant="primary"
-              onClick={() => (last ? done() : setStep(step + 1))}
+              onClick={() => (last ? onClose() : setStep(step + 1))}
             >
               {last ? "Get started" : "Next"}
             </Button>

@@ -15,12 +15,13 @@ import type { Settings } from "./lib/ipc";
 import {
   keys,
   useSettings,
+  useTourSeen,
   useStartupFailure,
   useSyncAll,
   useSyncing,
   useWallets,
 } from "./state/queries";
-import { useFollowSystemTheme, useTourSeen, useUi } from "./state/store";
+import { useFollowSystemTheme, useUi } from "./state/store";
 import { AddWalletModal } from "./views/AddWalletModal";
 import { BroadcastView } from "./views/BroadcastView";
 import { ExportView } from "./views/ExportView";
@@ -68,6 +69,7 @@ export default function App() {
     tour,
     openTour,
     closeTour,
+    hideTour,
   } = useUi();
   const hydrated = useRef(false);
   // The shell waits for the whole set of preferences: behind the lock
@@ -178,10 +180,16 @@ export default function App() {
   // through that moment, and a vault that holds wallets but never
   // wrote the flag would greet its owner again each time.
   const emptyVault = wallets.data !== undefined && wallets.data.length === 0;
-  const tourSeen = useTourSeen(settings.data);
+  const tourSeen = useTourSeen();
   useEffect(() => {
     if (settings.data && emptyVault && !tourSeen && !locked) openTour();
   }, [settings.data, emptyVault, tourSeen, locked, openTour]);
+  // The curtain takes the tour down with the shell. One never seen
+  // opens again behind the unlock, by the effect above; one replayed
+  // from About stays closed.
+  useEffect(() => {
+    if (locked) hideTour();
+  }, [locked, hideTour]);
 
   // A command refused because the curtain came down is the lock doing
   // its work, not a vault that failed to open: the screen behind it is

@@ -770,6 +770,8 @@ beforeEach(() => {
     explorerAck: false,
     toast: null,
     syncErrors: {},
+    tour: "closed",
+    tourDismissed: false,
   });
   useBackendSave.setState(useBackendSave.getInitialState());
 });
@@ -4335,6 +4337,50 @@ describe("the welcome tour", () => {
     expect(screen.queryByText("Keep it yours")).not.toBeInTheDocument();
   });
 
+  it("is taken down by the lock, and a replay does not come back behind it", async () => {
+    const LOCKED: Settings = {
+      ...SETTINGS,
+      app_lock: { kind: "pin", biometric: false },
+    };
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "get_settings":
+          return LOCKED;
+        case "app_lock":
+          return LOCKED.app_lock;
+        case "lock_app":
+          return undefined;
+        case "verify_app_lock":
+          return { unlocked: true, failures: 0, retry_after_secs: 0 };
+        case "list_wallets":
+          return [];
+        case "set_app_pref":
+          return undefined;
+        case "sync_all":
+          return { reports: [], failures: [] };
+        default:
+          throw new Error(`unexpected command ${cmd}`);
+      }
+    });
+    renderApp();
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText("PIN"), "1234");
+    await user.click(screen.getByRole("button", { name: /unlock/i }));
+    await screen.findByRole("navigation", { name: "Navigation" });
+
+    await openSettings(user, "About");
+    await user.click(screen.getByRole("button", { name: "Show the welcome tour" }));
+    expect(await screen.findByText("Watch, never spend")).toBeInTheDocument();
+
+    await user.keyboard("{Control>}l{/Control}");
+    await screen.findByText("Locked");
+    await user.type(screen.getByLabelText("PIN"), "1234");
+    await user.click(screen.getByRole("button", { name: /unlock/i }));
+    await screen.findByRole("navigation", { name: "Navigation" });
+
+    expect(screen.queryByText("Watch, never spend")).not.toBeInTheDocument();
+  });
+
   it("is one tour, replayed from About and retired for good on Skip", async () => {
     const prefs: Record<string, string> = { "onboarding.seen": "1" };
     const written: string[] = [];
@@ -4355,7 +4401,7 @@ describe("the welcome tour", () => {
         case "sync_all":
           return { reports: [], failures: [] };
         default:
-          return null;
+          throw new Error(`unexpected command ${cmd}`);
       }
     });
     renderApp();
