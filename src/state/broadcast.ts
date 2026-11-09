@@ -1,0 +1,138 @@
+import type { BroadcastStatus, RecentBroadcast, TxPreview } from "../lib/ipc";
+
+/* The broadcast page as one value. It used to be read off a preview
+   mutation, a send mutation and a `sent` record side by side, and a
+   send still in flight when the page was cleared put its card back over
+   whatever had been read since. Here every step that starts a request
+   or drops one takes a new ticket, each request carries the ticket it
+   was started under, and an answer under any other ticket is dropped:
+   the transaction still goes out, the vault lists it with the past
+   broadcasts, but it no longer takes the screen. */
+
+/** Why the field turned the input down: a file refused before it was
+    read, or the core's refusal of what it was given. */
+export type InputRefusal = { kind: "file"; message: string } | { kind: "core"; error: unknown };
+
+export type BroadcastFlow =
+  /** The field, empty or with what was typed, and why the last input
+      was turned down, if it was. */
+  | { phase: "compose"; ticket: number; refusal: InputRefusal | null }
+  /** The core is reading the input. */
+  | { phase: "previewing"; ticket: number }
+  /** What the transaction does, and the network's refusal of the last
+      send, if it refused. */
+  | { phase: "ready"; ticket: number; preview: TxPreview; refusal: unknown }
+  | { phase: "sending"; ticket: number; preview: TxPreview }
+  /** The network took it: the record the status card follows. */
+  | { phase: "sent"; ticket: number; preview: TxPreview; entry: RecentBroadcast };
+
+/** What happens to the page. A step that starts a request or drops one
+    brings a ticket no step of the page had before; an answer
+    brings the ticket its request was started under. */
+export type BroadcastEvent =
+  /** Start over, or another network: back to an empty field. */
+  | { type: "reset"; ticket: number }
+  /** The field changed: a refusal of what it held goes. */
+  | { type: "edit" }
+  | { type: "fileRefused"; ticket: number; message: string }
+  | { type: "preview"; ticket: number }
+  | { type: "previewed"; ticket: number; preview: TxPreview }
+  | { type: "previewFailed"; ticket: number; error: unknown }
+  | { type: "send"; ticket: number }
+  | { type: "sent"; ticket: number; entry: RecentBroadcast }
+  | { type: "sendFailed"; ticket: number; error: unknown };
+
+export const FIRST_FLOW: BroadcastFlow = { phase: "compose", ticket: 0, refusal: null };
+
+/** The one transition of the page. A request's answer applies only
+    under the ticket it was started with, and in the phase that waits
+    for it. */
+export function stepBroadcast(flow: BroadcastFlow, event: BroadcastEvent): BroadcastFlow {
+  switch (event.type) {
+    case "reset":
+      return { phase: "compose", ticket: event.ticket, refusal: null };
+    case "edit":
+      return flow.phase === "compose" && flow.refusal ? { ...flow, refusal: null } : flow;
+    case "fileRefused":
+      return {
+        phase: "compose",
+        ticket: event.ticket,
+        refusal: { kind: "file", message: event.message },
+      };
+    case "preview":
+      return { phase: "previewing", ticket: event.ticket };
+    case "previewed":
+      return flow.phase === "previewing" && flow.ticket === event.ticket
+        ? { phase: "ready", ticket: flow.ticket, preview: event.preview, refusal: null }
+        : flow;
+    case "previewFailed":
+      return flow.phase === "previewing" && flow.ticket === event.ticket
+        ? { phase: "compose", ticket: flow.ticket, refusal: { kind: "core", error: event.error } }
+        : flow;
+    case "send":
+      return flow.phase === "ready"
+        ? { phase: "sending", ticket: event.ticket, preview: flow.preview }
+        : flow;
+    case "sent":
+      return flow.phase === "sending" && flow.ticket === event.ticket
+        ? { phase: "sent", ticket: flow.ticket, preview: flow.preview, entry: event.entry }
+        : flow;
+    case "sendFailed":
+      return flow.phase === "sending" && flow.ticket === event.ticket
+        ? { phase: "ready", ticket: flow.ticket, preview: flow.preview, refusal: event.error }
+        : flow;
+  }
+}
+
+/** Where the status card's check stands. `checking` keeps what was
+    known before it, shown while the backend is asked again; `failed`
+    keeps the last answer the backend gave, so a failed check never
+    passes for that answer, nor hides it. */
+export type StatusCheck =
+  /** Not asked since the session opened. */
+  | { kind: "unchecked" }
+  | { kind: "checking"; previous: SettledCheck | null }
+  | SettledCheck;
+
+/** A check the backend answered, or failed to. */
+export type SettledCheck =
+  | { kind: "known"; status: BroadcastStatus }
+  | { kind: "failed"; error: unknown; last: BroadcastStatus | null };
+
+/** The status query, as TanStack Query keeps it: `data` is the last
+    answer that came, and stays after a failure. */
+interface StatusQuery {
+  data: BroadcastStatus | undefined;
+  error: unknown;
+  isError: boolean;
+  isFetching: boolean;
+}
+
+/** What the query settled on, if it says: a query with no answer yet
+    goes back to pending, its failure cleared, each time it asks again. */
+export function settledCheck(query: StatusQuery): SettledCheck | null {
+  return query.isError
+    ? { kind: "failed", error: query.error, last: query.data ?? null }
+    : query.data
+      ? { kind: "known", status: query.data }
+      : null;
+}
+
+/** The check, from the query and the last check the card saw settle:
+    `settled` stays through a new ask, so a failure is not forgotten
+    while the backend is asked again. */
+export function statusCheck(
+  watching: boolean,
+  query: StatusQuery,
+  settled: SettledCheck | null,
+): StatusCheck {
+  if (!watching) return { kind: "unchecked" };
+  if (query.isFetching || !settled) return { kind: "checking", previous: settled };
+  return settled;
+}
+
+/** What the card shows of a check: a check under way shows what it
+    knew before it. */
+export function shownCheck(check: StatusCheck): StatusCheck {
+  return check.kind === "checking" && check.previous ? check.previous : check;
+}

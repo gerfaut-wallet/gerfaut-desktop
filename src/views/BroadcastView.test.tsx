@@ -1,10 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BroadcastView, MAX_TRANSACTION_FILE_BYTES } from "./BroadcastView";
-import type { BroadcastStatus, RecentBroadcast, TxPreview, TxWarning } from "../lib/ipc";
+import type { BroadcastStatus, Network, RecentBroadcast, TxPreview, TxWarning } from "../lib/ipc";
 import { useUi } from "../state/store";
 import { formatFiat } from "../lib/format";
 
@@ -86,8 +86,12 @@ const PREVIEW: TxPreview = {
 const REPORT = { txid: TXID, backend: "mempool.space", at: 1_755_000_000 };
 
 function status(overrides: Partial<BroadcastStatus> = {}): BroadcastStatus {
+  // The core's word, kept in step with the flat fields as the core keeps it.
+  const found = overrides.found ?? true;
+  const confirmed = overrides.confirmed ?? false;
   return {
     txid: TXID,
+    standing: confirmed ? "confirmed" : found ? "in_mempool" : "not_seen",
     found: true,
     confirmed: false,
     block_height: null,
@@ -874,5 +878,289 @@ describe("BroadcastView", () => {
     );
     expect(read).not.toHaveBeenCalled();
     expect(asked).toBe(false);
+  });
+});
+
+/** A promise the test settles by hand: an answer still on its way. */
+function held<T>() {
+  let settle!: (value: T) => void;
+  let refuse!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolve, reject) => {
+    settle = resolve;
+    refuse = reject;
+  });
+  return { promise, settle, refuse };
+}
+
+/** The page over a core whose every answer the test writes, on a
+    network the test can change while something is in flight. */
+function mountCore(
+  answer: (cmd: string, payload: Record<string, string>) => unknown,
+  network: Network = "signet",
+) {
+  mockIPC((cmd, args) => answer(cmd, (args ?? {}) as Record<string, string>));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = (on: Network) => (
+    <QueryClientProvider client={client}>
+      <BroadcastView network={on} />
+    </QueryClientProvider>
+  );
+  const { rerender } = render(view(network));
+  return { user: userEvent.setup(), switchTo: (on: Network) => rerender(view(on)) };
+}
+
+/** Lets every answer already given reach the page. */
+const settle = () => act(() => new Promise<void>((done) => setTimeout(done, 50)));
+
+/** Preview, confirm, and leave the send in flight. */
+async function sendHeld(user: ReturnType<typeof userEvent.setup>) {
+  await preview(user);
+  await user.click(screen.getByRole("button", { name: "Broadcast" }));
+  const dialog = within(await screen.findByRole("dialog"));
+  await user.click(dialog.getByRole("button", { name: "Broadcast" }));
+  await screen.findByRole("button", { name: "Broadcasting…" });
+}
+
+describe("BroadcastView, an answer that comes late", () => {
+  beforeEach(() => {
+    useUi.setState({ masked: false });
+    kept = [];
+  });
+
+  const OTHER: TxPreview = { ...PREVIEW, txid: "ef".repeat(32), hex: "02000000ef" };
+
+  /** Start over leaves the send to the network: what it answers is
+      kept by the vault, and listed with the past, but it no longer
+      takes the screen from the transaction read since. */
+  it("keeps the next transaction on screen when a send started before Start over lands", async () => {
+    const send = held<typeof REPORT>();
+    const { user } = mountCore((cmd, payload) => {
+      if (cmd === "preview_transaction") return payload.input === "B" ? OTHER : PREVIEW;
+      if (cmd === "broadcast_transaction")
+        return send.promise.then((report) => {
+          kept = [{ ...report, network: "signet", hex: payload.hex }];
+          return report;
+        });
+      if (cmd === "recent_broadcasts") return kept;
+      if (cmd === "transaction_status") return status();
+      return undefined;
+    });
+    await sendHeld(user);
+
+    await user.click(screen.getByRole("button", { name: "Start over" }));
+    await user.type(screen.getByLabelText("Signed transaction"), "B");
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    await screen.findByRole("region", { name: "Technical" });
+
+    send.settle(REPORT);
+    await settle();
+
+    expect(screen.queryByText(/Sent · mempool\.space/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Broadcast another transaction" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Broadcast" })).toBeEnabled();
+    const past = within(await screen.findByRole("region", { name: "Past broadcasts" }));
+    expect(past.getByText(/Sent .* · mempool\.space/)).toBeInTheDocument();
+  });
+
+  it("keeps the page blank when a send started on another network lands", async () => {
+    const send = held<typeof REPORT>();
+    const { user, switchTo } = mountCore((cmd) => {
+      if (cmd === "preview_transaction") return PREVIEW;
+      if (cmd === "broadcast_transaction") return send.promise;
+      if (cmd === "recent_broadcasts") return [];
+      if (cmd === "transaction_status") return status();
+      return undefined;
+    });
+    await sendHeld(user);
+
+    switchTo("testnet4");
+    await screen.findByLabelText("Signed transaction");
+    send.settle(REPORT);
+    await settle();
+
+    expect(screen.queryByText(/Sent · mempool\.space/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Signed transaction")).toHaveValue("");
+    expect(screen.queryByRole("region", { name: "Technical" })).not.toBeInTheDocument();
+  });
+
+  it("drops a preview answered after the field took the page back", async () => {
+    const first = held<TxPreview>();
+    const { user } = mountCore((cmd) => {
+      if (cmd === "preview_transaction") return first.promise;
+      if (cmd === "recent_broadcasts") return [];
+      return undefined;
+    });
+    await user.type(screen.getByLabelText("Signed transaction"), HEX);
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    await screen.findByRole("button", { name: "Reading…" });
+
+    // A file too large is the one way back to the field while a
+    // preview reads: it says why, and the reading is dropped.
+    const file = new File(["0200"], "disc.img");
+    Object.defineProperty(file, "size", { value: MAX_TRANSACTION_FILE_BYTES + 1 });
+    fireEvent.change(document.querySelector<HTMLInputElement>('input[type="file"]')!, {
+      target: { files: [file] },
+    });
+    await screen.findByText("This file is too large to hold a transaction.");
+
+    first.settle(PREVIEW);
+    await settle();
+    expect(screen.queryByRole("region", { name: "Technical" })).not.toBeInTheDocument();
+    expect(screen.getByText("This file is too large to hold a transaction.")).toBeInTheDocument();
+  });
+
+  /** The transaction went out, wherever the page is by then: the toast
+      says so even when the card no longer comes back. */
+  it("says the transaction was broadcast when the send lands after Start over", async () => {
+    useUi.setState({ toast: null });
+    const send = held<typeof REPORT>();
+    const { user } = mountCore((cmd) => {
+      if (cmd === "preview_transaction") return PREVIEW;
+      if (cmd === "broadcast_transaction") return send.promise;
+      if (cmd === "recent_broadcasts") return [];
+      return undefined;
+    });
+    await sendHeld(user);
+
+    await user.click(screen.getByRole("button", { name: "Start over" }));
+    send.settle(REPORT);
+    await settle();
+
+    expect(useUi.getState().toast).toBe("Transaction broadcast");
+    expect(screen.queryByText(/Sent · mempool\.space/)).not.toBeInTheDocument();
+  });
+
+  it("leaves a file unread when the network changes while it is read", async () => {
+    let asked = false;
+    const { switchTo } = mountCore((cmd) => {
+      asked ||= cmd === "preview_transaction";
+      if (cmd === "recent_broadcasts") return [];
+      return undefined;
+    });
+    const file = new File(["0200"], "tx.txt");
+    const bytes = held<ArrayBuffer>();
+    vi.spyOn(file, "arrayBuffer").mockReturnValue(bytes.promise);
+    fireEvent.change(document.querySelector<HTMLInputElement>('input[type="file"]')!, {
+      target: { files: [file] },
+    });
+
+    switchTo("testnet4");
+    bytes.settle(new TextEncoder().encode(HEX).buffer as ArrayBuffer);
+    await settle();
+    expect(screen.getByLabelText("Signed transaction")).toHaveValue("");
+    expect(asked).toBe(false);
+  });
+});
+
+describe("BroadcastView, a check that fails after an answer", () => {
+  beforeEach(() => {
+    useUi.setState({ masked: false });
+    kept = [];
+  });
+
+  /** The page over a core that answers the first check and fails the
+      next ones, until the test says otherwise. */
+  async function checkThenFail(first: BroadcastStatus | null, failure: unknown) {
+    let failing = first === null;
+    const { user } = mountCore((cmd, payload) => {
+      if (cmd === "preview_transaction") return PREVIEW;
+      if (cmd === "broadcast_transaction") {
+        kept = [{ ...REPORT, network: "signet", hex: payload.hex }];
+        return REPORT;
+      }
+      if (cmd === "recent_broadcasts") return kept;
+      if (cmd === "transaction_status") return failing ? Promise.reject(failure) : first;
+      return undefined;
+    });
+    await send(user);
+    return {
+      user,
+      fail: async () => {
+        failing = true;
+        await user.click(screen.getByRole("button", { name: "Check status" }));
+      },
+    };
+  }
+
+  const NOW = () => Math.floor(Date.now() / 1000);
+  const DOWN = { kind: "backend", message: "connection refused" };
+  // The status query tries once more before it gives up, a second on.
+  const LATE = { timeout: 4000 };
+
+  it.each([
+    [
+      "confirmed",
+      () => status({ confirmed: true, block_height: 4_611_010, confirmations: 3, at: NOW() }),
+      "Confirmed · 3 conf",
+      "Last answer just now: confirmed, 3 confirmations.",
+    ],
+    [
+      "in_mempool",
+      () => status({ at: NOW() }),
+      "In the mempool",
+      "Last answer just now: waiting to be mined.",
+    ],
+    [
+      "not_seen",
+      () => status({ found: false, at: NOW() }),
+      "Not seen",
+      "Last answer just now: mempool.space did not have this transaction.",
+    ],
+  ])(
+    "says it could not check, then the last answer, for a %s transaction",
+    async (_standing, answer, pill, last) => {
+      const { fail } = await checkThenFail(answer(), DOWN);
+      await screen.findByText(pill);
+      await fail();
+
+      const badge = await screen.findByText("Could not check", undefined, LATE);
+      expect(badge).toHaveClass("bg-pending-surface", "text-pending");
+      expect(badge.querySelector(".lucide-triangle-alert")).toBeInTheDocument();
+      expect(screen.queryByText(pill)).not.toBeInTheDocument();
+      const error = screen.getByText("The backend did not answer. Try again in a moment.");
+      const said = screen.getByText(last);
+      expect(error.compareDocumentPosition(said) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    },
+  );
+
+  it("says it could not check a transaction it never had an answer for", async () => {
+    await checkThenFail(null, DOWN);
+    const badge = await screen.findByText("Could not check", undefined, LATE);
+    expect(badge).toHaveClass("bg-pending-surface", "text-pending");
+    expect(screen.getByText("The backend did not answer. Try again in a moment.")).toBeInTheDocument();
+    expect(screen.queryByText(/Last answer/)).not.toBeInTheDocument();
+  });
+
+  /** A query with no answer yet goes back to pending when it asks
+      again: the failure it had stays on the card meanwhile. */
+  it("keeps saying it could not check while it asks again", async () => {
+    let answer: () => Promise<BroadcastStatus> = () => Promise.reject(DOWN);
+    const { user } = mountCore((cmd, payload) => {
+      if (cmd === "preview_transaction") return PREVIEW;
+      if (cmd === "broadcast_transaction") {
+        kept = [{ ...REPORT, network: "signet", hex: payload.hex }];
+        return REPORT;
+      }
+      if (cmd === "recent_broadcasts") return kept;
+      if (cmd === "transaction_status") return answer();
+      return undefined;
+    });
+    await send(user);
+    await screen.findByText("Could not check", undefined, LATE);
+
+    const asked = held<BroadcastStatus>();
+    answer = () => asked.promise;
+    await user.click(screen.getByRole("button", { name: "Check status" }));
+    await settle();
+
+    expect(screen.queryByText("Asking the backend…")).not.toBeInTheDocument();
+    expect(screen.getByText("Could not check")).toBeInTheDocument();
+    expect(screen.getByText("The backend did not answer. Try again in a moment.")).toBeInTheDocument();
+
+    asked.settle(status({ at: Math.floor(Date.now() / 1000) }));
+    expect(await screen.findByText("In the mempool")).toBeInTheDocument();
+    expect(screen.queryByText("Could not check")).not.toBeInTheDocument();
   });
 });

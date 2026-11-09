@@ -3196,6 +3196,7 @@ describe("broadcast page", () => {
       recent_broadcasts: () => kept,
       transaction_status: () => ({
         txid: PREVIEW.txid,
+        standing: "in_mempool",
         found: true,
         confirmed: false,
         block_height: null,

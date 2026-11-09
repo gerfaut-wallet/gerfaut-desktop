@@ -22,7 +22,7 @@ import {
   Wallet as WalletIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { AddressChip } from "../components/AddressChip";
@@ -36,6 +36,7 @@ import { ScanQrModal } from "../components/ScanQrModal";
 import { BRANCH_ROLES, TxDiagram } from "../components/TxDiagram";
 import type { BranchRole, TxBranch } from "../components/TxDiagram";
 import type {
+  BroadcastStatus,
   Network,
   RecentBroadcast,
   TxInputPreview,
@@ -69,6 +70,14 @@ import {
   useTransactionStatus,
 } from "../state/queries";
 import { useUi } from "../state/store";
+import {
+  FIRST_FLOW,
+  settledCheck,
+  shownCheck,
+  statusCheck,
+  stepBroadcast,
+} from "../state/broadcast";
+import type { SettledCheck, StatusCheck } from "../state/broadcast";
 
 /** PSBT file magic, BIP-174: a binary file that starts with it is
     passed to the core as hex, like any other bytes. */
@@ -122,90 +131,105 @@ export function BroadcastView({ network }: { network: Network }) {
   const broadcast = useBroadcastTransaction();
   const recent = useRecentBroadcasts(network);
   const forget = useForgetBroadcast(network);
+  const [flow, dispatch] = useReducer(stepBroadcast, FIRST_FLOW);
+  /** The last ticket handed out: every step that starts a request or
+      drops one takes the next, so an answer can tell it is stale. */
+  const tickets = useRef(0);
+  const take = () => (tickets.current += 1);
   const [raw, setRaw] = useState("");
   const [scanOpen, setScanOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [sent, setSent] = useState<RecentBroadcast | null>(null);
-  /** A file refused before it was read: said where the core's refusal
-      would be. */
-  const [fileError, setFileError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Another workspace network means another chain: start over.
+  // Another workspace network means another chain: start over. A send
+  // still in flight goes on, but its answer no longer lands here.
   useEffect(() => {
     setRaw("");
-    setSent(null);
-    setFileError(null);
-    preview.reset();
-    broadcast.reset();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    dispatch({ type: "reset", ticket: take() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `take` only bumps a ref: a new network, and nothing else, starts over
   }, [network]);
 
   const decode = (input: string) => {
-    setFileError(null);
-    setSent(null);
-    broadcast.reset();
-    preview.mutate({ input, network });
+    const ticket = take();
+    dispatch({ type: "preview", ticket });
+    preview.mutateAsync({ input, network }).then(
+      (answer) => dispatch({ type: "previewed", ticket, preview: answer }),
+      (error: unknown) => dispatch({ type: "previewFailed", ticket, error }),
+    );
   };
 
   const importFile = async (file: File) => {
     if (file.size > MAX_TRANSACTION_FILE_BYTES) {
-      preview.reset();
-      setFileError("This file is too large to hold a transaction.");
+      dispatch({
+        type: "fileRefused",
+        ticket: take(),
+        message: "This file is too large to hold a transaction.",
+      });
       return;
     }
+    // Start over or another network while the file is read leaves it
+    // unread: the page it was opened for is gone.
+    const opened = tickets.current;
     const input = await fileToInput(file);
+    if (tickets.current !== opened) return;
     setRaw(input);
     decode(input);
   };
 
-  const send = async () => {
-    const hex = preview.data?.hex;
-    if (!hex) return;
+  const send = () => {
+    // A ticket taken since this render (a second click on the same
+    // render, among others) means the page has moved on: nothing goes.
+    if (flow.phase !== "ready" || flow.ticket !== tickets.current || !flow.preview.hex) return;
+    const hex = flow.preview.hex;
     setConfirmOpen(false);
-    try {
-      const report = await broadcast.mutateAsync({ network, hex });
-      const entry: RecentBroadcast = {
-        txid: report.txid,
-        network,
-        hex,
-        backend: report.backend,
-        at: report.at,
-      };
-      setSent(entry);
-      showToast("Transaction broadcast");
-    } catch {
-      // The refusal is rendered below the preview, in the node's words.
-    }
+    const ticket = take();
+    dispatch({ type: "send", ticket });
+    // The refusal is rendered below the preview, in the node's words.
+    broadcast.mutateAsync({ network, hex }).then(
+      (report) => {
+        // The transaction went out wherever the page is by now: said
+        // even when the ticket keeps the card off a page that moved on.
+        showToast("Transaction broadcast");
+        dispatch({
+          type: "sent",
+          ticket,
+          entry: { txid: report.txid, network, hex, backend: report.backend, at: report.at },
+        });
+      },
+      (error: unknown) => dispatch({ type: "sendFailed", ticket, error }),
+    );
   };
 
   const startOver = () => {
     setRaw("");
-    setSent(null);
-    setFileError(null);
-    preview.reset();
-    broadcast.reset();
+    dispatch({ type: "reset", ticket: take() });
   };
 
   /** Typing again answers a refusal: it goes as soon as the text
       changes, and the hint it stood in for comes back in its place. */
   const edit = (value: string) => {
     setRaw(value);
-    setFileError(null);
-    if (preview.isError) preview.reset();
+    dispatch({ type: "edit" });
   };
 
-  const inputError: InputError | null = fileError
-    ? { headline: fileError }
-    : preview.error
-      ? isCommandError(preview.error) &&
-        (preview.error.kind === "invalid_input" || preview.error.kind === "too_many_parts")
-        ? { headline: UNREADABLE_TRANSACTION, detail: preview.error.message }
-        : isCommandError(preview.error) && preview.error.kind === "private_material"
+  const refusal = flow.phase === "compose" ? flow.refusal : null;
+  const inputError: InputError | null = !refusal
+    ? null
+    : refusal.kind === "file"
+      ? { headline: refusal.message }
+      : isCommandError(refusal.error) &&
+          (refusal.error.kind === "invalid_input" || refusal.error.kind === "too_many_parts")
+        ? { headline: UNREADABLE_TRANSACTION, detail: refusal.error.message }
+        : isCommandError(refusal.error) && refusal.error.kind === "private_material"
           ? { headline: PRIVATE_KEY_NOT_A_TRANSACTION }
-          : { headline: errorMessage(preview.error) }
-      : null;
-  const broadcastError = broadcast.error ? errorMessage(broadcast.error) : null;
+          : { headline: errorMessage(refusal.error) };
+  const broadcastError =
+    flow.phase === "ready" && flow.refusal ? errorMessage(flow.refusal) : null;
+  /** What the transaction does, once the core has read it. */
+  const read = flow.phase === "ready" || flow.phase === "sending" || flow.phase === "sent"
+    ? flow.preview
+    : null;
+  const sent = flow.phase === "sent" ? flow.entry : null;
 
   const history = (recent.data ?? []).filter((entry) => entry.txid !== sent?.txid);
 
@@ -221,21 +245,21 @@ export function BroadcastView({ network }: { network: Network }) {
       </header>
 
       <div className="flex flex-col gap-4">
-        {!preview.data && !sent && (
+        {!read && (
           <InputCard
             raw={raw}
             onChange={edit}
             onDecode={() => decode(raw)}
             onImport={() => fileRef.current?.click()}
             onScan={() => setScanOpen(true)}
-            busy={preview.isPending}
+            busy={flow.phase === "previewing"}
             error={inputError}
           />
         )}
 
-        {preview.data && !sent && (
+        {read && !sent && (
           <>
-            <PreviewCard preview={preview.data} network={network} />
+            <PreviewCard preview={read} network={network} />
             {/* A node that says no risks neither funds nor privacy —
                 but nothing else on the page says the send failed. */}
             {broadcastError && (
@@ -253,11 +277,11 @@ export function BroadcastView({ network }: { network: Network }) {
               <Button
                 variant="primary"
                 icon={Radio}
-                disabled={!sendable(preview.data)}
-                busy={broadcast.isPending}
+                disabled={!sendable(read)}
+                busy={flow.phase === "sending"}
                 onClick={() => setConfirmOpen(true)}
               >
-                {broadcast.isPending ? "Broadcasting…" : "Broadcast"}
+                {flow.phase === "sending" ? "Broadcasting…" : "Broadcast"}
               </Button>
             </div>
           </>
@@ -270,7 +294,7 @@ export function BroadcastView({ network }: { network: Network }) {
                 just sent is exactly when one wants to re-read what it
                 does. The two platforms differ in the facts they can
                 offer, never in the layout. */}
-            {preview.data && <PreviewCard preview={preview.data} network={network} />}
+            {read && <PreviewCard preview={read} network={network} />}
             <div className="px-1">
               <Button variant="primary" onClick={startOver} icon={Radio}>
                 Broadcast another transaction
@@ -320,19 +344,19 @@ export function BroadcastView({ network }: { network: Network }) {
           decode(text);
         }}
       />
-      {preview.data && (
+      {read && (
         <Modal
           open={confirmOpen}
           onClose={() => setConfirmOpen(false)}
           title="Broadcast this transaction?"
           centered
         >
-          <ConfirmBody preview={preview.data} />
+          <ConfirmBody preview={read} />
           <div className="mt-5 flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setConfirmOpen(false)}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={() => void send()} icon={Radio}>
+            <Button variant="primary" onClick={send} icon={Radio}>
               Broadcast
             </Button>
           </div>
@@ -881,6 +905,104 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
 
 // --- status ------------------------------------------------------------------
 
+/** The pill of a check: where the transaction stands as the core says
+    it, or that the last check failed. A failed check says so even over
+    an earlier answer, which the line under it dates instead. Nothing
+    while there is nothing to say yet. */
+function checkPill(
+  check: StatusCheck,
+): { tone: "confirmed" | "pending"; icon: LucideIcon; label: string } | null {
+  switch (check.kind) {
+    case "unchecked":
+    case "checking":
+      return null;
+    // Amber, as a transaction not seen: nothing on chain is lost, the
+    // backend only did not say. The triangle and the words carry it.
+    case "failed":
+      return { tone: "pending", icon: AlertTriangle, label: "Could not check" };
+    case "known":
+      switch (check.status.standing) {
+        case "confirmed":
+          return {
+            tone: "confirmed",
+            icon: Check,
+            label: `Confirmed · ${check.status.confirmations} conf`,
+          };
+        case "in_mempool":
+          return { tone: "pending", icon: Clock, label: "In the mempool" };
+        // A transaction the backend has not seen is most often one it
+        // has not indexed yet, and the line below says broadcasting it
+        // again does no harm: nothing is lost, so nothing is red.
+        // Amber, with its own glyph and its own words — the colour is
+        // never the only carrier.
+        case "not_seen":
+          return { tone: "pending", icon: AlertTriangle, label: "Not seen" };
+      }
+  }
+}
+
+function confirmationCount(count: number): string {
+  return `${groupThousands(String(count))} confirmation${count === 1 ? "" : "s"}`;
+}
+
+/** The lines under the pill. */
+function CheckLines({ check }: { check: StatusCheck }) {
+  switch (check.kind) {
+    case "unchecked":
+      return <p>Not checked since this session opened.</p>;
+    case "checking":
+      return <p>Asking the backend…</p>;
+    case "failed":
+      return (
+        <>
+          <p>
+            {isFalseProof(check.error)
+              ? FALSE_PROOF
+              : "The backend did not answer. Try again in a moment."}
+          </p>
+          {check.last && <p>{lastAnswer(check.last)}</p>}
+        </>
+      );
+    case "known": {
+      const status = check.status;
+      switch (status.standing) {
+        case "confirmed":
+          return (
+            <>
+              {/* The height keeps a line to itself. Run into the count
+                  after a comma, the grouped number swallows it: "block
+                  4 611 010, 3 confirmations" reads as one figure whose
+                  last group happens to be a 3. */}
+              {status.block_height !== null && (
+                <p>{`Mined in block ${groupThousands(String(status.block_height))}`}</p>
+              )}
+              <p>{`${confirmationCount(status.confirmations)} as of ${relativeTime(status.at)}`}</p>
+            </>
+          );
+        case "in_mempool":
+          return <p>Waiting to be mined.</p>;
+        case "not_seen":
+          return (
+            <p>{`${status.backend} does not have this transaction. It may not have been relayed, or it was dropped or replaced. Broadcasting it again does no harm.`}</p>
+          );
+      }
+    }
+  }
+}
+
+/** The answer a failed check leaves standing, dated: it may be old. */
+function lastAnswer(last: BroadcastStatus): string {
+  const when = `Last answer ${relativeTime(last.at)}`;
+  switch (last.standing) {
+    case "confirmed":
+      return `${when}: confirmed, ${confirmationCount(last.confirmations)}.`;
+    case "in_mempool":
+      return `${when}: waiting to be mined.`;
+    case "not_seen":
+      return `${when}: ${last.backend} did not have this transaction.`;
+  }
+}
+
 /** Where a broadcast transaction stands, polled while it is pending. */
 function StatusCard({
   entry,
@@ -903,12 +1025,17 @@ function StatusCard({
   const url = explorerTxUrl(entry.network, entry.txid);
   const explorer = useExplorer(url);
 
-  const standing = status.data;
-  // A transaction the backend has not seen is most often one it has not
-  // indexed yet, and the line below says broadcasting it again does no
-  // harm: nothing is lost, so nothing is red. Amber, with its own glyph
-  // and its own words — the colour is never the only carrier.
-  const tone = !standing ? "neutral" : standing.confirmed ? "confirmed" : "pending";
+  // One value for where the check stands, so a failed check can never
+  // sit beside the pill of the answer before it.
+  // The last check the backend settled, kept by the time of the answer
+  // or the failure: a query with no answer goes back to pending, its
+  // failure cleared, each time it asks again.
+  const settled = settledCheck(status);
+  const settledAt = Math.max(status.dataUpdatedAt, status.errorUpdatedAt);
+  const [kept, setKept] = useState<{ at: number; check: SettledCheck } | null>(null);
+  if (settled && kept?.at !== settledAt) setKept({ at: settledAt, check: settled });
+  const check = shownCheck(statusCheck(watching, status, settled ?? kept?.check ?? null));
+  const pill = checkPill(check);
 
   return (
     <div
@@ -927,27 +1054,17 @@ function StatusCard({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {standing && (
+          {pill && (
             <span
               className={clsx(
                 "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 font-ui text-xs font-medium",
-                tone === "confirmed" && "border-confirmed/25 bg-confirmed-surface text-confirmed",
-                tone === "pending" && "border-pending/25 bg-pending-surface text-pending",
+                pill.tone === "confirmed" && "border-confirmed/25 bg-confirmed-surface text-confirmed",
+                pill.tone === "pending" && "border-pending/25 bg-pending-surface text-pending",
               )}
               aria-live="polite"
             >
-              {standing.confirmed ? (
-                <Check size={12} strokeWidth={2} aria-hidden />
-              ) : standing.found ? (
-                <Clock size={12} strokeWidth={2} aria-hidden />
-              ) : (
-                <AlertTriangle size={12} strokeWidth={2} aria-hidden />
-              )}
-              {standing.confirmed
-                ? `Confirmed · ${standing.confirmations} conf`
-                : standing.found
-                  ? "In the mempool"
-                  : "Not seen"}
+              <pill.icon size={12} strokeWidth={2} aria-hidden />
+              {pill.label}
             </span>
           )}
           <Button
@@ -968,32 +1085,7 @@ function StatusCard({
       </div>
 
       <div className="mt-3 font-ui text-sm text-muted" aria-live="polite">
-        {!watching && <p>Not checked since this session opened.</p>}
-        {watching && status.isPending && <p>Asking the backend…</p>}
-        {watching && status.isError && (
-          <p>
-            {isFalseProof(status.error)
-              ? FALSE_PROOF
-              : "The backend did not answer. Try again in a moment."}
-          </p>
-        )}
-        {standing &&
-          (standing.confirmed ? (
-            <>
-              {/* The height keeps a line to itself. Run into the count
-                  after a comma, the grouped number swallows it: "block
-                  4 611 010, 3 confirmations" reads as one figure whose
-                  last group happens to be a 3. */}
-              {standing.block_height !== null && (
-                <p>{`Mined in block ${groupThousands(String(standing.block_height))}`}</p>
-              )}
-              <p>{`${groupThousands(String(standing.confirmations))} confirmation${standing.confirmations === 1 ? "" : "s"} as of ${relativeTime(standing.at)}`}</p>
-            </>
-          ) : standing.found ? (
-            <p>Waiting to be mined.</p>
-          ) : (
-            <p>{`${standing.backend} does not have this transaction. It may not have been relayed, or it was dropped or replaced. Broadcasting it again does no harm.`}</p>
-          ))}
+        <CheckLines check={check} />
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
