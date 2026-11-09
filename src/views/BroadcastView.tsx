@@ -143,13 +143,6 @@ export function BroadcastView({ network }: { network: Network }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `take` only bumps a ref: a new network, and nothing else, starts over
   }, [network]);
 
-  // Said once, when the network's yes lands on this page: a send that
-  // went out after Start over is only listed with the past ones.
-  const sentTicket = flow.phase === "sent" ? flow.ticket : null;
-  useEffect(() => {
-    if (sentTicket !== null) showToast("Transaction broadcast");
-  }, [sentTicket, showToast]);
-
   const decode = (input: string) => {
     const ticket = take();
     dispatch({ type: "preview", ticket });
@@ -187,12 +180,16 @@ export function BroadcastView({ network }: { network: Network }) {
     dispatch({ type: "send", ticket });
     // The refusal is rendered below the preview, in the node's words.
     broadcast.mutateAsync({ network, hex }).then(
-      (report) =>
+      (report) => {
+        // The transaction went out wherever the page is by now: said
+        // even when the ticket keeps the card off a page that moved on.
+        showToast("Transaction broadcast");
         dispatch({
           type: "sent",
           ticket,
           entry: { txid: report.txid, network, hex, backend: report.backend, at: report.at },
-        }),
+        });
+      },
       (error: unknown) => dispatch({ type: "sendFailed", ticket, error }),
     );
   };

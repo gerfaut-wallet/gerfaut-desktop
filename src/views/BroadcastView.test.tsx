@@ -1010,6 +1010,28 @@ describe("BroadcastView, an answer that comes late", () => {
     expect(screen.queryByRole("region", { name: "Technical" })).not.toBeInTheDocument();
     expect(screen.getByText("This file is too large to hold a transaction.")).toBeInTheDocument();
   });
+
+  /** The transaction went out, wherever the page is by then: the toast
+      says so even when the card no longer comes back. */
+  it("says the transaction was broadcast when the send lands after Start over", async () => {
+    useUi.setState({ toast: null });
+    const send = held<typeof REPORT>();
+    const { user } = mountCore((cmd) => {
+      if (cmd === "preview_transaction") return PREVIEW;
+      if (cmd === "broadcast_transaction") return send.promise;
+      if (cmd === "recent_broadcasts") return [];
+      return undefined;
+    });
+    await sendHeld(user);
+
+    await user.click(screen.getByRole("button", { name: "Start over" }));
+    send.settle(REPORT);
+    await settle();
+
+    expect(useUi.getState().toast).toBe("Transaction broadcast");
+    expect(screen.queryByText(/Sent · mempool\.space/)).not.toBeInTheDocument();
+  });
+
   it("leaves a file unread when the network changes while it is read", async () => {
     let asked = false;
     const { switchTo } = mountCore((cmd) => {
