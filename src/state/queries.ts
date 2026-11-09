@@ -403,7 +403,7 @@ export function useTransactionStatus(network: Network, hex: string | null) {
     queryKey: ["broadcast-status", network, hex ?? "none"],
     queryFn: () => ipc.transactionStatus(network, hex!),
     enabled: hex !== null,
-    refetchInterval: (query) => (query.state.data?.confirmed ? false : 30_000),
+    refetchInterval: (query) => (query.state.data?.standing === "confirmed" ? false : 30_000),
     retry: 1,
   });
 }

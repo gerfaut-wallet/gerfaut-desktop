@@ -86,8 +86,12 @@ const PREVIEW: TxPreview = {
 const REPORT = { txid: TXID, backend: "mempool.space", at: 1_755_000_000 };
 
 function status(overrides: Partial<BroadcastStatus> = {}): BroadcastStatus {
+  // The core's word, kept in step with the flat fields as the core keeps it.
+  const found = overrides.found ?? true;
+  const confirmed = overrides.confirmed ?? false;
   return {
     txid: TXID,
+    standing: confirmed ? "confirmed" : found ? "in_mempool" : "not_seen",
     found: true,
     confirmed: false,
     block_height: null,

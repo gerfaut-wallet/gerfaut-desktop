@@ -823,8 +823,7 @@ export interface TxPreview {
   locktime: number;
   rbf: boolean;
   /** Where it stands: the one thing the pill and the Broadcast button
-      both read. The core also sends `ready`, derived from this, which
-      the page leaves alone. */
+      both read. */
   readiness: TxReadiness;
   warnings: TxWarning[];
   /** The transaction as the network takes it; present only when ready. */
@@ -837,8 +836,15 @@ export interface BroadcastReport {
   at: number;
 }
 
+/** Where a sent transaction stands, decided by the core: the one field
+    the status card reads to say so. The flat fields below carry the
+    details (height, count, who answered and when), and the core keeps
+    them saying the same thing. */
+export type BroadcastStanding = "not_seen" | "in_mempool" | "confirmed";
+
 export interface BroadcastStatus {
   txid: string;
+  standing: BroadcastStanding;
   found: boolean;
   confirmed: boolean;
   block_height: number | null;

@@ -574,8 +574,15 @@ const txPreview = object<ipc.TxPreview>("TxPreview")({
   hex: nullable(str),
 });
 const broadcastReport = object<ipc.BroadcastReport>("BroadcastReport")({ txid: str, backend: str, at: num });
+const broadcastStanding: Schema<ipc.BroadcastStanding> = literal(
+  "BroadcastStanding",
+  "not_seen",
+  "in_mempool",
+  "confirmed",
+);
 const broadcastStatus = object<ipc.BroadcastStatus>("BroadcastStatus")({
   txid: str,
+  standing: broadcastStanding,
   found: bool,
   confirmed: bool,
   block_height: nullable(num),
@@ -722,6 +729,7 @@ const CONTRACT: Record<string, AnySchema | Away> = {
   BranchState: branchState,
   BranchTone: branchTone,
   BroadcastReport: broadcastReport,
+  BroadcastStanding: broadcastStanding,
   BroadcastStatus: broadcastStatus,
   CachedTotals: cachedTotals,
   CertificateReport: certificateReport,
@@ -844,7 +852,6 @@ const IGNORED: Record<string, string> = {
     "a sync started from the window says what it found; payments confirming are announced by the live watch, on the Rust side",
   "TorStatus.system_socks_trusted":
     "true in every desktop build, which the hints of the Tor card assume: a Tor on this machine is the user's own",
-  "TxPreview.ready": "the same as `readiness` being ready, which the page reads",
 };
 
 /** Fields and variants of this app that no reference file holds, on
