@@ -101,13 +101,17 @@ export function Select<T extends string>({
               {current.icon}
             </span>
           )}
-          <SelectValue
-            className={cn(
-              "min-w-0 flex-1 truncate font-ui text-text",
-              size === "md" ? "text-base" : "text-sm font-medium",
-            )}
-          >
-            {current?.label ?? ""}
+          {/* Radix's Value drops a className of its own: the span it
+              stands for carries the classes. */}
+          <SelectValue asChild>
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate font-ui text-text",
+                size === "md" ? "text-base" : "text-sm font-medium",
+              )}
+            >
+              {current?.label ?? ""}
+            </span>
           </SelectValue>
         </SelectTrigger>
         <SelectContent
