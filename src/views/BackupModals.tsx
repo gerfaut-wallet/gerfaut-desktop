@@ -487,10 +487,10 @@ export function BackupRestoreModal({
       return "A wallet in this backup holds a private key, and Gerfaut only watches: nothing was restored.";
     }
     if (isCommandError(error) && error.kind === "descriptor") {
-      return `A wallet in this backup is not a descriptor Gerfaut can watch, so nothing was restored. ${error.message}`;
+      return `A wallet in this backup is not a descriptor Gerfaut can watch, so nothing was restored. The core says: ${error.message}`;
     }
     if (isCommandError(error) && error.kind === "invalid_input") {
-      return `Nothing was restored. ${error.message}`;
+      return `Nothing was restored. The core says: ${error.message}`;
     }
     return message(error);
   };
