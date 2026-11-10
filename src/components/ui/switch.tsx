@@ -3,13 +3,15 @@ import * as SwitchPrimitive from "@radix-ui/react-switch";
 import { cn } from "@/lib/utils";
 
 /** The shadcn/ui switch, on the Toundra roles: Glacier when on, Brume
-    when off, a white knob that keeps its light shadow in both themes. */
+    when off, a white knob that keeps its light shadow in both themes.
+    Left a plain inline button, as before: inline-flex moved it off the
+    baseline its setting row lines up on. */
 function Switch({ className, ...props }: React.ComponentProps<typeof SwitchPrimitive.Root>) {
   return (
     <SwitchPrimitive.Root
       data-slot="switch"
       className={cn(
-        "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-150",
+        "relative h-6 w-11 cursor-pointer rounded-full transition-colors duration-150",
         "data-[state=checked]:bg-primary data-[state=unchecked]:bg-border",
         "disabled:cursor-not-allowed disabled:opacity-45",
         className,
