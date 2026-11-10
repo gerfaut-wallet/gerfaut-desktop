@@ -57,7 +57,7 @@ const radioGroupItemVariants = cva(
         solid: [
           "h-9 cursor-pointer gap-1.5 rounded-[6px] px-3 text-sm",
           "data-[state=checked]:bg-primary data-[state=checked]:text-on-primary",
-          "data-[state=unchecked]:text-text data-[state=unchecked]:enabled:hover:bg-border/60",
+          "data-[state=unchecked]:enabled:text-text data-[state=unchecked]:enabled:hover:bg-border/60",
           "disabled:text-muted",
         ],
         quiet: [
