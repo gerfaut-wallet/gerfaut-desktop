@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useUi } from "../state/store";
 
 /** Benign confirmations only ("Copied", "Setting saved"). Anything that
@@ -7,9 +8,14 @@ export function Toast() {
   if (!toast) return null;
   // The inversion (Nuit background, Écume text) comes from the dark
   // island tokens, never from hardcoded values.
-  return (
-    <output className="shell-rail fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-md bg-background px-4 py-2 font-ui text-sm text-text">
+  // Beside the modals in the body and above the highest of them: a copy
+  // made in a modal is confirmed over its dim, not under it, and a
+  // modal opened earlier hides the app from screen readers, which
+  // would then never hear the toast.
+  return createPortal(
+    <output className="shell-rail fixed bottom-6 left-1/2 z-[100] -translate-x-1/2 rounded-md bg-background px-4 py-2 font-ui text-sm text-text">
       {toast}
-    </output>
+    </output>,
+    document.body,
   );
 }
