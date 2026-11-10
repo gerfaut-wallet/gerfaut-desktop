@@ -92,10 +92,7 @@ export function Select<T extends string>({
     <div className={className}>
       <SelectRoot
         value={encode(value)}
-        onValueChange={(next) => {
-          const chosen = decode(next) as T;
-          if (chosen !== value) onChange(chosen);
-        }}
+        onValueChange={(next) => onChange(decode(next) as T)}
         disabled={disabled}
       >
         <SelectTrigger id={id} size={size} aria-label={label} aria-haspopup="listbox">

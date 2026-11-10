@@ -13,8 +13,8 @@ import { cn } from "@/lib/utils";
     - `ghost`: a toolbar glyph or a disclosure, with no fill at rest. */
 const buttonVariants = cva(
   [
-    "inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md",
-    "font-ui text-sm font-medium whitespace-nowrap",
+    "inline-flex cursor-pointer items-center justify-center gap-2 rounded-md",
+    "font-ui text-sm font-medium",
     "transition-[background-color,color,box-shadow,scale] duration-150 ease-out",
     "live:active:scale-[0.96]",
     "disabled:cursor-default disabled:opacity-50 aria-busy:cursor-wait",
@@ -46,6 +46,8 @@ function Button({
   variant,
   size,
   asChild = false,
+  // Never a submit by accident: a form's submit says so where it is used.
+  type = "button",
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
@@ -58,6 +60,7 @@ function Button({
       data-slot="button"
       data-variant={variant}
       data-size={size}
+      type={asChild ? undefined : type}
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />
