@@ -96,7 +96,7 @@ export function TorSection({ tor }: { tor: TorSettings }) {
       <p className="max-w-2xl font-ui text-sm text-muted">
         {embedded
           ? "An address ending in .onion goes through Tor."
-          :"An address ending in .onion goes through Tor. This build has no Tor of its own: start Tor or the Tor Browser first."}{" "}
+          : "An address ending in .onion goes through Tor. This build has no Tor of its own: start Tor or the Tor Browser first."}{" "}
         {PRICE_ROUTE}
       </p>
 
