@@ -23,7 +23,7 @@ const STEPS: Step[] = [
   {
     icon: <Plus size={32} strokeWidth={1.5} aria-hidden />,
     title: "Add a wallet",
-    body: "Paste it, scan a QR code or open a file. Gerfaut says what it recognized before it stores anything.",
+    body: "Paste it, scan a QR code or open a file.",
   },
   {
     icon: <Server size={32} strokeWidth={1.5} aria-hidden />,

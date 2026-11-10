@@ -157,7 +157,7 @@ export function NotificationsSection({
             While this is on, Gerfaut keeps one connection open to your backend, which learns
             what a sync already tells it and how long Gerfaut stays connected.
             {automatic &&
-              " With the Automatic backend, that is an Electrum server of an operator already in the rotation: Electrum is what pushes changes."}
+              " With the Automatic backend, that is an Electrum server of an operator already in the rotation."}
           </p>
         </div>
 

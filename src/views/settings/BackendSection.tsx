@@ -331,11 +331,11 @@ export function BackendSection({
             })),
           ]}
         />
-        <p className="mt-1.5 font-ui text-xs text-muted">
-          {chosen
-            ? "Only this server is asked for chain data."
-            : "Every public server is tried in turn until one answers."}
-        </p>
+        {!chosen && (
+          <p className="mt-1.5 font-ui text-xs text-muted">
+            Every public server is tried in turn until one answers.
+          </p>
+        )}
       </>
     ),
     custom_esplora: (
@@ -486,10 +486,6 @@ export function BackendSection({
               clearRefusal();
             }}
           />
-          <p className="mt-3 font-ui text-xs text-muted">
-            An address ending in .onion goes through Tor; the Tor card below says
-            which one and lets you test it.
-          </p>
         </>
       )}
       {plainTcp && (
@@ -614,11 +610,6 @@ export function BackendRefusalNotice({ activeNetwork }: { activeNetwork: Network
         <Notice tone="info" role="alert">
           {refusal.message}
         </Notice>
-        <p className="font-ui text-xs text-muted">
-          {unseen === activeNetwork
-            ? "Settings › Network keeps the reason under Save backend."
-            : `Settings › Network keeps the reason under Save backend, on ${label}.`}
-        </p>
         <div className="mt-1 flex flex-wrap items-center justify-end gap-3">
           <Button variant="secondary" onClick={close}>
             Dismiss

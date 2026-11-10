@@ -72,8 +72,7 @@ export function TransactionsView({ walletId }: { walletId: string }) {
               {loadMore.isPending ? "Fetching…" : "Load older transactions"}
             </Button>
             <p className="font-ui text-xs text-muted">
-              This address has a long history: it loads in rounds. The balance
-              above already covers all of it.
+              The balance above already covers the full history.
             </p>
           </div>
         )}

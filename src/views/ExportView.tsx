@@ -115,7 +115,7 @@ export function ExportView({ walletId }: { walletId: string }) {
           Export
         </h1>
         <p className="mt-1 font-ui text-sm text-muted">
-          This wallet's transaction history as a CSV file. Everything stays on this machine.
+          Everything stays on this machine.
         </p>
       </header>
 
@@ -178,9 +178,8 @@ export function ExportView({ walletId }: { walletId: string }) {
             </p>
             {truncated && (
               <p className="mt-0.5 font-ui text-xs text-pending">
-                This address has a long history: only the loaded transactions
-                export. Load older rounds on the Transactions page first for a
-                complete file.
+                Only the loaded transactions export. Load older ones on the
+                Transactions page first for a complete file.
               </p>
             )}
           </div>

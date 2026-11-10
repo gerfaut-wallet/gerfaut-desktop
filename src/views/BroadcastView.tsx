@@ -239,9 +239,6 @@ export function BroadcastView({ network }: { network: Network }) {
         <h1 className="font-display text-2xl font-semibold tracking-[-0.01em] text-text">
           Broadcast
         </h1>
-        <p className="mt-1 font-ui text-sm text-muted">
-          Send a transaction signed elsewhere to the network, and follow it until it confirms.
-        </p>
       </header>
 
       <div className="flex flex-col gap-4">
@@ -417,9 +414,7 @@ function InputCard({
             error && "invisible",
           )}
         >
-          PSBT files, transaction files, base64, hex, or an animated QR code from a
-          signing device. Gerfaut never signs: a transaction missing signatures goes
-          back to the signer.
+          Gerfaut never signs: a transaction missing signatures goes back to the signer.
         </p>
         {error && (
           // An input error is said in words, in the text colour with its
@@ -861,12 +856,11 @@ function ConfirmBody({ preview }: { preview: TxPreview }) {
       {preview.readiness === "in_mempool" ? (
         <p className="font-ui text-sm text-text">
           This transaction is already waiting in the mempool. Broadcasting it again does no
-          harm: nodes that already hold it keep it, and others may relay it.
+          harm.
         </p>
       ) : (
         <p className="font-ui text-sm text-text">
-          Once broadcast, a transaction cannot be taken back. Nodes will relay it and miners
-          may include it in the next block.
+          Once broadcast, a transaction cannot be taken back.
         </p>
       )}
       <dl className="grid grid-cols-2 gap-3 rounded-md bg-sunken/50 p-3">
@@ -1129,9 +1123,6 @@ function StatusCard({
             colour of a delete. The words carry the irreversibility. */}
         <Notice tone="info">
           <span className="font-medium">This record cannot be brought back.</span>
-          <span className="mt-0.5 block text-xs text-muted">
-            Gerfaut keeps no copy once it is forgotten.
-          </span>
         </Notice>
         <p className="mt-4 font-ui text-sm text-muted">
           This only drops Gerfaut's local record of the broadcast. The transaction is on

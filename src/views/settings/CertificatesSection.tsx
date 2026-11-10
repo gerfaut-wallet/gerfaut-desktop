@@ -222,8 +222,8 @@ export function CertificatesSection({ certs }: { certs: Record<string, string> }
         ))}
       </ul>
       <p className="mt-3 font-ui text-xs text-muted">
-        Each line is a certificate you accepted for that server. Forget one and syncs with that
-        server fail until you press Save backend again and accept it.
+        Once forgotten, a certificate makes syncs with its server fail until you press Save
+        backend again and accept it.
       </p>
       {pending && (
         <Modal

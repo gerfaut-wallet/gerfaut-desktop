@@ -700,7 +700,7 @@ describe("restoring a backup", () => {
     await user.click(screen.getByRole("button", { name: /restore 1 wallet/i }));
     expect(
       await screen.findByText(
-        "A wallet in this backup is not a descriptor Gerfaut can watch, so nothing was restored. The core says: descriptor error: Invalid descriptor",
+        "A wallet in this backup is not a descriptor Gerfaut can watch, so nothing was restored. descriptor error: Invalid descriptor",
       ),
     ).toBeInTheDocument();
 
@@ -714,7 +714,7 @@ describe("restoring a backup", () => {
     await user.click(screen.getByRole("button", { name: /restore 1 wallet/i }));
     expect(
       await screen.findByText(
-        'Nothing was restored. The core says: invalid backup: "Hot" cannot be restored: input contains private key material and was rejected',
+        'Nothing was restored. invalid backup: "Hot" cannot be restored: input contains private key material and was rejected',
       ),
     ).toBeInTheDocument();
   });
@@ -871,7 +871,7 @@ describe("restoring a backup", () => {
     expect(await screen.findByText(/Backup read from/)).toHaveTextContent(
       "Backup read from backup.gerfaut",
     );
-    expect(screen.getByText("Type its password to open it.")).toBeInTheDocument();
+    expect(screen.queryByText("Type its password to open it.")).not.toBeInTheDocument();
 
     // The caret lands on the next step, and what just happened is read
     // out with it rather than left to a panel a screen reader may miss.
@@ -920,7 +920,7 @@ describe("restoring a backup", () => {
     expect(await screen.findByText(/Backup read from/)).toHaveTextContent(
       "Backup read from the QR code",
     );
-    expect(screen.getByText("Type its password to open it.")).toBeInTheDocument();
+    expect(screen.queryByText("Type its password to open it.")).not.toBeInTheDocument();
 
     const field = screen.getByLabelText("Password");
     await waitFor(() => expect(field).toHaveFocus());
