@@ -568,9 +568,6 @@ export function BackupRestoreModal({
                   <span className="break-all font-medium">{from.name}</span>
                 )}
               </p>
-              <p className="mt-0.5 font-ui text-xs text-muted">
-                Type its password to open it.
-              </p>
             </div>
           )}
           <PasswordField

@@ -31,8 +31,7 @@ export class ErrorBoundary extends Component<
             This screen failed
           </h1>
           <p className="mt-2 text-pretty font-ui text-sm text-text">
-            Gerfaut ran into an error it could not recover from. Reload to start the window
-            again; your wallets and settings are not affected.
+            Reload to start the window again. Your wallets and settings are not affected.
           </p>
           <p className="mt-2 break-words text-pretty font-ui text-xs text-muted">
             {error.message}

@@ -19,7 +19,7 @@ import { useCreditFor } from "../components/PriceCredit";
 import { BalanceChart } from "../components/BalanceChart";
 import { CoverageBadge } from "../components/CoverageBadge";
 import { LoadFailure } from "../components/LoadFailure";
-import { useRadioGroup } from "../components/radioGroup";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   MASKED,
   formatAmountSigned,
@@ -420,7 +420,6 @@ function PriceCard() {
   // Asked once the ranges are known, so the range asked for is one the
   // source serves, and the series is asked once.
   const history = usePriceHistory(range, fiatEnabled && table !== undefined);
-  const radio = useRadioGroup(ranges, range, setPriceRange);
   // A refresh that failed shows no price, like the amounts: the series
   // before it stays in the cache, and its last point is not today's.
   const answer = liveAnswer(history, fiatCurrency);
@@ -447,26 +446,17 @@ function PriceCard() {
     <Card
       label="Bitcoin price"
       action={
-        <div role="radiogroup" aria-label="Price range" className="inline-flex rounded-md bg-sunken p-0.5">
-          {ranges.map((option, index) => (
-            <button
-              key={option}
-              type="button"
-              role="radio"
-              aria-checked={range === option}
-              {...radio(option, index)}
-              onClick={() => setPriceRange(option)}
-              className={clsx(
-                "cursor-pointer rounded-[6px] px-2 py-0.5 font-ui text-[11px] font-medium transition-colors duration-150",
-                range === option
-                  ? "bg-surface text-text shadow-[inset_0_0_0_1px_var(--color-border)]"
-                  : "text-muted hover:text-text",
-              )}
-            >
+        <RadioGroup
+          aria-label="Price range"
+          value={range}
+          onValueChange={(next) => setPriceRange(next as PriceRange)}
+        >
+          {ranges.map((option) => (
+            <RadioGroupItem key={option} value={option} tone="quiet">
               {RANGE_LABEL[option]}
-            </button>
+            </RadioGroupItem>
           ))}
-        </div>
+        </RadioGroup>
       }
     >
       {last ? (

@@ -63,10 +63,7 @@ function DisplayCard() {
         >
           <Toggle checked={fiatEnabled} onChange={setFiatEnabled} label="Show fiat value" />
         </SettingRow>
-        <SettingRow
-          title="Currency"
-          hint="Used by the fiat value and the overview price."
-        >
+        <SettingRow title="Currency">
           <Select
             id="fiat-currency"
             label="Fiat currency"

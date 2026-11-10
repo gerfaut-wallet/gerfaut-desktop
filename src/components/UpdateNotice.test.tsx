@@ -434,7 +434,7 @@ describe("the About card", () => {
     core.finds = "offline";
     await user.click(screen.getByRole("button", { name: "Check for updates" }));
     expect(
-      await screen.findByText("Could not reach the release page. Try again later."),
+      await screen.findByText("Could not reach the release page."),
     ).toBeInTheDocument();
     expect(openLink).not.toHaveBeenCalled();
   });

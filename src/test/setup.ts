@@ -21,6 +21,12 @@ if (!window.matchMedia) {
 }
 Element.prototype.scrollIntoView = Element.prototype.scrollIntoView ?? vi.fn();
 
+// Radix Select captures the pointer on its trigger and items, which
+// jsdom does not implement: without these the list never opens.
+Element.prototype.hasPointerCapture = Element.prototype.hasPointerCapture ?? (() => false);
+Element.prototype.setPointerCapture = Element.prototype.setPointerCapture ?? (() => {});
+Element.prototype.releasePointerCapture = Element.prototype.releasePointerCapture ?? (() => {});
+
 // jsdom has no ResizeObserver; the chart measures its container with
 // it. Report a plausible width once so the SVG actually renders.
 if (!window.ResizeObserver) {

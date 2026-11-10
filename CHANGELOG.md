@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Dialogs, select lists, switches and choice rows now use Radix primitives. In a select list, typing the first letters of an option jumps to it, and the list opens above its field when there is no room below. While a dialog is open, screen readers no longer reach the rest of the window.
+- Help lines that repeated a label or a title are gone from Settings, Receive, Broadcast, Export and Transactions.
+
 ### Fixed
 
 - Closing the QR scanner while the system still asks for camera access no longer leaves the camera on once access is granted.

@@ -245,6 +245,10 @@ input::-ms-clear {
 /* Tailwind dark: variant follows the app's data-theme, not the OS. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* A control that takes a press: neither switched off nor busy. Hover and
+   the press scale only show on it. */
+@custom-variant live (&:enabled:not([aria-busy="true"]));
+
 /* An anchored panel (menu) has its origin on screen: fade alone, 150ms. */
 @keyframes menu-in {
   from {

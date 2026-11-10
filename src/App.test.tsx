@@ -2073,9 +2073,7 @@ describe("display settings", () => {
     await user.click(within(list).getByRole("option", { name: /^blockstream\.info/ }));
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
     expect(select).toHaveTextContent("blockstream.info");
-    expect(
-      screen.getByText(/Only this server is asked/),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/Every public server is tried/)).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Save backend" }));
     await waitFor(() =>
       expect(setBackend).toHaveBeenCalledWith({
@@ -2087,7 +2085,7 @@ describe("display settings", () => {
     // An Electrum server serves a single-address wallet as Esplora does:
     // nothing is said against choosing one.
     await choose(user, "Public server", "mempool.space:60602");
-    expect(screen.getByText("Only this server is asked for chain data.")).toBeInTheDocument();
+    expect(screen.queryByText(/Every public server is tried/)).not.toBeInTheDocument();
     expect(screen.queryByText(/single-address/)).not.toBeInTheDocument();
 
     // Back to automatic: the stored shape carries no operator.
@@ -2559,7 +2557,7 @@ describe("partial history", () => {
     await screen.findByText("Bitcoin price");
     await user.click(sidebar().getByRole("button", { name: "Transactions" }));
     const button = await screen.findByRole("button", { name: /load older transactions/i });
-    expect(screen.getByText(/loads in rounds/i)).toBeInTheDocument();
+    expect(screen.getByText(/balance above already covers/i)).toBeInTheDocument();
     await user.click(button);
     await waitFor(() => expect(loadMore).toHaveBeenCalledTimes(1));
   });

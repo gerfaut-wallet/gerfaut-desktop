@@ -95,14 +95,13 @@ export function TorSection({ tor }: { tor: TorSettings }) {
     <SectionCard icon={<OnionIcon size={18} />} title="Tor">
       <p className="max-w-2xl font-ui text-sm text-muted">
         {embedded
-          ? "An address ending in .onion goes through Tor. Gerfaut uses the Tor already running on this machine when there is one, and starts its own otherwise."
+          ? "An address ending in .onion goes through Tor."
           : "An address ending in .onion goes through Tor. This build has no Tor of its own: start Tor or the Tor Browser first."}{" "}
         {PRICE_ROUTE}
       </p>
 
       <div className="mt-4 flex flex-col gap-4">
         <div>
-          <FieldLabel>Tor</FieldLabel>
           <Segmented
             label="Tor"
             value={mode}
@@ -135,7 +134,7 @@ export function TorSection({ tor }: { tor: TorSettings }) {
               className="field-focus h-11 w-full max-w-xs rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted"
             />
             <p className="mt-1.5 font-ui text-xs text-muted">
-              Empty means 127.0.0.1:9050. The Tor Browser listens on 9150.
+              The Tor Browser listens on 9150.
             </p>
           </div>
         )}

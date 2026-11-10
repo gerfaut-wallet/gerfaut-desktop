@@ -85,7 +85,7 @@ export function AboutSection() {
               {available
                 ? `Gerfaut ${available} is available.`
                 : result === "failed"
-                  ? "Could not reach the release page. Try again later."
+                  ? "Could not reach the release page."
                   : result === "current"
                     ? "You are up to date."
                     : ""}

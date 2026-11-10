@@ -89,11 +89,6 @@ export function ReceiveView({ walletId }: { walletId: string }) {
         <h1 className="font-display text-2xl font-semibold tracking-[-0.01em] text-text">
           Receive
         </h1>
-        <p className="mt-1 font-ui text-sm text-muted">
-          {singleAddress
-            ? "The address this wallet watches."
-            : "Share an address to receive bitcoin into this wallet."}
-        </p>
       </header>
 
       {addresses.isPending && (
@@ -246,11 +241,7 @@ export function ReceiveView({ walletId }: { walletId: string }) {
           <>
             <AddressCard
               title={singleAddress ? "Watched address" : "External"}
-              hint={
-                singleAddress
-                  ? "The one address this wallet watches."
-                  : "Receive addresses, in derivation order."
-              }
+              hint={singleAddress ? undefined : "Receive addresses, in derivation order."}
               rows={list.data.external}
             />
             {!singleAddress && (
@@ -283,7 +274,7 @@ function AddressCard({
   empty,
 }: {
   title: string;
-  hint: string;
+  hint?: string;
   rows: AddressRow[];
   empty?: string;
 }) {
@@ -304,7 +295,7 @@ function AddressCard({
             </span>
           )}
         </h2>
-        <p className="font-ui text-xs text-muted">{hint}</p>
+        {hint && <p className="font-ui text-xs text-muted">{hint}</p>}
       </div>
       {rows.length === 0 ? (
         <p className="px-4 pb-4 pt-1 font-ui text-sm text-muted">{empty ?? "Nothing here yet."}</p>

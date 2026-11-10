@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
-import { Segmented } from "../views/settings/primitives";
+import { Segmented } from "./primitives";
 
 function Modes() {
   const [mode, setMode] = useState<"auto" | "system" | "embedded" | "off">("system");
@@ -48,6 +48,15 @@ function SavedModes({ saved }: { saved: string[] }) {
 
 const radio = (name: string) => screen.getByRole("radio", { name });
 
+/** An arrow pressed the way a hand presses it: the focus moves on the
+    next tick, while the key is still down, and the choice follows it. */
+async function press(user: ReturnType<typeof userEvent.setup>, ...keys: string[]) {
+  for (const key of keys) {
+    await user.keyboard(`{${key}>}`);
+    await user.keyboard(`{/${key}}`);
+  }
+}
+
 describe("a group of choices at the keyboard", () => {
   it("is one stop for Tab, on the chosen one", async () => {
     render(<Modes />);
@@ -65,20 +74,20 @@ describe("a group of choices at the keyboard", () => {
     await user.click(screen.getByRole("button", { name: "Before" }));
     await user.tab();
 
-    await user.keyboard("{ArrowRight}");
+    await press(user, "ArrowRight");
     expect(radio("Off")).toHaveFocus();
     expect(radio("Off")).toBeChecked();
     expect(radio("Built-in")).not.toBeChecked();
 
-    await user.keyboard("{ArrowRight}");
+    await press(user, "ArrowRight");
     expect(radio("Automatic")).toHaveFocus();
     expect(radio("Automatic")).toBeChecked();
 
-    await user.keyboard("{ArrowLeft}");
+    await press(user, "ArrowLeft");
     expect(radio("Off")).toBeChecked();
-    await user.keyboard("{Home}");
+    await press(user, "Home");
     expect(radio("Automatic")).toBeChecked();
-    await user.keyboard("{End}");
+    await press(user, "End");
     expect(radio("Off")).toBeChecked();
   });
 
@@ -89,7 +98,7 @@ describe("a group of choices at the keyboard", () => {
     render(<SavedModes saved={saved} />);
     const user = userEvent.setup();
     await user.tab();
-    await user.keyboard("{ArrowRight}{ArrowLeft}");
+    await press(user, "ArrowRight", "ArrowLeft");
     expect(saved).toEqual(["system", "auto"]);
     expect(radio("Automatic")).toHaveFocus();
   });

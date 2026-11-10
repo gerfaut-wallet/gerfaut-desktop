@@ -871,7 +871,6 @@ describe("restoring a backup", () => {
     expect(await screen.findByText(/Backup read from/)).toHaveTextContent(
       "Backup read from backup.gerfaut",
     );
-    expect(screen.getByText("Type its password to open it.")).toBeInTheDocument();
 
     // The caret lands on the next step, and what just happened is read
     // out with it rather than left to a panel a screen reader may miss.
@@ -920,7 +919,6 @@ describe("restoring a backup", () => {
     expect(await screen.findByText(/Backup read from/)).toHaveTextContent(
       "Backup read from the QR code",
     );
-    expect(screen.getByText("Type its password to open it.")).toBeInTheDocument();
 
     const field = screen.getByLabelText("Password");
     await waitFor(() => expect(field).toHaveFocus());

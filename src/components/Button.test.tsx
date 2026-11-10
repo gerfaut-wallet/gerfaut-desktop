@@ -68,8 +68,9 @@ describe("Button", () => {
     );
     const button = screen.getByRole("button", { name: "Save backend" });
     expect(button).toBeDisabled();
-    expect(button).toHaveClass("opacity-50");
-    expect(button.className).not.toContain("hover:");
+    expect(button).toHaveClass("disabled:opacity-50");
+    // Hover only lives under `live:`, which a disabled button is not.
+    expect(button.className).not.toMatch(/(^| )hover:/);
   });
 });
 

@@ -1,7 +1,8 @@
-import { clsx } from "clsx";
 import { ChevronDown, ChevronUp, LoaderCircle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ButtonHTMLAttributes, Ref } from "react";
+import { Button as UiButton } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 /** Every labelled button is filled: a word alone with no fill and no
     edge does not read as something to press.
@@ -48,11 +49,12 @@ export function Button({
   children,
   ...rest
 }: Props) {
-  const inert = disabled || busy;
   return (
-    <button
+    <UiButton
       // First, so nothing passed here can undo the busy state below.
       {...rest}
+      variant={variant}
+      size={size}
       type={type}
       // A busy button stays focusable; a submit one is switched off
       // outright, or Enter in a field of its form would send it again.
@@ -60,24 +62,12 @@ export function Button({
       aria-disabled={busy || undefined}
       aria-busy={busy || undefined}
       onClick={busy ? (event) => event.preventDefault() : onClick}
-      className={clsx(
-        "inline-flex items-center justify-center gap-2 rounded-md",
-        "font-ui text-sm font-medium transition-[background-color,color,box-shadow,scale] duration-150 ease-out",
-        size === "md" ? "h-11 px-4" : "h-10 px-3",
-        busy
-          ? "cursor-wait"
-          : disabled
-            ? "cursor-default opacity-50"
-            : "cursor-pointer active:scale-[0.96]",
-        variant === "primary" && ["bg-primary text-on-primary", !inert && "hover:bg-primary-hover"],
-        variant === "secondary" && [
-          "text-text",
-          onTint
-            ? "bg-surface shadow-[inset_0_0_0_1px_var(--color-border)] dark:bg-sunken dark:shadow-none"
-            : "bg-sunken",
-          !inert && (onTint ? "hover:bg-background dark:hover:bg-border" : "hover:bg-border/60"),
-        ],
-        variant === "danger" && ["bg-alert text-on-alert", !inert && "hover:bg-alert-hover"],
+      className={cn(
+        // Busy is not off: full strength, only the cursor says to wait.
+        busy && "disabled:opacity-100",
+        variant === "secondary" &&
+          onTint &&
+          "bg-surface shadow-[inset_0_0_0_1px_var(--color-border)] live:hover:bg-background dark:bg-sunken dark:shadow-none dark:live:hover:bg-border",
         className,
       )}
     >
@@ -92,7 +82,7 @@ export function Button({
         Icon && <Icon size={ICON_SIZE} strokeWidth={1.5} aria-hidden className="shrink-0" />
       )}
       {children}
-    </button>
+    </UiButton>
   );
 }
 
@@ -106,17 +96,12 @@ export function IconButton({
   ...rest
 }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
   return (
-    <button
-      type="button"
+    <UiButton
+      variant="ghost"
+      size="icon"
       aria-label={label}
       title={label}
-      className={clsx(
-        "inline-flex size-10 cursor-pointer items-center justify-center rounded-md",
-        "text-muted transition-colors duration-150 ease-out",
-        "enabled:hover:bg-sunken enabled:hover:text-text enabled:active:scale-[0.96]",
-        "disabled:cursor-default disabled:opacity-40",
-        className,
-      )}
+      className={className}
       {...rest}
     />
   );
@@ -133,19 +118,15 @@ export function Disclosure({
 }: ButtonHTMLAttributes<HTMLButtonElement> & { open: boolean }) {
   const Chevron = open ? ChevronUp : ChevronDown;
   return (
-    <button
-      type="button"
+    <UiButton
+      variant="ghost"
       aria-expanded={open}
-      className={clsx(
-        "inline-flex h-10 cursor-pointer items-center gap-2 rounded-md px-2",
-        "font-ui text-sm font-medium text-muted transition-colors duration-150 ease-out",
-        "hover:bg-sunken hover:text-text",
-        className,
-      )}
+      // The voice of a heading, not of an action: no press scale.
+      className={cn("h-10 px-2 live:active:scale-100", className)}
       {...rest}
     >
       <Chevron size={14} strokeWidth={1.5} aria-hidden className="shrink-0" />
       {children}
-    </button>
+    </UiButton>
   );
 }

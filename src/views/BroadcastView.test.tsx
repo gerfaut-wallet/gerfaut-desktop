@@ -538,7 +538,7 @@ describe("BroadcastView", () => {
     await user.type(field, "nope");
     await user.click(screen.getByRole("button", { name: "Preview" }));
     const alert = await screen.findByRole("alert");
-    const hint = screen.getByText(/PSBT files, transaction files/);
+    const hint = screen.getByText(/Gerfaut never signs/);
     // One cell: the hint is kept, hidden, under the error.
     expect(alert.parentElement).toBe(hint.parentElement);
     expect(hint).toHaveClass("invisible");

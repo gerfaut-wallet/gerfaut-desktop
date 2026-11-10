@@ -20,7 +20,7 @@ function wordsFor(failure: CommandError): { title: string; body: string; hint: s
   if (failure.kind === "vault_in_use") {
     return {
       title: "Gerfaut is already open",
-      body: "Another Gerfaut window is using this vault, and a vault opens in one place at a time. Switch to that window, or close it and try again.",
+      body: "Another Gerfaut window is using this vault. Switch to that window, or close it and try again.",
       hint: "No other window in sight? Another copy of Gerfaut installed on this machine may be holding the same vault.",
     };
   }
