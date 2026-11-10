@@ -4,7 +4,8 @@
 import { clsx } from "clsx";
 import type { ReactNode, Ref } from "react";
 import { Notice } from "../../components/Notice";
-import { useRadioGroup } from "../../components/radioGroup";
+import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { errorMessage } from "../../lib/ipc";
 
 /** What a setting that was not saved leaves under it: the amber note,
@@ -110,44 +111,23 @@ export function Segmented<T extends string>({
   onChange: (value: T) => void;
   label: string;
 }) {
-  const radio = useRadioGroup(
-    options.map((option) => option.value),
-    value,
-    onChange,
-    (candidate) => options.find((option) => option.value === candidate)?.disabled === true,
-  );
   return (
-    <div
-      role="radiogroup"
+    <RadioGroup
       aria-label={label}
-      className="inline-flex rounded-md bg-sunken p-0.5"
+      value={value}
+      onValueChange={(next) => onChange(next as T)}
     >
-      {options.map((option, index) => (
-        <button
-          key={option.value}
-          type="button"
-          role="radio"
-          aria-checked={value === option.value}
-          {...radio(option.value, index)}
-          disabled={option.disabled}
-          onClick={() => onChange(option.value)}
-          className={clsx(
-            "inline-flex h-9 items-center gap-1.5 rounded-[6px] px-3 font-ui text-sm font-medium transition-colors duration-150",
-            option.disabled ? "cursor-not-allowed text-muted" : "cursor-pointer",
-            value === option.value
-              ? "bg-primary text-on-primary"
-              : !option.disabled && "text-text hover:bg-border/60",
-          )}
-        >
+      {options.map((option) => (
+        <RadioGroupItem key={option.value} value={option.value} disabled={option.disabled}>
           {option.icon && (
             <span aria-hidden className="shrink-0">
               {option.icon}
             </span>
           )}
           {option.label}
-        </button>
+        </RadioGroupItem>
       ))}
-    </div>
+    </RadioGroup>
   );
 }
 
@@ -175,31 +155,16 @@ export function Toggle({
   ref?: Ref<HTMLButtonElement>;
 }) {
   return (
-    <button
+    <Switch
       ref={ref}
-      type="button"
-      role="switch"
-      aria-checked={checked}
+      checked={checked}
+      onCheckedChange={onChange}
       aria-label={label}
       aria-describedby={describedBy}
       aria-busy={busy || undefined}
       disabled={disabled || busy}
-      onClick={() => onChange(!checked)}
-      className={clsx(
-        "relative h-6 w-11 rounded-full transition-colors duration-150",
-        checked ? "bg-primary" : "bg-border",
-        disabled ? "cursor-not-allowed opacity-45" : busy ? "cursor-wait" : "cursor-pointer",
-      )}
-    >
-      {/* Anchored left-0.5: without an explicit inset the knob's resting
-          spot follows the button's text alignment and drifts per engine. */}
-      <span
-        aria-hidden
-        className={clsx(
-          "absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow-[0_1px_2px_rgba(13,19,23,0.25)] transition-transform duration-150",
-          checked && "translate-x-5",
-        )}
-      />
-    </button>
+      // Busy is not off: full strength, only the cursor says to wait.
+      className={busy && !disabled ? "disabled:cursor-wait disabled:opacity-100" : undefined}
+    />
   );
 }
