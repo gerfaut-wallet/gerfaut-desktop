@@ -122,9 +122,14 @@ jobs:
           persist-credentials: false
 
       # The list release.yml installs, for the same reason.
+      # apt-mirror.sh drops a mirror that serves its indexes but not its
+      # packages, which apt would otherwise wait on for hours; the timeout
+      # catches any other stall.
       - name: Install Linux dependencies
+        timeout-minutes: 15
         run: |
           sudo apt-get update
+          gerfaut-desktop/.github/apt-mirror.sh
           sudo apt-get install -y build-essential pkg-config curl wget file libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libdbus-1-dev xdg-utils
 
       - name: Install the pinned Rust toolchain
