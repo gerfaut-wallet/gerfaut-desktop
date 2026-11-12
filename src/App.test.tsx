@@ -604,6 +604,7 @@ function walletIpc(
             address: "tb1qutxoaddress",
             value_sats: 150_000,
             status: { state: "confirmed", height: 199_990, timestamp: 1_755_000_000 },
+            confirmations: 11,
             keychain: "external",
             derivation_index: 0,
           },
