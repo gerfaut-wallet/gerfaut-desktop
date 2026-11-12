@@ -20,7 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - In "Add a wallet", an input that is refused is marked with an icon, as on the Broadcast page.
 - A button with a label that cannot be pressed yet is drawn hollow, with a thin edge and its label in grey. Faded to half strength, its label was too pale to read.
 - In the Transactions list, a transaction with 6 confirmations or more shows a small grey check in place of the green "Confirmed" pill. The pill stays for what still moves: "Pending", then the count of confirmations for the first 5.
-- In the UTXOs list, a confirmed coin shows the same grey check. A coin still waiting keeps its "Pending" pill.
+- Under 6 confirmations, the pill shows a small pie next to the count, one sixth filled for each confirmation, in the lists and in a transaction's details. A screen reader says "3 of 6 confirmations".
+- The UTXOs list counts the confirmations of each coin: "Pending" while it waits, the pill with its pie under 6, then the same grey check.
 
 ### Fixed
 

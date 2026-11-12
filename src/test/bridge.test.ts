@@ -199,6 +199,7 @@ const utxoInfo = object<ipc.UtxoInfo>("UtxoInfo")({
   address: nullable(str),
   value_sats: num,
   status: txStatus,
+  confirmations: num,
   keychain: nullable(keychain),
   derivation_index: nullable(num),
 });

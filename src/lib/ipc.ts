@@ -219,6 +219,8 @@ export interface UtxoInfo {
   address: string | null;
   value_sats: number;
   status: TxStatus;
+  /** 0 while it waits, 1 in the tip block. */
+  confirmations: number;
   keychain: "external" | "internal" | null;
   derivation_index: number | null;
 }

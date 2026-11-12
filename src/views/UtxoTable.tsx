@@ -52,7 +52,7 @@ export function UtxoTable({ utxos }: { utxos: UtxoInfo[] }) {
               )}
             </td>
             <td className="px-3 py-2">
-              <RowStatus status={utxo.status} />
+              <RowStatus status={utxo.status} confirmations={utxo.confirmations} />
             </td>
             <td className="px-3 py-2 text-right">
               <StackedAmount sats={utxo.value_sats} />
