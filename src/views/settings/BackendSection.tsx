@@ -355,7 +355,7 @@ export function BackendSection({
               spellCheck={false}
               autoComplete="off"
               placeholder="https://node.example.org:3002/api"
-              className="field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted"
+              className="field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text"
             />
           </div>
           <ScanButton onClick={() => setScanOpen(true)} />
@@ -381,7 +381,7 @@ export function BackendSection({
               spellCheck={false}
               autoComplete="off"
               placeholder="node.example.org or xxxxxxxx.onion"
-              className="field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted"
+              className="field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text"
             />
           </div>
           <div className="w-24">
@@ -398,7 +398,7 @@ export function BackendSection({
               inputMode="numeric"
               autoComplete="off"
               placeholder="50002"
-              className="field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted"
+              className="field-focus selectable h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text"
             />
           </div>
           <div className="flex h-11 items-center gap-2 pb-0.5">
@@ -461,7 +461,7 @@ export function BackendSection({
                   clearRefusal();
                   setOnion(false);
                 }}
-                className="mt-1 accent-(--color-primary)"
+                className="mt-1"
               />
               <span>
                 <span className="block font-ui text-sm font-medium text-text">

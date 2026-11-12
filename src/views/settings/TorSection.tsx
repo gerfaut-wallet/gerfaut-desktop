@@ -131,7 +131,7 @@ export function TorSection({ tor }: { tor: TorSettings }) {
                 if (next === (tor.socks_proxy ?? "")) return;
                 apply({ socks_proxy: next === "" ? null : next });
               }}
-              className="field-focus h-11 w-full max-w-xs rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted"
+              className="field-focus h-11 w-full max-w-xs rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text"
             />
             <p className="mt-1.5 font-ui text-xs text-muted">
               The Tor Browser listens on 9150.

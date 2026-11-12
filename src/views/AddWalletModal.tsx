@@ -300,7 +300,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
               autoComplete="off"
               aria-invalid={error !== null}
               placeholder="wpkh([fingerprint/84h/0h/0h]xpub.../0/*)"
-              className="field-focus selectable w-full resize-none rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text placeholder:text-muted"
+              className="field-focus selectable w-full resize-none rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text"
             />
             {error && (
               <p role="alert" className="mt-2 font-ui text-sm text-muted">
@@ -492,7 +492,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
                   }
                 }}
                 placeholder="Cold storage"
-                className="field-focus h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-ui text-base text-text placeholder:text-muted"
+                className="field-focus h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-ui text-base text-text"
               />
             </div>
             {/* An input that fits one network leaves nothing to choose:
@@ -596,7 +596,7 @@ function PathField({
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
-        className="field-focus h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted"
+        className="field-focus h-11 w-full rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text"
       />
     </div>
   );

@@ -400,7 +400,7 @@ function InputCard({
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? "broadcast-input-error" : "broadcast-input-hint"}
         placeholder="Paste a PSBT (base64 or hex) or a raw transaction (hex)…"
-        className="field-focus selectable w-full resize-y rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text placeholder:text-muted"
+        className="field-focus selectable w-full resize-y rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text"
       />
       {/* One slot under the field, for the hint or for what went wrong
           in its place: both sit in the same cell, the hint kept, hidden,

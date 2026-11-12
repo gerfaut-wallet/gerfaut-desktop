@@ -102,7 +102,7 @@ export function LockScreen() {
                     setSecret(pin ? next.replace(/\D/g, "") : next);
                     setMessage(null);
                   }}
-                  className="field-focus h-11 w-full rounded-sm border border-border bg-sunken px-3 pr-11 font-ui text-sm text-text placeholder:text-muted disabled:opacity-60"
+                  className="field-focus h-11 w-full rounded-sm border border-border bg-sunken px-3 pr-11 font-ui text-sm text-text disabled:opacity-60"
                 />
                 {!pin && (
                   <span className="absolute right-1 top-1/2 -translate-y-1/2">
