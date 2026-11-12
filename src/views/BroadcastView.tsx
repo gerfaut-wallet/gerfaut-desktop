@@ -2,7 +2,6 @@ import {
   AlertTriangle,
   Ban,
   Check,
-  CircleAlert,
   CircleHelp,
   Clock,
   Coins,
@@ -29,6 +28,7 @@ import { AddressChip } from "../components/AddressChip";
 import { UnitAmount, useAmountText } from "../components/Amount";
 import { Button } from "../components/Button";
 import { OpenFailure, useExplorer } from "../components/ExternalLink";
+import { InputError } from "../components/InputError";
 import { Modal } from "../components/Modal";
 import { Pill } from "../components/StatusPill";
 import { Notice } from "../components/Notice";
@@ -116,7 +116,7 @@ export const UNREADABLE_TRANSACTION =
   "This is not a transaction Gerfaut can read. Paste a signed transaction in hex, or a PSBT.";
 
 /** A refusal to read the input, said under the field. */
-interface InputError {
+interface InputRefusal {
   headline: string;
   detail?: string;
 }
@@ -213,7 +213,7 @@ export function BroadcastView({ network }: { network: Network }) {
   };
 
   const refusal = flow.phase === "compose" ? flow.refusal : null;
-  const inputError: InputError | null = !refusal
+  const inputError: InputRefusal | null = !refusal
     ? null
     : refusal.kind === "file"
       ? { headline: refusal.message }
@@ -380,7 +380,7 @@ function InputCard({
   onImport: () => void;
   onScan: () => void;
   busy: boolean;
-  error: InputError | null;
+  error: InputRefusal | null;
 }) {
   return (
     <div className="rounded-lg border border-border bg-surface p-5">
@@ -417,28 +417,13 @@ function InputCard({
           Gerfaut never signs: a transaction missing signatures goes back to the signer.
         </p>
         {error && (
-          // An input error is said in words, in the text colour with its
-          // glyph, never in red: red is kept for what happens on chain.
-          <div
+          <InputError
             id="broadcast-input-error"
-            role="alert"
-            className="col-start-1 row-start-1 flex items-start gap-2"
+            detail={error.detail}
+            className="col-start-1 row-start-1"
           >
-            <CircleAlert
-              size={16}
-              strokeWidth={1.5}
-              aria-hidden
-              className="mt-0.5 shrink-0 text-text"
-            />
-            <p className="min-w-0 font-ui text-sm font-medium text-text">
-              {error.headline}
-              {error.detail && (
-                <span className="selectable mt-0.5 block break-words font-ui text-xs font-normal text-muted">
-                  {error.detail}
-                </span>
-              )}
-            </p>
-          </div>
+            {error.headline}
+          </InputError>
         )}
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">

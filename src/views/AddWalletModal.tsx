@@ -1,6 +1,7 @@
 import { FileUp, ScanLine } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button, Disclosure } from "../components/Button";
+import { InputError } from "../components/InputError";
 import { Modal } from "../components/Modal";
 import { Notice } from "../components/Notice";
 import { Select } from "../components/Select";
@@ -302,11 +303,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
               placeholder="wpkh([fingerprint/84h/0h/0h]xpub.../0/*)"
               className="field-focus selectable w-full resize-none rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text"
             />
-            {error && (
-              <p role="alert" className="mt-2 font-ui text-sm text-muted">
-                {error}
-              </p>
-            )}
+            {error && <InputError className="mt-2">{error}</InputError>}
             <p className="mt-2 font-ui text-xs text-muted">
               Gerfaut is watch-only: anything containing a private key or a seed
               phrase is refused and never stored.
@@ -532,11 +529,7 @@ export function AddWalletModal({ activeNetwork }: { activeNetwork: Network }) {
             )}
           </div>
 
-          {error && (
-            <p role="alert" className="font-ui text-sm text-muted">
-              {error}
-            </p>
-          )}
+          {error && <InputError>{error}</InputError>}
 
           <div className="flex justify-between">
             <Button variant="secondary" onClick={back}>
