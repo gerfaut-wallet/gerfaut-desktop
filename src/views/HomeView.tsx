@@ -81,12 +81,18 @@ export function HomeView({ walletId }: { walletId: string }) {
   const { meta } = snapshot.data;
 
   return (
-    <div className="flex h-full min-h-[560px] flex-col pb-2">
+    // The page measures itself, not the window: the two columns hold
+    // down to the narrowest window with the sidebar open.
+    <div className="@container flex h-full min-h-[560px] flex-col pb-2">
       {/* No freshness line here: Watch status carries it below. */}
       <PageHeader heading={<WalletTitle key={meta.id} meta={meta} />} />
 
-      <div className="flex min-h-0 flex-1 gap-4 max-lg:flex-col">
-        <div className="flex w-[320px] shrink-0 flex-col gap-4 max-lg:w-full">
+      {/* On a narrow canvas the left column gives 40px to the right
+          one, where a date beside an amount was cut short. One column
+          only under the window's own minimum, where a tiling window
+          manager can put it. */}
+      <div className="flex min-h-0 flex-1 gap-4 @max-[640px]:flex-col">
+        <div className="flex w-[320px] shrink-0 flex-col gap-4 @max-[720px]:w-[280px] @max-[640px]:w-full">
           <BalanceCard
             snapshot={snapshot.data}
             walletId={walletId}
