@@ -109,7 +109,8 @@ export function Sidebar({
           {collapseButton}
         </div>
       ) : (
-        <div className="flex items-center gap-2.5 py-4 pl-5 pr-3">
+        // The mark stands on the axis the page icons share.
+        <div className="flex items-center gap-2.5 py-4 pl-6 pr-3">
           <img src={mark} alt="" aria-hidden className="h-6 w-6 shrink-0" />
           <span className="font-display text-[15px] font-bold tracking-wide text-text">
             GERFAUT
@@ -131,7 +132,8 @@ export function Sidebar({
               label={page.label}
               icon={page.icon}
               collapsed={collapsed}
-              active={view === page.view}
+              // No page is open while there is no wallet to open one on.
+              active={view === page.view && hasWallets}
               disabled={!hasWallets}
               onClick={() => setView(page.view)}
             />
@@ -142,7 +144,7 @@ export function Sidebar({
       <div className="flex-1" />
 
       {network !== "mainnet" && (
-        <div className={clsx("flex pb-2", collapsed ? "justify-center px-2" : "px-5")}>
+        <div className={clsx("flex pb-2", collapsed ? "justify-center px-2" : "px-6")}>
           <span
             title={collapsed ? NETWORK_LABEL[network] : undefined}
             className={clsx(
