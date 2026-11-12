@@ -44,6 +44,9 @@ export function Pill({
   );
 }
 
+/** How deep a transaction is once nothing about it moves any more. */
+const SETTLED = 6;
+
 /** A transaction's standing: the check once it is in a block, the
     clock while it waits, and the count of confirmations under six.
     `data-glyph` names the shape for a test, which should not read a
@@ -51,7 +54,7 @@ export function Pill({
 export function StatusPill({ status, confirmations }: { status: TxStatus; confirmations?: number }) {
   const confirmed = status.state === "confirmed";
   const label = confirmed
-    ? confirmations !== undefined && confirmations < 6
+    ? confirmations !== undefined && confirmations < SETTLED
       ? `${confirmations} conf`
       : "Confirmed"
     : "Pending";
@@ -68,5 +71,27 @@ export function StatusPill({ status, confirmations }: { status: TxStatus; confir
     >
       {label}
     </Pill>
+  );
+}
+
+/** The standing of a row in a list. A transaction six blocks deep has
+    nothing left to say: a check in the muted colour, its word kept for
+    a screen reader and for the pointer. The pill, and its colour, are
+    for what still moves: "Pending", then the count of confirmations
+    on the way to six. A list of three hundred settled rows was three
+    hundred green pills, and the one amber one did not stand out. */
+export function RowStatus({ status, confirmations }: { status: TxStatus; confirmations?: number }) {
+  const settled =
+    status.state === "confirmed" && (confirmations === undefined || confirmations >= SETTLED);
+  if (!settled) return <StatusPill status={status} confirmations={confirmations} />;
+  return (
+    // Positioned, so the hidden word stays in its row: placed from the
+    // page instead, the words of the rows below the fold of a list that
+    // scrolls in its card made the page scroll too. A box of its own
+    // rather than a word in a line, so a table cell centres it too.
+    <span title="Confirmed" className="relative flex w-fit shrink-0 items-center text-muted">
+      <Check size={14} strokeWidth={2} aria-hidden data-glyph="check" />
+      <span className="sr-only">Confirmed</span>
+    </span>
   );
 }

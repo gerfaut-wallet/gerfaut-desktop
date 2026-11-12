@@ -2629,8 +2629,12 @@ describe("transaction status marker", () => {
     const confirmed = (await screen.findAllByText("Confirmed"))[0];
     const pending = screen.getAllByText("Pending")[0];
     // A check and a clock: readable on a monochrome screenshot too.
-    expect(confirmed.querySelector("[data-glyph='check']")).not.toBe(null);
+    // The settled row keeps the check alone, its word beside it for a
+    // screen reader; the pill is for the row that still waits.
+    expect(confirmed.parentElement?.querySelector("[data-glyph='check']")).not.toBe(null);
+    expect(confirmed.closest("[data-tone]")).toBe(null);
     expect(pending.querySelector("[data-glyph='clock']")).not.toBe(null);
+    expect(pending).toHaveAttribute("data-tone", "pending");
     // The old colour-only dot is gone from both.
     expect(confirmed.querySelector(".bg-current")).toBe(null);
     expect(pending.querySelector(".bg-current")).toBe(null);

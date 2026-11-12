@@ -4,7 +4,7 @@ import type { TxSummary } from "../lib/ipc";
 import { formatTimestamp, truncateMiddle } from "../lib/format";
 import { ListAmount } from "../components/Amount";
 import { DirectionChip } from "../components/DirectionChip";
-import { StatusPill } from "../components/StatusPill";
+import { RowStatus } from "../components/StatusPill";
 import { EmptyState } from "../components/EmptyState";
 import { useUi } from "../state/store";
 
@@ -52,7 +52,7 @@ export function TxList({ txs }: { txs: TxSummary[] }) {
                   )}
                 </span>
               </span>
-              <StatusPill status={tx.status} confirmations={tx.confirmations} />
+              <RowStatus status={tx.status} confirmations={tx.confirmations} />
               <span className="w-36 text-right">
                 <ListAmount sats={tx.net_sats} pending={pending} />
               </span>
