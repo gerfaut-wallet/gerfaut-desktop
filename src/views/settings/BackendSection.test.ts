@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildElectrumUrl, parseElectrumUrl } from "./BackendSection";
+import { buildElectrumUrl, isPlainHttp, parseElectrumUrl } from "./BackendSection";
 
 describe("parseElectrumUrl", () => {
   it("reads an IPv4 address and its port", () => {
@@ -117,5 +117,20 @@ describe("buildElectrumUrl", () => {
       const { host, port, tls } = parseElectrumUrl(url);
       expect(buildElectrumUrl(host, port, tls)).toBe(url);
     }
+  });
+});
+
+describe("isPlainHttp", () => {
+  it("reads an http server outside Tor as plain", () => {
+    expect(isPlainHttp("http://192.168.1.20:3002/api")).toBe(true);
+    expect(isPlainHttp(" HTTP://node.local/api ")).toBe(true);
+  });
+
+  it("reads https, an onion, or no address at all as not plain", () => {
+    expect(isPlainHttp("https://node.local/api")).toBe(false);
+    expect(isPlainHttp("http://abcdef.onion/api")).toBe(false);
+    expect(isPlainHttp("http://abcdef.ONION./api")).toBe(false);
+    expect(isPlainHttp("")).toBe(false);
+    expect(isPlainHttp("node.local")).toBe(false);
   });
 });

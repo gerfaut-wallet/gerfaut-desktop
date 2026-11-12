@@ -146,6 +146,26 @@ describe("saving a server address", () => {
     expect(field("Server URL")).toHaveAttribute("spellcheck", "false");
   });
 
+  /** An Esplora server read over plain HTTP is in the clear as much as
+      an Electrum one without TLS, and says so the same way; over Tor,
+      or over HTTPS, it is not. */
+  it("says an http Esplora server travels in the clear", async () => {
+    mockBackendIpc({ error: "unused" });
+    renderBackend(() => {}, {
+      ...SETTINGS,
+      backends: { mainnet: { type: "custom_esplora", url: "https://node.local/api" } },
+    });
+    const clear = /everything travels in the clear/;
+    expect(screen.queryByText(clear)).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.clear(field("Server URL"));
+    await user.type(field("Server URL"), "http://192.168.1.20:3002/api");
+    expect(screen.getByText(clear)).toBeInTheDocument();
+    await user.clear(field("Server URL"));
+    await user.type(field("Server URL"), "http://abcdef.ONION/api");
+    expect(screen.queryByText(clear)).not.toBeInTheDocument();
+  });
+
   /** A port typed into the host field: the core would only call the
       whole a bad IPv6 literal, so the section says where the port goes
       before anything is asked of it. */
