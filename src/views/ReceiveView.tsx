@@ -7,6 +7,7 @@ import {
   RotateCcw,
   SkipForward,
 } from "lucide-react";
+import { clsx } from "clsx";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { renderSVG } from "uqr";
@@ -15,8 +16,8 @@ import { StackedAmount } from "../components/Amount";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { Notice } from "../components/Notice";
-import type { AddressEntry, AddressRow } from "../lib/ipc";
 import { PageHeader } from "../components/PageHeader";
+import type { AddressEntry, AddressRow } from "../lib/ipc";
 import { useAddressList, useReceiveAddresses, useSnapshot } from "../state/queries";
 import { useClipboard } from "../state/clipboard";
 
@@ -100,7 +101,7 @@ export function ReceiveView({ walletId }: { walletId: string }) {
       <div className="flex flex-col gap-4">
         {entry && (
           <>
-            <div className="rounded-lg border border-border bg-surface p-5">
+            <div className="rounded-lg border border-border bg-surface p-6">
               <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-stretch sm:gap-6">
                 {/* A QR code stays dark-on-light in every theme: scanners
                     expect it, and inverting hurts contrast for cameras.
@@ -282,7 +283,7 @@ function AddressCard({
 
   return (
     <section aria-label={title} className="overflow-clip rounded-lg border border-border bg-surface">
-      <div className="flex items-baseline justify-between gap-3 px-4 pb-1 pt-3">
+      <div className="flex items-baseline justify-between gap-3 px-3 pb-1 pt-3">
         <h2 className="flex items-baseline gap-2 font-ui text-sm font-semibold text-text">
           {title}
           {rows.length > 0 && (
@@ -295,27 +296,34 @@ function AddressCard({
         {hint && <p className="font-ui text-xs text-muted">{hint}</p>}
       </div>
       {rows.length === 0 ? (
-        <p className="px-4 pb-4 pt-1 font-ui text-sm text-muted">{empty ?? "Nothing here yet."}</p>
+        <p className="px-3 pb-4 pt-1 font-ui text-sm text-muted">{empty ?? "Nothing here yet."}</p>
       ) : (
         <>
-          <table className="w-full border-separate border-spacing-0">
+          {/* Fixed columns: the address takes what the three others
+              leave, and its chip cuts itself to that room. */}
+          <table className="w-full table-fixed border-separate border-spacing-0">
             <thead>
               <tr className="text-left [&>th]:border-b [&>th]:border-border [&>th]:bg-surface">
                 <Th className="w-16">Index</Th>
                 <Th>Address</Th>
                 <Th className="w-24">Status</Th>
-                <Th className="w-40 text-right">Balance</Th>
+                <Th className="w-52 text-right">Balance</Th>
               </tr>
             </thead>
             <tbody>
               {shown.map((row) => (
                 <tr
                   key={row.index}
-                  className="transition-colors duration-100 hover:bg-sunken/60 [&>td]:border-b [&>td]:border-border"
+                  className={clsx(
+                    "transition-colors duration-100 hover:bg-sunken/60 [&>td]:border-b [&>td]:border-border",
+                    // The last row's rule parts it from the control under
+                    // it; with none, the card's own edge is enough.
+                    rows.length <= FOLDED_ROWS && "last:[&>td]:border-b-0",
+                  )}
                 >
                   <td className="tabular px-3 py-2 text-[13px] text-muted">{row.index}</td>
                   <td className="px-3 py-2">
-                    <AddressChip value={row.address} head={16} tail={10} />
+                    <AddressChip value={row.address} tail={10} fit />
                   </td>
                   <td className="px-3 py-2">
                     <StatusChip used={row.used} />
