@@ -1,7 +1,7 @@
 import type { UtxoInfo } from "../lib/ipc";
 import { StackedAmount } from "../components/Amount";
 import { AddressChip } from "../components/AddressChip";
-import { StatusPill } from "../components/StatusPill";
+import { RowStatus } from "../components/StatusPill";
 import { EmptyState } from "../components/EmptyState";
 
 /** Dense UTXO table: mono data columns, tabular figures, hairlines. */
@@ -52,7 +52,7 @@ export function UtxoTable({ utxos }: { utxos: UtxoInfo[] }) {
               )}
             </td>
             <td className="px-3 py-2">
-              <StatusPill status={utxo.status} />
+              <RowStatus status={utxo.status} />
             </td>
             <td className="px-3 py-2 text-right">
               <StackedAmount sats={utxo.value_sats} />
