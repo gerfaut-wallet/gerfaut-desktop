@@ -1,8 +1,9 @@
 import { clsx } from "clsx";
-import { ArrowDownLeft, ArrowUpRight, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { TxSummary } from "../lib/ipc";
 import { formatTimestamp, truncateMiddle } from "../lib/format";
 import { ListAmount } from "../components/Amount";
+import { DirectionChip } from "../components/DirectionChip";
 import { StatusPill } from "../components/StatusPill";
 import { EmptyState } from "../components/EmptyState";
 import { useUi } from "../state/store";
@@ -38,21 +39,7 @@ export function TxList({ txs }: { txs: TxSummary[] }) {
                 selected ? "bg-sunken" : "hover:bg-sunken/60",
               )}
             >
-              <span
-                aria-hidden
-                className={clsx(
-                  "inline-flex size-8 shrink-0 items-center justify-center rounded-lg",
-                  incoming && !pending
-                    ? "bg-confirmed-surface text-confirmed"
-                    : "bg-sunken text-muted",
-                )}
-              >
-                {incoming ? (
-                  <ArrowDownLeft size={15} strokeWidth={1.5} />
-                ) : (
-                  <ArrowUpRight size={15} strokeWidth={1.5} />
-                )}
-              </span>
+              <DirectionChip incoming={incoming} pending={pending} />
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="font-ui text-sm text-text">
                   {incoming ? "Received" : "Sent"}

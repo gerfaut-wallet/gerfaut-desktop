@@ -2,9 +2,7 @@ import { clsx } from "clsx";
 import {
   AlertTriangle,
   Archive,
-  ArrowDownLeft,
   ArrowLeftRight,
-  ArrowUpRight,
   ChevronRight,
   Clock,
   Coins,
@@ -18,8 +16,9 @@ import { Balance, ListAmount } from "../components/Amount";
 import { useCreditFor } from "../components/PriceCredit";
 import { BalanceChart } from "../components/BalanceChart";
 import { CoverageBadge } from "../components/CoverageBadge";
-import { PAGE_TITLE_TEXT, PageHeader, PageTitle } from "../components/PageHeader";
+import { DirectionChip } from "../components/DirectionChip";
 import { LoadFailure } from "../components/LoadFailure";
+import { PAGE_TITLE_TEXT, PageHeader, PageTitle } from "../components/PageHeader";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   MASKED,
@@ -671,21 +670,7 @@ function ActivityRow({ tx, onOpen }: { tx: TxSummary; onOpen: () => void }) {
         onClick={onOpen}
         className="group flex w-full cursor-pointer items-center gap-2.5 rounded-md px-1 py-1.5 text-left transition-colors duration-100 hover:bg-sunken/60"
       >
-        <span
-          aria-hidden
-          className={clsx(
-            "inline-flex size-6 shrink-0 items-center justify-center rounded-md",
-            incoming && !pending
-              ? "bg-confirmed-surface text-confirmed"
-              : "bg-sunken text-muted",
-          )}
-        >
-          {incoming ? (
-            <ArrowDownLeft size={13} strokeWidth={1.5} />
-          ) : (
-            <ArrowUpRight size={13} strokeWidth={1.5} />
-          )}
-        </span>
+        <DirectionChip incoming={incoming} pending={pending} size="sm" />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate font-ui text-[13px] text-text">
             {incoming ? "Received" : "Sent"}

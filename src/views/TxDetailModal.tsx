@@ -613,7 +613,7 @@ function RoleIcon({ io, side, coinbase }: { io: TxIo; side: "in" | "out"; coinba
   );
   if (coinbase) return chip("Newly minted coins", "bg-sunken text-muted", <Pickaxe {...common} />);
   if (io.op_return) {
-    return chip("Data output", "bg-pending-surface text-pending", <ScrollText {...common} />);
+    return chip("Data output", "bg-pending-surface text-pending dark:bg-pending/10", <ScrollText {...common} />);
   }
   if (!io.is_mine) {
     return chip(

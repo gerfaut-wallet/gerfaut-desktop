@@ -746,7 +746,7 @@ function IoList({
                 className={clsx(
                   "inline-flex size-7 shrink-0 items-center justify-center rounded-md",
                   output?.op_return
-                    ? "bg-pending-surface text-pending"
+                    ? "bg-pending-surface text-pending dark:bg-pending/10"
                     : mine
                       ? "bg-primary/10 text-primary"
                       : "bg-sunken text-muted",
