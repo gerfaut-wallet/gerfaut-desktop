@@ -62,6 +62,21 @@ export function parseElectrumUrl(url: string): { host: string; port: string; tls
   return { host: rest.slice(0, colon), port: digits(rest.slice(colon + 1)), tls };
 }
 
+/** Whether an Esplora address is read over plain HTTP outside Tor: an
+    `http://` server whose host is not a `.onion`, which Tor carries
+    encrypted whatever the scheme. What anything on the path reads is
+    then what an Electrum server without TLS would give it. */
+export function isPlainHttp(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url.trim());
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:") return false;
+  return !parsed.hostname.toLowerCase().replace(/\.$/, "").endsWith(".onion");
+}
+
 export function buildElectrumUrl(host: string, port: string, tls: boolean): string {
   const name = host.trim();
   // A bare IPv6 goes in brackets, or its last group reads as the port.
@@ -420,7 +435,8 @@ export function BackendSection({
     ),
   };
 
-  const plainTcp = kind === "custom_electrum" && !tls;
+  const inTheClear =
+    (kind === "custom_electrum" && !tls) || (kind === "custom_esplora" && isPlainHttp(esploraUrl));
 
   return (
     <SectionCard
@@ -490,7 +506,7 @@ export function BackendSection({
           />
         </>
       )}
-      {plainTcp && (
+      {inTheClear && (
         <p className="mt-3 max-w-[65ch] text-pretty font-ui text-xs text-muted">
           Without TLS everything travels in the clear: anything on the path between this
           machine and the server reads the addresses being watched.
