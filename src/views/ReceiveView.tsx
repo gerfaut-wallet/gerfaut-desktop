@@ -16,6 +16,7 @@ import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { Notice } from "../components/Notice";
 import type { AddressEntry, AddressRow } from "../lib/ipc";
+import { PageHeader } from "../components/PageHeader";
 import { useAddressList, useReceiveAddresses, useSnapshot } from "../state/queries";
 import { useClipboard } from "../state/clipboard";
 
@@ -85,17 +86,13 @@ export function ReceiveView({ walletId }: { walletId: string }) {
 
   return (
     <div className="pb-8">
-      <header className="px-1 pb-5 pt-2">
-        <h1 className="font-display text-2xl font-semibold tracking-[-0.01em] text-text">
-          Receive
-        </h1>
-      </header>
+      <PageHeader title="Receive" />
 
       {addresses.isPending && (
-        <p className="px-1 font-ui text-sm text-muted">Deriving address…</p>
+        <p className="font-ui text-sm text-muted">Deriving address…</p>
       )}
       {addresses.isError && (
-        <p className="px-1 font-ui text-sm text-muted">
+        <p className="font-ui text-sm text-muted">
           The receive address could not be derived.
         </p>
       )}
@@ -232,10 +229,10 @@ export function ReceiveView({ walletId }: { walletId: string }) {
 
         {/* The audit of what was revealed so far, per keychain. */}
         {list.isPending && (
-          <p className="px-1 font-ui text-sm text-muted">Loading addresses…</p>
+          <p className="font-ui text-sm text-muted">Loading addresses…</p>
         )}
         {list.isError && (
-          <p className="px-1 font-ui text-sm text-muted">The addresses could not be loaded.</p>
+          <p className="font-ui text-sm text-muted">The addresses could not be loaded.</p>
         )}
         {list.data && (
           <>
@@ -253,7 +250,7 @@ export function ReceiveView({ walletId }: { walletId: string }) {
               />
             )}
             {list.data.truncated && (
-              <p className="px-1 font-ui text-xs text-muted">
+              <p className="font-ui text-xs text-muted">
                 Long keychains are capped: only the first 200 addresses of each are listed.
               </p>
             )}

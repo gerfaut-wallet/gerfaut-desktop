@@ -32,6 +32,7 @@ import { InputError } from "../components/InputError";
 import { Modal } from "../components/Modal";
 import { Pill } from "../components/StatusPill";
 import { Notice } from "../components/Notice";
+import { PageHeader } from "../components/PageHeader";
 import { ScanQrModal } from "../components/ScanQrModal";
 import { BRANCH_ROLES, TxDiagram } from "../components/TxDiagram";
 import type { BranchRole, TxBranch } from "../components/TxDiagram";
@@ -235,11 +236,7 @@ export function BroadcastView({ network }: { network: Network }) {
 
   return (
     <div className="pb-8">
-      <header className="px-1 pb-5 pt-2">
-        <h1 className="font-display text-2xl font-semibold tracking-[-0.01em] text-text">
-          Broadcast
-        </h1>
-      </header>
+      <PageHeader title="Broadcast" />
 
       <div className="flex flex-col gap-4">
         {!read && (
@@ -267,7 +264,7 @@ export function BroadcastView({ network }: { network: Network }) {
                 </span>
               </Notice>
             )}
-            <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <Button variant="secondary" onClick={startOver} icon={Undo2}>
                 Start over
               </Button>
@@ -292,7 +289,7 @@ export function BroadcastView({ network }: { network: Network }) {
                 does. The two platforms differ in the facts they can
                 offer, never in the layout. */}
             {read && <PreviewCard preview={read} network={network} />}
-            <div className="px-1">
+            <div>
               <Button variant="primary" onClick={startOver} icon={Radio}>
                 Broadcast another transaction
               </Button>
@@ -302,7 +299,7 @@ export function BroadcastView({ network }: { network: Network }) {
 
         {history.length > 0 && (
           <section aria-label="Past broadcasts" className="mt-4">
-            <h2 className="mb-2 px-1 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
+            <h2 className="mb-2 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
               Past broadcasts
             </h2>
             <div className="flex flex-col gap-3">
@@ -622,7 +619,7 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
 
       {preview.warnings.length > 0 && (
         <section aria-label="Before you send">
-          <h2 className="mb-2 px-1 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
+          <h2 className="mb-2 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
             Before you send
           </h2>
           <ul className="flex flex-col gap-2">
@@ -718,7 +715,7 @@ function IoList({
   const total = useAmountText(sum);
   return (
     <section aria-label={title} className="min-w-0">
-      <h2 className="mb-2 px-1 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
+      <h2 className="mb-2 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
         {title} ({ios.length}) <span className="tabular">· {total}</span>
         {claimed && sum !== null && (
           <>

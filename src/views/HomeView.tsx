@@ -18,6 +18,7 @@ import { Balance, ListAmount } from "../components/Amount";
 import { useCreditFor } from "../components/PriceCredit";
 import { BalanceChart } from "../components/BalanceChart";
 import { CoverageBadge } from "../components/CoverageBadge";
+import { PAGE_TITLE_TEXT, PageHeader, PageTitle } from "../components/PageHeader";
 import { LoadFailure } from "../components/LoadFailure";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
@@ -66,7 +67,7 @@ export function HomeView({ walletId }: { walletId: string }) {
   const failure = failureOf(useWalletSync(walletId));
 
   if (snapshot.isPending) {
-    return <p className="px-1 py-4 font-ui text-sm text-muted">Loading wallet…</p>;
+    return <p className="py-4 font-ui text-sm text-muted">Loading wallet…</p>;
   }
   if (snapshot.isError || !snapshot.data) {
     return (
@@ -83,9 +84,7 @@ export function HomeView({ walletId }: { walletId: string }) {
   return (
     <div className="flex h-full min-h-[560px] flex-col pb-2">
       {/* No freshness line here: Watch status carries it below. */}
-      <header className="px-1 pb-4 pt-2">
-        <WalletTitle key={meta.id} meta={meta} />
-      </header>
+      <PageHeader heading={<WalletTitle key={meta.id} meta={meta} />} />
 
       <div className="flex min-h-0 flex-1 gap-4 max-lg:flex-col">
         <div className="flex w-[320px] shrink-0 flex-col gap-4 max-lg:w-full">
@@ -134,9 +133,7 @@ function Card({
   );
 }
 
-/** The title, in one look and one style whether it is read or edited:
-    the display face at 24px, the same box either way. */
-const TITLE_TEXT = "font-display text-2xl font-semibold tracking-[-0.01em] text-text";
+/** The title's box, the same whether it is read or edited. */
 const TITLE_BOX = "-mx-2 rounded-md border border-transparent px-2 py-0.5";
 
 /** The wallet's name, and the place to correct it: the title is a
@@ -217,7 +214,7 @@ function WalletTitle({ meta }: { meta: WalletMeta }) {
     <div>
       {/* The heading stays whether it is read or edited: the page keeps
           its title in the outline while the field is open. */}
-      <h1 aria-label={name} className={TITLE_TEXT}>
+      <PageTitle aria-label={name}>
         {editing ? (
           <input
             ref={inputRef}
@@ -237,7 +234,7 @@ function WalletTitle({ meta }: { meta: WalletMeta }) {
             aria-label="Wallet name"
             className={clsx(
               "field-focus selectable block w-full max-w-md bg-sunken",
-              TITLE_TEXT,
+              PAGE_TITLE_TEXT,
               TITLE_BOX,
             )}
           />
@@ -262,7 +259,7 @@ function WalletTitle({ meta }: { meta: WalletMeta }) {
             />
           </button>
         )}
-      </h1>
+      </PageTitle>
       {error && (
         <p role="status" className="mt-1 font-ui text-xs text-muted">
           {error}

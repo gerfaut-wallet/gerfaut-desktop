@@ -533,7 +533,7 @@ function IoList({
   );
   return (
     <section aria-label={title} className="min-w-0">
-      <h2 className="mb-2 px-1 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
+      <h2 className="mb-2 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
         {title} ({ios.length}) <span className="tabular">· {total}</span>
       </h2>
       <ul className="flex flex-col gap-1.5">

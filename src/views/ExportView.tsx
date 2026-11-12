@@ -2,6 +2,7 @@ import { FileDown } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { Button } from "../components/Button";
+import { PageHeader } from "../components/PageHeader";
 import { LoadFailure } from "../components/LoadFailure";
 import type { ExportDirection, ExportOptions, TxSummary } from "../lib/ipc";
 import { Notice } from "../components/Notice";
@@ -69,7 +70,7 @@ export function ExportView({ walletId }: { walletId: string }) {
   const [includePending, setIncludePending] = useState(true);
 
   if (snapshot.isPending) {
-    return <p className="px-1 py-4 font-ui text-sm text-muted">Loading wallet…</p>;
+    return <p className="py-4 font-ui text-sm text-muted">Loading wallet…</p>;
   }
   if (snapshot.isError || !snapshot.data) {
     return (
@@ -110,14 +111,7 @@ export function ExportView({ walletId }: { walletId: string }) {
 
   return (
     <div className="pb-8">
-      <header className="px-1 pb-5 pt-2">
-        <h1 className="font-display text-2xl font-semibold tracking-[-0.01em] text-text">
-          Export
-        </h1>
-        <p className="mt-1 font-ui text-sm text-muted">
-          Everything stays on this machine.
-        </p>
-      </header>
+      <PageHeader title="Export" sub="Everything stays on this machine." />
 
       <div className="rounded-lg border border-border bg-surface p-6">
         <div className="flex flex-col gap-5">
