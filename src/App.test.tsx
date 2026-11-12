@@ -1818,7 +1818,8 @@ describe("policy page", () => {
     expect(
       await screen.findByText(/the policy cannot be read: unknown fragment/),
     ).toBeInTheDocument();
-    expect(screen.getByText("The policy could not be read.")).toBeInTheDocument();
+    expect(screen.getByText("The policy could not be loaded.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
     // The balance row keeps its plain name rather than a wrong digest.
     await user.click(sidebar().getByRole("button", { name: "Overview" }));
     const main = within(screen.getByRole("main"));
