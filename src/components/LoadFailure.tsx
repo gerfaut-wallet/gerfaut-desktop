@@ -19,7 +19,7 @@ export function LoadFailure({
   retrying?: boolean;
 }) {
   return (
-    <div role="alert" className="px-1 py-4">
+    <div role="alert" className="py-4">
       <p className="font-ui text-sm text-text">{what} could not be loaded.</p>
       {error !== null && error !== undefined && (
         <p className="mt-1 max-w-xl break-words font-ui text-xs text-muted">

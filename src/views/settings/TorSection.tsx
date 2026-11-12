@@ -93,7 +93,7 @@ export function TorSection({ tor }: { tor: TorSettings }) {
 
   return (
     <SectionCard icon={<OnionIcon size={18} />} title="Tor">
-      <p className="max-w-2xl font-ui text-sm text-muted">
+      <p className="max-w-[65ch] text-pretty font-ui text-sm text-muted">
         {embedded
           ? "An address ending in .onion goes through Tor."
           : "An address ending in .onion goes through Tor. This build has no Tor of its own: start Tor or the Tor Browser first."}{" "}
@@ -131,7 +131,7 @@ export function TorSection({ tor }: { tor: TorSettings }) {
                 if (next === (tor.socks_proxy ?? "")) return;
                 apply({ socks_proxy: next === "" ? null : next });
               }}
-              className="field-focus h-11 w-full max-w-xs rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text placeholder:text-muted"
+              className="field-focus h-11 w-full max-w-xs rounded-sm border border-transparent bg-sunken px-3 font-data text-[13px] text-text"
             />
             <p className="mt-1.5 font-ui text-xs text-muted">
               The Tor Browser listens on 9150.

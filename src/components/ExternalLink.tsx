@@ -82,7 +82,7 @@ export function useExplorer(url: string, { z }: { z?: number } = {}) {
             type="checkbox"
             checked={skipNextTime}
             onChange={(event) => setSkipNextTime(event.target.checked)}
-            className="size-4 accent-(--color-primary)"
+            className="size-4"
           />
           Do not show this warning again
         </label>

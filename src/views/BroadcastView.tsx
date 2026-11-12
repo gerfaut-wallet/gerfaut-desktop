@@ -2,7 +2,6 @@ import {
   AlertTriangle,
   Ban,
   Check,
-  CircleAlert,
   CircleHelp,
   Clock,
   Coins,
@@ -29,9 +28,11 @@ import { AddressChip } from "../components/AddressChip";
 import { UnitAmount, useAmountText } from "../components/Amount";
 import { Button } from "../components/Button";
 import { OpenFailure, useExplorer } from "../components/ExternalLink";
+import { InputError } from "../components/InputError";
 import { Modal } from "../components/Modal";
 import { Pill } from "../components/StatusPill";
 import { Notice } from "../components/Notice";
+import { PageHeader } from "../components/PageHeader";
 import { ScanQrModal } from "../components/ScanQrModal";
 import { BRANCH_ROLES, TxDiagram } from "../components/TxDiagram";
 import type { BranchRole, TxBranch } from "../components/TxDiagram";
@@ -116,7 +117,7 @@ export const UNREADABLE_TRANSACTION =
   "This is not a transaction Gerfaut can read. Paste a signed transaction in hex, or a PSBT.";
 
 /** A refusal to read the input, said under the field. */
-interface InputError {
+interface InputRefusal {
   headline: string;
   detail?: string;
 }
@@ -213,7 +214,7 @@ export function BroadcastView({ network }: { network: Network }) {
   };
 
   const refusal = flow.phase === "compose" ? flow.refusal : null;
-  const inputError: InputError | null = !refusal
+  const inputError: InputRefusal | null = !refusal
     ? null
     : refusal.kind === "file"
       ? { headline: refusal.message }
@@ -235,11 +236,7 @@ export function BroadcastView({ network }: { network: Network }) {
 
   return (
     <div className="pb-8">
-      <header className="px-1 pb-5 pt-2">
-        <h1 className="font-display text-2xl font-semibold tracking-[-0.01em] text-text">
-          Broadcast
-        </h1>
-      </header>
+      <PageHeader title="Broadcast" />
 
       <div className="flex flex-col gap-4">
         {!read && (
@@ -267,7 +264,7 @@ export function BroadcastView({ network }: { network: Network }) {
                 </span>
               </Notice>
             )}
-            <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <Button variant="secondary" onClick={startOver} icon={Undo2}>
                 Start over
               </Button>
@@ -292,7 +289,7 @@ export function BroadcastView({ network }: { network: Network }) {
                 does. The two platforms differ in the facts they can
                 offer, never in the layout. */}
             {read && <PreviewCard preview={read} network={network} />}
-            <div className="px-1">
+            <div>
               <Button variant="primary" onClick={startOver} icon={Radio}>
                 Broadcast another transaction
               </Button>
@@ -302,7 +299,7 @@ export function BroadcastView({ network }: { network: Network }) {
 
         {history.length > 0 && (
           <section aria-label="Past broadcasts" className="mt-4">
-            <h2 className="mb-2 px-1 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
+            <h2 className="mb-2 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
               Past broadcasts
             </h2>
             <div className="flex flex-col gap-3">
@@ -380,10 +377,10 @@ function InputCard({
   onImport: () => void;
   onScan: () => void;
   busy: boolean;
-  error: InputError | null;
+  error: InputRefusal | null;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-surface p-5">
+    <div className="rounded-lg border border-border bg-surface p-6">
       <label
         htmlFor="broadcast-input"
         className="mb-1.5 block font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted"
@@ -400,7 +397,7 @@ function InputCard({
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? "broadcast-input-error" : "broadcast-input-hint"}
         placeholder="Paste a PSBT (base64 or hex) or a raw transaction (hex)…"
-        className="field-focus selectable w-full resize-y rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text placeholder:text-muted"
+        className="field-focus selectable w-full resize-y rounded-sm border border-transparent bg-sunken p-3 font-data text-[13px] leading-relaxed text-text"
       />
       {/* One slot under the field, for the hint or for what went wrong
           in its place: both sit in the same cell, the hint kept, hidden,
@@ -417,28 +414,13 @@ function InputCard({
           Gerfaut never signs: a transaction missing signatures goes back to the signer.
         </p>
         {error && (
-          // An input error is said in words, in the text colour with its
-          // glyph, never in red: red is kept for what happens on chain.
-          <div
+          <InputError
             id="broadcast-input-error"
-            role="alert"
-            className="col-start-1 row-start-1 flex items-start gap-2"
+            detail={error.detail}
+            className="col-start-1 row-start-1"
           >
-            <CircleAlert
-              size={16}
-              strokeWidth={1.5}
-              aria-hidden
-              className="mt-0.5 shrink-0 text-text"
-            />
-            <p className="min-w-0 font-ui text-sm font-medium text-text">
-              {error.headline}
-              {error.detail && (
-                <span className="selectable mt-0.5 block break-words font-ui text-xs font-normal text-muted">
-                  {error.detail}
-                </span>
-              )}
-            </p>
-          </div>
+            {error.headline}
+          </InputError>
         )}
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
@@ -582,7 +564,7 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
   const rate = feeRate(preview);
 
   return (
-    <div className="flex flex-col gap-5 rounded-lg border border-border bg-surface p-5">
+    <div className="flex flex-col gap-5 rounded-lg border border-border bg-surface p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
@@ -637,7 +619,7 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
 
       {preview.warnings.length > 0 && (
         <section aria-label="Before you send">
-          <h2 className="mb-2 px-1 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
+          <h2 className="mb-2 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
             Before you send
           </h2>
           <ul className="flex flex-col gap-2">
@@ -670,11 +652,13 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
       </div>
 
       {/* The fee node carries the amount; the rate belongs here. */}
-      <section aria-label="Technical" className="rounded-md border border-border p-4">
+      <section aria-label="Technical" className="border-t border-border pt-4">
         <h2 className="mb-2.5 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
           Technical
         </h2>
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-4">
+        {/* Nine facts, three to a line: on four, the last one sat
+            alone on a line of its own. */}
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3">
           <Fact label="Network">{NETWORK_LABEL[network]}</Fact>
           <Fact label="Size">{groupThousands(String(preview.size))} B</Fact>
           <Fact label="Virtual size">{groupThousands(String(preview.vsize))} vB</Fact>
@@ -733,7 +717,7 @@ function IoList({
   const total = useAmountText(sum);
   return (
     <section aria-label={title} className="min-w-0">
-      <h2 className="mb-2 px-1 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
+      <h2 className="mb-2 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
         {title} ({ios.length}) <span className="tabular">· {total}</span>
         {claimed && sum !== null && (
           <>
@@ -764,7 +748,7 @@ function IoList({
                 className={clsx(
                   "inline-flex size-7 shrink-0 items-center justify-center rounded-md",
                   output?.op_return
-                    ? "bg-pending-surface text-pending"
+                    ? "bg-pending-surface text-pending dark:bg-pending/10"
                     : mine
                       ? "bg-primary/10 text-primary"
                       : "bg-sunken text-muted",
@@ -1035,7 +1019,7 @@ function StatusCard({
     <div
       className={clsx(
         "rounded-lg border bg-surface",
-        live ? "border-border p-5" : "border-border p-4",
+        live ? "border-border p-6" : "border-border p-4",
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">

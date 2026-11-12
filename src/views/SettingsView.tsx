@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import type { ReactNode } from "react";
 import type { Settings, WalletMeta } from "../lib/ipc";
+import { PageHeader } from "../components/PageHeader";
 import { useUi } from "../state/store";
 import type { SettingsSection } from "../state/store";
 import { AboutSection } from "./settings/AboutSection";
@@ -48,9 +49,7 @@ export function SettingsView({
     // column beside the cards on a wide canvas, a row above them on a
     // narrow one.
     <div ref={rootRef} className="@container scroll-mt-4 pb-8">
-      <h1 className="px-1 pb-5 pt-2 font-display text-2xl font-semibold tracking-[-0.01em] text-text">
-        Settings
-      </h1>
+      <PageHeader title="Settings" />
       <div className="flex flex-col gap-5 @4xl:flex-row @4xl:items-start @4xl:gap-8">
         <SettingsNav
           active={section}

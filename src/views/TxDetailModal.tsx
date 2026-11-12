@@ -533,7 +533,7 @@ function IoList({
   );
   return (
     <section aria-label={title} className="min-w-0">
-      <h2 className="mb-2 px-1 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
+      <h2 className="mb-2 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
         {title} ({ios.length}) <span className="tabular">· {total}</span>
       </h2>
       <ul className="flex flex-col gap-1.5">
@@ -613,7 +613,7 @@ function RoleIcon({ io, side, coinbase }: { io: TxIo; side: "in" | "out"; coinba
   );
   if (coinbase) return chip("Newly minted coins", "bg-sunken text-muted", <Pickaxe {...common} />);
   if (io.op_return) {
-    return chip("Data output", "bg-pending-surface text-pending", <ScrollText {...common} />);
+    return chip("Data output", "bg-pending-surface text-pending dark:bg-pending/10", <ScrollText {...common} />);
   }
   if (!io.is_mine) {
     return chip(

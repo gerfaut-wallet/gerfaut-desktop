@@ -105,7 +105,7 @@ export function NotificationsSection({
 
   return (
     <SectionCard icon={<Bell size={18} strokeWidth={1.5} />} title="Notifications">
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-4">
         <div>
           <SettingRow
             title="New transactions"
@@ -153,7 +153,7 @@ export function NotificationsSection({
           {notifyNewTx && status && leftOut && (
             <ShortOfRoomNote status={status} leftOut={leftOut} />
           )}
-          <p className="mt-1.5 max-w-xl font-ui text-xs text-muted">
+          <p className="mt-1.5 max-w-md text-pretty font-ui text-xs text-muted">
             While this is on, Gerfaut keeps one connection open to your backend, which learns
             what a sync already tells it and how long Gerfaut stays connected.
             {automatic &&

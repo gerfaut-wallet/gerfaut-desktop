@@ -633,7 +633,7 @@ export function BackupRestoreModal({
                 >
                   <input
                     type="checkbox"
-                    className="mt-1 accent-primary"
+                    className="mt-1"
                     checked={chosen.has(wallet.index)}
                     disabled={outOfReach(wallet)}
                     onChange={(event) => {

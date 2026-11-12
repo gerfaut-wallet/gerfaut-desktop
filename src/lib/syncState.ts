@@ -11,6 +11,13 @@ export type WalletSyncStatus =
   | { state: "syncing"; failure: string | null }
   | { state: "failed"; message: string };
 
+/** The first sync of a wallet, still running: nothing was fetched yet,
+    so the zero the vault holds for it is not an answer and no screen
+    prints it as one. */
+export function isFirstSync(sync: WalletSyncStatus, meta: { last_sync: unknown }): boolean {
+  return sync.state === "syncing" && !meta.last_sync;
+}
+
 /** The fields of the store this module writes, and nothing else does. */
 export interface SyncSlice {
   /** The words of the last failed sync of each wallet, until one

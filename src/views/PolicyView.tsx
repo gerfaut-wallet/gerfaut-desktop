@@ -3,12 +3,12 @@ import { Check, ChevronRight, Clock, Coins, Copy, Lock } from "lucide-react";
 import type { ReactNode } from "react";
 import { AddressChip } from "../components/AddressChip";
 import { IconButton } from "../components/Button";
-import { Notice } from "../components/Notice";
+import { LoadFailure } from "../components/LoadFailure";
+import { PageHeader } from "../components/PageHeader";
 import { Pill } from "../components/StatusPill";
 import { formatTimestamp, groupThousands } from "../lib/format";
 import { multipathDescriptor } from "../lib/descriptor";
 import type { PolicyBranch, PolicyKey, PolicySnapshot, WalletKind } from "../lib/ipc";
-import { isCommandError } from "../lib/ipc";
 import type { Countdown as CountdownFigures } from "../lib/policy";
 import {
   branchStatus,
@@ -37,29 +37,34 @@ export function PolicyView({ walletId }: { walletId: string }) {
   const name = snapshot.data?.meta.name;
 
   return (
-    <div className="flex flex-col gap-6 pb-6">
-      <header className="px-1 pt-2">
-        <h1 className="font-display text-2xl font-semibold tracking-[-0.01em] text-text">
-          Policy
-        </h1>
-        {name && (
-          <p className="mt-1 font-ui text-sm text-muted">
-            {name}
-            {policy.data && <ReadAt tip={policy.data.tip_height} />}
-          </p>
-        )}
-      </header>
+    <div className="pb-6">
+      <PageHeader
+        title="Policy"
+        sub={
+          name && (
+            <>
+              {name}
+              {policy.data && <ReadAt tip={policy.data.tip_height} />}
+            </>
+          )
+        }
+      />
 
-      {policy.isPending ? (
-        <Placeholder />
-      ) : policy.isError || !policy.data ? (
-        <Notice tone="info">
-          <span className="font-medium">The policy could not be read.</span>{" "}
-          {isCommandError(policy.error) ? policy.error.message : "The core did not answer."}
-        </Notice>
-      ) : (
-        <Body snapshot={policy.data} wallet={snapshot.data?.meta.kind} />
-      )}
+      <div className="flex flex-col gap-6">
+        {policy.isPending ? (
+          <Placeholder />
+        ) : policy.isError || !policy.data ? (
+          // What failed, why, and a way to ask again, as on every page.
+          <LoadFailure
+            what="The policy"
+            error={policy.error}
+            retrying={policy.isFetching}
+            onRetry={() => void policy.refetch()}
+          />
+        ) : (
+          <Body snapshot={policy.data} wallet={snapshot.data?.meta.kind} />
+        )}
+      </div>
     </div>
   );
 }
@@ -80,9 +85,9 @@ function ReadAt({ tip }: { tip: number | null }) {
 function Placeholder() {
   return (
     <div role="status" aria-label="Loading policy" aria-busy className="flex flex-col gap-6">
-      <div className="mx-1 h-4 w-2/3 max-w-[480px] rounded-sm bg-sunken" />
+      <div className="h-4 w-2/3 max-w-[480px] rounded-sm bg-sunken" />
       <div className={CARDS}>
-        <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-5">
+        <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-6">
           <div className="h-3 w-16 rounded-sm bg-sunken" />
           <div className="h-4 w-3/4 rounded-sm bg-sunken" />
           <div className="h-3 w-1/2 rounded-sm bg-sunken" />
@@ -94,7 +99,7 @@ function Placeholder() {
 
 function Body({ snapshot, wallet }: { snapshot: PolicySnapshot; wallet?: WalletKind }) {
   const sentence = (
-    <p className="max-w-[65ch] px-1 font-ui text-base text-pretty text-text">
+    <p className="max-w-[65ch] font-ui text-base text-pretty text-text">
       {describePolicy(snapshot)}
     </p>
   );
@@ -103,7 +108,7 @@ function Body({ snapshot, wallet }: { snapshot: PolicySnapshot; wallet?: WalletK
     return (
       <>
         {sentence}
-        <div className="px-1">
+        <div>
           <AddressChip value={snapshot.descriptor} head={12} tail={8} label="address" />
         </div>
       </>
@@ -123,7 +128,7 @@ function Body({ snapshot, wallet }: { snapshot: PolicySnapshot; wallet?: WalletK
         </div>
       )}
       {hasTimeBasedLocks(snapshot) && (
-        <p className="px-1 font-ui text-xs text-muted">
+        <p className="font-ui text-xs text-muted">
           Time locks compare against this device&apos;s clock; the chain can lag by up to two
           hours.
         </p>
@@ -150,7 +155,7 @@ function BranchCard({ branch, keys }: { branch: PolicyBranch; keys: PolicyKey[] 
   return (
     <section
       aria-label={`${branch.label} path`}
-      className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-5"
+      className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-6"
     >
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <h2 className={LABEL}>{branch.label}</h2>
@@ -253,7 +258,7 @@ function CountdownBlock({ timer }: { timer: CountdownFigures }) {
     fingerprint, the origin, the key shortened around its middle. */
 function KeysSection({ keys }: { keys: PolicyKey[] }) {
   return (
-    <section aria-label="Keys" className="px-1">
+    <section aria-label="Keys">
       <h2 className={clsx(LABEL, "mb-2")}>Keys</h2>
       <ul className="selectable flex flex-col divide-y divide-border/60 rounded-lg border border-border bg-surface">
         {keys.map((key) => (
@@ -295,7 +300,7 @@ function DescriptorSection({ snapshot, wallet }: { snapshot: PolicySnapshot; wal
   const copy = () => copyText(descriptor);
 
   return (
-    <details className="group px-1">
+    <details className="group">
       <summary
         className={clsx(
           LABEL,

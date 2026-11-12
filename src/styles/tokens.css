@@ -107,10 +107,15 @@
   --color-pending: #c1983a;
   --color-pending-surface: #1f2933;
   --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.5);
+  /* What the platform draws itself (a radio, a checkbox, a scrollbar)
+     follows the ramp: left on the light scheme, a radio not chosen was
+     a near-black disc with no ring on a dark card. */
+  color-scheme: dark;
 }
 
 /* The desktop shell rail: a self-contained dark island in any theme. */
 .shell-rail {
+  color-scheme: dark;
   --color-background: #0b0f14;
   --color-surface: #161e27;
   --color-sunken: #1f2933;
@@ -141,6 +146,77 @@ html,
 body,
 #root {
   height: 100%;
+}
+
+/* The platform's own controls: on the light scheme by default, on the
+   dark one where the theme or the rail says so. In the base layer, so
+   the dark theme and the rail, which set their scheme outside any
+   layer, have the last word wherever they stand in this file. */
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  /* A radio and a checkbox are drawn from the palette, like every other
+     control: each engine has its own, and one of them left a radio not
+     chosen as a near-black disc with no ring on a dark card. Ardoise
+     for the edge at rest, the action colour once chosen; the shape
+     says which of the two it is. */
+  input[type="radio"],
+  input[type="checkbox"] {
+    appearance: none;
+    flex: none;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    border: 1.5px solid var(--color-muted);
+    background: var(--color-surface);
+    cursor: pointer;
+    transition-property: border-color, background-color;
+    transition-duration: 150ms;
+    transition-timing-function: ease-out;
+  }
+  input[type="radio"] {
+    border-radius: 9999px;
+  }
+  input[type="checkbox"] {
+    border-radius: var(--radius-sm);
+  }
+  /* The dot is the fill, seen through a ring of the card's colour. */
+  input[type="radio"]:checked {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+    box-shadow: inset 0 0 0 3px var(--color-surface);
+  }
+  input[type="checkbox"]:checked {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+  }
+  /* The tick, in the colour that reads on the fill in either theme. */
+  input[type="checkbox"]:checked::after {
+    content: "";
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: var(--color-on-primary);
+    clip-path: polygon(20% 48%, 11% 57%, 40% 86%, 90% 30%, 81% 21%, 40% 67%);
+  }
+  input[type="radio"]:disabled,
+  input[type="checkbox"]:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+  /* Forced colours drop the fill, the shadow and the tick: the two
+     states would look the same. The platform draws its own there. */
+  @media (forced-colors: active) {
+    input[type="radio"],
+    input[type="checkbox"] {
+      appearance: auto;
+    }
+    input[type="checkbox"]:checked::after {
+      content: none;
+    }
+  }
 }
 
 body {
@@ -220,6 +296,14 @@ input::-ms-clear {
     border-color: var(--color-primary);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
   }
+}
+
+/* A placeholder shows the format a field expects: it is read, so it
+   holds the floor of any text. The engine's own grey fell to 3.4:1 on
+   a field. */
+::placeholder {
+  color: var(--color-muted);
+  opacity: 1;
 }
 
 ::selection {

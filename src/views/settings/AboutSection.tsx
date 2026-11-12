@@ -66,7 +66,7 @@ export function AboutSection() {
       title="About"
       headingRef={heading}
     >
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-ui text-sm text-text">
             Gerfaut {APP_VERSION}

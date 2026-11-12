@@ -113,7 +113,7 @@ export function SecuritySection({ lock }: { lock: AppLock | null }) {
 
   return (
     <SectionCard icon={<Lock size={18} strokeWidth={1.5} />} title="Security">
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-4">
         <SettingRow
           title="App lock"
           hint="Asked when Gerfaut opens, and not again until you close it — Ctrl+L locks it before then. The vault is encrypted either way; the lock is what stops someone at your unlocked computer."
