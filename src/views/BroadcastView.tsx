@@ -380,7 +380,7 @@ function InputCard({
   error: InputRefusal | null;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-surface p-5">
+    <div className="rounded-lg border border-border bg-surface p-6">
       <label
         htmlFor="broadcast-input"
         className="mb-1.5 block font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted"
@@ -564,7 +564,7 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
   const rate = feeRate(preview);
 
   return (
-    <div className="flex flex-col gap-5 rounded-lg border border-border bg-surface p-5">
+    <div className="flex flex-col gap-5 rounded-lg border border-border bg-surface p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
@@ -652,11 +652,13 @@ function PreviewCard({ preview, network }: { preview: TxPreview; network: Networ
       </div>
 
       {/* The fee node carries the amount; the rate belongs here. */}
-      <section aria-label="Technical" className="rounded-md border border-border p-4">
+      <section aria-label="Technical" className="border-t border-border pt-4">
         <h2 className="mb-2.5 font-ui text-xs font-medium uppercase tracking-[0.04em] text-muted">
           Technical
         </h2>
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-4">
+        {/* Nine facts, three to a line: on four, the last one sat
+            alone on a line of its own. */}
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3">
           <Fact label="Network">{NETWORK_LABEL[network]}</Fact>
           <Fact label="Size">{groupThousands(String(preview.size))} B</Fact>
           <Fact label="Virtual size">{groupThousands(String(preview.vsize))} vB</Fact>
@@ -1017,7 +1019,7 @@ function StatusCard({
     <div
       className={clsx(
         "rounded-lg border bg-surface",
-        live ? "border-border p-5" : "border-border p-4",
+        live ? "border-border p-6" : "border-border p-4",
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
