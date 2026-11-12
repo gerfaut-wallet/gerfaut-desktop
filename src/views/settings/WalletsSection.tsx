@@ -181,14 +181,20 @@ export function WalletsSection({
                 >
                   {/* The name takes the room there is, and the actions go
                       under it when the row is too narrow for both: a row
-                      that squeezed the name to nothing named nothing. A
-                      coverage badge beside the name asks for that much
-                      more before the actions may stay on its line. */}
+                      that squeezed the name to nothing named nothing.
+                      The room asked for holds the grip, the icon and a
+                      name of some twenty characters; a coverage badge
+                      beside the name asks for that much more before the
+                      actions may stay on its line. */}
                   <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                     <span
                       className={clsx(
                         "flex min-w-0 items-center gap-2.5",
-                        coverage ? "flex-[1_1_20rem]" : "flex-[1_1_10rem]",
+                        coverage ? "flex-[1_1_22rem]" : "flex-[1_1_16rem]",
+                        // The room Move up and Move down take once they
+                        // show: a long name ends on its ellipsis before
+                        // them, not under them.
+                        movable && "group-focus-within:pr-20 group-hover:pr-20",
                       )}
                     >
                       {movable && (
@@ -257,9 +263,21 @@ export function WalletsSection({
                       )}
                     </span>
                     {renaming?.id !== wallet.id && confirmRemove !== wallet.id && (
-                      <span className="ml-auto flex shrink-0 flex-wrap items-center gap-1">
+                      <span className="relative ml-auto flex shrink-0 flex-wrap items-center gap-1">
                         {movable && (
-                          <>
+                          // Shown under the pointer or the focus, out of
+                          // the line: kept in it while hidden, the two
+                          // reserved 88px that cut a name short next to
+                          // an empty space. The name makes room for them
+                          // when they show.
+                          <span
+                            className={clsx(
+                              "absolute right-full top-1/2 flex -translate-y-1/2 items-center gap-1 pr-1",
+                              "pointer-events-none opacity-0 transition-opacity duration-150 ease-out",
+                              "group-focus-within:pointer-events-auto group-focus-within:opacity-100",
+                              "group-hover:pointer-events-auto group-hover:opacity-100",
+                            )}
+                          >
                             <MoveButton
                               label="Move up"
                               blocked={first}
@@ -274,7 +292,7 @@ export function WalletsSection({
                             >
                               <ChevronDown size={16} strokeWidth={1.5} aria-hidden />
                             </MoveButton>
-                          </>
+                          </span>
                         )}
                         <WalletIconPicker
                           name={wallet.name}
@@ -502,8 +520,7 @@ function MoveButton({
       onClick={blocked ? undefined : onClick}
       className={clsx(
         "inline-flex size-10 items-center justify-center rounded-md",
-        "opacity-0 transition-[color,background-color,opacity] duration-150 ease-out",
-        "focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100",
+        "transition-[color,background-color] duration-150 ease-out",
         blocked
           ? "cursor-default text-muted/40"
           : "cursor-pointer text-muted hover:bg-sunken hover:text-text active:scale-[0.96]",
