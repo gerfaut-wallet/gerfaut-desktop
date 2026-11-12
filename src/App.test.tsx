@@ -1081,6 +1081,44 @@ describe("overview", () => {
     expect(await screen.findByText("Not synced yet.")).toBeInTheDocument();
   });
 
+  /** A first sync still running has fetched nothing: a zero, a
+      "never" and an empty list would be read as answers. */
+  it("says a first sync runs, where it would say the wallet never synced", async () => {
+    const unsynced: WalletMeta = { ...WALLET, last_sync: null };
+    walletIpc(
+      {
+        list_wallets: () => [unsynced],
+        wallet_snapshot: () => ({ ...SNAPSHOT, meta: unsynced, txs: [] }),
+        wallet_sync_states: () => [],
+      },
+      { events: true },
+    );
+    renderApp();
+    const page = within(await screen.findByRole("main"));
+    expect(await page.findByText("Not synced yet.")).toBeInTheDocument();
+    // Listening is asynchronous: give the listeners a turn.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    await act(() => emit("sync://state", { wallet_id: WALLET.id, state: "syncing" }));
+    // The balance, the watch status, the curve and the activity.
+    expect(await page.findAllByText("Syncing…")).toHaveLength(4);
+    expect(page.queryByText("Not synced yet.")).not.toBeInTheDocument();
+    expect(page.queryByText("never")).not.toBeInTheDocument();
+    expect(page.queryByText(/No transactions yet/)).not.toBeInTheDocument();
+    // No figure before an answer: a dash for the balance and the
+    // counts, in the page and under the wallet's name in the rail.
+    expect(page.getByRole("button", { name: /—\s*transactions/ })).toBeInTheDocument();
+    expect(page.getByRole("button", { name: /—\s*UTXOs/ })).toBeInTheDocument();
+    expect(page.queryByText(/BTC/)).not.toBeInTheDocument();
+    const selector = screen.getByRole("button", { name: `Wallet: ${WALLET.name}` });
+    expect(within(selector).getByText("—")).toBeInTheDocument();
+
+    // The list waits too: an empty one would say the wallet has no history.
+    await userEvent.setup().click(page.getByRole("button", { name: /—\s*transactions/ }));
+    expect(await screen.findByRole("heading", { name: "Transactions" })).toBeInTheDocument();
+    expect(screen.queryByText("No transactions yet")).not.toBeInTheDocument();
+  });
+
   it("navigates from the count rows", async () => {
     renderApp();
     const user = userEvent.setup();

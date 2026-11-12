@@ -197,6 +197,9 @@ export const NETWORK_LABEL: Record<Network, string> = {
 /** Masked replacement for any amount. */
 export const MASKED = "•••••";
 
+/** In the place of a figure nobody has yet: a wallet that never synced. */
+export const UNKNOWN = "—";
+
 export type Unit = "btc" | "sats";
 
 /** Primary amount in the chosen display unit. */

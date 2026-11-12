@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { MASKED, formatAmount } from "../lib/format";
+import { MASKED, UNKNOWN, formatAmount } from "../lib/format";
 import { useUi } from "../state/store";
 
 /** The face of a page title, for the one title that is also a field
@@ -59,8 +59,10 @@ export function PageHeader({
 }
 
 /** The wallet's total, small, beside the title of a page that lists
-    what it is made of: the large figure lives on the Overview. */
-export function HeaderBalance({ sats }: { sats: number }) {
+    what it is made of: the large figure lives on the Overview. Null
+    while the first sync runs: a dash, not the zero of a wallet nobody
+    has read yet. */
+export function HeaderBalance({ sats }: { sats: number | null }) {
   const { masked, unit } = useUi();
   return (
     <div className="shrink-0 pb-0.5 text-right">
@@ -68,7 +70,7 @@ export function HeaderBalance({ sats }: { sats: number }) {
         Total balance
       </p>
       <p className="tabular text-[15px] font-semibold text-text">
-        {masked ? MASKED : formatAmount(sats, unit)}
+        {masked ? MASKED : sats === null ? UNKNOWN : formatAmount(sats, unit)}
       </p>
     </div>
   );

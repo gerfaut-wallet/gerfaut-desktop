@@ -28,6 +28,7 @@ import {
   groupThousands,
   relativeTime,
   truncateMiddle,
+  UNKNOWN,
 } from "../lib/format";
 import { isCommandError } from "../lib/ipc";
 import type { PriceRange, TxSummary, WalletMeta, WalletSnapshot } from "../lib/ipc";
@@ -46,7 +47,7 @@ import {
 import { coverageOf, useLiveStatus, waitingWords } from "../state/live";
 import { useUi } from "../state/store";
 import { useWalletSync } from "../state/walletSync";
-import { failureOf } from "../lib/syncState";
+import { failureOf, isFirstSync } from "../lib/syncState";
 
 const RANGE_LABEL: Record<PriceRange, string> = {
   day: "1D",
@@ -61,9 +62,10 @@ const RANGE_LABEL: Record<PriceRange, string> = {
     and its latest activity. Sized to the window, nothing to arrange. */
 export function HomeView({ walletId }: { walletId: string }) {
   const snapshot = useSnapshot(walletId);
+  const sync = useWalletSync(walletId);
   // The failure of this wallet's last sync, still said while it syncs
   // again.
-  const failure = failureOf(useWalletSync(walletId));
+  const failure = failureOf(sync);
 
   if (snapshot.isPending) {
     return <p className="py-4 font-ui text-sm text-muted">Loading wallet…</p>;
@@ -79,6 +81,9 @@ export function HomeView({ walletId }: { walletId: string }) {
     );
   }
   const { meta } = snapshot.data;
+  // Nothing was fetched yet: a zero, a "never" and an empty list are
+  // not answers. The cards say they wait instead.
+  const firstSync = isFirstSync(sync, meta);
 
   return (
     // The page measures itself, not the window: the two columns hold
@@ -97,14 +102,15 @@ export function HomeView({ walletId }: { walletId: string }) {
             snapshot={snapshot.data}
             walletId={walletId}
             error={failure}
+            firstSync={firstSync}
           />
           <PriceCard />
           <ShortcutsCard />
-          <StatusCard snapshot={snapshot.data} error={failure} />
+          <StatusCard snapshot={snapshot.data} error={failure} firstSync={firstSync} />
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-4">
-          <HistoryCard snapshot={snapshot.data} />
-          <ActivityCard snapshot={snapshot.data} />
+          <HistoryCard snapshot={snapshot.data} firstSync={firstSync} />
+          <ActivityCard snapshot={snapshot.data} firstSync={firstSync} />
         </div>
       </div>
     </div>
@@ -280,9 +286,10 @@ function WalletTitle({ meta }: { meta: WalletMeta }) {
     zero. The note says where the number comes from, and only then: a
     balance with nothing to explain explains nothing. "All funds
     confirmed" was the normal state announcing itself. */
-function balanceNote(meta: WalletMeta, error: string | null): string | null {
+function balanceNote(meta: WalletMeta, error: string | null, firstSync: boolean): string | null {
   if (error && !meta.last_sync) return "Sync failed: nothing fetched yet.";
   if (error) return "Sync failed: showing the last known balance.";
+  if (firstSync) return "Syncing…";
   if (!meta.last_sync) return "Not synced yet.";
   return null;
 }
@@ -304,27 +311,43 @@ function PendingLine({ sats }: { sats: number }) {
   );
 }
 
+/** Where the balance goes, while there is none to print: the dash of a
+    figure nobody has, at the size of the figure, so the card keeps its
+    lines. The note under it says why. */
+function BalanceUnknown() {
+  return (
+    <div
+      aria-hidden
+      className="tabular text-2xl font-semibold leading-[1.1] tracking-[-0.02em] text-muted"
+    >
+      {UNKNOWN}
+    </div>
+  );
+}
+
 function BalanceCard({
   snapshot,
   walletId,
   error,
+  firstSync,
 }: {
   snapshot: WalletSnapshot;
   walletId: string;
   error: string | null;
+  firstSync: boolean;
 }) {
   const utxos = useUtxos(walletId, true);
   const policy = useWalletPolicy(walletId);
-  const { setView } = useUi();
+  const { setView, masked } = useUi();
   const { balance, meta } = snapshot;
-  const note = balanceNote(meta, error);
+  const note = balanceNote(meta, error, firstSync);
   // The policy in the grammar of the counts: "1 key", "2 of 3 keys",
   // "Recovery in 142 days". Until it is in, the row is only its name.
   const digest = policy.data ? policyDigest(policy.data) : { figure: "Policy", label: "" };
   return (
     <Card label="Total balance" className="flex-1">
       <div className="flex h-full flex-col">
-        <Balance sats={balance.total} />
+        {firstSync && !masked ? <BalanceUnknown /> : <Balance sats={balance.total} />}
         {note ? (
           <p className="mt-2 font-ui text-xs text-muted">{note}</p>
         ) : (
@@ -335,19 +358,21 @@ function BalanceCard({
           <LinkRow
             icon={<Coins size={15} strokeWidth={1.5} aria-hidden />}
             figure={
-              utxos.data
-                ? groupThousands(String(utxos.data.length))
-                : utxos.isError
-                  ? "—"
-                  : "…"
+              firstSync
+                ? UNKNOWN
+                : utxos.data
+                  ? groupThousands(String(utxos.data.length))
+                  : utxos.isError
+                    ? "—"
+                    : "…"
             }
-            label={`UTXO${(utxos.data?.length ?? 0) === 1 ? "" : "s"}`}
+            label={`UTXO${!firstSync && utxos.data?.length === 1 ? "" : "s"}`}
             onClick={() => setView("utxos")}
           />
           <LinkRow
             icon={<ArrowLeftRight size={15} strokeWidth={1.5} aria-hidden />}
-            figure={groupThousands(String(meta.cached.tx_count))}
-            label={`transaction${meta.cached.tx_count === 1 ? "" : "s"}`}
+            figure={firstSync ? UNKNOWN : groupThousands(String(meta.cached.tx_count))}
+            label={`transaction${!firstSync && meta.cached.tx_count === 1 ? "" : "s"}`}
             onClick={() => setView("transactions")}
           />
           <LinkRow
@@ -520,7 +545,15 @@ function ShortcutsCard() {
 /** Where the watch stands: when it last reached a backend, which one,
     and how far the chain had got. The action leads to the node
     settings, where the backend is chosen. */
-function StatusCard({ snapshot, error }: { snapshot: WalletSnapshot; error: string | null }) {
+function StatusCard({
+  snapshot,
+  error,
+  firstSync,
+}: {
+  snapshot: WalletSnapshot;
+  error: string | null;
+  firstSync: boolean;
+}) {
   const { openSettings } = useUi();
   const { meta, tip_height } = snapshot;
   // Said only while the live watch is short of room: with room for
@@ -537,6 +570,8 @@ function StatusCard({ snapshot, error }: { snapshot: WalletSnapshot; error: stri
         </span>
       ) : meta.last_sync ? (
         <span className="tabular">{relativeTime(meta.last_sync.at)}</span>
+      ) : firstSync ? (
+        "Syncing…"
       ) : (
         "never"
       ),
@@ -611,7 +646,7 @@ function StatusCard({ snapshot, error }: { snapshot: WalletSnapshot; error: stri
 
 // --- right column -------------------------------------------------------
 
-function HistoryCard({ snapshot }: { snapshot: WalletSnapshot }) {
+function HistoryCard({ snapshot, firstSync }: { snapshot: WalletSnapshot; firstSync: boolean }) {
   const { masked, unit } = useUi();
   const points = balanceSeries(snapshot.txs, snapshot.balance.total);
   return (
@@ -622,7 +657,7 @@ function HistoryCard({ snapshot }: { snapshot: WalletSnapshot }) {
         </p>
       ) : points.length < 2 ? (
         <p className="flex h-full items-center justify-center font-ui text-sm text-muted">
-          Not enough history to chart yet.
+          {firstSync ? "Syncing…" : "Not enough history to chart yet."}
         </p>
       ) : (
         <BalanceChart points={points} unit={unit} />
@@ -631,7 +666,7 @@ function HistoryCard({ snapshot }: { snapshot: WalletSnapshot }) {
   );
 }
 
-function ActivityCard({ snapshot }: { snapshot: WalletSnapshot }) {
+function ActivityCard({ snapshot, firstSync }: { snapshot: WalletSnapshot; firstSync: boolean }) {
   const { selectTx, setView } = useUi();
   const txs = snapshot.txs.slice(0, 5);
   return (
@@ -652,8 +687,9 @@ function ActivityCard({ snapshot }: { snapshot: WalletSnapshot }) {
     >
       {txs.length === 0 ? (
         <p className="font-ui text-sm text-muted">
-          No transactions yet. Once this wallet sees activity on the chain, it
-          shows up here.
+          {firstSync
+            ? "Syncing…"
+            : "No transactions yet. Once this wallet sees activity on the chain, it shows up here."}
         </p>
       ) : (
         <ul>

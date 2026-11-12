@@ -3,6 +3,7 @@ import { LoadFailure } from "../components/LoadFailure";
 import { HeaderBalance, PageHeader } from "../components/PageHeader";
 import { useSnapshot, useUtxos } from "../state/queries";
 import { useWalletSync } from "../state/walletSync";
+import { isFirstSync } from "../lib/syncState";
 import { UtxoTable } from "./UtxoTable";
 
 /** Unspent outputs of one wallet, as a table with a pinned header and
@@ -26,13 +27,15 @@ export function UtxosView({ walletId }: { walletId: string }) {
     );
   }
 
+  const firstSync = isFirstSync(sync, snapshot.data.meta);
+
   return (
     <div className="flex h-full flex-col pb-2">
       <PageHeader
         title="UTXOs"
         count={utxos.data?.length}
         sub={<SyncIndicator stamp={snapshot.data.meta.last_sync} sync={sync} />}
-        aside={<HeaderBalance sats={snapshot.data.balance.total} />}
+        aside={<HeaderBalance sats={firstSync ? null : snapshot.data.balance.total} />}
       />
 
       {/* As tall as its rows, then scrolling: a short list stays short. */}
@@ -49,6 +52,9 @@ export function UtxosView({ walletId }: { walletId: string }) {
               onRetry={() => void utxos.refetch()}
             />
           </div>
+        ) : firstSync && utxos.data.length === 0 ? (
+          // Not the empty table either, before the first answer.
+          <p className="px-3 py-4 font-ui text-sm text-muted">Syncing…</p>
         ) : (
           <UtxoTable utxos={utxos.data ?? []} />
         )}

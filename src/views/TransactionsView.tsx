@@ -5,6 +5,7 @@ import { HeaderBalance, PageHeader } from "../components/PageHeader";
 import { SyncIndicator } from "../components/SyncIndicator";
 import { useLoadMoreHistory, useSnapshot } from "../state/queries";
 import { useWalletSync } from "../state/walletSync";
+import { isFirstSync } from "../lib/syncState";
 import { TxList } from "./TxList";
 
 /** Full transaction history of one wallet, with the compact balance in
@@ -28,6 +29,7 @@ export function TransactionsView({ walletId }: { walletId: string }) {
     );
   }
   const { meta, balance, txs } = snapshot.data;
+  const firstSync = isFirstSync(sync, meta);
 
   return (
     <div className="flex h-full flex-col pb-2">
@@ -35,13 +37,18 @@ export function TransactionsView({ walletId }: { walletId: string }) {
         title="Transactions"
         count={txs.length}
         sub={<SyncIndicator stamp={meta.last_sync} sync={sync} />}
-        aside={<HeaderBalance sats={balance.total} />}
+        aside={<HeaderBalance sats={firstSync ? null : balance.total} />}
       />
 
       {/* As tall as its rows, then scrolling: a short list stays short,
           not a white box down to the bottom of the window. */}
       <div className="min-h-0 overflow-y-auto rounded-lg border border-border bg-surface">
-        <TxList txs={txs} />
+        {firstSync && txs.length === 0 ? (
+          // Not the empty list: it says the wallet has no history.
+          <p className="px-3 py-4 font-ui text-sm text-muted">Syncing…</p>
+        ) : (
+          <TxList txs={txs} />
+        )}
         {snapshot.data.truncated && (
           <div className="flex flex-col items-center gap-1.5 px-3 py-4">
             <Button

@@ -22,12 +22,14 @@ import {
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { DropLine, useDragReorder } from "../components/DragReorder";
-import { MASKED, NETWORK_LABEL, formatAmount } from "../lib/format";
+import { MASKED, NETWORK_LABEL, UNKNOWN, formatAmount } from "../lib/format";
 import type { Network, WalletMeta } from "../lib/ipc";
+import { isFirstSync } from "../lib/syncState";
 import { walletGlyph } from "../lib/walletIcons";
 import type { CanvasView } from "../state/store";
 import { useUi } from "../state/store";
 import { useWalletOrder } from "../state/walletOrder";
+import { useWalletSyncOf } from "../state/walletSync";
 import mark from "../assets/gerfaut-mark-accent-dark.svg";
 
 /** The wallet pages of the sidebar: one word, one icon, every wallet. */
@@ -280,6 +282,15 @@ function WalletSwitcher({
   collapsed: boolean;
 }) {
   const { openWallet, setAddWalletOpen, masked, unit } = useUi();
+  const syncOf = useWalletSyncOf();
+  // Under a name, its balance: hidden when amounts are, and a dash
+  // until the wallet's first sync has answered.
+  const balanceOf = (wallet: WalletMeta) =>
+    masked
+      ? MASKED
+      : isFirstSync(syncOf(wallet.id), wallet)
+        ? UNKNOWN
+        : formatAmount(wallet.cached.balance.total, unit);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -384,7 +395,7 @@ function WalletSwitcher({
               </span>
               {active && (
                 <span className="tabular truncate text-[11px] text-muted">
-                  {masked ? MASKED : formatAmount(active.cached.balance.total, unit)}
+                  {balanceOf(active)}
                 </span>
               )}
             </span>
@@ -458,7 +469,7 @@ function WalletSwitcher({
                       {wallet.name}
                     </span>
                     <span className="tabular truncate text-[11px] text-muted">
-                      {masked ? MASKED : formatAmount(wallet.cached.balance.total, unit)}
+                      {balanceOf(wallet)}
                     </span>
                   </span>
                   {current && (
