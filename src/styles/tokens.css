@@ -94,7 +94,10 @@
   --color-sunken: #2a3641; /* raised in dark, sunken in light */
   --color-border: #37424f;
   --color-text: #e6ecf2;
-  --color-muted: #8a98a6;
+  /* One step up with the grounds: the muted grey of the rail reads at
+     4.2:1 on this ramp's relief, where chips and fields write in it.
+     5.3:1 there, 6.3:1 on a card. */
+  --color-muted: #9eabb8;
   --color-primary: #7dd3e8;
   --color-primary-hover: #a5e1f0;
   --color-on-primary: #06232b;
