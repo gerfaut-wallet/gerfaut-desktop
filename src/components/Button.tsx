@@ -25,9 +25,9 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** The glyph before the label, which the spinner takes over while
       busy: one slot, so the label does not move. */
   icon?: LucideIcon;
-  /** Working on it: a spinner, at full strength rather than greyed —
-      it is not off, it is busy. Clicks are ignored, but the button
-      keeps the keyboard focus it was pressed with. */
+  /** Working on it: a spinner, and the fill it had rather than the
+      hollow of a button that is off. It is busy: clicks are ignored,
+      but the button keeps the keyboard focus it was pressed with. */
   busy?: boolean;
   /** A secondary on a tinted panel (a notice): Neige with a hairline,
       where Givre would read dirty. Dark keeps its fill. */
@@ -63,8 +63,6 @@ export function Button({
       aria-busy={busy || undefined}
       onClick={busy ? (event) => event.preventDefault() : onClick}
       className={cn(
-        // Busy is not off: full strength, only the cursor says to wait.
-        busy && "disabled:opacity-100",
         variant === "secondary" &&
           onTint &&
           "bg-surface shadow-[inset_0_0_0_1px_var(--color-border)] live:hover:bg-background dark:bg-sunken dark:shadow-none dark:live:hover:bg-border",

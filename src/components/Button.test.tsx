@@ -60,7 +60,7 @@ describe("Button", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("greys out when disabled, with no hover", () => {
+  it("goes hollow when disabled, with no hover", () => {
     render(
       <Button variant="primary" disabled>
         Save backend
@@ -68,7 +68,9 @@ describe("Button", () => {
     );
     const button = screen.getByRole("button", { name: "Save backend" });
     expect(button).toBeDisabled();
-    expect(button).toHaveClass("disabled:opacity-50");
+    // No fade: half a button wrote white on a pale fill, at 2:1.
+    expect(button.className).not.toMatch(/opacity/);
+    expect(button).toHaveClass("off:bg-transparent", "off:text-muted");
     // Hover only lives under `live:`, which a disabled button is not.
     expect(button.className).not.toMatch(/(^| )hover:/);
   });

@@ -332,6 +332,9 @@ input::-ms-clear {
 /* A control that takes a press: neither switched off nor busy. Hover and
    the press scale only show on it. */
 @custom-variant live (&:enabled:not([aria-busy="true"]));
+/* Switched off, and not for being busy: a busy submit is disabled too,
+   and keeps its fill. */
+@custom-variant off (&:disabled:not([aria-busy="true"]));
 
 /* An anchored panel (menu) has its origin on screen: fade alone, 150ms. */
 @keyframes menu-in {
