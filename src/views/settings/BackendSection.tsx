@@ -467,7 +467,9 @@ export function BackendSection({
                 <span className="block font-ui text-sm font-medium text-text">
                   {option.label}
                 </span>
-                <span className="block font-ui text-xs text-muted">{option.hint}</span>
+                <span className="block max-w-md text-pretty font-ui text-xs text-muted">
+                  {option.hint}
+                </span>
               </span>
             </label>
             {kind === option.value && (
@@ -489,7 +491,7 @@ export function BackendSection({
         </>
       )}
       {plainTcp && (
-        <p className="mt-3 font-ui text-xs text-muted">
+        <p className="mt-3 max-w-[65ch] text-pretty font-ui text-xs text-muted">
           Without TLS everything travels in the clear: anything on the path between this
           machine and the server reads the addresses being watched.
         </p>
@@ -646,9 +648,9 @@ function OwnNodeSwitch({
   const limits = useLiveLimits().data;
   return (
     <div className="mt-4 flex items-start justify-between gap-6 border-t border-border pt-4">
-      <div className="min-w-0 max-w-xl">
+      <div className="min-w-0 max-w-md">
         <p className="font-ui text-sm font-medium text-text">This is my node</p>
-        <p id="own-node-hint" className="mt-0.5 font-ui text-xs text-muted">
+        <p id="own-node-hint" className="mt-0.5 text-pretty font-ui text-xs text-muted">
           {limits &&
             `The live watch then follows up to ${groupThousands(String(limits.own_node.total))} addresses instead of ${groupThousands(String(limits.any.total))}. `}
           Leave it off for a server you do not run: it would refuse most of them, and learn every

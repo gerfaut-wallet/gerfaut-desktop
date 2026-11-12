@@ -93,7 +93,7 @@ export function TorSection({ tor }: { tor: TorSettings }) {
 
   return (
     <SectionCard icon={<OnionIcon size={18} />} title="Tor">
-      <p className="max-w-2xl font-ui text-sm text-muted">
+      <p className="max-w-[65ch] text-pretty font-ui text-sm text-muted">
         {embedded
           ? "An address ending in .onion goes through Tor."
           : "An address ending in .onion goes through Tor. This build has no Tor of its own: start Tor or the Tor Browser first."}{" "}

@@ -1,15 +1,14 @@
 import { FileDown } from "lucide-react";
 import { useState } from "react";
-import type { ReactNode } from "react";
 import { Button } from "../components/Button";
-import { PageHeader } from "../components/PageHeader";
 import { LoadFailure } from "../components/LoadFailure";
+import { PageHeader } from "../components/PageHeader";
 import type { ExportDirection, ExportOptions, TxSummary } from "../lib/ipc";
 import { Notice } from "../components/Notice";
 import { errorMessage } from "../lib/ipc";
 import { useExportCsv, useSnapshot } from "../state/queries";
 import { useUi } from "../state/store";
-import { Segmented, Toggle } from "./settings/primitives";
+import { Segmented, SettingRow, Toggle } from "./settings/primitives";
 
 type DirectionChoice = "all" | ExportDirection;
 
@@ -114,8 +113,8 @@ export function ExportView({ walletId }: { walletId: string }) {
       <PageHeader title="Export" sub="Everything stays on this machine." />
 
       <div className="rounded-lg border border-border bg-surface p-6">
-        <div className="flex flex-col gap-5">
-          <Row
+        <div className="flex flex-col gap-4">
+          <SettingRow
             title="Date range"
             hint="Days in UTC, as the file dates each transaction. Leave empty to export the full history."
           >
@@ -142,18 +141,18 @@ export function ExportView({ walletId }: { walletId: string }) {
                 </p>
               )}
             </div>
-          </Row>
+          </SettingRow>
 
-          <Row title="Direction">
+          <SettingRow title="Direction">
             <Segmented
               label="Direction"
               value={direction}
               onChange={setDirection}
               options={DIRECTIONS}
             />
-          </Row>
+          </SettingRow>
 
-          <Row
+          <SettingRow
             title="Include pending"
             hint="Pending transactions have no date yet: they only export without date bounds."
           >
@@ -162,7 +161,7 @@ export function ExportView({ walletId }: { walletId: string }) {
               onChange={setIncludePending}
               label="Include pending transactions"
             />
-          </Row>
+          </SettingRow>
         </div>
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
@@ -195,26 +194,6 @@ export function ExportView({ walletId }: { walletId: string }) {
           </Notice>
         )}
       </div>
-    </div>
-  );
-}
-
-function Row({
-  title,
-  hint,
-  children,
-}: {
-  title: ReactNode;
-  hint?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
-      <div className="min-w-0 max-w-xl flex-[1_1_20rem]">
-        <p className="font-ui text-sm font-medium text-text">{title}</p>
-        {hint && <p className="mt-0.5 font-ui text-xs text-muted">{hint}</p>}
-      </div>
-      <div className="shrink-0">{children}</div>
     </div>
   );
 }

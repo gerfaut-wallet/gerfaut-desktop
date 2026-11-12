@@ -43,14 +43,15 @@ export function SectionCard({
   return (
     <section
       className={clsx(
-        "rounded-lg border border-border bg-surface p-5",
+        "rounded-lg border border-border bg-surface p-6",
         className,
       )}
     >
       <h2
         ref={headingRef}
         tabIndex={headingRef ? -1 : undefined}
-        className="mb-4 flex items-center gap-2 font-display text-base font-semibold text-text"
+        // The display face never goes under 18px.
+        className="mb-4 flex items-center gap-2 font-display text-lg font-semibold leading-[1.35] text-text"
       >
         <span className="text-muted">{icon}</span>
         {title}
@@ -61,7 +62,10 @@ export function SectionCard({
 }
 
 /** Full-width setting line: title and hint on the left, control on the
-    right, so stacked cards stay balanced at any window width. */
+    right, so stacked cards stay balanced at any window width. Every
+    line is at least as tall as the tallest control, with or without a
+    hint, so the lines of a card keep one pitch: the space between two
+    controls used to depend on the words beside them. */
 export function SettingRow({
   title,
   hint,
@@ -72,14 +76,17 @@ export function SettingRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+    <div className="flex min-h-11 flex-wrap items-center justify-between gap-x-6 gap-y-2">
       {/* The words give way before the control does: a hint at its full
-          measure pushed a 96px field onto a line of its own. */}
-      <div className="min-w-0 max-w-xl flex-[1_1_20rem]">
+          measure pushed a 96px field onto a line of its own. They keep
+          to a reading measure, about 65 characters of the hint. */}
+      <div className="min-w-0 max-w-md flex-[1_1_20rem]">
         <p className="font-ui text-sm font-medium text-text">{title}</p>
-        {hint && <p className="mt-0.5 font-ui text-xs text-muted">{hint}</p>}
+        {hint && <p className="mt-0.5 text-pretty font-ui text-xs text-muted">{hint}</p>}
       </div>
-      <div className="shrink-0">{children}</div>
+      {/* On a line of its own in a narrow window, the control keeps the
+          right edge the others hold. */}
+      <div className="ml-auto shrink-0">{children}</div>
     </div>
   );
 }

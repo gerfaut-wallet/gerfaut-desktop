@@ -19,7 +19,7 @@ export function BackupSection({ activeNetwork }: { activeNetwork: Network }) {
 
   return (
     <SectionCard icon={<Archive size={18} strokeWidth={1.5} />} title="Backup & sync">
-      <p className="max-w-2xl font-ui text-sm text-muted">
+      <p className="max-w-[65ch] text-pretty font-ui text-sm text-muted">
         Every wallet you watch, encrypted with a password you choose. Restore it
         on another device: the same file or QR code moves your wallets between
         the desktop and the phone. A backup holds descriptors and addresses,
