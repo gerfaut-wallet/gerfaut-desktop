@@ -18,12 +18,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - In Settings › Wallets, the name of a wallet takes the room the row has. "Move up" and "Move down" no longer hold 88 pixels of it while they are hidden.
 - A policy that could not be loaded shows the error with a "Try again" button.
 - In "Add a wallet", an input that is refused is marked with an icon, as on the Broadcast page.
+- A button with a label that cannot be pressed yet is drawn hollow, with a thin edge and its label in grey. Faded to half strength, its label was too pale to read.
+- In the Transactions list, a transaction with 6 confirmations or more shows a small grey check in place of the green "Confirmed" pill. The pill stays for what still moves: "Pending", then the count of confirmations for the first 5.
+- In the UTXOs list, a confirmed coin shows the same grey check. A coin still waiting keeps its "Pending" pill.
 
 ### Fixed
 
 - During the first sync of a wallet, the Overview says "Syncing…" and shows a dash in place of the balance and of the counts. It used to show a balance of zero, "Not synced yet.", "Last sync never" and "No transactions yet". The dash also shows beside the title of Transactions and UTXOs, and under the name of the wallet in the sidebar. The two lists say "Syncing…" as well, where they said "No transactions yet" and "No unspent outputs".
 - In the dark theme, a radio button that was not selected showed as a dark disc with no ring in Settings › Network, and the "Received" arrow had lost its square background.
 - At the smallest window width, the tabs of Settings wrap onto a second line. "Backup & sync" used to be cut at the edge and "About" was out of sight.
+- In the dark theme, the grey text of address chips, fields and help lines is lighter and easier to read on their raised background.
 - With no wallet, the sidebar no longer marks "Overview" as the current page.
 - The "Next" button of the welcome tour stays where it is from one page to the next.
 - Closing the QR scanner while the system still asks for camera access no longer leaves the camera on once access is granted.
