@@ -10,9 +10,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Dialogs, select lists, switches and choice rows now use Radix primitives. In a select list, typing the first letters of an option jumps to it, and the list opens above its field when there is no room below. While a dialog is open, screen readers no longer reach the rest of the window.
 - Help lines that repeated a label or a title are gone from Settings, Receive, Broadcast, Export and Transactions.
+- Every page has the same header. The title lines up with the left edge of the cards and sits at the same height from one page to the next.
+- The tables of the Receive page show each address in full when the column has room, and cut it in the middle when it does not.
+- In Settings, card titles are larger, a row keeps the same height with or without a help line, and help lines wrap at a reading width. The Export page uses the same rows.
+- Checkboxes and radio buttons are drawn in the colors of the app, in the light theme and in the dark one. In a high contrast mode, the system draws them.
+- The Overview keeps its two columns down to the smallest window. It used to stack its cards in one column under 1024 pixels, with the balance history below the fold.
+- In Settings › Wallets, the name of a wallet takes the room the row has. "Move up" and "Move down" no longer hold 88 pixels of it while they are hidden.
+- A policy that could not be loaded shows the error with a "Try again" button.
+- In "Add a wallet", an input that is refused is marked with an icon, as on the Broadcast page.
 
 ### Fixed
 
+- During the first sync of a wallet, the Overview says "Syncing…" and shows a dash in place of the balance and of the counts. It used to show a balance of zero, "Not synced yet.", "Last sync never" and "No transactions yet". The dash also shows beside the title of Transactions and UTXOs, and under the name of the wallet in the sidebar. The two lists say "Syncing…" as well, where they said "No transactions yet" and "No unspent outputs".
+- In the dark theme, a radio button that was not selected showed as a dark disc with no ring in Settings › Network, and the "Received" arrow had lost its square background.
+- At the smallest window width, the tabs of Settings wrap onto a second line. "Backup & sync" used to be cut at the edge and "About" was out of sight.
+- With no wallet, the sidebar no longer marks "Overview" as the current page.
+- The "Next" button of the welcome tour stays where it is from one page to the next.
 - Closing the QR scanner while the system still asks for camera access no longer leaves the camera on once access is granted.
 - A scan that stops on a code with too many parts no longer leaves the aiming frame over a frozen picture.
 - On the Broadcast page, when a status check fails after an earlier answer, the card now reads "Could not check" and shows the error, then the last answer with its time. It used to keep the earlier badge, such as "Confirmed", next to the error. A check that fails before any answer now shows "Could not check" too, and the card keeps it while the backend is asked again.
