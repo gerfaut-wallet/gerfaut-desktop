@@ -16,7 +16,7 @@ export const SECTIONS: { id: SettingsSection; label: string; icon: LucideIcon }[
 ];
 
 /** The sub-navigation of Settings: a column beside the cards when the
-    canvas is wide enough, a scrollable row above them otherwise. Every
+    canvas is wide enough, a row that wraps above them otherwise. Every
     item is a tab stop, as in the sidebar; the arrow keys walk them. */
 export function SettingsNav({
   active,
@@ -53,10 +53,11 @@ export function SettingsNav({
       <ul
         onKeyDown={onKeyDown}
         className={clsx(
-          // Room for the focus ring, which the horizontal scroller would
-          // otherwise clip.
-          "-m-1 flex gap-1 overflow-x-auto p-1",
-          "@4xl:m-0 @4xl:flex-col @4xl:gap-0.5 @4xl:overflow-visible @4xl:p-0",
+          // Above the cards, the row wraps: scrolled sideways, the last
+          // sections were cut at the edge of the narrowest window with
+          // nothing to say there were more.
+          "flex flex-wrap gap-1",
+          "@4xl:flex-col @4xl:flex-nowrap @4xl:gap-0.5",
         )}
       >
         {SECTIONS.map(({ id, label, icon: Icon }) => {
