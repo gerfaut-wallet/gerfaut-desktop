@@ -78,14 +78,21 @@ export function WelcomeTour({
             {current.icon}
           </span>
         )}
-        <h2 className="font-display text-2xl font-semibold text-text">{current.title}</h2>
-        <p className="max-w-sm font-ui text-sm text-muted">{current.body}</p>
-        {step === 0 && beta && (
-          <p className="-mt-3 max-w-sm font-ui text-xs text-muted">
-            <span className="font-medium text-pending">Public beta.</span> Check addresses and
-            amounts on your signing device.
-          </p>
-        )}
+        {/* As tall as the longest page's words: the dots and the
+            buttons under them stay where they are from a page to the
+            next, under a pointer that presses Next four times. */}
+        <div className="flex min-h-36 flex-col items-center gap-5">
+          <h2 className="text-balance font-display text-2xl font-semibold text-text">
+            {current.title}
+          </h2>
+          <p className="max-w-sm text-pretty font-ui text-sm text-muted">{current.body}</p>
+          {step === 0 && beta && (
+            <p className="-mt-3 max-w-sm font-ui text-xs text-muted">
+              <span className="font-medium text-pending">Public beta.</span> Check addresses and
+              amounts on your signing device.
+            </p>
+          )}
+        </div>
 
         <div className="flex gap-1.5" aria-hidden>
           {STEPS.map((_, index) => (
