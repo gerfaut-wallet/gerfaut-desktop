@@ -10,7 +10,7 @@
 Follow every wallet you own from its descriptor or public key.<br>
 Gerfaut holds no private keys, so it can never spend your bitcoin.
 
-[Download](https://gerfaut-wallet.com/download) · [Documentation](https://gerfaut-wallet.com/docs) · [Website](https://gerfaut-wallet.com) · [Android app](https://github.com/gerfaut-wallet/gerfaut-mobile)
+[Download](https://gerfaut-wallet.com/download) · [Documentation](https://gerfaut-wallet.com/docs) · [Website](https://gerfaut-wallet.com) · [Mobile app](https://github.com/gerfaut-wallet/gerfaut-mobile)
 
 [![CI](https://github.com/gerfaut-wallet/gerfaut-desktop/actions/workflows/ci.yml/badge.svg)](https://github.com/gerfaut-wallet/gerfaut-desktop/actions/workflows/ci.yml)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](LICENSE)
@@ -32,7 +32,7 @@ Gerfaut holds no private keys, so it can never spend your bitcoin.
 - Get a system notification when a transaction reaches the mempool, and another when it confirms, for as long as Gerfaut runs, minimised or locked.
 - Connect to your own Electrum or Esplora server, or stay on a public one. An `.onion` backend goes through the Tor running on your machine, or through the Tor client built into Gerfaut when there is none.
 - Broadcast a transaction signed elsewhere. Paste a PSBT or a raw transaction, open a file or scan a QR code, and Gerfaut shows what it does before it leaves.
-- Lock Gerfaut with a PIN or a password. The vault is encrypted on disk, and an encrypted backup carries your wallets to the [Android app](https://github.com/gerfaut-wallet/gerfaut-mobile).
+- Lock Gerfaut with a PIN or a password. The vault is encrypted on disk, and an encrypted backup carries your wallets to the [mobile app](https://github.com/gerfaut-wallet/gerfaut-mobile), on Android and soon on iPhone.
 
 Gerfaut works on mainnet, signet, testnet4 and regtest, in a light or a dark theme. There is no code to generate keys, handle seeds or sign transactions, and no Send button.
 
